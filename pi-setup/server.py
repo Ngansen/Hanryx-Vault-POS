@@ -54,6 +54,7 @@ import datetime
 import hashlib
 import html as _html
 import os
+import re
 import subprocess
 import threading
 import time as _time
@@ -475,6 +476,188 @@ def _now_ms():
     return int(_time.time() * 1000)
 
 
+# ---------------------------------------------------------------------------
+# Pokémon card QR / scan-code helpers
+# ---------------------------------------------------------------------------
+
+# Pokémon TCG URL patterns (what their official QR codes produce when scanned)
+#   https://www.pokemon.com/us/pokemon-trading-card-game/...?series=XY&set=BASE&number=4
+#   https://tcg.pokemon.com/en-us/...
+#   ptcg://card/SV1/001  (deep-link used by the companion app)
+_PTCG_DOMAIN_RE = re.compile(r'pokemon\.com|ptcg://', re.IGNORECASE)
+
+
+def _normalize_qr(raw: str) -> str:
+    """
+    Normalise a raw scanner value so it matches what's stored as qr_code in the DB.
+
+    • Plain codes / custom QR labels → returned as-is (already the right key)
+    • Pokémon TCG URLs → extract a canonical 'SET-NUMBER' identifier so the
+      same card always maps to the same key regardless of which URL variation
+      the scanner sends.
+    """
+    raw = raw.strip()
+    if not (raw.startswith("http") or raw.startswith("ptcg://")):
+        return raw  # not a URL — use as-is
+
+    try:
+        parsed = urllib.parse.urlparse(raw)
+
+        # Deep-link: ptcg://card/SET/NUMBER
+        if raw.startswith("ptcg://"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) >= 2:
+                return f"{parts[-2].upper()}-{parts[-1].lstrip('0') or '0'}"
+
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        # Pokemon.com QR: ?set=XXX&number=YY  (or &series=...&set=...&number=...)
+        set_code = (qs.get("set") or qs.get("series") or [""])[0].strip().upper()
+        card_num = (qs.get("number") or qs.get("card") or [""])[0].strip().lstrip("0") or "0"
+        if set_code and card_num != "0":
+            return f"{set_code}-{card_num}"
+
+        # Last path segment as fallback (e.g. /cards/sv1-001)
+        tail = parsed.path.rstrip("/").split("/")[-1]
+        if tail and len(tail) > 2:
+            return tail.upper()
+    except Exception:
+        pass
+
+    return raw  # give up — use raw
+
+
+def _tokenize(text: str) -> list[str]:
+    """Split a card name into searchable tokens, ignoring small words."""
+    _STOP = {"the", "a", "an", "of", "in", "ex", "v", "vmax", "vstar", "gx"}
+    return [t for t in re.split(r'[\s\-_/\\,\.]+', text.lower()) if t and t not in _STOP]
+
+
+def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str]) -> int:
+    """
+    Return a relevance score (higher = better match) for a candidate card
+    against a list of search tokens.  Purely in-Python — no extra DB round-trip.
+    """
+    score     = 0
+    name_lc   = name.lower()
+    set_lc    = set_code.lower()
+    qr_lc     = qr_code.lower()
+    name_toks = _tokenize(name)
+
+    for t in tokens:
+        if t in name_lc:    score += 2
+        if t in name_toks:  score += 3  # exact token boundary match
+        if t in set_lc:     score += 1
+        if t in qr_lc:      score += 1
+
+    # Bonus: all tokens matched
+    if all(t in name_lc for t in tokens):
+        score += 5
+
+    return score
+
+
+def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
+                 set_code: str = "", card_num: str = "",
+                 limit: int = 10) -> list[dict]:
+    """
+    Fuzzy card lookup.  Priority order:
+      1. Exact qr_code match (fast path — used by scanner)
+      2. Normalised QR → qr_code match
+      3. Set code + card number (extracted from name or explicit params)
+      4. Tokenised name search
+    Returns at most `limit` results sorted by relevance.
+    """
+    def _row_to_dict(r) -> dict:
+        return {
+            "qrCode":        r["qr_code"],
+            "name":          r["name"],
+            "price":         r["price"],
+            "category":      r["category"] or "General",
+            "rarity":        r["rarity"] or "",
+            "setCode":       r["set_code"] or "",
+            "description":   r["description"] or "",
+            "stockQuantity": r["stock"],
+            "lastUpdated":   r["last_updated"],
+        }
+
+    # 1 — exact qr match
+    if qr:
+        row = db.execute(
+            "SELECT * FROM inventory WHERE qr_code = ? LIMIT 1", (qr,)
+        ).fetchone()
+        if row:
+            return [_row_to_dict(row)]
+
+        # 1b — normalised qr
+        norm = _normalize_qr(qr)
+        if norm != qr:
+            row = db.execute(
+                "SELECT * FROM inventory WHERE qr_code = ? LIMIT 1", (norm,)
+            ).fetchone()
+            if row:
+                return [_row_to_dict(row)]
+
+        # treat qr text as search terms if no exact match
+        if not q:
+            q = norm
+
+    # 2 — explicit set + number
+    if set_code and card_num:
+        rows = db.execute("""
+            SELECT * FROM inventory
+            WHERE UPPER(set_code) = UPPER(?)
+              AND (name LIKE ? OR qr_code LIKE ?)
+            ORDER BY name ASC LIMIT ?
+        """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
+        if rows:
+            return [_row_to_dict(r) for r in rows]
+
+    # 3 — try to extract set+number from q (e.g. "SV1 001" or "sv1-001")
+    if q:
+        _SET_NUM_RE = re.compile(r'\b([A-Za-z]{2,6})\s*[-/]?\s*0*(\d{1,4})\b')
+        m = _SET_NUM_RE.search(q)
+        if m:
+            s, n = m.group(1).upper(), m.group(2)
+            rows = db.execute("""
+                SELECT * FROM inventory
+                WHERE UPPER(set_code) = ? AND (name LIKE ? OR qr_code LIKE ?)
+                ORDER BY name ASC LIMIT ?
+            """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
+            if rows:
+                return [_row_to_dict(r) for r in rows]
+
+    # 4 — tokenised name search with scoring
+    if not q and name:
+        q = name
+    if not q:
+        return []
+
+    tokens = _tokenize(q)
+    if not tokens:
+        return []
+
+    # Pull candidates that contain at least one token (LIKE OR chain)
+    like_clauses = " OR ".join(["LOWER(name) LIKE ?" for _ in tokens])
+    like_args    = [f"%{t}%" for t in tokens]
+    rows = db.execute(f"""
+        SELECT * FROM inventory
+        WHERE {like_clauses}
+        ORDER BY name ASC
+        LIMIT 200
+    """, like_args).fetchall()
+
+    if not rows:
+        return []
+
+    scored = sorted(
+        rows,
+        key=lambda r: _score_card(r["name"], r["set_code"] or "", r["qr_code"], tokens),
+        reverse=True,
+    )
+    return [_row_to_dict(r) for r in scored[:limit]]
+
+
 def _cors(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
@@ -623,16 +806,28 @@ def scan_post():
     qr_code = (data.get("qrCode") or data.get("qr_code") or data.get("code") or "").strip()
     if not qr_code:
         return jsonify({"error": "qrCode is required"}), 400
+
+    # Normalise Pokémon TCG URL QR codes → canonical SET-NUMBER key.
+    # Stores the normalised form so exact-match lookups work even when the
+    # physical QR contains a full URL.
+    normalised = _normalize_qr(qr_code)
+    store_code = normalised  # what goes into the DB
+
     db = get_db()
-    db.execute("INSERT INTO scan_queue (qr_code) VALUES (?)", (qr_code,))
+    db.execute("INSERT INTO scan_queue (qr_code) VALUES (?)", (store_code,))
     db.commit()
     # Bust the 1 s scan cache so the tablet picks this up on its very next poll
     with _cache_lock:
         _scan_cache.clear()
     # Also push instantly to any SSE clients (tablet with /scan/stream)
-    _sse_broadcast_scan(qr_code)
-    print(f"[scan] Queued: {qr_code}")
-    return jsonify({"ok": True, "queued": qr_code}), 201
+    _sse_broadcast_scan(store_code)
+
+    if normalised != qr_code:
+        print(f"[scan] Queued (normalised): {qr_code!r} → {store_code!r}")
+    else:
+        print(f"[scan] Queued: {store_code}")
+
+    return jsonify({"ok": True, "queued": store_code, "original": qr_code}), 201
 
 
 @app.route("/scan/pending", methods=["GET"])
@@ -646,8 +841,17 @@ def scan_pending():
     row = db.execute(
         "SELECT id, qr_code FROM scan_queue WHERE processed = 0 ORDER BY id ASC LIMIT 1"
     ).fetchone()
-    result = {"id": row["id"], "qrCode": row["qr_code"]} if row \
-             else {"id": 0, "qrCode": ""}
+    if not row:
+        result = {"id": 0, "qrCode": ""}
+    else:
+        qr_code = row["qr_code"]
+        result  = {"id": row["id"], "qrCode": qr_code}
+        # Attach a resolved product so the tablet doesn't need a second lookup.
+        # Uses the same fuzzy logic as /card/lookup — fast exact match first,
+        # falling back to token search only on a miss.
+        matches = _card_lookup(db, qr=qr_code, limit=1)
+        if matches:
+            result["resolvedProduct"] = matches[0]
     _cache_set(_scan_cache, "p", result)
     return jsonify(result)
 
@@ -706,6 +910,89 @@ def scan_stream():
             "Connection":        "keep-alive",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Card lookup — fuzzy / multi-field search for Pokémon (and any) cards
+# ---------------------------------------------------------------------------
+
+@app.route("/card/lookup", methods=["GET"])
+def card_lookup():
+    """
+    Fuzzy card lookup used by the website and any scanner client.
+
+    Query params (at least one required):
+      qr    — raw scanner value (URL or plain code); normalised automatically
+      q     — general search string (name fragment, set+number, etc.)
+      name  — card name (can be partial)
+      set   — set code, e.g. "SV1", "XY3", "BW"
+      num   — card number within the set, e.g. "001" or "1"
+      limit — max results to return (default 10, max 50)
+
+    Returns:
+      {"results": [...], "count": N, "query": {...}}
+
+    Examples:
+      GET /card/lookup?q=charizard           → all Charizard cards
+      GET /card/lookup?q=SV1-001             → card 1 from Scarlet & Violet base
+      GET /card/lookup?qr=https://pokemon.com/...?set=SV1&number=1
+      GET /card/lookup?name=pikachu&set=sv1  → Pikachu in SV1
+    """
+    qr       = request.args.get("qr",    "").strip()
+    q        = request.args.get("q",     "").strip()
+    name     = request.args.get("name",  "").strip()
+    set_code = request.args.get("set",   "").strip().upper()
+    card_num = request.args.get("num",   "").strip().lstrip("0")
+    try:
+        limit = min(int(request.args.get("limit", 10)), 50)
+    except (ValueError, TypeError):
+        limit = 10
+
+    if not any([qr, q, name, set_code]):
+        return jsonify({"error": "Provide at least one of: qr, q, name, set"}), 400
+
+    db      = get_db()
+    results = _card_lookup(db, q=q, qr=qr, name=name,
+                           set_code=set_code, card_num=card_num, limit=limit)
+
+    return jsonify({
+        "results": results,
+        "count":   len(results),
+        "query":   {
+            "qr": qr, "q": q, "name": name,
+            "set": set_code, "num": card_num,
+        },
+    })
+
+
+@app.route("/card/lookup", methods=["POST"])
+def card_lookup_post():
+    """
+    POST version of /card/lookup — used by the website camera scanner.
+
+    Body (JSON):
+      {"qr": "...", "q": "...", "name": "...", "set": "...", "num": "...", "limit": 10}
+
+    Same response as GET version.
+    """
+    body     = request.get_json(silent=True) or {}
+    qr       = (body.get("qr")   or "").strip()
+    q        = (body.get("q")    or "").strip()
+    name     = (body.get("name") or "").strip()
+    set_code = (body.get("set")  or "").strip().upper()
+    card_num = (body.get("num")  or "").strip().lstrip("0")
+    try:
+        limit = min(int(body.get("limit", 10)), 50)
+    except (ValueError, TypeError):
+        limit = 10
+
+    if not any([qr, q, name, set_code]):
+        return jsonify({"error": "Provide at least one of: qr, q, name, set"}), 400
+
+    db      = get_db()
+    results = _card_lookup(db, q=q, qr=qr, name=name,
+                           set_code=set_code, card_num=card_num, limit=limit)
+    return jsonify({"results": results, "count": len(results)})
 
 
 # ---------------------------------------------------------------------------
