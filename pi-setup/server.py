@@ -24,11 +24,22 @@ Scanner relay (Expo scanner app on phone):
   POST /scan/ack/<id>       — tablet marks scan as handled
   GET  /scan/stream         — SSE: instant push instead of polling
 
-Card lookup (website camera scanner):
-  GET  /card/lookup?q=charizard          — fuzzy name search
+Card lookup + enrichment (website camera scanner / tablet):
+  GET  /card/lookup?q=charizard          — fuzzy name search (local inventory)
   GET  /card/lookup?qr=<raw_scan>        — resolve any scan value to a card
   GET  /card/lookup?name=X&set=SV1&num=1 — explicit fields
   POST /card/lookup                      — same, JSON body
+  GET  /card/enrich?qr=SV1-1            — local + full TCG API data + market price + image
+  POST /card/enrich                      — same, JSON body
+  GET  /card/condition/<qr>             — get NM/LP/MP/HP/DMG condition for a card
+  POST /card/condition/<qr>             — set condition + notes
+
+Admin — card utilities:
+  GET  /admin/export-cards              — JSON export for website bulk import
+  GET  /admin/export-cards?fmt=csv      — CSV download
+  GET  /admin/export-cards?enrich=1     — include TCG images + market prices
+  GET  /admin/webhook-config            — check if auto-push webhook is configured
+  POST /admin/webhook-config            — set webhook URL (auto-pushes new cards to site)
 
 Zettle OAuth:
   GET  /zettle/auth         — begin OAuth flow
@@ -190,6 +201,15 @@ _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
 # ---------------------------------------------------------------------------
+# Pokémon TCG API — config + in-memory cache
+# ---------------------------------------------------------------------------
+_TCG_API_BASE   = "https://api.pokemontcg.io/v2"
+_PTCG_API_KEY   = os.environ.get("PTCG_API_KEY", "")  # optional; free tier = 1k/day, with key = 20k/day
+_tcg_cache_lock = threading.Lock()
+_tcg_mem_cache: dict = {}    # card_id → {"data": {...}, "fetched_ms": int}
+_TCG_MEM_TTL_MS = 3_600_000  # 1 hour in-memory; DB stores 24 hours
+
+# ---------------------------------------------------------------------------
 # Server start time — used by /health uptime field
 # ---------------------------------------------------------------------------
 _server_start_time = _time.time()
@@ -344,6 +364,19 @@ def init_db():
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS card_tcg_cache (
+            card_id     TEXT PRIMARY KEY,
+            data_json   TEXT NOT NULL,
+            fetched_ms  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+
+        CREATE TABLE IF NOT EXISTS card_conditions (
+            qr_code    TEXT PRIMARY KEY,
+            condition  TEXT NOT NULL DEFAULT 'NM',
+            notes      TEXT NOT NULL DEFAULT '',
+            updated_ms INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
     """)
     db.commit()
 
@@ -355,6 +388,16 @@ def init_db():
         db.execute("ALTER TABLE sales ADD COLUMN source TEXT NOT NULL DEFAULT 'local'")
         db.commit()
         print("[DB] Migration: added sales.source column")
+
+    inv_cols = {r[1] for r in db.execute("PRAGMA table_info(inventory)").fetchall()}
+    if "image_url" not in inv_cols:
+        db.execute("ALTER TABLE inventory ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
+        db.commit()
+        print("[DB] Migration: added inventory.image_url column")
+    if "tcg_id" not in inv_cols:
+        db.execute("ALTER TABLE inventory ADD COLUMN tcg_id TEXT NOT NULL DEFAULT ''")
+        db.commit()
+        print("[DB] Migration: added inventory.tcg_id column")
 
     db.close()
     print("[DB] Initialized vault_pos.db")
@@ -498,40 +541,95 @@ def _normalize_qr(raw: str) -> str:
     """
     Normalise a raw scanner value so it matches what's stored as qr_code in the DB.
 
-    • Plain codes / custom QR labels → returned as-is (already the right key)
-    • Pokémon TCG URLs → extract a canonical 'SET-NUMBER' identifier so the
-      same card always maps to the same key regardless of which URL variation
-      the scanner sends.
+    Handles:
+      • Plain SET-NUMBER codes (already canonical)            → returned as-is
+      • ptcg://card/SET/NUMBER  (companion app deep-link)    → SET-NUMBER
+      • pokemon.com URLs with ?set=&number= query params     → SET-NUMBER
+      • tcg.pokemon.com URLs                                 → SET-NUMBER
+      • pkmncards.com slugs  /card/slug-number               → best guess
+      • ptcgo.com / ptcgolive.com URLs with ?set=&card=      → SET-NUMBER
+      • limitlesstcg.com /cards/SET/NUMBER                   → SET-NUMBER
+      • pokellector.com / bulbapedia.net card links          → SET-NUMBER fallback
+      • Energy/trainer plain names                           → returned as-is
     """
     raw = raw.strip()
+    if not raw:
+        return raw
+
+    # Already canonical — plain code with no URL characters
     if not (raw.startswith("http") or raw.startswith("ptcg://")):
-        return raw  # not a URL — use as-is
+        # Normalise casing for SET-NUMBER patterns: sv1-1 → SV1-1
+        m = re.match(r'^([A-Za-z0-9]{2,8})-(\d{1,4}[a-zA-Z]?)$', raw)
+        if m:
+            return f"{m.group(1).upper()}-{m.group(2).lstrip('0') or '0'}"
+        return raw
 
     try:
         parsed = urllib.parse.urlparse(raw)
+        host   = parsed.hostname or ""
+        path   = parsed.path
+        qs     = urllib.parse.parse_qs(parsed.query)
 
-        # Deep-link: ptcg://card/SET/NUMBER
+        # ── Deep-link: ptcg://card/SET/NUMBER ───────────────────────────────
         if raw.startswith("ptcg://"):
-            parts = parsed.path.strip("/").split("/")
+            parts = path.strip("/").split("/")
             if len(parts) >= 2:
                 return f"{parts[-2].upper()}-{parts[-1].lstrip('0') or '0'}"
 
-        qs = urllib.parse.parse_qs(parsed.query)
+        # ── pokemon.com  (all regional subdomains) ───────────────────────────
+        if "pokemon.com" in host:
+            set_code = (qs.get("set") or qs.get("series") or qs.get("setCode") or [""])[0].strip().upper()
+            card_num = (qs.get("number") or qs.get("card") or qs.get("num") or [""])[0].strip().lstrip("0") or "0"
+            if set_code and card_num != "0":
+                return f"{set_code}-{card_num}"
+            # /cards/sv1-001 path style
+            tail = path.rstrip("/").split("/")[-1]
+            m = re.match(r'^([A-Za-z0-9]+)-0*(\d+[a-zA-Z]?)$', tail)
+            if m:
+                return f"{m.group(1).upper()}-{m.group(2)}"
 
-        # Pokemon.com QR: ?set=XXX&number=YY  (or &series=...&set=...&number=...)
-        set_code = (qs.get("set") or qs.get("series") or [""])[0].strip().upper()
-        card_num = (qs.get("number") or qs.get("card") or [""])[0].strip().lstrip("0") or "0"
-        if set_code and card_num != "0":
-            return f"{set_code}-{card_num}"
+        # ── ptcgo.com / ptcgolive.com ────────────────────────────────────────
+        if "ptcgo" in host or "ptcgolive" in host:
+            set_code = (qs.get("set") or qs.get("setId") or [""])[0].strip().upper()
+            card_num = (qs.get("card") or qs.get("number") or qs.get("num") or [""])[0].strip().lstrip("0") or "0"
+            if set_code and card_num != "0":
+                return f"{set_code}-{card_num}"
 
-        # Last path segment as fallback (e.g. /cards/sv1-001)
-        tail = parsed.path.rstrip("/").split("/")[-1]
+        # ── limitlesstcg.com/cards/SET/NUMBER ────────────────────────────────
+        if "limitlesstcg" in host:
+            parts = [p for p in path.strip("/").split("/") if p]
+            if len(parts) >= 2 and parts[0].lower() in ("cards", "card"):
+                return f"{parts[1].upper()}-{parts[2].lstrip('0') or '0'}" if len(parts) >= 3 else parts[1].upper()
+
+        # ── pkmncards.com/card/<slug> ─────────────────────────────────────────
+        # Slug format: "charizard-base-set-4" → BASE1-4 requires name DB lookup;
+        # best we can do here is extract the trailing number and prior segment
+        if "pkmncards.com" in host:
+            parts = [p for p in path.strip("/").split("/") if p]
+            if parts:
+                slug = parts[-1]  # e.g. "charizard-base-set-4"
+                m = re.search(r'-(\w{2,8})-(\d+[a-zA-Z]?)$', slug)
+                if m:
+                    return f"{m.group(1).upper()}-{m.group(2).lstrip('0') or '0'}"
+                m2 = re.search(r'(\d+[a-zA-Z]?)$', slug)
+                if m2:
+                    return slug.upper()
+
+        # ── Generic fallback: extract SET-NUM from path ──────────────────────
+        # Matches anything like /sv1-001, /BASE/4, /cards/xy3/15
+        m = re.search(r'/([A-Za-z0-9]{2,8})[-/]0*(\d+[a-zA-Z]?)(?:/|$|\?)', path)
+        if m:
+            return f"{m.group(1).upper()}-{m.group(2)}"
+
+        # Last path segment
+        tail = path.rstrip("/").split("/")[-1]
         if tail and len(tail) > 2:
             return tail.upper()
+
     except Exception:
         pass
 
-    return raw  # give up — use raw
+    return raw  # give up — use raw as-is
 
 
 def _tokenize(text: str) -> list[str]:
@@ -576,6 +674,7 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     Returns at most `limit` results sorted by relevance.
     """
     def _row_to_dict(r) -> dict:
+        keys = r.keys() if hasattr(r, "keys") else []
         return {
             "qrCode":        r["qr_code"],
             "name":          r["name"],
@@ -586,6 +685,8 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
             "description":   r["description"] or "",
             "stockQuantity": r["stock"],
             "lastUpdated":   r["last_updated"],
+            "imageUrl":      r["image_url"] if "image_url" in keys else "",
+            "tcgId":         r["tcg_id"]    if "tcg_id"    in keys else "",
         }
 
     # 1 — exact qr match
@@ -663,6 +764,277 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         reverse=True,
     )
     return [_row_to_dict(r) for r in scored[:limit]]
+
+
+# ---------------------------------------------------------------------------
+# Pokémon TCG API helpers — fetch, search, enrich
+# ---------------------------------------------------------------------------
+
+def _tcg_headers() -> dict:
+    h = {"Accept": "application/json"}
+    if _PTCG_API_KEY:
+        h["X-Api-Key"] = _PTCG_API_KEY
+    return h
+
+
+def _tcg_db_get(card_id: str) -> dict | None:
+    """Return SQLite-cached TCG data if younger than 24 h, else None."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        row = conn.execute(
+            "SELECT data_json, fetched_ms FROM card_tcg_cache WHERE card_id=?", (card_id,)
+        ).fetchone()
+        conn.close()
+        if row and (_now_ms() - row[1]) < 86_400_000:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    return None
+
+
+def _tcg_db_set(card_id: str, data: dict):
+    """Persist a TCG API response to the SQLite cache."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute(
+            "INSERT OR REPLACE INTO card_tcg_cache (card_id, data_json, fetched_ms) VALUES (?,?,?)",
+            (card_id, json.dumps(data, ensure_ascii=False), _now_ms()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _tcg_fetch(card_id: str) -> dict | None:
+    """
+    Fetch a single card from api.pokemontcg.io/v2/cards/{id}.
+    Cache layers: in-memory (1 h) → SQLite (24 h) → live API.
+    Returns the raw 'data' object from the API, or None on miss.
+    """
+    cid = card_id.lower().strip()
+    if not cid:
+        return None
+
+    # 1 — in-memory
+    with _tcg_cache_lock:
+        hit = _tcg_mem_cache.get(cid)
+        if hit and (_now_ms() - hit["fetched_ms"]) < _TCG_MEM_TTL_MS:
+            return hit["data"]
+
+    # 2 — SQLite
+    cached = _tcg_db_get(cid)
+    if cached:
+        with _tcg_cache_lock:
+            _tcg_mem_cache[cid] = {"data": cached, "fetched_ms": _now_ms()}
+        return cached
+
+    # 3 — live API
+    try:
+        url = f"{_TCG_API_BASE}/cards/{urllib.parse.quote(cid, safe='')}"
+        req = urllib.request.Request(url, headers=_tcg_headers())
+        with urllib.request.urlopen(req, timeout=7) as resp:
+            body = json.loads(resp.read())
+            data = body.get("data")
+            if data:
+                _tcg_db_set(cid, data)
+                with _tcg_cache_lock:
+                    _tcg_mem_cache[cid] = {"data": data, "fetched_ms": _now_ms()}
+                return data
+    except Exception as e:
+        print(f"[tcg] fetch '{cid}' failed: {e}")
+    return None
+
+
+def _tcg_search(name: str = "", set_id: str = "", number: str = "",
+                limit: int = 5) -> list[dict]:
+    """
+    Search api.pokemontcg.io by name / set / number.
+    Warms the per-card in-memory + DB cache as a side-effect.
+    """
+    parts = []
+    if name:
+        clean = re.sub(r'["\']', '', name).strip()
+        parts.append(f'name:"{clean}"')
+    if set_id:
+        parts.append(f"set.id:{set_id.lower()}")
+    if number:
+        parts.append(f"number:{number.lstrip('0') or '0'}")
+    if not parts:
+        return []
+
+    url = (f"{_TCG_API_BASE}/cards?"
+           + urllib.parse.urlencode({"q": " ".join(parts),
+                                     "pageSize": limit,
+                                     "orderBy": "-set.releaseDate"}))
+    try:
+        req = urllib.request.Request(url, headers=_tcg_headers())
+        with urllib.request.urlopen(req, timeout=9) as resp:
+            results = json.loads(resp.read()).get("data", [])
+            for card in results:
+                cid = card.get("id", "").lower()
+                if cid:
+                    _tcg_db_set(cid, card)
+                    with _tcg_cache_lock:
+                        _tcg_mem_cache[cid] = {"data": card, "fetched_ms": _now_ms()}
+            return results
+    except Exception as e:
+        print(f"[tcg] search failed ('{' '.join(parts)}'): {e}")
+    return []
+
+
+def _tcg_to_summary(card: dict) -> dict:
+    """
+    Flatten a raw TCG API card object into a clean dict that merges with
+    local inventory format and feeds the price overlay / website upload.
+    """
+    images = card.get("images", {})
+    tcgp   = card.get("tcgplayer", {})
+    prices = tcgp.get("prices", {})
+
+    price_tiers: dict = {}
+    for tier, pdata in prices.items():
+        if isinstance(pdata, dict):
+            price_tiers[tier] = {
+                "low":       pdata.get("low"),
+                "mid":       pdata.get("mid"),
+                "high":      pdata.get("high"),
+                "market":    pdata.get("market"),
+                "directLow": pdata.get("directLow"),
+            }
+
+    # Best single market price: holofoil > normal > reverseHolo > first available
+    market_price: float | None = None
+    for tier in ("holofoil", "normal", "reverseHolofoil", "1stEditionHolofoil",
+                 "unlimitedHolofoil", "1stEditionNormal"):
+        if tier in price_tiers and price_tiers[tier].get("market"):
+            market_price = price_tiers[tier]["market"]
+            break
+    if market_price is None and price_tiers:
+        first = next(iter(price_tiers.values()))
+        market_price = first.get("market") or first.get("mid")
+
+    tcg_set = card.get("set", {})
+    return {
+        "tcgId":       card.get("id"),
+        "name":        card.get("name"),
+        "supertype":   card.get("supertype"),
+        "subtypes":    card.get("subtypes", []),
+        "hp":          card.get("hp"),
+        "types":       card.get("types", []),
+        "evolvesFrom": card.get("evolvesFrom"),
+        "rarity":      card.get("rarity"),
+        "number":      card.get("number"),
+        "artist":      card.get("artist"),
+        "flavorText":  card.get("flavorText"),
+        "nationalDex": card.get("nationalPokedexNumbers", []),
+        "set": {
+            "id":          tcg_set.get("id"),
+            "name":        tcg_set.get("name"),
+            "series":      tcg_set.get("series"),
+            "ptcgoCode":   tcg_set.get("ptcgoCode"),
+            "total":       tcg_set.get("total"),
+            "releaseDate": tcg_set.get("releaseDate"),
+            "images":      tcg_set.get("images", {}),
+        },
+        "images": {
+            "small": images.get("small"),
+            "large": images.get("large"),
+        },
+        "tcgplayer": {
+            "url":         tcgp.get("url"),
+            "updatedAt":   tcgp.get("updatedAt"),
+            "marketPrice": market_price,
+            "priceTiers":  price_tiers,
+        },
+        "legalities": card.get("legalities", {}),
+        "attacks":    card.get("attacks", []),
+        "weaknesses": card.get("weaknesses", []),
+        "abilities":  card.get("abilities", []),
+        "retreatCost": card.get("convertedRetreatCost"),
+    }
+
+
+def _enrich_with_tcg(local_result: dict | None, qr_code: str) -> dict:
+    """
+    Merge a local inventory result with live TCG API data.
+
+    Returns a dict with:
+      • All local inventory fields (if card is in local DB)
+      • "tcgData"          — clean TCG summary (images, prices, set info)
+      • "inLocalInventory" — bool
+      • "isDuplicate"      — True if already in stock (qty > 0)
+      • "suggestedPrice"   — TCG market price when no local price exists
+      • "imageUrl"         — large card image URL (auto-filled from TCG if absent)
+    """
+    out: dict = dict(local_result) if local_result else {}
+    out["inLocalInventory"] = bool(local_result)
+    out["isDuplicate"]      = bool(local_result and (local_result.get("stockQuantity") or 0) > 0)
+
+    # Derive canonical TCG card id from qr_code  e.g. "SV1-1" → "sv1-1"
+    cid = qr_code.lower().strip()
+
+    tcg_raw = _tcg_fetch(cid)
+
+    # Fallback: search by set+number or name
+    if not tcg_raw:
+        m = re.match(r'^([a-z0-9]+)-(\d+[a-z]?)$', cid)
+        local_name = (local_result or {}).get("name", "")
+        if m:
+            hits = _tcg_search(name=local_name, set_id=m.group(1), number=m.group(2), limit=1)
+        elif local_name:
+            hits = _tcg_search(name=local_name, limit=1)
+        else:
+            # Last resort: treat qr_code tokens as a name search
+            hits = _tcg_search(name=qr_code.replace("-", " "), limit=1)
+        if hits:
+            tcg_raw = hits[0]
+
+    if tcg_raw:
+        summary = _tcg_to_summary(tcg_raw)
+        out["tcgData"] = summary
+
+        # Auto-fill empty local fields from TCG data
+        if not out.get("name") and summary.get("name"):
+            out["name"]    = summary["name"]
+        if not out.get("rarity") and summary.get("rarity"):
+            out["rarity"]  = summary["rarity"]
+        if not out.get("setCode") and summary.get("set", {}).get("ptcgoCode"):
+            out["setCode"] = summary["set"]["ptcgoCode"]
+        # Image URL: prefer local override, fall back to TCG large image
+        if not out.get("imageUrl"):
+            img = summary.get("images", {}).get("large") or summary.get("images", {}).get("small")
+            if img:
+                out["imageUrl"] = img
+        # Suggest market price when product has no local price
+        mkt = summary.get("tcgplayer", {}).get("marketPrice")
+        if not out.get("price") and mkt:
+            out["suggestedPrice"] = round(mkt, 2)
+
+    return out
+
+
+def _fire_webhook(payload: dict):
+    """POST card data to the configured webhook URL in a background thread (non-blocking)."""
+    try:
+        db  = sqlite3.connect(DB_PATH)
+        row = db.execute("SELECT value FROM server_state WHERE key='webhook_url'").fetchone()
+        db.close()
+        url = row[0].strip() if row and row[0] else ""
+        if not url:
+            return
+        data  = json.dumps(payload, ensure_ascii=False).encode()
+        req   = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json", "X-Source": "HanryxVault-Pi"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            print(f"[webhook] pushed card '{payload.get('name', '?')}' → {resp.status}")
+    except Exception as e:
+        print(f"[webhook] push failed: {e}")
 
 
 def _cors(response):
@@ -853,12 +1225,13 @@ def scan_pending():
     else:
         qr_code = row["qr_code"]
         result  = {"id": row["id"], "qrCode": qr_code}
-        # Attach a resolved product so the tablet doesn't need a second lookup.
-        # Uses the same fuzzy logic as /card/lookup — fast exact match first,
-        # falling back to token search only on a miss.
+        # Attach a resolved product (local inventory + TCG enrichment) so the
+        # tablet gets name, price, image, market data in a single response.
         matches = _card_lookup(db, qr=qr_code, limit=1)
-        if matches:
-            result["resolvedProduct"] = matches[0]
+        local   = matches[0] if matches else None
+        enriched = _enrich_with_tcg(local, qr_code)
+        if enriched.get("name") or enriched.get("tcgData"):
+            result["resolvedProduct"] = enriched
     _cache_set(_scan_cache, "p", result)
     return jsonify(result)
 
@@ -1000,6 +1373,223 @@ def card_lookup_post():
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
     return jsonify({"results": results, "count": len(results)})
+
+
+# ---------------------------------------------------------------------------
+# Card enrichment — local inventory + full TCG API data merged
+# ---------------------------------------------------------------------------
+
+@app.route("/card/enrich", methods=["GET", "POST"])
+def card_enrich():
+    """
+    Return the richest possible card data by combining local inventory with
+    the Pokémon TCG API (cached 24 h).
+
+    GET  /card/enrich?qr=SV1-1
+    GET  /card/enrich?name=Charizard&set=sv3
+    POST /card/enrich  {"qr":"SV1-1"}
+
+    Response includes:
+      • All local inventory fields (price, stock, rarity, …)
+      • tcgData: {name, hp, types, rarity, set, images{small,large},
+                  attacks, weaknesses, tcgplayer{marketPrice, priceTiers}}
+      • inLocalInventory: bool
+      • isDuplicate: bool — card already in stock
+      • suggestedPrice: float — TCG market price when no local price set
+      • imageUrl: large card image
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        qr   = (body.get("qr") or body.get("qrCode") or "").strip()
+        name = (body.get("name") or "").strip()
+        set_code = (body.get("set") or "").strip()
+        num      = (body.get("num") or "").strip().lstrip("0")
+    else:
+        qr       = request.args.get("qr",   "").strip()
+        name     = request.args.get("name", "").strip()
+        set_code = request.args.get("set",  "").strip()
+        num      = request.args.get("num",  "").strip().lstrip("0")
+
+    # Build a canonical qr code to look up
+    if not qr:
+        if set_code and num:
+            qr = f"{set_code.upper()}-{num}"
+        elif name:
+            qr = name  # will be used as text search below
+
+    if not qr:
+        return jsonify({"error": "Provide qr, name, or set+num"}), 400
+
+    norm_qr = _normalize_qr(qr)
+    db      = get_db()
+    matches = _card_lookup(db, qr=norm_qr, name=name,
+                           set_code=set_code, card_num=num, limit=1)
+    local   = matches[0] if matches else None
+    result  = _enrich_with_tcg(local, norm_qr)
+    result["normalizedQr"] = norm_qr
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Card condition — NM / LP / MP / HP / DMG per qr_code
+# ---------------------------------------------------------------------------
+
+_CONDITIONS = {"NM", "LP", "MP", "HP", "DMG"}
+
+@app.route("/card/condition/<path:qr_code>", methods=["GET"])
+def card_condition_get(qr_code):
+    db  = get_db()
+    row = db.execute(
+        "SELECT condition, notes, updated_ms FROM card_conditions WHERE qr_code=?", (qr_code,)
+    ).fetchone()
+    if row:
+        return jsonify({"qrCode": qr_code, "condition": row["condition"],
+                        "notes": row["notes"], "updatedMs": row["updated_ms"]})
+    return jsonify({"qrCode": qr_code, "condition": "NM", "notes": "", "updatedMs": None})
+
+
+@app.route("/card/condition/<path:qr_code>", methods=["POST"])
+def card_condition_set(qr_code):
+    """
+    POST /card/condition/SV1-1
+    Body: {"condition": "LP", "notes": "minor corner wear"}
+
+    condition must be one of: NM, LP, MP, HP, DMG
+    """
+    body      = request.get_json(silent=True) or {}
+    condition = (body.get("condition") or "NM").strip().upper()
+    notes     = (body.get("notes") or "").strip()[:500]
+    if condition not in _CONDITIONS:
+        return jsonify({"error": f"condition must be one of {sorted(_CONDITIONS)}"}), 400
+    db = get_db()
+    db.execute("""
+        INSERT INTO card_conditions (qr_code, condition, notes, updated_ms)
+        VALUES (?,?,?,?)
+        ON CONFLICT(qr_code) DO UPDATE SET
+            condition=excluded.condition, notes=excluded.notes, updated_ms=excluded.updated_ms
+    """, (qr_code, condition, notes, _now_ms()))
+    db.commit()
+    return jsonify({"ok": True, "qrCode": qr_code, "condition": condition})
+
+
+# ---------------------------------------------------------------------------
+# Bulk export — JSON or CSV for website upload
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/export-cards", methods=["GET"])
+def admin_export_cards():
+    """
+    Export Pokémon card inventory in a format ready for bulk import on the
+    HanRYX website.
+
+    GET /admin/export-cards           → JSON array
+    GET /admin/export-cards?fmt=csv   → CSV download
+    GET /admin/export-cards?cat=Trading+Card  → filter by category
+    GET /admin/export-cards?enrich=1  → include TCG images + market prices (slow!)
+
+    Each row contains: qrCode, name, price, category, rarity, setCode,
+    description, stock, imageUrl, tcgId, condition, tcgMarketPrice
+    """
+    fmt      = request.args.get("fmt", "json").lower()
+    cat      = request.args.get("cat", "").strip()
+    do_enrich = request.args.get("enrich", "0") == "1"
+
+    db = get_db()
+    if cat:
+        rows = db.execute(
+            "SELECT * FROM inventory WHERE LOWER(category) LIKE ? ORDER BY name ASC",
+            (f"%{cat.lower()}%",)
+        ).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM inventory ORDER BY name ASC").fetchall()
+
+    # Fetch conditions in one query
+    cond_rows = db.execute("SELECT qr_code, condition, notes FROM card_conditions").fetchall()
+    cond_map  = {r["qr_code"]: {"condition": r["condition"], "notes": r["notes"]}
+                 for r in cond_rows}
+
+    cards = []
+    for r in rows:
+        qr = r["qr_code"]
+        c  = cond_map.get(qr, {})
+        entry = {
+            "qrCode":      qr,
+            "name":        r["name"],
+            "price":       r["price"],
+            "category":    r["category"] or "General",
+            "rarity":      r["rarity"] or "",
+            "setCode":     r["set_code"] or "",
+            "description": r["description"] or "",
+            "stock":       r["stock"],
+            "imageUrl":    r["image_url"] if "image_url" in r.keys() else "",
+            "tcgId":       r["tcg_id"]    if "tcg_id"    in r.keys() else "",
+            "condition":   c.get("condition", "NM"),
+            "conditionNotes": c.get("notes", ""),
+            "lastUpdated": r["last_updated"],
+        }
+        if do_enrich:
+            enriched = _enrich_with_tcg(entry, qr)
+            mkt = (enriched.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
+            if mkt:
+                entry["tcgMarketPrice"] = mkt
+            if enriched.get("imageUrl") and not entry["imageUrl"]:
+                entry["imageUrl"] = enriched["imageUrl"]
+        else:
+            entry["tcgMarketPrice"] = None
+        cards.append(entry)
+
+    if fmt == "csv":
+        fields = ["qrCode","name","price","stock","category","rarity","setCode",
+                  "condition","imageUrl","tcgId","tcgMarketPrice","description",
+                  "conditionNotes","lastUpdated"]
+        buf = io.StringIO()
+        w   = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(cards)
+        from flask import Response as _Resp
+        return _Resp(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=hanryx_inventory.csv"},
+        )
+
+    return jsonify({"count": len(cards), "cards": cards})
+
+
+# ---------------------------------------------------------------------------
+# Webhook config — auto-push new cards to the HanRYX website
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/webhook-config", methods=["GET"])
+def webhook_config_get():
+    """Return whether a webhook URL is configured (never reveals the URL itself)."""
+    db  = get_db()
+    row = db.execute("SELECT value FROM server_state WHERE key='webhook_url'").fetchone()
+    has = bool(row and row["value"] and row["value"].strip())
+    return jsonify({"configured": has})
+
+
+@app.route("/admin/webhook-config", methods=["POST"])
+def webhook_config_set():
+    """
+    Configure the webhook URL that receives new card data automatically.
+
+    POST /admin/webhook-config
+    Body: {"url": "https://hanryxvault.app/api/pi-ingest"}
+          {"url": ""}  ← clears the webhook
+
+    The Pi will POST card JSON to this URL whenever a product is saved via
+    /admin/inventory and the card has tcgData or an imageUrl.
+    """
+    body = request.get_json(silent=True) or {}
+    url  = (body.get("url") or "").strip()
+    db   = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO server_state (key, value) VALUES ('webhook_url', ?)", (url,)
+    )
+    db.commit()
+    action = "cleared" if not url else "saved"
+    return jsonify({"ok": True, "action": action})
 
 
 # ---------------------------------------------------------------------------
@@ -1416,23 +2006,49 @@ def admin_add_product():
     name    = (data.get("name") or "").strip()
     if not qr_code or not name:
         return jsonify({"error": "qrCode and name are required"}), 400
+
+    image_url = (data.get("imageUrl") or data.get("image_url") or "").strip()
+    tcg_id    = (data.get("tcgId")    or data.get("tcg_id")    or "").strip()
+
     db = get_db()
     db.execute("""
-        INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO inventory
+            (qr_code, name, price, category, rarity, set_code, description, stock,
+             image_url, tcg_id, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(qr_code) DO UPDATE SET
             name=excluded.name, price=excluded.price, category=excluded.category,
             rarity=excluded.rarity, set_code=excluded.set_code,
             description=excluded.description, stock=excluded.stock,
+            image_url=CASE WHEN excluded.image_url!='' THEN excluded.image_url ELSE image_url END,
+            tcg_id=CASE WHEN excluded.tcg_id!=''    THEN excluded.tcg_id    ELSE tcg_id    END,
             last_updated=excluded.last_updated
     """, (
         qr_code, name,
         float(data.get("price", 0)), data.get("category", "General"),
         data.get("rarity", ""), data.get("setCode") or data.get("set_code", ""),
-        data.get("description", ""), int(data.get("stock", 0)), _now_ms(),
+        data.get("description", ""), int(data.get("stock", 0)),
+        image_url, tcg_id, _now_ms(),
     ))
     db.commit()
     _invalidate_inventory()
+
+    # Fire webhook in background (non-blocking) if configured
+    webhook_payload = {
+        "event":       "card_saved",
+        "qrCode":      qr_code,
+        "name":        name,
+        "price":       float(data.get("price", 0)),
+        "category":    data.get("category", "General"),
+        "rarity":      data.get("rarity", ""),
+        "setCode":     data.get("setCode") or data.get("set_code", ""),
+        "stock":       int(data.get("stock", 0)),
+        "imageUrl":    image_url,
+        "tcgId":       tcg_id,
+        "savedAt":     _now_ms(),
+    }
+    threading.Thread(target=_fire_webhook, args=(webhook_payload,), daemon=True).start()
+
     return jsonify({"ok": True, "qrCode": qr_code})
 
 
@@ -1878,17 +2494,36 @@ def admin_dashboard():
 
 <div class="form-panel">
   <h2>Add / Update Product</h2>
+  <div style="display:flex;gap:10px;margin-bottom:14px;align-items:flex-end;flex-wrap:wrap">
+    <div style="flex:1;min-width:180px">
+      <label style="display:block;color:#666;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">QR Code / Set-Number *</label>
+      <input id="f-qr" placeholder="SV1-1 or PRODUCT-001" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:13px">
+    </div>
+    <button class="btn-gold" onclick="prefillFromTCG()" style="background:#6366f1;white-space:nowrap" title="Auto-fill name, rarity, set, image & market price from the TCG API">
+      ⚡ Prefill from TCG API
+    </button>
+  </div>
+  <div id="prefill-status" style="font-size:12px;color:#6366f1;margin-bottom:10px;display:none"></div>
+  <div id="prefill-img" style="margin-bottom:14px;display:none">
+    <img id="f-img-preview" src="" alt="card" style="height:120px;border-radius:8px;border:1px solid #333">
+  </div>
   <div class="form-grid">
-    <div><label>QR Code *</label><input id="f-qr" placeholder="PRODUCT-001"></div>
-    <div><label>Name *</label><input id="f-name" placeholder="Black Lotus"></div>
+    <div><label>Name *</label><input id="f-name" placeholder="Charizard"></div>
     <div><label>Price</label><input id="f-price" type="number" step="0.01" placeholder="0.00"></div>
     <div><label>Category</label><input id="f-cat" placeholder="Trading Card"></div>
-    <div><label>Rarity</label><input id="f-rarity" placeholder="Rare"></div>
-    <div><label>Set Code</label><input id="f-set" placeholder="LEA"></div>
+    <div><label>Rarity</label><input id="f-rarity" placeholder="Rare Holo"></div>
+    <div><label>Set Code</label><input id="f-set" placeholder="SV1"></div>
     <div><label>Stock</label><input id="f-stock" type="number" placeholder="0"></div>
     <div><label>Description</label><input id="f-desc" placeholder="..."></div>
+    <div><label>Image URL</label><input id="f-imgurl" placeholder="https://..."></div>
+    <div><label>TCG ID</label><input id="f-tcgid" placeholder="sv1-1"></div>
   </div>
-  <button class="btn-gold" style="margin-top:16px" onclick="addProduct()">Save Product</button>
+  <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn-gold" onclick="addProduct()">Save Product</button>
+    <div id="mkt-price-hint" style="font-size:12px;color:#888;display:none">
+      TCG market: <span id="mkt-price-val" style="color:#FFD700;font-weight:bold"></span>
+    </div>
+  </div>
 </div>
 
 <h2>Full Inventory ({len(inventory)} products)</h2>
@@ -1899,7 +2534,112 @@ def admin_dashboard():
 
 <div id="toast"></div>
 
+<!-- ── Price flash overlay ──────────────────────────────────────────── -->
+<div id="price-flash" onclick="pfDismiss()">
+  <div id="pf-name"></div>
+  <div id="pf-meta"></div>
+  <div id="pf-price"></div>
+  <div id="pf-stock"></div>
+  <div id="pf-notfound" style="display:none"></div>
+  <div id="pf-bar"></div>
+</div>
+
 <script>
+/* ── Price flash overlay logic ──────────────────────────────────────── */
+let _pfTimer    = null;
+let _pfBarTimer = null;
+const PF_DURATION = 4000;  // ms the overlay stays visible
+
+function pfShow(data) {{
+  const hasProduct = data && (data.name || (data.tcgData && data.tcgData.name));
+  const name    = (data && (data.name || (data.tcgData && data.tcgData.name))) || "";
+  const price   = data && (data.price || data.suggestedPrice || (data.tcgData && data.tcgData.tcgplayer && data.tcgData.tcgplayer.marketPrice));
+  const rarity  = (data && (data.rarity || (data.tcgData && data.tcgData.rarity))) || "";
+  const setName = (data && data.tcgData && data.tcgData.set && data.tcgData.set.name) || (data && data.setCode) || "";
+  const stock   = data && data.stockQuantity != null ? data.stockQuantity : null;
+  const isDup   = data && data.isDuplicate;
+
+  const flash  = document.getElementById('price-flash');
+  const pfName = document.getElementById('pf-name');
+  const pfMeta = document.getElementById('pf-meta');
+  const pfPric = document.getElementById('pf-price');
+  const pfStk  = document.getElementById('pf-stock');
+  const pfNF   = document.getElementById('pf-notfound');
+  const pfBar  = document.getElementById('pf-bar');
+
+  if (!hasProduct) {{
+    pfName.textContent = '';
+    pfMeta.textContent = '';
+    pfPric.textContent = '';
+    pfStk.textContent  = '';
+    pfNF.style.display = 'block';
+    pfNF.textContent   = 'Card not found in inventory';
+  }} else {{
+    pfNF.style.display = 'none';
+    pfName.textContent = name;
+    const metaParts = [];
+    if (rarity)  metaParts.push(rarity);
+    if (setName) metaParts.push(setName);
+    pfMeta.textContent = metaParts.join(' · ');
+    pfPric.textContent = price != null ? '$' + Number(price).toFixed(2) : '—';
+    if (isDup && stock != null) {{
+      pfStk.textContent  = stock + ' in stock  ·  DUPLICATE SCAN';
+      pfStk.className    = 'low';
+    }} else if (stock != null && stock <= 3) {{
+      pfStk.textContent  = stock === 0 ? 'OUT OF STOCK' : stock + ' remaining';
+      pfStk.className    = stock === 0 ? 'low' : '';
+    }} else {{
+      pfStk.textContent  = '';
+      pfStk.className    = '';
+    }}
+  }}
+
+  // Show overlay
+  clearTimeout(_pfTimer);
+  pfBar.style.transition = 'none';
+  pfBar.style.transform  = 'scaleX(1)';
+  flash.classList.add('visible');
+
+  // Animate the progress bar shrinking over PF_DURATION ms
+  requestAnimationFrame(() => {{
+    requestAnimationFrame(() => {{
+      pfBar.style.transition = `transform ${{PF_DURATION}}ms linear`;
+      pfBar.style.transform  = 'scaleX(0)';
+    }});
+  }});
+
+  _pfTimer = setTimeout(pfDismiss, PF_DURATION);
+}}
+
+function pfDismiss() {{
+  clearTimeout(_pfTimer);
+  document.getElementById('price-flash').classList.remove('visible');
+}}
+
+/* ── SSE scan stream → price flash ─────────────────────────────────── */
+function connectScanStream() {{
+  const es = new EventSource('/scan/stream');
+  es.onmessage = async (evt) => {{
+    try {{
+      const {{qrCode}} = JSON.parse(evt.data);
+      if (!qrCode) return;
+      // Fetch enriched data from the Pi
+      const resp = await fetch('/card/enrich?' + new URLSearchParams({{qr: qrCode}}));
+      if (resp.ok) {{
+        const data = await resp.json();
+        pfShow(data);
+      }} else {{
+        pfShow(null);
+      }}
+    }} catch(e) {{ pfShow(null); }}
+  }};
+  es.onerror = () => {{
+    es.close();
+    setTimeout(connectScanStream, 5000);  // reconnect after 5 s
+  }};
+}}
+connectScanStream();
+
 function toast(msg, err=false) {{
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = err ? 'err' : '';
@@ -1912,16 +2652,65 @@ function clock() {{
 }}
 setInterval(clock, 1000); clock();
 
+async function prefillFromTCG() {{
+  const qr = document.getElementById('f-qr').value.trim();
+  if (!qr) {{ toast('Enter a QR code or Set-Number first (e.g. SV1-1)', true); return; }}
+  const statusEl = document.getElementById('prefill-status');
+  statusEl.textContent = 'Looking up TCG data…'; statusEl.style.display = 'block';
+  try {{
+    const r = await fetch('/card/enrich?' + new URLSearchParams({{qr}}));
+    const d = await r.json();
+    const t = d.tcgData || {{}};
+    if (d.name)    document.getElementById('f-name').value   = d.name;
+    if (t.rarity || d.rarity)
+      document.getElementById('f-rarity').value = t.rarity || d.rarity;
+    if (t.set && t.set.ptcgoCode)
+      document.getElementById('f-set').value = t.set.ptcgoCode;
+    if (d.imageUrl) {{
+      document.getElementById('f-imgurl').value = d.imageUrl;
+      document.getElementById('f-img-preview').src = d.imageUrl;
+      document.getElementById('prefill-img').style.display = 'block';
+    }}
+    if (t.tcgId || d.tcgId)
+      document.getElementById('f-tcgid').value = t.tcgId || d.tcgId || '';
+    const mkt = t.tcgplayer && t.tcgplayer.marketPrice;
+    if (mkt) {{
+      document.getElementById('mkt-price-hint').style.display = 'flex';
+      document.getElementById('mkt-price-val').textContent = '$' + mkt.toFixed(2);
+      if (!document.getElementById('f-price').value)
+        document.getElementById('f-price').value = mkt.toFixed(2);
+    }}
+    if (d.isDuplicate) {{
+      statusEl.textContent = 'Already in stock (' + (d.stockQuantity||0) + ' units) — updating.';
+      statusEl.style.color = '#ff9800';
+    }} else if (d.inLocalInventory) {{
+      statusEl.textContent = 'Found in local inventory — fields pre-filled.';
+      statusEl.style.color = '#4caf50';
+    }} else if (t.name) {{
+      statusEl.textContent = 'Fetched from TCG API — verify price before saving.';
+      statusEl.style.color = '#6366f1';
+    }} else {{
+      statusEl.textContent = 'Card not found in TCG API — fill in manually.';
+      statusEl.style.color = '#f59e0b';
+    }}
+  }} catch(e) {{
+    statusEl.textContent = 'TCG lookup failed: ' + e.message;
+    statusEl.style.color = '#f44336';
+  }}
+}}
+
 async function addProduct() {{
   const body = {{
-    qrCode: document.getElementById('f-qr').value.trim(),
-    name:   document.getElementById('f-name').value.trim(),
-    price:  parseFloat(document.getElementById('f-price').value) || 0,
-    category: document.getElementById('f-cat').value.trim() || 'General',
-    rarity: document.getElementById('f-rarity').value.trim(),
-    setCode: document.getElementById('f-set').value.trim(),
-    stock:  parseInt(document.getElementById('f-stock').value) || 0,
+    qrCode:      document.getElementById('f-qr').value.trim(),
+    name:        document.getElementById('f-name').value.trim(),
+    price:       parseFloat(document.getElementById('f-price').value) || 0,
+    category:    document.getElementById('f-cat').value.trim() || 'General',
+    rarity:      document.getElementById('f-rarity').value.trim(),
+    setCode:     document.getElementById('f-set').value.trim(),
+    stock:       parseInt(document.getElementById('f-stock').value) || 0,
     description: document.getElementById('f-desc').value.trim(),
+    imageUrl:    document.getElementById('f-imgurl').value.trim(),
+    tcgId:       document.getElementById('f-tcgid').value.trim(),
   }};
   if (!body.qrCode || !body.name) {{ toast('QR Code and Name are required', true); return; }}
   const r = await fetch('/admin/inventory', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});

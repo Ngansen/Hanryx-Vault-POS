@@ -4,6 +4,21 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## HanryxVault Pi Server (`pi-setup/server.py`)
+
+Flask + SQLite POS backend that runs on a Raspberry Pi 5. Key features:
+
+- **TCG API enrichment** — `_tcg_fetch()` / `_tcg_search()` hit `api.pokemontcg.io/v2` with 2-layer cache (in-memory 1h + SQLite 24h). Optional `PTCG_API_KEY` env var for 20k/day rate limit.
+- **`/card/enrich`** — combined local inventory + full TCG data (name, HP, types, image, market prices) in one call; used by scan/pending and admin dashboard.
+- **`/card/condition/<qr>`** — GET/POST NM/LP/MP/HP/DMG condition per card stored in `card_conditions` table.
+- **`/admin/export-cards`** — bulk JSON/CSV export for website upload; `?enrich=1` flag adds TCG images + market prices.
+- **`/admin/webhook-config`** — configure a POST webhook URL; fires automatically when a card is saved via `/admin/inventory`.
+- **Price flash overlay** — admin dashboard (`/admin`) connects to `/scan/stream` (SSE), on each scan calls `/card/enrich` and flashes a full-screen semi-transparent overlay with card name, rarity, set name, and price (gold `$XX.XX`). Progress bar auto-dismisses after 4s. Duplicate scan warning shown in red.
+- **`⚡ Prefill from TCG API` button** — admin product form: enter a Set-Number (e.g. `SV1-1`), click button → name, rarity, set code, image, and TCG market price auto-fill.
+- **`_normalize_qr()`** — handles pokemon.com, ptcg://, ptcgo.com, limitlesstcg.com, pkmncards.com, and generic path-based URLs.
+- **Satellite sync** — token-authenticated sync from trade-show Pi via WireGuard VPN.
+- **QR Scan Hub** — `barcode_daemon.py` HTTP hub on port 8765 with SSE, multi-app forwarding, duplicate suppression.
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
