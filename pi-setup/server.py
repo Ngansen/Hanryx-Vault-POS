@@ -1773,6 +1773,68 @@ def admin_dashboard():
   .btn-del:hover{{background:#c62828;color:#fff}}
   #toast{{position:fixed;bottom:24px;right:24px;background:#4caf50;color:#fff;padding:12px 20px;border-radius:8px;font-weight:bold;display:none;z-index:99}}
   #toast.err{{background:#c62828}}
+
+  /* ── Price flash overlay ─────────────────────────────────────────────── */
+  #price-flash{{
+    position:fixed;inset:0;
+    background:rgba(0,0,0,0.72);
+    backdrop-filter:blur(3px);
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    z-index:200;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity 0.18s ease;
+  }}
+  #price-flash.visible{{opacity:1;pointer-events:auto}}
+  #pf-name{{
+    color:rgba(255,255,255,0.92);
+    font-size:clamp(22px,4vw,44px);
+    font-weight:700;
+    letter-spacing:0.5px;
+    text-align:center;
+    max-width:80vw;
+    margin-bottom:8px;
+    text-shadow:0 2px 12px rgba(0,0,0,0.8);
+  }}
+  #pf-meta{{
+    color:rgba(180,180,180,0.8);
+    font-size:clamp(13px,1.8vw,18px);
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-bottom:20px;
+    text-align:center;
+  }}
+  #pf-price{{
+    color:#FFD700;
+    font-size:clamp(56px,12vw,130px);
+    font-weight:900;
+    letter-spacing:-2px;
+    line-height:1;
+    text-shadow:0 0 60px rgba(255,215,0,0.35);
+    text-align:center;
+  }}
+  #pf-stock{{
+    margin-top:18px;
+    font-size:clamp(12px,1.5vw,16px);
+    color:rgba(160,160,160,0.7);
+    letter-spacing:1px;
+  }}
+  #pf-stock.low{{color:rgba(255,80,80,0.85)}}
+  #pf-bar{{
+    position:absolute;bottom:0;left:0;
+    height:4px;background:#FFD700;
+    width:100%;
+    transform-origin:left;
+    transform:scaleX(1);
+  }}
+  #pf-notfound{{
+    color:rgba(255,255,255,0.45);
+    font-size:clamp(18px,3vw,32px);
+    font-weight:300;
+    letter-spacing:3px;
+    text-transform:uppercase;
+  }}
 </style>
 </head>
 <body>
