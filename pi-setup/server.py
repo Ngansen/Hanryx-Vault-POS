@@ -4,8 +4,8 @@ Runs behind nginx on port 8080 (nginx handles 80/443 → 8080).
 
 Performance improvements over original:
   - Gunicorn WSGI server (multi-worker, replaces Flask dev server)
-  - SQLite WAL mode + PRAGMA optimizations
-  - Connection-per-thread via threading.local (safe for gunicorn workers)
+  - PostgreSQL database via psycopg2 connection pool
+  - Connection pool shared across gunicorn workers (ThreadedConnectionPool)
   - Startup cloud-sync runs in background thread (non-blocking)
   - Scan-queue cleanup runs hourly via background timer
   - Flask response compression via flask-compress
@@ -66,7 +66,9 @@ Run via gunicorn (production — handled by systemd):
   gunicorn -w 4 -b 127.0.0.1:8080 --timeout 60 server:app
 """
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
 import json
 import datetime
 import hashlib
@@ -123,12 +125,12 @@ def _token_post(form_data):
 def _persist_tokens():
     """Write current token state to DB so it survives server restarts."""
     try:
-        db = sqlite3.connect(DB_PATH)
-        db.execute("PRAGMA busy_timeout=3000")
+        db = _direct_db()
         with _token_lock:
             payload = json.dumps(_zettle_state)
         db.execute(
-            "INSERT OR REPLACE INTO server_state (key, value) VALUES ('zettle_tokens', ?)",
+            "INSERT INTO server_state (key, value) VALUES ('zettle_tokens', %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
             (payload,)
         )
         db.commit()
@@ -140,7 +142,7 @@ def _persist_tokens():
 def _load_tokens_from_db():
     """Restore persisted Zettle tokens from DB on startup."""
     try:
-        db = sqlite3.connect(DB_PATH)
+        db = _direct_db()
         row = db.execute(
             "SELECT value FROM server_state WHERE key='zettle_tokens'"
         ).fetchone()
@@ -188,10 +190,72 @@ def _refresh_token_if_needed():
 app = Flask(__name__)
 Compress(app)  # gzip all responses automatically
 
-DB_PATH = os.environ.get(
-    "DATABASE_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault_pos.db"),
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://vaultpos:vaultpos@localhost:5432/vaultpos",
 )
+
+# ---------------------------------------------------------------------------
+# PostgreSQL connection pool + SQLite-compatible wrapper
+# ---------------------------------------------------------------------------
+
+_pg_pool: "psycopg2.pool.ThreadedConnectionPool | None" = None
+
+
+def _get_pool() -> "psycopg2.pool.ThreadedConnectionPool":
+    global _pg_pool
+    if _pg_pool is None:
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL)
+    return _pg_pool
+
+
+class _PgConn:
+    """
+    Wraps a raw psycopg2 connection to mimic the sqlite3 connection API so
+    that all existing db.execute() / db.commit() call-sites stay unchanged.
+    • Converts SQLite '?' placeholders → psycopg2 '%s' automatically.
+    • Returns DictCursor rows that support both r["col"] and r[0] access.
+    """
+
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def execute(self, sql: str, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(sql.replace("?", "%s"), params or ())
+        return cur
+
+    def executemany(self, sql: str, params_list):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.executemany(sql.replace("?", "%s"), params_list)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+        _get_pool().putconn(self._conn)
+
+    # Compatibility no-ops for code that sets conn.row_factory = sqlite3.Row
+    @property
+    def row_factory(self):
+        return None
+
+    @row_factory.setter
+    def row_factory(self, _):
+        pass
+
+
+def _direct_db() -> _PgConn:
+    """Open a pooled connection for use outside a Flask request context."""
+    return _PgConn(_get_pool().getconn())
 
 # ---------------------------------------------------------------------------
 # In-memory caches — dramatically reduces SQLite hits on hot endpoints
@@ -269,20 +333,10 @@ CLOUD_INVENTORY_SOURCES = [
 # Database — thread-local connections (gunicorn multi-worker safe)
 # ---------------------------------------------------------------------------
 
-def get_db():
-    """Return a per-request SQLite connection stored on Flask's g object."""
+def get_db() -> _PgConn:
+    """Return a per-request PostgreSQL connection (from pool) stored on Flask's g."""
     if "db" not in g:
-        conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-131072")    # 128 MB page cache per connection (negative = KiB)
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA temp_store=MEMORY")
-        conn.execute("PRAGMA busy_timeout=5000")     # wait up to 5 s on lock instead of crashing
-        conn.execute("PRAGMA mmap_size=268435456")   # 256 MB memory-mapped I/O — free read speedup
-        conn.execute("PRAGMA optimize")              # let SQLite pick query plans once at open
-        g.db = conn
+        g.db = _PgConn(_get_pool().getconn())
     return g.db
 
 
@@ -290,144 +344,141 @@ def get_db():
 def close_db(exc):
     db = g.pop("db", None)
     if db is not None:
+        if exc:
+            db.rollback()
         db.close()
 
 
+_NOW_MS_PG = "(EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT"
+
+
 def init_db():
-    db = sqlite3.connect(DB_PATH)
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA synchronous=NORMAL")
-    db.execute("PRAGMA cache_size=-131072")
-    db.executescript("""
-        CREATE TABLE IF NOT EXISTS sales (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    db = _direct_db()
+
+    _ddl_statements = [
+        f"""CREATE TABLE IF NOT EXISTS sales (
+            id              BIGSERIAL PRIMARY KEY,
             transaction_id  TEXT UNIQUE NOT NULL,
-            timestamp_ms    INTEGER NOT NULL,
-            subtotal        REAL NOT NULL DEFAULT 0,
-            tax_amount      REAL NOT NULL DEFAULT 0,
-            tip_amount      REAL NOT NULL DEFAULT 0,
-            total_amount    REAL NOT NULL DEFAULT 0,
+            timestamp_ms    BIGINT NOT NULL,
+            subtotal        DOUBLE PRECISION NOT NULL DEFAULT 0,
+            tax_amount      DOUBLE PRECISION NOT NULL DEFAULT 0,
+            tip_amount      DOUBLE PRECISION NOT NULL DEFAULT 0,
+            total_amount    DOUBLE PRECISION NOT NULL DEFAULT 0,
             payment_method  TEXT NOT NULL DEFAULT 'UNKNOWN',
             employee_id     TEXT NOT NULL DEFAULT 'UNKNOWN',
             items_json      TEXT NOT NULL DEFAULT '[]',
-            cash_received   REAL NOT NULL DEFAULT 0,
-            change_given    REAL NOT NULL DEFAULT 0,
+            cash_received   DOUBLE PRECISION NOT NULL DEFAULT 0,
+            change_given    DOUBLE PRECISION NOT NULL DEFAULT 0,
             is_refunded     INTEGER NOT NULL DEFAULT 0,
-            received_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+            received_at     BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
             source          TEXT NOT NULL DEFAULT 'local'
-        );
-
-        CREATE TABLE IF NOT EXISTS inventory (
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS inventory (
             qr_code         TEXT PRIMARY KEY,
             name            TEXT NOT NULL,
-            price           REAL NOT NULL DEFAULT 0,
+            price           DOUBLE PRECISION NOT NULL DEFAULT 0,
             category        TEXT NOT NULL DEFAULT 'General',
             rarity          TEXT NOT NULL DEFAULT '',
             set_code        TEXT NOT NULL DEFAULT '',
             description     TEXT NOT NULL DEFAULT '',
             stock           INTEGER NOT NULL DEFAULT 0,
-            last_updated    INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-
-        CREATE TABLE IF NOT EXISTS stock_deductions (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            last_updated    BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            image_url       TEXT NOT NULL DEFAULT '',
+            tcg_id          TEXT NOT NULL DEFAULT ''
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS stock_deductions (
+            id              BIGSERIAL PRIMARY KEY,
             transaction_id  TEXT,
             qr_code         TEXT NOT NULL,
             name            TEXT NOT NULL,
             quantity        INTEGER NOT NULL,
-            unit_price      REAL NOT NULL,
-            line_total      REAL NOT NULL,
-            deducted_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-
-        CREATE TABLE IF NOT EXISTS scan_queue (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            unit_price      DOUBLE PRECISION NOT NULL,
+            line_total      DOUBLE PRECISION NOT NULL,
+            deducted_at     BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS scan_queue (
+            id          BIGSERIAL PRIMARY KEY,
             qr_code     TEXT NOT NULL,
-            scanned_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+            scanned_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
             processed   INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_scan_pending     ON scan_queue(processed, id);
-        CREATE INDEX IF NOT EXISTS idx_sales_timestamp  ON sales(timestamp_ms);
-        CREATE INDEX IF NOT EXISTS idx_sales_received   ON sales(received_at);
-        CREATE INDEX IF NOT EXISTS idx_stock_qr         ON stock_deductions(qr_code);
-        CREATE INDEX IF NOT EXISTS idx_stock_received   ON stock_deductions(deducted_at);
-
-        CREATE TABLE IF NOT EXISTS sale_history (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_scan_pending    ON scan_queue(processed, id)",
+        "CREATE INDEX IF NOT EXISTS idx_sales_timestamp ON sales(timestamp_ms)",
+        "CREATE INDEX IF NOT EXISTS idx_sales_received  ON sales(received_at)",
+        "CREATE INDEX IF NOT EXISTS idx_stock_qr        ON stock_deductions(qr_code)",
+        "CREATE INDEX IF NOT EXISTS idx_stock_received  ON stock_deductions(deducted_at)",
+        f"""CREATE TABLE IF NOT EXISTS sale_history (
+            id       BIGSERIAL PRIMARY KEY,
             name     TEXT NOT NULL,
-            price    REAL NOT NULL,
+            price    DOUBLE PRECISION NOT NULL,
             quantity INTEGER NOT NULL DEFAULT 1,
-            sold_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_sale_history_name ON sale_history(name, sold_at);
-
-        CREATE TABLE IF NOT EXISTS server_state (
+            sold_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sale_history_name ON sale_history(name, sold_at)",
+        """CREATE TABLE IF NOT EXISTS server_state (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS card_tcg_cache (
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS card_tcg_cache (
             card_id     TEXT PRIMARY KEY,
             data_json   TEXT NOT NULL,
-            fetched_ms  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-
-        CREATE TABLE IF NOT EXISTS card_conditions (
+            fetched_ms  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS card_conditions (
             qr_code    TEXT PRIMARY KEY,
             condition  TEXT NOT NULL DEFAULT 'NM',
             notes      TEXT NOT NULL DEFAULT '',
-            updated_ms INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-
-        CREATE TABLE IF NOT EXISTS price_history (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            updated_ms BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS price_history (
+            id           BIGSERIAL PRIMARY KEY,
             card_id      TEXT NOT NULL,
             card_name    TEXT NOT NULL DEFAULT '',
-            market_price REAL NOT NULL,
-            fetched_ms   INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-        CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(card_id, fetched_ms);
-
-        CREATE TABLE IF NOT EXISTS scan_log (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_price DOUBLE PRECISION NOT NULL,
+            fetched_ms   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(card_id, fetched_ms)",
+        f"""CREATE TABLE IF NOT EXISTS scan_log (
+            id         BIGSERIAL PRIMARY KEY,
             qr_code    TEXT NOT NULL,
             card_name  TEXT NOT NULL DEFAULT '',
             matched    INTEGER NOT NULL DEFAULT 0,
-            price      REAL NOT NULL DEFAULT 0,
-            scanned_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-        );
-        CREATE INDEX IF NOT EXISTS idx_scan_log ON scan_log(scanned_at);
-
-        CREATE TABLE IF NOT EXISTS wg_peer_names (
+            price      DOUBLE PRECISION NOT NULL DEFAULT 0,
+            scanned_at BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_scan_log ON scan_log(scanned_at)",
+        """CREATE TABLE IF NOT EXISTS wg_peer_names (
             pubkey        TEXT PRIMARY KEY,
             friendly_name TEXT NOT NULL DEFAULT ''
-        );
-    """)
+        )""",
+    ]
+
+    for stmt in _ddl_statements:
+        db.execute(stmt)
     db.commit()
 
-    # ── Safe migration for existing databases ────────────────────────────────
-    # Add 'source' column if it was created before this version.
-    # SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so check manually.
-    existing_cols = {r[1] for r in db.execute("PRAGMA table_info(sales)").fetchall()}
-    if "source" not in existing_cols:
-        db.execute("ALTER TABLE sales ADD COLUMN source TEXT NOT NULL DEFAULT 'local'")
-        db.commit()
-        print("[DB] Migration: added sales.source column")
+    # ── Safe migration: add columns that may be missing on older installs ────
+    def _col_exists(table, col):
+        r = db.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name=%s AND column_name=%s",
+            (table, col),
+        ).fetchone()
+        return r is not None
 
-    inv_cols = {r[1] for r in db.execute("PRAGMA table_info(inventory)").fetchall()}
-    if "image_url" not in inv_cols:
-        db.execute("ALTER TABLE inventory ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
-        db.commit()
-        print("[DB] Migration: added inventory.image_url column")
-    if "tcg_id" not in inv_cols:
-        db.execute("ALTER TABLE inventory ADD COLUMN tcg_id TEXT NOT NULL DEFAULT ''")
-        db.commit()
-        print("[DB] Migration: added inventory.tcg_id column")
+    for col, ddl in [
+        ("source",    "ALTER TABLE sales     ADD COLUMN source    TEXT NOT NULL DEFAULT 'local'"),
+        ("image_url", "ALTER TABLE inventory ADD COLUMN image_url TEXT NOT NULL DEFAULT ''"),
+        ("tcg_id",    "ALTER TABLE inventory ADD COLUMN tcg_id    TEXT NOT NULL DEFAULT ''"),
+    ]:
+        table = "sales" if col == "source" else "inventory"
+        if not _col_exists(table, col):
+            db.execute(ddl)
+            db.commit()
+            print(f"[DB] Migration: added {table}.{col} column")
 
     db.close()
-    print("[DB] Initialized vault_pos.db")
+    print("[DB] Initialized PostgreSQL database")
 
 
 # ---------------------------------------------------------------------------
@@ -436,8 +487,7 @@ def init_db():
 
 def sync_inventory_from_cloud(force: bool = False) -> dict:
     """Pull inventory from both Replit cloud sources and upsert into local DB."""
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
+    db = _direct_db()
 
     if not force:
         count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
@@ -509,40 +559,16 @@ def _cleanup_scan_queue():
     """Delete processed scans older than 1 hour — runs every hour in background."""
     try:
         cutoff = int((_time.time() - 3600) * 1000)
-        db = sqlite3.connect(DB_PATH)
-        db.execute("PRAGMA busy_timeout=5000")
-        db.execute("DELETE FROM scan_queue WHERE processed = 1 AND scanned_at < ?", (cutoff,))
-        db.commit()
-        deleted = db.execute("SELECT changes()").fetchone()[0]
+        db = _direct_db()
+        cur = db.execute(
+            "DELETE FROM scan_queue WHERE processed = 1 AND scanned_at < %s", (cutoff,)
+        )
+        deleted = cur.rowcount
         db.close()
         print(f"[cleanup] Removed {deleted} stale scan_queue rows")
     except Exception as e:
         print(f"[cleanup] scan_queue cleanup failed: {e}")
     threading.Timer(3600, _cleanup_scan_queue).start()
-
-
-def _wal_checkpoint():
-    """
-    Periodically checkpoint the WAL file so it doesn't grow unboundedly.
-    TRUNCATE mode checkpoints and then removes (truncates) the WAL file entirely,
-    returning reads to full speed. Runs every 30 minutes.
-    Without this, the WAL can grow to 100s of MB over days of trading, making
-    every read slower because SQLite has to scan the WAL for changes.
-    """
-    try:
-        db = sqlite3.connect(DB_PATH)
-        db.execute("PRAGMA busy_timeout=10000")
-        # TRUNCATE: checkpoint and then zero the WAL — cleanest reset
-        result = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-        db.close()
-        # result = (busy, log, checkpointed) — busy=1 means writer was active
-        if result and result[0] == 0:
-            print(f"[wal] Checkpoint OK — {result[2]} of {result[1]} frames written")
-        else:
-            print(f"[wal] Checkpoint deferred (writer active) — will retry next cycle")
-    except Exception as e:
-        print(f"[wal] Checkpoint failed: {e}")
-    threading.Timer(1800, _wal_checkpoint).start()
 
 
 # ---------------------------------------------------------------------------
@@ -805,28 +831,27 @@ def _tcg_headers() -> dict:
 
 
 def _tcg_db_get(card_id: str) -> dict | None:
-    """Return SQLite-cached TCG data if younger than 24 h, else None."""
+    """Return PostgreSQL-cached TCG data if younger than 24 h, else None."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("PRAGMA busy_timeout=2000")
+        conn = _direct_db()
         row = conn.execute(
-            "SELECT data_json, fetched_ms FROM card_tcg_cache WHERE card_id=?", (card_id,)
+            "SELECT data_json, fetched_ms FROM card_tcg_cache WHERE card_id=%s", (card_id,)
         ).fetchone()
         conn.close()
-        if row and (_now_ms() - row[1]) < 86_400_000:
-            return json.loads(row[0])
+        if row and (_now_ms() - row["fetched_ms"]) < 86_400_000:
+            return json.loads(row["data_json"])
     except Exception:
         pass
     return None
 
 
 def _tcg_db_set(card_id: str, data: dict):
-    """Persist a TCG API response to the SQLite cache."""
+    """Persist a TCG API response to the PostgreSQL cache."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("PRAGMA busy_timeout=2000")
+        conn = _direct_db()
         conn.execute(
-            "INSERT OR REPLACE INTO card_tcg_cache (card_id, data_json, fetched_ms) VALUES (?,?,?)",
+            "INSERT INTO card_tcg_cache (card_id, data_json, fetched_ms) VALUES (%s,%s,%s) "
+            "ON CONFLICT (card_id) DO UPDATE SET data_json=EXCLUDED.data_json, fetched_ms=EXCLUDED.fetched_ms",
             (card_id, json.dumps(data, ensure_ascii=False), _now_ms()),
         )
         conn.commit()
@@ -1046,7 +1071,7 @@ def _enrich_with_tcg(local_result: dict | None, qr_code: str) -> dict:
 def _fire_webhook(payload: dict):
     """POST card data to the configured webhook URL in a background thread (non-blocking)."""
     try:
-        db  = sqlite3.connect(DB_PATH)
+        db  = _direct_db()
         row = db.execute("SELECT value FROM server_state WHERE key='webhook_url'").fetchone()
         db.close()
         url = row[0].strip() if row and row[0] else ""
