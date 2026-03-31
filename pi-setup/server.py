@@ -181,6 +181,38 @@ _health_cache    = TTLCache(maxsize=1, ttl=5)     # /health — 5 s TTL
 _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
+# ---------------------------------------------------------------------------
+# Server start time — used by /health uptime field
+# ---------------------------------------------------------------------------
+_server_start_time = _time.time()
+
+# ---------------------------------------------------------------------------
+# SSE (Server-Sent Events) for real-time scan push
+#   Connects once; scanner events arrive instantly instead of being polled.
+#   Existing /scan/pending polling continues to work — no app changes needed.
+# ---------------------------------------------------------------------------
+import queue as _queue_mod
+
+_sse_lock            = threading.Lock()
+_sse_scan_subscribers: list = []   # one Queue per connected SSE client
+
+
+def _sse_broadcast_scan(qr_code: str):
+    """Push a new scan to every connected SSE client instantly."""
+    with _sse_lock:
+        dead = []
+        for q in _sse_scan_subscribers:
+            try:
+                q.put_nowait(qr_code)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            try:
+                _sse_scan_subscribers.remove(q)
+            except ValueError:
+                pass
+
+
 
 def _cache_get(cache, key):
     with _cache_lock:
@@ -250,7 +282,8 @@ def init_db():
             cash_received   REAL NOT NULL DEFAULT 0,
             change_given    REAL NOT NULL DEFAULT 0,
             is_refunded     INTEGER NOT NULL DEFAULT 0,
-            received_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+            received_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+            source          TEXT NOT NULL DEFAULT 'local'
         );
 
         CREATE TABLE IF NOT EXISTS inventory (
@@ -305,6 +338,16 @@ def init_db():
         );
     """)
     db.commit()
+
+    # ── Safe migration for existing databases ────────────────────────────────
+    # Add 'source' column if it was created before this version.
+    # SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so check manually.
+    existing_cols = {r[1] for r in db.execute("PRAGMA table_info(sales)").fetchall()}
+    if "source" not in existing_cols:
+        db.execute("ALTER TABLE sales ADD COLUMN source TEXT NOT NULL DEFAULT 'local'")
+        db.commit()
+        print("[DB] Migration: added sales.source column")
+
     db.close()
     print("[DB] Initialized vault_pos.db")
 
@@ -468,14 +511,46 @@ def health():
     if cached:
         return jsonify(cached)
     db = get_db()
-    inv_count  = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
-    sale_count = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+    inv_count     = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    sale_count    = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+    pending_scans = db.execute(
+        "SELECT COUNT(*) FROM scan_queue WHERE processed=0"
+    ).fetchone()[0]
+
+    # Satellite sales (from trade-show Pi) vs local sales
+    sat_sales = 0
+    try:
+        sat_sales = db.execute(
+            "SELECT COUNT(*) FROM sales WHERE source='satellite'"
+        ).fetchone()[0]
+    except Exception:
+        pass  # column may not exist on very old DBs
+
+    # DB file sizes
+    db_size_mb  = 0.0
+    wal_size_mb = 0.0
+    try:
+        db_size_mb  = round(os.path.getsize(DB_PATH) / (1024 * 1024), 2)
+        wal_path    = DB_PATH + "-wal"
+        if os.path.exists(wal_path):
+            wal_size_mb = round(os.path.getsize(wal_path) / (1024 * 1024), 2)
+    except Exception:
+        pass
+
     data = {
-        "status":      "ok",
-        "server":      "HanryxVault Pi",
-        "time_ms":     int(_time.time() * 1000),
-        "inventory":   inv_count,
-        "total_sales": sale_count,
+        "status":          "ok",
+        "server":          "HanryxVault Pi",
+        "version":         "2.0",
+        "time_ms":         int(_time.time() * 1000),
+        "uptime_s":        int(_time.time() - _server_start_time),
+        "inventory":       inv_count,
+        "total_sales":     sale_count,
+        "satellite_sales": sat_sales,
+        "local_sales":     sale_count - sat_sales,
+        "pending_scans":   pending_scans,
+        "sse_clients":     len(_sse_scan_subscribers),
+        "db_size_mb":      db_size_mb,
+        "wal_size_mb":     wal_size_mb,
     }
     _cache_set(_health_cache, "h", data)
     return jsonify(data)
@@ -554,6 +629,8 @@ def scan_post():
     # Bust the 1 s scan cache so the tablet picks this up on its very next poll
     with _cache_lock:
         _scan_cache.clear()
+    # Also push instantly to any SSE clients (tablet with /scan/stream)
+    _sse_broadcast_scan(qr_code)
     print(f"[scan] Queued: {qr_code}")
     return jsonify({"ok": True, "queued": qr_code}), 201
 
@@ -587,14 +664,106 @@ def scan_ack(scan_id):
 
 
 # ---------------------------------------------------------------------------
+# SSE scan stream — real-time alternative to polling /scan/pending
+# ---------------------------------------------------------------------------
+
+@app.route("/scan/stream", methods=["GET"])
+def scan_stream():
+    """
+    Server-Sent Events endpoint.  Connect once; barcode scan events are pushed
+    instantly instead of polling /scan/pending every 1.5 s.
+
+    Event format:  data: {"qrCode": "<code>"}
+
+    Heartbeat comment every 15 s keeps the connection alive through nginx.
+    The existing /scan/pending + /scan/ack polling flow still works — no app
+    changes are required to benefit from this endpoint.
+    """
+    def _generate():
+        q = _queue_mod.Queue()
+        with _sse_lock:
+            _sse_scan_subscribers.append(q)
+        try:
+            while True:
+                try:
+                    qr_code = q.get(timeout=15)
+                    yield f"data: {json.dumps({'qrCode': qr_code})}\n\n"
+                except _queue_mod.Empty:
+                    yield ": heartbeat\n\n"  # keeps nginx from closing the connection
+        finally:
+            with _sse_lock:
+                try:
+                    _sse_scan_subscribers.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        _generate(),
+        content_type="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",   # tell nginx: do not buffer this response
+            "Connection":        "keep-alive",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Satellite authentication
+#   The trade-show Pi includes X-Satellite-Token on every POST to this server.
+#   The shared secret is stored in the server_state table under key
+#   'satellite_token'.  If no token is configured, all requests are accepted
+#   (safe default until you explicitly lock it down).
+# ---------------------------------------------------------------------------
+
+_satellite_token_cache: str | None = None   # lazily loaded, cleared on DB write
+
+
+def _load_satellite_token() -> str | None:
+    global _satellite_token_cache
+    if _satellite_token_cache is not None:
+        return _satellite_token_cache or None
+    try:
+        row = get_db().execute(
+            "SELECT value FROM server_state WHERE key='satellite_token'"
+        ).fetchone()
+        _satellite_token_cache = row[0] if row else ""
+    except Exception:
+        _satellite_token_cache = ""
+    return _satellite_token_cache or None
+
+
+def _validate_satellite_token() -> tuple[bool, str]:
+    """
+    Returns (ok, error_message).
+    If no token is configured on the home Pi, all callers are accepted so the
+    system works out-of-the-box before the token is set up.
+    """
+    expected = _load_satellite_token()
+    if not expected:
+        return True, ""                         # no token configured — open
+    provided = request.headers.get("X-Satellite-Token", "")
+    if provided == expected:
+        return True, ""
+    return False, "Invalid or missing satellite token"
+
+
+# ---------------------------------------------------------------------------
 # Sales sync
 # ---------------------------------------------------------------------------
 
 @app.route("/sync/sales", methods=["POST"])
 def sync_sales():
     data = request.get_json(force=True, silent=True)
+    ok, err = _validate_satellite_token()
+    if not ok:
+        return jsonify({"error": err}), 401
+
     if not data or not isinstance(data, list):
         return jsonify({"error": "Expected a JSON array of sales"}), 400
+
+    # source: "satellite" when pushed from trade-show Pi, "local" otherwise
+    source = request.headers.get("X-Source", "local")
 
     db       = get_db()
     inserted = 0
@@ -610,8 +779,8 @@ def sync_sales():
                 INSERT OR IGNORE INTO sales
                     (transaction_id, timestamp_ms, subtotal, tax_amount, tip_amount,
                      total_amount, payment_method, employee_id, items_json,
-                     cash_received, change_given, is_refunded)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     cash_received, change_given, is_refunded, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 transaction_id,
                 sale.get("timestamp", _now_ms()),
@@ -625,6 +794,7 @@ def sync_sales():
                 sale.get("cashReceived", 0.0),
                 sale.get("changeGiven", 0.0),
                 1 if sale.get("isRefunded", False) else 0,
+                sale.get("source", source),
             ))
             if db.execute("SELECT changes()").fetchone()[0] > 0:
                 inserted += 1
@@ -635,8 +805,8 @@ def sync_sales():
             skipped += 1
 
     db.commit()
-    print(f"[sync/sales] inserted={inserted} skipped={skipped}")
-    return jsonify({"inserted": inserted, "skipped": skipped}), 200
+    print(f"[sync/sales] source={source} inserted={inserted} skipped={skipped}")
+    return jsonify({"inserted": inserted, "skipped": skipped, "source": source}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -646,12 +816,19 @@ def sync_sales():
 @app.route("/inventory/deduct", methods=["POST"])
 def inventory_deduct():
     data = request.get_json(force=True, silent=True)
+
+    ok, err = _validate_satellite_token()
+    if not ok:
+        return jsonify({"error": err}), 401
+
     if not data or not isinstance(data, list):
         return jsonify({"error": "Expected a JSON array of sold items"}), 400
 
-    db       = get_db()
-    deducted = 0
-    unknown  = 0
+    db           = get_db()
+    deducted     = 0
+    unknown      = 0
+    oversold     = 0
+    stock_levels = {}    # qr_code → new stock level (returned to satellite)
 
     for item in data:
         qr_code    = item.get("qrCode", "")
@@ -665,6 +842,11 @@ def inventory_deduct():
             VALUES (?, ?, ?, ?, ?)
         """, (qr_code, name, quantity, unit_price, line_total))
 
+        # Check stock BEFORE deducting so we can flag an oversell
+        before = db.execute(
+            "SELECT stock FROM inventory WHERE qr_code = ?", (qr_code,)
+        ).fetchone()
+
         result = db.execute("""
             UPDATE inventory
             SET stock = MAX(0, stock - ?), last_updated = ?
@@ -673,13 +855,27 @@ def inventory_deduct():
 
         if result.rowcount > 0:
             deducted += 1
+            after_stock = db.execute(
+                "SELECT stock FROM inventory WHERE qr_code = ?", (qr_code,)
+            ).fetchone()
+            new_stock = after_stock[0] if after_stock else 0
+            stock_levels[qr_code] = new_stock
+            if before and before[0] < quantity:
+                oversold += 1
+                print(f"[inventory/deduct] OVERSELL {qr_code}: "
+                      f"had {before[0]}, sold {quantity} → clamped to 0")
         else:
             unknown += 1
 
     db.commit()
     _invalidate_inventory()
-    print(f"[inventory/deduct] deducted={deducted} unknown_sku={unknown}")
-    return jsonify({"deducted": deducted, "unknown_skus": unknown}), 200
+    print(f"[inventory/deduct] deducted={deducted} oversold={oversold} unknown_sku={unknown}")
+    return jsonify({
+        "deducted":     deducted,
+        "unknown_skus": unknown,
+        "oversold":     oversold,      # items where satellite sold more than was in stock
+        "stock_levels": stock_levels,  # qr_code → new stock level after deduction
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -855,6 +1051,50 @@ def admin_sync_cloud():
     result = sync_inventory_from_cloud(force=force)
     _invalidate_inventory()
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Admin — satellite token management
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/set-satellite-token", methods=["POST"])
+def admin_set_satellite_token():
+    """
+    Register the shared secret for satellite-Pi authentication.
+    Called on the HOME Pi after running setup-satellite.sh on the trade-show Pi.
+
+    Usage:
+        curl -s -X POST http://localhost:8080/admin/set-satellite-token \\
+             -H 'Content-Type: application/json' \\
+             -d '{"token":"<64-char-hex>"}'
+    """
+    body  = request.get_json(silent=True) or {}
+    token = (body.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "token is required"}), 400
+    if len(token) < 16:
+        return jsonify({"error": "token is too short (minimum 16 characters)"}), 400
+
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO server_state(key, value) VALUES ('satellite_token', ?)",
+        (token,)
+    )
+    db.commit()
+    # Invalidate health cache so the next /health shows updated state
+    _cache_set(_health_cache, "h", None)
+    return jsonify({"ok": True, "message": "Satellite token saved — sync auth is now active"}), 200
+
+
+@app.route("/admin/satellite-token-status", methods=["GET"])
+def admin_satellite_token_status():
+    """Check whether a satellite token is currently registered (never reveals the token value)."""
+    db  = get_db()
+    row = db.execute(
+        "SELECT value FROM server_state WHERE key='satellite_token'"
+    ).fetchone()
+    has_token = bool(row and row["value"])
+    return jsonify({"has_token": has_token})
 
 
 # ---------------------------------------------------------------------------

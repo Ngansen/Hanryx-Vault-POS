@@ -40,12 +40,17 @@ DB_PATH   = os.path.join(BASE_DIR, "vault_pos.db")
 
 # Default config — overridden by satellite.conf
 _DEFAULTS = {
-    "home_pi_url":   "http://10.10.0.1:8080",
-    "timeout_s":     "15",
-    "retry_count":   "2",
-    "vpn_interface": "wg0",   # WireGuard interface name
-    "vpn_wait_s":    "8",     # seconds to let VPN tunnel stabilise before first attempt
+    "home_pi_url":      "http://10.10.0.1:8080",
+    "timeout_s":        "15",
+    "retry_count":      "3",        # retries per sync step before giving up
+    "retry_delay_s":    "4",        # seconds between retries
+    "vpn_interface":    "wg0",      # WireGuard interface name
+    "vpn_wait_s":       "8",        # seconds to let VPN tunnel stabilise before first attempt
+    "satellite_token":  "",         # shared secret — set by setup-satellite.sh
 }
+
+# Module-level auth token — set once in main() from conf so all helpers share it
+_satellite_token: str = ""
 
 
 def _ts():
@@ -77,18 +82,24 @@ def get_db() -> sqlite3.Connection:
 
 
 def _api_post(url: str, data, timeout: int) -> dict:
-    body = json.dumps(data).encode()
-    req  = urllib.request.Request(
-        url, data=body,
-        headers={
-            "Content-Type":  "application/json",
-            "User-Agent":    "HanryxVaultSatellite/1.0",
-            "X-Source":      "satellite",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    body    = json.dumps(data).encode()
+    headers = {
+        "Content-Type":  "application/json",
+        "User-Agent":    "HanryxVaultSatellite/1.0",
+        "X-Source":      "satellite",
+    }
+    if _satellite_token:
+        headers["X-Satellite-Token"] = _satellite_token
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise RuntimeError(
+                "Home Pi rejected satellite token — check satellite_token in satellite.conf"
+            ) from e
+        raise
 
 
 def _api_get(url: str, timeout: int) -> object:
@@ -101,6 +112,25 @@ def _api_get(url: str, timeout: int) -> object:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
+
+
+def _with_retry(label: str, fn, retry_count: int, retry_delay_s: int):
+    """
+    Call fn() up to retry_count times, pausing retry_delay_s seconds between
+    attempts.  Returns the result of fn() on success.  Raises on final failure.
+    """
+    for attempt in range(1, retry_count + 1):
+        try:
+            return fn()
+        except RuntimeError:
+            raise   # token errors — no point retrying
+        except Exception as e:
+            if attempt < retry_count:
+                log(f"{label} attempt {attempt}/{retry_count} failed: {e} — retrying in {retry_delay_s}s")
+                time.sleep(retry_delay_s)
+            else:
+                log(f"{label} failed after {retry_count} attempts: {e}")
+                raise
 
 
 def get_last_sync(db: sqlite3.Connection) -> int:
@@ -120,7 +150,8 @@ def set_last_sync(db: sqlite3.Connection, ts_ms: int):
 
 # ── 1. Push sales ─────────────────────────────────────────────────────────────
 
-def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int, timeout: int) -> int:
+def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int,
+               timeout: int, retry_count: int, retry_delay_s: int) -> int:
     rows = db.execute(
         "SELECT * FROM sales WHERE received_at > ? ORDER BY received_at ASC",
         (since_ms,)
@@ -145,9 +176,14 @@ def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int, timeout: in
             "cashReceived":  r["cash_received"],
             "changeGiven":   r["change_given"],
             "isRefunded":    bool(r["is_refunded"]),
+            "source":        "satellite",   # tag so home Pi knows these came from trade show
         })
 
-    result = _api_post(f"{home_url}/sync/sales", payload, timeout)
+    result = _with_retry(
+        "push_sales",
+        lambda: _api_post(f"{home_url}/sync/sales", payload, timeout),
+        retry_count, retry_delay_s,
+    )
     log(f"Pushed {len(payload)} sales → home  "
         f"(inserted={result.get('inserted','?')} skipped={result.get('skipped','?')})")
     return len(payload)
@@ -155,7 +191,8 @@ def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int, timeout: in
 
 # ── 2. Push stock deductions ──────────────────────────────────────────────────
 
-def push_deductions(db: sqlite3.Connection, home_url: str, since_ms: int, timeout: int) -> int:
+def push_deductions(db: sqlite3.Connection, home_url: str, since_ms: int,
+                    timeout: int, retry_count: int, retry_delay_s: int) -> int:
     rows = db.execute(
         "SELECT * FROM stock_deductions WHERE deducted_at > ? ORDER BY deducted_at ASC",
         (since_ms,)
@@ -176,8 +213,15 @@ def push_deductions(db: sqlite3.Connection, home_url: str, since_ms: int, timeou
         for r in rows
     ]
 
-    result = _api_post(f"{home_url}/inventory/deduct", items, timeout)
-    log(f"Pushed {len(items)} deductions → home  ({result})")
+    result = _with_retry(
+        "push_deductions",
+        lambda: _api_post(f"{home_url}/inventory/deduct", items, timeout),
+        retry_count, retry_delay_s,
+    )
+    oversold = result.get("oversold", 0)
+    log(f"Pushed {len(items)} deductions → home  "
+        f"deducted={result.get('deducted','?')} unknown_skus={result.get('unknown_skus','?')}"
+        + (f" ⚠ OVERSOLD {oversold} item(s) on home Pi" if oversold else ""))
     return len(items)
 
 
@@ -251,11 +295,17 @@ def _wait_for_vpn(interface: str, wait_s: int):
 
 
 def main():
-    conf      = load_conf()
-    home_url  = conf["home_pi_url"].rstrip("/")
-    timeout   = int(conf.get("timeout_s",   15))
-    vpn_iface = conf.get("vpn_interface", "wg0").strip()
-    vpn_wait  = int(conf.get("vpn_wait_s", 8))
+    global _satellite_token
+
+    conf         = load_conf()
+    home_url     = conf["home_pi_url"].rstrip("/")
+    timeout      = int(conf.get("timeout_s",    15))
+    retry_count  = int(conf.get("retry_count",   3))
+    retry_delay  = int(conf.get("retry_delay_s", 4))
+    vpn_iface    = conf.get("vpn_interface", "wg0").strip()
+    vpn_wait     = int(conf.get("vpn_wait_s",    8))
+
+    _satellite_token = conf.get("satellite_token", "").strip()
 
     log(f"Satellite sync starting — home Pi: {home_url}")
 
@@ -296,23 +346,38 @@ def main():
         since_str = "never (first sync — sending everything)"
     log(f"Last sync: {since_str}")
 
+    log(f"Config: retries={retry_count} delay={retry_delay}s"
+        + (" token=<set>" if _satellite_token else " token=<none — open mode>"))
+
     # ── Run sync steps ────────────────────────────────────────────────────────
-    errors = 0
+    errors  = 0
+    stats   = {}
 
     try:
-        push_sales(db, home_url, since_ms, timeout)
+        n = push_sales(db, home_url, since_ms, timeout, retry_count, retry_delay)
+        stats["sales_pushed"] = n
+    except RuntimeError as e:
+        log(f"FATAL: {e}")
+        db.close()
+        sys.exit(2)   # auth error — don't retry automatically
     except Exception as e:
         log(f"ERROR pushing sales: {e}")
         errors += 1
 
     try:
-        push_deductions(db, home_url, since_ms, timeout)
+        n = push_deductions(db, home_url, since_ms, timeout, retry_count, retry_delay)
+        stats["deductions_pushed"] = n
+    except RuntimeError as e:
+        log(f"FATAL: {e}")
+        db.close()
+        sys.exit(2)
     except Exception as e:
         log(f"ERROR pushing deductions: {e}")
         errors += 1
 
     try:
-        pull_inventory(db, home_url, timeout)
+        n = pull_inventory(db, home_url, timeout)
+        stats["inventory_products"] = n
     except Exception as e:
         log(f"ERROR pulling inventory: {e}")
         errors += 1
@@ -321,10 +386,14 @@ def main():
     if errors == 0:
         now_ms = int(time.time() * 1000)
         set_last_sync(db, now_ms)
-        log("Sync complete ✓ — timestamp saved, home Pi inventory is now local")
+        log(
+            f"Sync complete ✓  sales={stats.get('sales_pushed',0)}"
+            f"  deductions={stats.get('deductions_pushed',0)}"
+            f"  inventory={stats.get('inventory_products',0)} products"
+        )
     else:
         log(f"Sync finished with {errors} error(s) — timestamp NOT updated "
-            "(will retry everything on next boot)")
+            "(will retry everything on next run)")
 
     db.close()
     sys.exit(1 if errors else 0)
