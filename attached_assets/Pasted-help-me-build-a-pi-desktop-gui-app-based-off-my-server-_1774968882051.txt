@@ -1,0 +1,795 @@
+help me build a pi desktop gui app based off my server script  """
+HanryxVault POS — Raspberry Pi Backend Server
+Runs on port 8080 on your local network (e.g. 10.0.0.1:8080)
+
+Endpoints consumed by the tablet app:
+  GET  /health              — connectivity check
+  POST /sync/sales          — receives completed SaleEntity JSON from tablet
+  POST /inventory/deduct    — receives SoldItemEntry list to decrement stock
+
+Admin dashboard:
+  GET  /admin               — web UI showing today's sales + inventory levels
+  GET  /admin/sales         — JSON dump of all sales
+  GET  /admin/inventory     — JSON dump of full inventory
+  POST /admin/inventory     — add/update a product in local inventory
+  DELETE /admin/inventory/<qr_code> — remove product
+  GET  /download/apk        — download the latest debug APK
+
+Install (on your Pi):
+  pip3 install flask
+
+Run:
+  python3 server.py
+"""
+
+import sqlite3
+import json
+import datetime
+import os
+import subprocess
+import threading
+import time as _time
+import urllib.parse
+import urllib.request
+import urllib.error
+import base64
+from flask import Flask, request, jsonify, redirect, g
+
+# ---------------------------------------------------------------------------
+# Zettle OAuth + Payment configuration
+# ---------------------------------------------------------------------------
+
+ZETTLE_CLIENT_ID     = os.environ.get("ZETTLE_CLIENT_ID", "")
+ZETTLE_CLIENT_SECRET = os.environ.get("ZETTLE_CLIENT_SECRET", "")
+ZETTLE_REDIRECT_URI  = "https://hanryxvault.tailcfc0a3.ts.net/zettle/callback"
+ZETTLE_OAUTH_BASE    = "https://oauth.zettle.com"
+ZETTLE_POS_BASE      = "https://pos.api.zettle.com"
+ZETTLE_APP_SCHEME    = "hanryxvaultdone://zettle-done"
+
+_token_lock   = threading.Lock()
+_zettle_state = {"access_token": None, "refresh_token": None, "expires_at": 0.0}
+
+
+def _basic_auth():
+    return base64.b64encode(f"{ZETTLE_CLIENT_ID}:{ZETTLE_CLIENT_SECRET}".encode()).decode()
+
+
+def _token_post(form_data):
+    data = urllib.parse.urlencode(form_data).encode()
+    req  = urllib.request.Request(
+        f"{ZETTLE_OAUTH_BASE}/token",
+        data=data,
+        headers={
+            "Authorization": f"Basic {_basic_auth()}",
+            "Content-Type":  "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())
+
+
+def _store_tokens(result):
+    with _token_lock:
+        _zettle_state["access_token"]  = result.get("access_token")
+        _zettle_state["refresh_token"] = result.get("refresh_token")
+        _zettle_state["expires_at"]    = _time.time() + result.get("expires_in", 7200) - 60
+
+
+def _refresh_token_if_needed():
+    with _token_lock:
+        rt  = _zettle_state.get("refresh_token")
+        exp = _zettle_state.get("expires_at", 0.0)
+        at  = _zettle_state.get("access_token")
+    if not rt:
+        return None
+    if at and _time.time() < exp:
+        return at
+    try:
+        result = _token_post({"grant_type": "refresh_token", "refresh_token": rt})
+        _store_tokens(result)
+        return result.get("access_token")
+    except Exception as e:
+        print(f"[zettle] Token refresh failed: {e}")
+        return None
+
+app = Flask(__name__)
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "vault_pos.db")
+
+# ---------------------------------------------------------------------------
+# Cloud inventory sources — Pi auto-syncs from these on startup (if empty)
+# and whenever /admin/sync-from-cloud is called.
+# ---------------------------------------------------------------------------
+CLOUD_INVENTORY_SOURCES = [
+    "https://inventory-scanner-ngansen84.replit.app/api/inventory",
+    "https://hanryxvault.app/api/products",
+]
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA journal_mode=WAL")
+        g.db.execute("PRAGMA foreign_keys=ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exc):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    db = sqlite3.connect(DB_PATH)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
+    db.execute("PRAGMA cache_size=4000")
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS sales (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id  TEXT UNIQUE NOT NULL,
+            timestamp_ms    INTEGER NOT NULL,
+            subtotal        REAL NOT NULL DEFAULT 0,
+            tax_amount      REAL NOT NULL DEFAULT 0,
+            tip_amount      REAL NOT NULL DEFAULT 0,
+            total_amount    REAL NOT NULL DEFAULT 0,
+            payment_method  TEXT NOT NULL DEFAULT 'UNKNOWN',
+            employee_id     TEXT NOT NULL DEFAULT 'UNKNOWN',
+            items_json      TEXT NOT NULL DEFAULT '[]',
+            cash_received   REAL NOT NULL DEFAULT 0,
+            change_given    REAL NOT NULL DEFAULT 0,
+            is_refunded     INTEGER NOT NULL DEFAULT 0,
+            received_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory (
+            qr_code         TEXT PRIMARY KEY,
+            name            TEXT NOT NULL,
+            price           REAL NOT NULL DEFAULT 0,
+            category        TEXT NOT NULL DEFAULT 'General',
+            rarity          TEXT NOT NULL DEFAULT '',
+            set_code        TEXT NOT NULL DEFAULT '',
+            description     TEXT NOT NULL DEFAULT '',
+            stock           INTEGER NOT NULL DEFAULT 0,
+            last_updated    INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+
+        CREATE TABLE IF NOT EXISTS stock_deductions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id  TEXT,
+            qr_code         TEXT NOT NULL,
+            name            TEXT NOT NULL,
+            quantity        INTEGER NOT NULL,
+            unit_price      REAL NOT NULL,
+            line_total      REAL NOT NULL,
+            deducted_at     INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+
+        CREATE TABLE IF NOT EXISTS scan_queue (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            qr_code     TEXT NOT NULL,
+            scanned_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+            processed   INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scan_pending
+            ON scan_queue(processed, id);
+
+        CREATE INDEX IF NOT EXISTS idx_sales_timestamp
+            ON sales(timestamp_ms);
+
+        CREATE INDEX IF NOT EXISTS idx_stock_qr
+            ON stock_deductions(qr_code);
+
+        CREATE TABLE IF NOT EXISTS sale_history (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            name     TEXT NOT NULL,
+            price    REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            sold_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sale_history_name
+            ON sale_history(name, sold_at);
+    """)
+    db.commit()
+    db.close()
+    print("[DB] Initialized vault_pos.db")
+
+
+def sync_inventory_from_cloud(force: bool = False) -> dict:
+    """
+    Pull inventory from both Replit cloud sources and upsert into the local DB.
+    Called automatically on startup when inventory is empty, and on demand via
+    /admin/sync-from-cloud.  Set force=True to sync even if DB already has products.
+    """
+    import urllib.request, json as _json, time
+
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+
+    if not force:
+        count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+        if count > 0:
+            db.close()
+            print(f"[cloud-sync] Inventory already has {count} products — skipping auto-sync (use force=True to override)")
+            return {"skipped": True, "existing": count}
+
+    total_upserted = 0
+    total_skipped = 0
+    results = {}
+
+    for url in CLOUD_INVENTORY_SOURCES:
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "HanryxVaultPi/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                items = _json.loads(resp.read().decode())
+
+            if not isinstance(items, list):
+                items = items.get("items") or items.get("products") or items.get("inventory") or []
+
+            upserted = 0
+            for item in items:
+                qr = (item.get("qrCode") or item.get("qr_code") or item.get("barcode") or item.get("id") or "").strip()
+                name = (item.get("name") or item.get("title") or "").strip()
+                if not qr or not name:
+                    total_skipped += 1
+                    continue
+                try:
+                    db.execute("""
+                        INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(qr_code) DO UPDATE SET
+                            name=excluded.name, price=excluded.price, category=excluded.category,
+                            rarity=excluded.rarity, set_code=excluded.set_code,
+                            description=excluded.description, stock=excluded.stock,
+                            last_updated=excluded.last_updated
+                    """, (
+                        qr, name,
+                        float(item.get("price", 0) or 0),
+                        item.get("category") or "General",
+                        item.get("rarity") or "",
+                        item.get("setCode") or item.get("set_code") or item.get("setName") or item.get("set_name") or "",
+                        item.get("description") or "",
+                        int(item.get("stock") or item.get("stockQuantity") or item.get("quantity") or 0),
+                        int(time.time() * 1000),
+                    ))
+                    upserted += 1
+                except Exception as row_err:
+                    print(f"[cloud-sync] Row error ({url}): {row_err}")
+                    total_skipped += 1
+
+            db.commit()
+            total_upserted += upserted
+            results[url] = {"ok": True, "upserted": upserted}
+            print(f"[cloud-sync] {url} → {upserted} products upserted")
+
+        except Exception as e:
+            results[url] = {"ok": False, "error": str(e)}
+            print(f"[cloud-sync] Failed to fetch {url}: {e}")
+
+    db.close()
+    print(f"[cloud-sync] Done — total upserted={total_upserted} skipped={total_skipped}")
+    return {"upserted": total_upserted, "skipped": total_skipped, "sources": results}
+
+
+def _cleanup_scan_queue():
+    """Delete processed scan entries older than 1 hour to keep the table small."""
+    import threading
+    try:
+        cutoff = int((__import__('time').time() - 3600) * 1000)
+        db = sqlite3.connect(DB_PATH)
+        db.execute("DELETE FROM scan_queue WHERE processed = 1 AND scanned_at < ?", (cutoff,))
+        db.commit()
+        db.close()
+    except Exception:
+        pass
+    threading.Timer(3600, _cleanup_scan_queue).start()
+
+
+def get_connection():
+    db = sqlite3.connect(DB_PATH, check_same_thread=False)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
+    db.execute("PRAGMA cache_size=4000")
+    return db
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def _now_ms():
+    return int(datetime.datetime.now().timestamp() * 1000)
+
+
+def _cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    return response
+
+
+@app.after_request
+def after_request(response):
+    return _cors(response)
+
+
+@app.before_request
+def handle_options():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+
+
+# ---------------------------------------------------------------------------
+# App endpoints (called by the tablet)
+# ---------------------------------------------------------------------------
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Simple ping — tablet calls this to verify Pi is reachable."""
+    return jsonify({"status": "ok", "server": "HanryxVault Pi", "time_ms": int(_time.time() * 1000)})
+
+
+# ---------------------------------------------------------------------------
+# Expo Scanner Relay — Expo app POSTs scans here, tablet polls and picks them up
+# ---------------------------------------------------------------------------
+
+@app.route("/scan", methods=["POST"])
+def scan_post():
+    """
+    Called by the Expo scanner app whenever it scans a QR/barcode.
+    Body: { "qrCode": "PRODUCT-CODE-HERE" }
+    The tablet polls /scan/pending and will add the product to cart automatically.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    qr_code = (data.get("qrCode") or data.get("qr_code") or data.get("code") or "").strip()
+    if not qr_code:
+        return jsonify({"error": "qrCode is required"}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO scan_queue (qr_code) VALUES (?)", (qr_code,)
+    )
+    db.commit()
+    print(f"[scan] Queued: {qr_code}")
+    return jsonify({"ok": True, "queued": qr_code}), 201
+
+
+@app.route("/scan/pending", methods=["GET"])
+def scan_pending():
+    """
+    Called by the tablet every 1.5 s.
+    Returns the oldest unprocessed scan, or {id:0, qrCode:""} if the queue is empty.
+    """
+    db = get_db()
+    row = db.execute(
+        "SELECT id, qr_code FROM scan_queue WHERE processed = 0 ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    if row:
+        return jsonify({"id": row["id"], "qrCode": row["qr_code"]})
+    return jsonify({"id": 0, "qrCode": ""})
+
+
+@app.route("/scan/ack/<int:scan_id>", methods=["POST"])
+def scan_ack(scan_id):
+    """
+    Called by the tablet after it has handled a scan — marks it processed.
+    """
+    db = get_db()
+    db.execute("UPDATE scan_queue SET processed = 1 WHERE id = ?", (scan_id,))
+    db.commit()
+    return jsonify({"ok": True, "acked": scan_id})
+
+
+@app.route("/sync/sales", methods=["POST"])
+def sync_sales():
+    """
+    Receives a JSON array of SaleEntity objects from the tablet.
+    Inserts each one (ignores duplicates by transactionId).
+    """
+    data = request.get_json(force=True, silent=True)
+    if not data or not isinstance(data, list):
+        return jsonify({"error": "Expected a JSON array of sales"}), 400
+
+    db = get_db()
+    inserted = 0
+    skipped = 0
+
+    for sale in data:
+        transaction_id = sale.get("transactionId") or sale.get("transaction_id")
+        if not transaction_id:
+            skipped += 1
+            continue
+        try:
+            db.execute("""
+                INSERT OR IGNORE INTO sales
+                    (transaction_id, timestamp_ms, subtotal, tax_amount, tip_amount,
+                     total_amount, payment_method, employee_id, items_json,
+                     cash_received, change_given, is_refunded)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                transaction_id,
+                sale.get("timestamp", _now_ms()),
+                sale.get("subtotal", 0.0),
+                sale.get("taxAmount", 0.0),
+                sale.get("tipAmount", 0.0),
+                sale.get("totalAmount", 0.0),
+                sale.get("paymentMethod", "UNKNOWN"),
+                sale.get("employeeId", "UNKNOWN"),
+                json.dumps(sale.get("items", [])),
+                sale.get("cashReceived", 0.0),
+                sale.get("changeGiven", 0.0),
+                1 if sale.get("isRefunded", False) else 0,
+            ))
+            if db.execute("SELECT changes()").fetchone()[0] > 0:
+                inserted += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            print(f"[sync/sales] Error on {transaction_id}: {e}")
+            skipped += 1
+
+    db.commit()
+    print(f"[sync/sales] inserted={inserted} skipped={skipped}")
+    return jsonify({"inserted": inserted, "skipped": skipped}), 200
+
+
+@app.route("/inventory/deduct", methods=["POST"])
+def inventory_deduct():
+    """
+    Receives a JSON array of SoldItemEntry objects:
+      [{ qrCode, name, quantity, unitPrice, lineTotal }]
+    Decrements stock for each QR code in local inventory.
+    Logs every deduction regardless of whether the product is tracked.
+    """
+    data = request.get_json(force=True, silent=True)
+    if not data or not isinstance(data, list):
+        return jsonify({"error": "Expected a JSON array of sold items"}), 400
+
+    db = get_db()
+    deducted = 0
+    unknown = 0
+
+    for item in data:
+        qr_code = item.get("qrCode", "")
+        name = item.get("name", "Unknown")
+        quantity = int(item.get("quantity", 1))
+        unit_price = float(item.get("unitPrice", 0.0))
+        line_total = float(item.get("lineTotal", unit_price * quantity))
+
+        # Log the deduction event
+        db.execute("""
+            INSERT INTO stock_deductions (qr_code, name, quantity, unit_price, line_total)
+            VALUES (?, ?, ?, ?, ?)
+        """, (qr_code, name, quantity, unit_price, line_total))
+
+        # Decrement if product exists in local inventory
+        result = db.execute("""
+            UPDATE inventory
+            SET stock = MAX(0, stock - ?),
+                last_updated = ?
+            WHERE qr_code = ?
+        """, (quantity, _now_ms(), qr_code))
+
+        if result.rowcount > 0:
+            deducted += 1
+        else:
+            unknown += 1
+
+    db.commit()
+    print(f"[inventory/deduct] deducted={deducted} unknown_sku={unknown}")
+    return jsonify({"deducted": deducted, "unknown_skus": unknown}), 200
+
+
+# ---------------------------------------------------------------------------
+# Tablet inventory endpoint — returns merged product list, no images
+# ---------------------------------------------------------------------------
+
+@app.route("/inventory", methods=["GET"])
+def get_inventory():
+    """
+    Called by the tablet to pull the product catalogue.
+    Optional ?since=<epoch_ms> — returns only products updated after that timestamp (delta sync).
+    Optional ?q=<text>        — text search filter.
+    Matches the ProductEntity shape the tablet expects:
+      { qrCode, name, price, category, rarity, setCode, description, stockQuantity, lastUpdated }
+    """
+    db     = get_db()
+    search = request.args.get("q", "").strip().lower()
+    since  = request.args.get("since", "")
+
+    since_clause = ""
+    since_args   = []
+    if since:
+        try:
+            since_ms     = int(since)
+            since_clause = "AND last_updated > ?" if search else "WHERE last_updated > ?"
+            since_args   = [since_ms]
+        except (ValueError, TypeError):
+            pass
+
+    if search:
+        rows = db.execute(f"""
+            SELECT qr_code, name, price, category, rarity, set_code, description, stock, last_updated
+            FROM inventory
+            WHERE (LOWER(name) LIKE ? OR LOWER(qr_code) LIKE ? OR LOWER(category) LIKE ?)
+            {since_clause}
+            ORDER BY name ASC
+        """, [f"%{search}%", f"%{search}%", f"%{search}%"] + since_args).fetchall()
+    else:
+        rows = db.execute(f"""
+            SELECT qr_code, name, price, category, rarity, set_code, description, stock, last_updated
+            FROM inventory {since_clause} ORDER BY name ASC
+        """, since_args).fetchall()
+
+    products = [
+        {
+            "qrCode":        r["qr_code"],
+            "name":          r["name"],
+            "price":         r["price"],
+            "category":      r["category"] or "General",
+            "rarity":        r["rarity"] or "",
+            "setCode":       r["set_code"] or "",
+            "description":   r["description"] or "",
+            "stockQuantity": r["stock"],
+            "lastUpdated":   r["last_updated"],
+        }
+        for r in rows
+    ]
+    return jsonify(products)
+
+
+@app.route("/push/inventory", methods=["POST"])
+def push_inventory():
+    """
+    Receives product data pushed from your websites or scanner app.
+    Accepts a single product OR an array. No images stored — text fields only.
+    Body (single or array):
+      { qrCode, name, price, category, rarity, setCode, description, stock }
+    """
+    data = request.get_json(force=True, silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    items = data if isinstance(data, list) else [data]
+    db = get_db()
+    upserted = 0
+    errors = 0
+
+    for item in items:
+        qr_code = item.get("qrCode") or item.get("qr_code") or item.get("barcode") or item.get("id")
+        name = item.get("name") or item.get("title") or item.get("productName")
+        if not qr_code or not name:
+            errors += 1
+            continue
+        try:
+            db.execute("""
+                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(qr_code) DO UPDATE SET
+                    name        = excluded.name,
+                    price       = excluded.price,
+                    category    = excluded.category,
+                    rarity      = excluded.rarity,
+                    set_code    = excluded.set_code,
+                    description = excluded.description,
+                    stock       = excluded.stock,
+                    last_updated= excluded.last_updated
+            """, (
+                str(qr_code),
+                str(name),
+                float(item.get("price", 0.0)),
+                str(item.get("category", "General")),
+                str(item.get("rarity", "")),
+                str(item.get("setCode") or item.get("set_code", "")),
+                str(item.get("description", "")),
+                int(item.get("stock") or item.get("stockQuantity") or item.get("quantity", 0)),
+                _now_ms(),
+            ))
+            upserted += 1
+        except Exception as e:
+            print(f"[push/inventory] Error on {qr_code}: {e}")
+            errors += 1
+
+    db.commit()
+    print(f"[push/inventory] upserted={upserted} errors={errors}")
+    return jsonify({"upserted": upserted, "errors": errors}), 200
+
+
+@app.route("/push/inventory/csv", methods=["POST"])
+def push_inventory_csv():
+    """
+    Bulk-import products from a CSV file upload.
+    Column header must include: qrCode (or barcode), name, price.
+    Optional: category, rarity, setCode, description, stock.
+
+    Usage: curl -X POST http://10.0.0.1:8080/push/inventory/csv -F file=@products.csv
+    """
+    import csv, io
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "Upload a CSV with field 'file'"}), 400
+
+    content = f.read().decode("utf-8-sig")  # strip BOM if present
+    reader = csv.DictReader(io.StringIO(content))
+
+    db = get_db()
+    upserted = 0
+    skipped = 0
+
+    for row in reader:
+        qr_code = (row.get("qrCode") or row.get("barcode") or row.get("qr_code") or "").strip()
+        name = (row.get("name") or row.get("title") or "").strip()
+        if not qr_code or not name:
+            skipped += 1
+            continue
+        try:
+            price = float(row.get("price", 0) or 0)
+            stock = int(row.get("stock") or row.get("stockQuantity") or row.get("quantity") or 0)
+            db.execute("""
+                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(qr_code) DO UPDATE SET
+                    name=excluded.name, price=excluded.price, category=excluded.category,
+                    rarity=excluded.rarity, set_code=excluded.set_code,
+                    description=excluded.description, stock=excluded.stock,
+                    last_updated=excluded.last_updated
+            """, (
+                qr_code, name, price,
+                row.get("category", "General"),
+                row.get("rarity", ""),
+                row.get("setCode") or row.get("set_code", ""),
+                row.get("description", ""),
+                stock, _now_ms(),
+            ))
+            upserted += 1
+        except Exception as e:
+            print(f"[csv] Row error: {e} — {row}")
+            skipped += 1
+
+    db.commit()
+    return jsonify({"upserted": upserted, "skipped": skipped}), 200
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints (browser dashboard)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin", methods=["GET"])
+def admin_dashboard():
+    """Simple HTML dashboard — open in any browser on your network."""
+    db = get_db()
+
+    # Today's sales
+    midnight_ms = int(datetime.datetime.combine(
+        datetime.date.today(), datetime.time.min
+    ).timestamp() * 1000)
+
+    today_sales = db.execute("""
+        SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as revenue,
+               COALESCE(SUM(tax_amount), 0) as tax, COALESCE(SUM(tip_amount), 0) as tips
+        FROM sales WHERE timestamp_ms >= ?
+    """, (midnight_ms,)).fetchone()
+
+    recent_sales = db.execute("""
+        SELECT transaction_id, timestamp_ms, total_amount, payment_method, employee_id
+        FROM sales ORDER BY timestamp_ms DESC LIMIT 25
+    """).fetchall()
+
+    low_stock = db.execute("""
+        SELECT qr_code, name, stock, price, category
+        FROM inventory WHERE stock <= 5 ORDER BY stock ASC
+    """).fetchall()
+
+    inventory = db.execute("""
+        SELECT qr_code, name, stock, price, category
+        FROM inventory ORDER BY name ASC
+    """).fetchall()
+
+    def fmt_time(ms):
+        if not ms:
+            return "—"
+        return datetime.datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M")
+
+    rows_recent = "".join(
+        f"<tr><td>{r['transaction_id'][:12]}…</td><td>${r['total_amount']:.2f}</td>"
+        f"<td>{r['payment_method']}</td><td>{r['employee_id']}</td>"
+        f"<td>{fmt_time(r['timestamp_ms'])}</td></tr>"
+        for r in recent_sales
+    )
+
+    rows_low = "".join(
+        f"<tr style='color:{'#f44336' if r['stock']==0 else '#ff9800'}'>"
+        f"<td>{r['name']}</td><td>{r['qr_code']}</td>"
+        f"<td><b>{r['stock']}</b></td><td>${r['price']:.2f}</td><td>{r['category']}</td></tr>"
+        for r in low_stock
+    ) or "<tr><td colspan='5' style='color:#4caf50'>All stock levels healthy ✓</td></tr>"
+
+    rows_inv = "".join(
+        f"<tr data-qr=\"{r['qr_code']}\" data-name=\"{r['name']}\" data-price=\"{r['price']}\" "
+        f"data-cat=\"{r['category']}\" data-stock=\"{r['stock']}\" style=\"cursor:pointer\">"
+        f"<td>{r['name']}</td><td><code style='color:#aaa'>{r['qr_code']}</code></td>"
+        f"<td>{r['stock']}</td><td>${r['price']:.2f}</td><td>{r['category']}</td>"
+        f"<td><button class='btn-del' onclick=\"event.stopPropagation();deleteProduct('{r['qr_code']}')\">DEL</button></td></tr>"
+        for r in inventory
+    ) or "<tr><td colspan='6' style='color:#555;text-align:center;padding:20px'>No products yet — use the form above to add your first product</td></tr>"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault POS — Pi Dashboard</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: #0d0d0d; color: #e0e0e0; padding: 24px; }}
+  h1 {{ color: #FFD700; font-size: 22px; margin-bottom: 4px; }}
+  .subtitle {{ color: #666; font-size: 13px; margin-bottom: 24px; }}
+  .cards {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }}
+  .card {{ background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;
+           padding: 18px 24px; min-width: 160px; flex: 1; }}
+  .card label {{ color: #888; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }}
+  .card .value {{ color: #FFD700; font-size: 28px; font-weight: 900; margin-top: 4px; }}
+  .card .value.green {{ color: #4caf50; }}
+  h2 {{ color: #aaa; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+        margin-bottom: 10px; margin-top: 28px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  th {{ text-align: left; color: #555; padding: 8px 10px; border-bottom: 1px solid #222; }}
+  td {{ padding: 8px 10px; border-bottom: 1px solid #1a1a1a; }}
+  tr:hover td {{ background: #1a1a1a; }}
+  .badge {{ background: #222; border-radius: 4px; padding: 2px 7px; font-size: 11px; color: #aaa; }}
+  a {{ color: #FFD700; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .form-panel {{ background: #111; border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; margin-top: 28px; }}
+  .form-panel h2 {{ margin-top: 0; margin-bottom: 16px; }}
+  .form-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }}
+  .form-grid input, .form-grid select {{ width: 100%; background: #1a1a1a; border: 1px solid #333;
+    border-radius: 6px; color: #e0e0e0; padding: 8px 10px; font-size: 13px; }}
+  .form-grid input:focus, .form-grid select:focus {{ outline: none; border-color: #FFD700; }}
+  .form-grid label {{ display: block; color: #666; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; margin-bottom: 4px; }}
+  .btn-gold {{ background: #FFD700; color: #000; border: none; border-radius: 6px;
+    padding: 10px 24px; font-weight: 900; font-size: 13px; cursor: pointer; letter-spacing: 1px; }}
+  .btn-gold:hover {{ background: #ffe033; }}
+  .btn-del {{ background: none; border: 1px solid #c62828; color: #c62828; border-radius: 4px;
+    padding: 3px 8px; font-size: 11px; cursor: pointer; }}
+  .btn-del:hover {{ background: #c62828; color: #fff; }}
+  #toast {{ position: fixed; bottom: 24px; right: 24px; background: #4caf50; color: #fff;
+    padding: 12px 20px; border-radius: 8px; font-weight: bold; display: none; z-index: 99; }}
+  #toast.err {{ background: #c62828; }}
+</style>
+</head>
+<body>
+<h1>HanryxVault POS</h1>
+<div class="subtitle">Raspberry Pi Dashboard &nbsp;·&nbsp; <span id="clock"></span>
+  &nbsp;·&nbsp; <a href="/admin/sales">Sales JSON</a>
+  &nbsp;·&nbsp; <a href="/admin/inventory">Inventory JSON</a>
+  &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 10px;border-radius:4px;font-weight:bold;">⬇ Download APK</a>
+</div>
+
+<div class="cards">
+  <div class="card"><label>Today's Sales</label><div class="value green">{today_sales['count']}</div></div>
+  <div class="card"><label>Revenue Today</label><div class="value">${today_sales['revenue']:.2f}</div></div>
+  <div class="card"><label>Tax Collected</label><div class="value">${today_sales['tax']:.2f}</div></div>
+  <div class="card"><label>Tips Today</label><div class="value">${today_sales['tips']:.2f}</div></div>
+</div>
+
+<!-- SYNC FROM CLOUD -->
+<div class="form-panel" style="margin-top:16px;border-color:#4caf50;background:#001a05">
+  <h2 style="color:#4caf50">☁️ SYNC PRODUCTS FROM YOUR REPLIT SITES</h2>
+  <p style="color:#aaa;font-size:13px;margin-bottom:12px">
+    Pulls your full product catalogue from both Replit inventory websites into the Pi database.
+    The tablet will pick up the products on its next sync.
+    Use <b>Force Re-Sync</b> to refresh products that already exist.
+  </p>
+  <div style="displ
