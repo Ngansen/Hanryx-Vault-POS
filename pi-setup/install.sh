@@ -239,6 +239,15 @@ log "Step 9/9 — Enabling fail2ban (brute-force protection)..."
 systemctl enable fail2ban --quiet
 systemctl start fail2ban
 
+# ── Performance tuning ────────────────────────────────────────────────────────
+log "Step 10/10 — Applying performance & reliability tuning..."
+PERF_SCRIPT="${SCRIPT_DIR}/scripts/setup-performance.sh"
+if [[ -f "$PERF_SCRIPT" ]]; then
+    bash "$PERF_SCRIPT"
+else
+    warn "  setup-performance.sh not found — run it manually: sudo bash scripts/setup-performance.sh"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}╔══════════════════════════════════════════════╗${NC}"

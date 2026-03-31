@@ -213,11 +213,12 @@ def get_db():
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=4000")
+        conn.execute("PRAGMA cache_size=-131072")    # 128 MB page cache per connection (negative = KiB)
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA busy_timeout=5000")     # wait up to 5 s on lock instead of crashing
         conn.execute("PRAGMA mmap_size=268435456")   # 256 MB memory-mapped I/O — free read speedup
+        conn.execute("PRAGMA optimize")              # let SQLite pick query plans once at open
         g.db = conn
     return g.db
 
@@ -233,7 +234,7 @@ def init_db():
     db = sqlite3.connect(DB_PATH)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=NORMAL")
-    db.execute("PRAGMA cache_size=4000")
+    db.execute("PRAGMA cache_size=-131072")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS sales (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,9 +283,11 @@ def init_db():
             processed   INTEGER NOT NULL DEFAULT 0
         );
 
-        CREATE INDEX IF NOT EXISTS idx_scan_pending   ON scan_queue(processed, id);
-        CREATE INDEX IF NOT EXISTS idx_sales_timestamp ON sales(timestamp_ms);
-        CREATE INDEX IF NOT EXISTS idx_stock_qr        ON stock_deductions(qr_code);
+        CREATE INDEX IF NOT EXISTS idx_scan_pending     ON scan_queue(processed, id);
+        CREATE INDEX IF NOT EXISTS idx_sales_timestamp  ON sales(timestamp_ms);
+        CREATE INDEX IF NOT EXISTS idx_sales_received   ON sales(received_at);
+        CREATE INDEX IF NOT EXISTS idx_stock_qr         ON stock_deductions(qr_code);
+        CREATE INDEX IF NOT EXISTS idx_stock_received   ON stock_deductions(deducted_at);
 
         CREATE TABLE IF NOT EXISTS sale_history (
             id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -395,6 +398,30 @@ def _cleanup_scan_queue():
     except Exception as e:
         print(f"[cleanup] scan_queue cleanup failed: {e}")
     threading.Timer(3600, _cleanup_scan_queue).start()
+
+
+def _wal_checkpoint():
+    """
+    Periodically checkpoint the WAL file so it doesn't grow unboundedly.
+    TRUNCATE mode checkpoints and then removes (truncates) the WAL file entirely,
+    returning reads to full speed. Runs every 30 minutes.
+    Without this, the WAL can grow to 100s of MB over days of trading, making
+    every read slower because SQLite has to scan the WAL for changes.
+    """
+    try:
+        db = sqlite3.connect(DB_PATH)
+        db.execute("PRAGMA busy_timeout=10000")
+        # TRUNCATE: checkpoint and then zero the WAL — cleanest reset
+        result = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        db.close()
+        # result = (busy, log, checkpointed) — busy=1 means writer was active
+        if result and result[0] == 0:
+            print(f"[wal] Checkpoint OK — {result[2]} of {result[1]} frames written")
+        else:
+            print(f"[wal] Checkpoint deferred (writer active) — will retry next cycle")
+    except Exception as e:
+        print(f"[wal] Checkpoint failed: {e}")
+    threading.Timer(1800, _wal_checkpoint).start()
 
 
 # ---------------------------------------------------------------------------
@@ -1336,5 +1363,6 @@ if __name__ == "__main__":
     _load_tokens_from_db()
     threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
     _cleanup_scan_queue()
+    _wal_checkpoint()
     print("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
