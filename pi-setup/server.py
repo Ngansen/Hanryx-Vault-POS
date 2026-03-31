@@ -377,6 +377,30 @@ def init_db():
             notes      TEXT NOT NULL DEFAULT '',
             updated_ms INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
         );
+
+        CREATE TABLE IF NOT EXISTS price_history (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id      TEXT NOT NULL,
+            card_name    TEXT NOT NULL DEFAULT '',
+            market_price REAL NOT NULL,
+            fetched_ms   INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+        CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(card_id, fetched_ms);
+
+        CREATE TABLE IF NOT EXISTS scan_log (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            qr_code    TEXT NOT NULL,
+            card_name  TEXT NOT NULL DEFAULT '',
+            matched    INTEGER NOT NULL DEFAULT 0,
+            price      REAL NOT NULL DEFAULT 0,
+            scanned_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scan_log ON scan_log(scanned_at);
+
+        CREATE TABLE IF NOT EXISTS wg_peer_names (
+            pubkey        TEXT PRIMARY KEY,
+            friendly_name TEXT NOT NULL DEFAULT ''
+        );
     """)
     db.commit()
 
@@ -1201,6 +1225,24 @@ def scan_post():
     # Also push instantly to any SSE clients (tablet with /scan/stream)
     _sse_broadcast_scan(store_code)
 
+    # Write to scan_log for Scan History tab (best-effort, non-blocking)
+    try:
+        _sl_matches = _card_lookup(db, qr=store_code, limit=1)
+        _sl_local   = _sl_matches[0] if _sl_matches else None
+        db.execute(
+            "INSERT INTO scan_log (qr_code, card_name, matched, price, scanned_at) VALUES (?,?,?,?,?)",
+            (
+                store_code,
+                _sl_local.get("name", "")  if _sl_local else "",
+                1 if _sl_local else 0,
+                _sl_local.get("price", 0.0) if _sl_local else 0.0,
+                _now_ms(),
+            )
+        )
+        db.commit()
+    except Exception as _sl_err:
+        print(f"[scan_log] write failed: {_sl_err}")
+
     if normalised != qr_code:
         print(f"[scan] Queued (normalised): {qr_code!r} → {store_code!r}")
     else:
@@ -1427,6 +1469,20 @@ def card_enrich():
     local   = matches[0] if matches else None
     result  = _enrich_with_tcg(local, norm_qr)
     result["normalizedQr"] = norm_qr
+
+    # Persist market price to price_history for trend tracking
+    _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
+    if _ph_price:
+        try:
+            db.execute(
+                "INSERT INTO price_history (card_id, card_name, market_price, fetched_ms) "
+                "VALUES (?,?,?,?)",
+                (norm_qr, result.get("name") or norm_qr, float(_ph_price), _now_ms())
+            )
+            db.commit()
+        except Exception:
+            pass
+
     return jsonify(result)
 
 
@@ -2346,12 +2402,106 @@ def _sys_service_up(name: str) -> bool:
     return _sys_run(f"systemctl is-active {name} 2>/dev/null") == "active"
 
 
-def _sys_wg_peers() -> int:
+def _fmt_bytes(n: int) -> str:
+    """Human-readable bytes: 1.2MB, 340KB, etc."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024:
+            return f"{n:.1f}{unit}"
+        n //= 1024
+    return f"{n:.1f}PB"
+
+
+def _sys_wg_peer_list() -> list:
+    """
+    Parse `wg show wg0 dump` into a list of peer dicts.
+    Merges friendly names from the wg_peer_names DB table.
+    Returns [] when WireGuard is not running or wg is not installed.
+    """
     try:
-        out = _sys_run("wg show wg0 peers 2>/dev/null | wc -l")
-        return int(out) if out else 0
-    except Exception:
-        return 0
+        raw = _sys_run("wg show wg0 dump 2>/dev/null")
+        if not raw:
+            return []
+        lines = [l for l in raw.strip().splitlines() if l]
+        if len(lines) < 2:
+            return []
+        # Fetch all name mappings at once with a direct connection
+        try:
+            _nc = sqlite3.connect(DB_PATH)
+            names_map = {r[0]: r[1] for r in
+                         _nc.execute("SELECT pubkey, friendly_name FROM wg_peer_names").fetchall()}
+            _nc.close()
+        except Exception:
+            names_map = {}
+        now = int(_time.time())
+        peers = []
+        for line in lines[1:]:   # first line is the interface row
+            parts = line.split("\t")
+            if len(parts) < 8:
+                continue
+            pubkey    = parts[0]
+            endpoint  = parts[2] if parts[2] != "(none)" else "—"
+            allowed   = parts[3]
+            hs_raw    = parts[4]
+            rx_raw    = parts[5]
+            tx_raw    = parts[6]
+            hs = int(hs_raw) if hs_raw.isdigit() else 0
+            if hs == 0:
+                hs_str, hs_ok = "Never", False
+            else:
+                ago = now - hs
+                if ago < 180:
+                    hs_str, hs_ok = f"{ago}s ago", True
+                elif ago < 3600:
+                    hs_str, hs_ok = f"{ago // 60}m ago", ago < 300
+                else:
+                    hs_str = f"{ago // 3600}h {(ago % 3600) // 60}m ago"
+                    hs_ok  = False
+            peers.append({
+                "pubkey":       pubkey,
+                "short_key":    pubkey[:16] + "…",
+                "friendly":     names_map.get(pubkey, ""),
+                "endpoint":     endpoint,
+                "allowed_ips":  allowed,
+                "handshake":    hs_str,
+                "handshake_ok": hs_ok,
+                "rx":  _fmt_bytes(int(rx_raw) if rx_raw.isdigit() else 0),
+                "tx":  _fmt_bytes(int(tx_raw) if tx_raw.isdigit() else 0),
+            })
+        return peers
+    except Exception as _e:
+        print(f"[wg] peer_list error: {_e}")
+        return []
+
+
+def _sys_wg_peers() -> int:
+    return len(_sys_wg_peer_list())
+
+
+def _sparkline_svg(values: list, width: int = 336, height: int = 52,
+                   color: str = "#FFD700") -> str:
+    """Render a list of floats as a minimal SVG bar-chart sparkline."""
+    if not values or max(values) == 0:
+        return (f'<svg width="{width}" height="{height}">'
+                f'<text x="50%" y="55%" text-anchor="middle" '
+                f'fill="#333" font-size="11" font-family="sans-serif">'
+                f'No sales data yet</text></svg>')
+    mx = max(values)
+    n  = len(values)
+    bw = width / n
+    gp = bw * 0.22
+    rects = []
+    for i, v in enumerate(values):
+        bh = max(4, int((v / mx) * (height - 16)))
+        x  = i * bw + gp / 2
+        y  = height - 16 - bh
+        rects.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" '
+            f'width="{bw - gp:.1f}" height="{bh}" rx="3" '
+            f'fill="{color}" opacity="0.82"/>'
+        )
+    return (f'<svg width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}">'
+            + "".join(rects) + "</svg>")
 
 
 def _sys_ping(url: str) -> tuple:
@@ -2415,21 +2565,42 @@ _ADMIN_BASE_CSS = """
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
-        ("dashboard", "/admin",         "🏠 Dashboard"),
-        ("market",    "/admin/market",  "📈 Market Prices"),
-        ("system",    "/admin/system",  "⚙️ System"),
-        ("logs",      "/admin/logs",    "📋 Logs"),
+        ("dashboard", "/admin",        "🏠 Dashboard"),
+        ("market",    "/admin/market", "📈 Market Prices"),
+        ("system",    "/admin/system", "⚙️ System"),
+        ("logs",      "/admin/logs",   "📋 Logs"),
     ]
     items = "".join(
         f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
         for k, href, lbl in pages
     )
+    # Hub-dot: tiny coloured circle next to logo that goes green when POS is reachable
+    # (same-origin /health check — reliable proxy for scan-hub daemon health)
+    hub_dot = (
+        '<span id="hub-dot" title="Scan Hub status" '
+        'style="display:inline-block;width:7px;height:7px;border-radius:50%;'
+        'background:#333;margin-left:6px;vertical-align:middle;'
+        'transition:background .4s"></span>'
+    )
+    hub_js = (
+        "<script>"
+        "(function(){"
+        "function hb(){fetch('/health',{signal:AbortSignal.timeout(1800)})"
+        ".then(r=>{var d=document.getElementById('hub-dot');"
+        "if(d)d.style.background=r.ok?'#4caf50':'#f44336';})"
+        ".catch(()=>{var d=document.getElementById('hub-dot');"
+        "if(d)d.style.background='#f44336';});};"
+        "hb();setInterval(hb,20000);"
+        "})();"
+        "</script>"
+    )
     return (
         f'<nav class="admin-nav">'
-        f'<span class="nav-logo">🔐 HANRYX</span>'
+        f'<span class="nav-logo">🔐 HANRYX{hub_dot}</span>'
         f'{items}'
         f'<span class="nav-clock" id="clock"></span>'
         f'</nav>'
+        f'{hub_js}'
     )
 
 
@@ -2749,6 +2920,7 @@ inp.addEventListener('input', () => {{
   _timer  = setTimeout(doSearch, 400);
   _vTimer = setTimeout(fetchVariants, 280);
 }});
+inp.addEventListener('keydown', e => {{ if (e.key === 'Enter') {{ clearTimeout(_timer); clearTimeout(_vTimer); doSearch(); }} }});
 condS.addEventListener('change', () => {{ condD.value = condS.value; if (_lastData) applyCond(); }});
 condD.addEventListener('change', () => {{ condS.value = condD.value; if (_lastData) applyCond(); }});
 langS.addEventListener('change', () => {{ if (_lastData) applyCond(); }});
@@ -2985,18 +3157,22 @@ function renderTiersOnly(m) {{
 
 function addToInventory() {{
   if (!_lastData) return;
-  const d  = _lastData;
-  const t  = d.tcgData || {{}};
-  const qr = d.tcgId || _selId || '';
-  // Store form values in sessionStorage and redirect to dashboard
+  const d    = _lastData;
+  const t    = d.tcgData || {{}};
+  const qr   = d.tcgId || _selId || '';
+  // Use the condition-adjusted market price currently displayed, not raw
+  const condM   = parseFloat(condD.value) || 1;
+  const rawPrice = Object.values(_rawTiers)[0] || d.suggestedPrice
+                   || (t.tcgplayer && t.tcgplayer.marketPrice) || d.price || 0;
+  const adjPrice = parseFloat((rawPrice * condM).toFixed(2));
   const pre = {{
     qr:      qr,
     name:    d.name || t.name || '',
-    price:   (d.price || d.suggestedPrice || (t.tcgplayer && t.tcgplayer.marketPrice) || 0),
+    price:   adjPrice,
     rarity:  d.rarity || t.rarity || '',
     set:     (t.set && t.set.ptcgoCode) || d.setCode || '',
     imgurl:  d.imageUrl || (t.images && (t.images.large || t.images.small)) || '',
-    tcgid:   d.tcgId || (t.id) || '',
+    tcgid:   d.tcgId || t.id || '',
   }};
   sessionStorage.setItem('prefillData', JSON.stringify(pre));
   location.href = '/admin#add-product';
@@ -3132,6 +3308,41 @@ def admin_system():
       <tbody>{site_rows}</tbody>
     </table>
   </div>
+
+  <div class="panel">
+    <div class="panel-title" style="display:flex;align-items:center;gap:10px">
+      WireGuard VPN Peers
+      <span id="wgStatus" style="font-size:11px;color:#555;font-weight:400;margin-left:auto"></span>
+    </div>
+    <table id="wgPeerTable">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Allowed IPs</th>
+          <th>Endpoint</th>
+          <th>Last Handshake</th>
+          <th>↓ RX</th>
+          <th>↑ TX</th>
+          <th>Label</th>
+        </tr>
+      </thead>
+      <tbody id="wgPeerBody">
+        <tr><td colspan="7" style="color:#555;text-align:center;padding:16px">Loading peers…</td></tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Public Key (paste full key or first 16+ chars)</div>
+        <input id="wgKeyInp" placeholder="e.g. abc123XYZ..." style="width:260px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:12px;outline:none">
+      </div>
+      <div>
+        <div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Friendly Name</div>
+        <input id="wgNameInp" placeholder="e.g. Tablet, Phone, Satellite Pi" style="width:200px;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:12px;outline:none">
+      </div>
+      <button class="btn-gold" onclick="savePeerName()" style="padding:9px 20px">Save Label</button>
+    </div>
+  </div>
 </div>
 <div id="toast"></div>
 
@@ -3236,8 +3447,66 @@ async function quickAction(action) {{
   }}
 }}
 
+async function refreshWgPeers() {{
+  try {{
+    const r = await fetch('/system/wg-peers');
+    const d = await r.json();
+    const peers = d.peers || [];
+    const tbody = document.getElementById('wgPeerBody');
+    const status = document.getElementById('wgStatus');
+    if (!peers.length) {{
+      tbody.innerHTML = '<tr><td colspan="7" style="color:#555;text-align:center;padding:16px">No WireGuard peers — VPN may be offline or no peers configured</td></tr>';
+      status.textContent = 'Offline or no peers';
+      return;
+    }}
+    status.textContent = peers.length + ' peer' + (peers.length!==1?'s':'') + ' · refreshed ' + new Date().toLocaleTimeString();
+    tbody.innerHTML = peers.map(p => {{
+      const nameCell = p.friendly
+        ? `<span style="color:#FFD700;font-weight:700">${{p.friendly}}</span><br><span style="font-size:10px;color:#444">${{p.short_key}}</span>`
+        : `<span style="color:#555;font-size:11px">${{p.short_key}}</span>`;
+      const hsColor = p.handshake_ok ? '#4caf50' : (p.handshake==='Never'?'#555':'#f59e0b');
+      return `<tr>
+        <td>${{nameCell}}</td>
+        <td style="font-size:11px;color:#888">${{p.allowed_ips}}</td>
+        <td style="font-size:11px;color:#888">${{p.endpoint}}</td>
+        <td style="color:${{hsColor}};font-size:12px">${{p.handshake}}</td>
+        <td style="font-size:12px;color:#aaa">${{p.rx}}</td>
+        <td style="font-size:12px;color:#aaa">${{p.tx}}</td>
+        <td><button class="act-btn" style="font-size:10px" onclick="fillPeerKey('${{p.pubkey.replace(/'/g,"\\\\'")}}')"
+            title="Copy key to label form">Label…</button></td>
+      </tr>`;
+    }}).join('');
+  }} catch(e) {{
+    document.getElementById('wgStatus').textContent = 'Error: ' + e.message;
+  }}
+}}
+
+function fillPeerKey(pubkey) {{
+  document.getElementById('wgKeyInp').value = pubkey;
+  document.getElementById('wgNameInp').focus();
+}}
+
+async function savePeerName() {{
+  const pubkey   = document.getElementById('wgKeyInp').value.trim();
+  const friendly = document.getElementById('wgNameInp').value.trim();
+  if (!pubkey) {{ toast('Paste the public key first', true); return; }}
+  const r = await fetch('/system/wg-peer-name', {{
+    method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{pubkey, name: friendly}})
+  }});
+  const d = await r.json();
+  if (d.ok) {{
+    toast('Label saved: ' + (friendly || '(cleared)'));
+    document.getElementById('wgKeyInp').value  = '';
+    document.getElementById('wgNameInp').value = '';
+    refreshWgPeers();
+  }} else toast('Error: ' + (d.error||'unknown'), true);
+}}
+
 refresh();
 setInterval(refresh, 3000);
+refreshWgPeers();
+setInterval(refreshWgPeers, 10000);
 </script>
 </body>
 </html>"""
@@ -3256,9 +3525,15 @@ def admin_logs():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HanryxVault — Live Logs</title>
+<title>HanryxVault — Logs</title>
 <style>
 {_ADMIN_BASE_CSS}
+  .tab-bar{{display:flex;gap:0;border-bottom:1px solid #222;margin-bottom:20px}}
+  .tab{{padding:11px 20px;font-size:13px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:.15s}}
+  .tab:hover{{color:#aaa}}
+  .tab.active{{color:#FFD700;border-bottom-color:#FFD700}}
+  .tab-panel{{display:none}}
+  .tab-panel.active{{display:block}}
   .log-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
   .log-controls label{{font-size:12px;color:#666}}
   .log-controls select{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
@@ -3275,34 +3550,76 @@ def admin_logs():
   #searchInp{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none;width:200px}}
   #searchInp:focus{{border-color:#FFD700}}
   .highlight{{background:#FFD70044;border-radius:2px}}
+  /* Scan History */
+  .sh-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
+  .sh-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
+  .sh-tbl th{{text-align:left;color:#555;padding:8px 10px;border-bottom:1px solid #222;font-size:11px;text-transform:uppercase;letter-spacing:.8px}}
+  .sh-tbl td{{padding:7px 10px;border-bottom:1px solid #111}}
+  .sh-tbl tr:hover td{{background:#111}}
+  .badge-match{{background:#1a3a1a;color:#4ade80;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700}}
+  .badge-miss{{background:#2a1a1a;color:#f87171;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700}}
+  #shStatus{{font-size:11px;color:#444;margin-bottom:8px}}
 </style>
 </head>
 <body>
 {nav}
 <div class="wrap">
-  <h1>📋 Live Logs</h1>
-  <p class="subtitle">Tail service logs from your Pi in real-time.</p>
+  <h1>📋 Logs</h1>
+  <p class="subtitle">Service logs &amp; barcode scan history from your Pi.</p>
 
-  <div class="log-controls">
-    <label>Service:</label>
-    <select id="svcSelect" onchange="loadLogs()">
-      <option value="hanryxvault">POS Server (hanryxvault)</option>
-      <option value="nginx">nginx</option>
-      <option value="syslog">syslog</option>
-    </select>
-    <label>Lines:</label>
-    <input type="range" id="linesRange" min="20" max="500" step="20" value="120" oninput="linesLbl.textContent=this.value">
-    <span id="linesLbl" style="font-size:12px;color:#888;min-width:32px">120</span>
-    <label class="toggle"><input type="checkbox" id="autoRefresh" checked onchange="toggleAuto()"> Auto-refresh (5s)</label>
-    <button onclick="loadLogs()" class="btn-gold" style="padding:8px 18px">↺ Refresh</button>
-    <input type="text" id="searchInp" placeholder="Search in logs…" oninput="highlightSearch()">
+  <div class="tab-bar">
+    <div class="tab active" id="tab-syslog" onclick="switchTab('syslog')">📄 System Log</div>
+    <div class="tab" id="tab-scanlog" onclick="switchTab('scanlog')">📷 Scan History</div>
   </div>
 
-  <div class="log-status">
-    <span class="log-status-txt" id="logStatus">Loading…</span>
-    <span class="log-status-txt" id="logTime"></span>
+  <!-- ── System Log ─────────────────────────────────────────────────── -->
+  <div class="tab-panel active" id="panel-syslog">
+    <div class="log-controls">
+      <label>Service:</label>
+      <select id="svcSelect" onchange="loadLogs()">
+        <option value="hanryxvault">POS Server (hanryxvault)</option>
+        <option value="nginx">nginx</option>
+        <option value="syslog">syslog</option>
+      </select>
+      <label>Lines:</label>
+      <input type="range" id="linesRange" min="20" max="500" step="20" value="120" oninput="linesLbl.textContent=this.value">
+      <span id="linesLbl" style="font-size:12px;color:#888;min-width:32px">120</span>
+      <label class="toggle"><input type="checkbox" id="autoRefresh" checked onchange="toggleAuto()"> Auto-refresh (5s)</label>
+      <button onclick="loadLogs()" class="btn-gold" style="padding:8px 18px">↺ Refresh</button>
+      <input type="text" id="searchInp" placeholder="Search in logs…" oninput="highlightSearch()">
+    </div>
+    <div class="log-status">
+      <span class="log-status-txt" id="logStatus">Loading…</span>
+      <span class="log-status-txt" id="logTime"></span>
+    </div>
+    <div id="logBox">Loading logs…</div>
   </div>
-  <div id="logBox">Loading logs…</div>
+
+  <!-- ── Scan History ───────────────────────────────────────────────── -->
+  <div class="tab-panel" id="panel-scanlog">
+    <div class="sh-controls">
+      <label style="font-size:12px;color:#666">Show last</label>
+      <select id="shLimit" onchange="loadScanLog()">
+        <option value="50">50 scans</option>
+        <option value="200" selected>200 scans</option>
+        <option value="500">500 scans</option>
+      </select>
+      <button onclick="loadScanLog()" class="btn-gold" style="padding:8px 18px">↺ Refresh</button>
+      <span style="margin-left:auto;font-size:12px;color:#555" id="shMatchRate"></span>
+    </div>
+    <div id="shStatus">Loading scan history…</div>
+    <div style="overflow-x:auto">
+      <table class="sh-tbl">
+        <thead><tr>
+          <th>#</th><th>Time</th><th>QR Code</th>
+          <th>Card Name</th><th>Match</th><th>Price</th>
+        </tr></thead>
+        <tbody id="shBody">
+          <tr><td colspan="6" style="color:#555;text-align:center;padding:20px">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 <div id="toast"></div>
 
@@ -3313,6 +3630,16 @@ setInterval(clock,1000); clock();
 
 function toast(msg,err=false){{const t=document.getElementById('toast');t.textContent=msg;t.className=err?'err':'';t.style.display='block';setTimeout(()=>t.style.display='none',3000);}}
 
+// ── Tab switching ────────────────────────────────────────────────────────
+function switchTab(id) {{
+  ['syslog','scanlog'].forEach(t => {{
+    document.getElementById('tab-'  +t).classList.toggle('active', t===id);
+    document.getElementById('panel-'+t).classList.toggle('active', t===id);
+  }});
+  if (id==='scanlog') loadScanLog();
+}}
+
+// ── System Log tab ───────────────────────────────────────────────────────
 async function loadLogs() {{
   const svc   = document.getElementById('svcSelect').value;
   const lines = document.getElementById('linesRange').value;
@@ -3322,7 +3649,6 @@ async function loadLogs() {{
     const d = await r.json();
     const box = document.getElementById('logBox');
     const raw = d.log || '';
-    // colour lines
     box.innerHTML = raw.split('\\n').map(line => {{
       const cls = /error|exception|traceback|critical/i.test(line) ? 'log-line-err'
                 : /warn/i.test(line)   ? 'log-line-warn'
@@ -3362,12 +3688,194 @@ function highlightSearch() {{
   box.innerHTML = box.innerHTML.replace(re, '<mark class="highlight">$1</mark>');
 }}
 
+// ── Scan History tab ─────────────────────────────────────────────────────
+async function loadScanLog() {{
+  const limit = document.getElementById('shLimit').value;
+  document.getElementById('shStatus').textContent = 'Loading…';
+  try {{
+    const r = await fetch('/admin/scan-log?limit=' + limit);
+    const rows = await r.json();
+    const matched = rows.filter(x => x.matched).length;
+    const pct = rows.length ? Math.round(matched/rows.length*100) : 0;
+    document.getElementById('shMatchRate').textContent =
+      rows.length + ' scans · ' + matched + ' matched (' + pct + '%)';
+    document.getElementById('shStatus').textContent =
+      'Showing last ' + rows.length + ' scans · updated ' + new Date().toLocaleTimeString();
+    if (!rows.length) {{
+      document.getElementById('shBody').innerHTML =
+        '<tr><td colspan="6" style="color:#555;text-align:center;padding:20px">No scans recorded yet</td></tr>';
+      return;
+    }}
+    document.getElementById('shBody').innerHTML = rows.map((s,i) => {{
+      const t = new Date(s.scannedAt).toLocaleString();
+      const badge = s.matched
+        ? '<span class="badge-match">✓ Matched</span>'
+        : '<span class="badge-miss">✗ Not found</span>';
+      const price = s.price > 0 ? '$' + s.price.toFixed(2) : '—';
+      const name  = s.cardName || '<span style="color:#444">—</span>';
+      const qr    = `<code style="color:#aaa;font-size:11px">${{s.qrCode}}</code>`;
+      return `<tr><td style="color:#555">${{i+1}}</td><td style="color:#666;font-size:11px">${{t}}</td><td>${{qr}}</td><td>${{name}}</td><td>${{badge}}</td><td style="color:#FFD700">${{price}}</td></tr>`;
+    }}).join('');
+  }} catch(e) {{
+    document.getElementById('shStatus').textContent = 'Error: ' + e.message;
+  }}
+}}
+
 loadLogs();
 toggleAuto();
 </script>
 </body>
 </html>"""
     return html
+
+
+# ---------------------------------------------------------------------------
+# New utility endpoints (stats-partial, export-inventory, scan-log,
+#                        sell-one, wg-peers, wg-peer-name)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/stats-partial", methods=["GET"])
+def admin_stats_partial():
+    """Lightweight JSON snapshot for auto-refreshing the dashboard cards."""
+    db = get_db()
+    midnight_ms = int(datetime.datetime.combine(
+        datetime.date.today(), datetime.time.min
+    ).timestamp() * 1000)
+    row = db.execute("""
+        SELECT COUNT(*) as count,
+               COALESCE(SUM(total_amount), 0) as revenue,
+               COALESCE(SUM(tax_amount),   0) as tax,
+               COALESCE(SUM(tip_amount),   0) as tips
+        FROM sales WHERE timestamp_ms >= ?
+    """, (midnight_ms,)).fetchone()
+    inv_count  = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    low_count  = db.execute("SELECT COUNT(*) FROM inventory WHERE stock <= 5").fetchone()[0]
+    # 7-day daily revenue
+    seven_days = []
+    for i in range(6, -1, -1):
+        d       = datetime.date.today() - datetime.timedelta(days=i)
+        day_ms  = int(datetime.datetime.combine(d, datetime.time.min).timestamp() * 1000)
+        next_ms = day_ms + 86_400_000
+        rev = db.execute(
+            "SELECT COALESCE(SUM(total_amount),0) FROM sales "
+            "WHERE timestamp_ms >= ? AND timestamp_ms < ?",
+            (day_ms, next_ms)
+        ).fetchone()[0]
+        seven_days.append({"label": d.strftime("%a"), "revenue": round(rev, 2)})
+    return jsonify({
+        "sales_count": row["count"],
+        "revenue":     round(row["revenue"], 2),
+        "tax":         round(row["tax"], 2),
+        "tips":        round(row["tips"], 2),
+        "inv_count":   inv_count,
+        "low_stock":   low_count,
+        "seven_days":  seven_days,
+    })
+
+
+@app.route("/admin/export-inventory", methods=["GET"])
+def admin_export_inventory():
+    """Download the full inventory as a CSV file."""
+    from flask import Response as _Resp
+    db     = get_db()
+    rows   = db.execute("SELECT * FROM inventory ORDER BY name ASC").fetchall()
+    fields = ["qr_code", "name", "price", "stock", "category", "rarity",
+              "set_code", "description", "image_url", "tcg_id", "last_updated"]
+    buf = io.StringIO()
+    w   = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        keys = r.keys()
+        w.writerow({f: (r[f] if f in keys else "") for f in fields})
+    return _Resp(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=hanryxvault-inventory.csv"},
+    )
+
+
+@app.route("/admin/scan-log", methods=["GET"])
+def admin_scan_log():
+    """Return recent scan history for the Logs page Scan History tab."""
+    try:
+        limit = min(int(request.args.get("limit", 200)), 1000)
+    except (ValueError, TypeError):
+        limit = 200
+    db   = get_db()
+    rows = db.execute(
+        "SELECT id, qr_code, card_name, matched, price, scanned_at "
+        "FROM scan_log ORDER BY scanned_at DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    return jsonify([{
+        "id":        r["id"],
+        "qrCode":    r["qr_code"],
+        "cardName":  r["card_name"],
+        "matched":   bool(r["matched"]),
+        "price":     r["price"],
+        "scannedAt": r["scanned_at"],
+    } for r in rows])
+
+
+@app.route("/admin/sell-one/<path:qr_code>", methods=["POST"])
+def admin_sell_one(qr_code):
+    """
+    Quick-sell: decrement stock by 1 and record a minimal sale entry.
+    Used by the dashboard 'Sell 1' button for fast walk-up sales.
+    """
+    db  = get_db()
+    row = db.execute(
+        "SELECT name, price, stock FROM inventory WHERE qr_code = ?", (qr_code,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Product not found"}), 404
+    if row["stock"] <= 0:
+        return jsonify({"error": "Out of stock"}), 409
+    db.execute(
+        "UPDATE inventory SET stock = stock - 1, last_updated = ? WHERE qr_code = ?",
+        (_now_ms(), qr_code)
+    )
+    tid = f"QUICK-{_now_ms()}"
+    db.execute("""
+        INSERT INTO sales (transaction_id, timestamp_ms, subtotal, tax_amount,
+                           tip_amount, total_amount, payment_method, employee_id,
+                           items_json, source)
+        VALUES (?,?,?,0,0,?,?,?,?,?)
+    """, (
+        tid, _now_ms(), row["price"], row["price"],
+        "CASH", "dashboard",
+        json.dumps([{"qrCode": qr_code, "name": row["name"],
+                     "qty": 1, "unitPrice": row["price"]}]),
+        "quick-sell",
+    ))
+    db.commit()
+    _invalidate_inventory()
+    return jsonify({"ok": True, "qrCode": qr_code, "newStock": row["stock"] - 1,
+                    "price": row["price"]})
+
+
+@app.route("/system/wg-peers", methods=["GET"])
+def system_wg_peers_api():
+    """Return parsed WireGuard peer list as JSON."""
+    return jsonify({"peers": _sys_wg_peer_list()})
+
+
+@app.route("/system/wg-peer-name", methods=["POST"])
+def system_wg_peer_name():
+    """Set a friendly name for a WireGuard peer public key."""
+    data    = request.get_json(silent=True) or {}
+    pubkey  = (data.get("pubkey") or "").strip()
+    friendly = (data.get("name") or "").strip()[:64]
+    if not pubkey:
+        return jsonify({"error": "pubkey required"}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO wg_peer_names (pubkey, friendly_name) VALUES (?,?) "
+        "ON CONFLICT(pubkey) DO UPDATE SET friendly_name=excluded.friendly_name",
+        (pubkey, friendly)
+    )
+    db.commit()
+    return jsonify({"ok": True, "pubkey": pubkey[:16] + "…", "name": friendly})
 
 
 # ---------------------------------------------------------------------------
@@ -3469,15 +3977,44 @@ def admin_dashboard():
         for r in low_stock
     ) or "<tr><td colspan='5' style='color:#4caf50'>All stock levels healthy ✓</td></tr>"
 
-    rows_inv = "".join(
-        f"<tr data-qr=\"{e(r['qr_code'], quote=True)}\" "
-        f"data-name=\"{e(r['name'], quote=True)}\" data-price=\"{r['price']}\" "
-        f"data-cat=\"{e(r['category'], quote=True)}\" data-stock=\"{r['stock']}\" style=\"cursor:pointer\">"
-        f"<td>{e(r['name'])}</td><td><code style='color:#aaa'>{e(r['qr_code'])}</code></td>"
-        f"<td>{r['stock']}</td><td>${r['price']:.2f}</td><td>{e(r['category'])}</td>"
-        f"<td><button class='btn-del' onclick=\"event.stopPropagation();deleteProduct('{e(r['qr_code'], quote=True)}')\">DEL</button></td></tr>"
-        for r in inventory
-    ) or "<tr><td colspan='6' style='color:#555;text-align:center;padding:20px'>No products yet</td></tr>"
+    def _inv_row(r):
+        qr      = e(r["qr_code"], quote=True)
+        nm      = e(r["name"], quote=True)
+        sell_ex = 'disabled title="Out of stock"' if r["stock"] <= 0 else ""
+        return (
+            f'<tr data-qr="{qr}" data-name="{nm}" data-price="{r["price"]}" '
+            f'data-cat="{e(r["category"], quote=True)}" data-stock="{r["stock"]}" style="cursor:pointer">'
+            f'<td>{e(r["name"])}</td><td><code style="color:#aaa">{e(r["qr_code"])}</code></td>'
+            f'<td id="stock-{qr}">{r["stock"]}</td>'
+            f'<td>${r["price"]:.2f}</td><td>{e(r["category"])}</td>'
+            f'<td style="white-space:nowrap">'
+            f'<button class="btn-sell" onclick="event.stopPropagation();sellOne(\'{qr}\',\'{nm}\',{r["price"]})" {sell_ex}>Sell 1</button> '
+            f'<button class="btn-del" onclick="event.stopPropagation();deleteProduct(\'{qr}\')">DEL</button>'
+            f'</td></tr>'
+        )
+    rows_inv = "".join(_inv_row(r) for r in inventory) or \
+        "<tr><td colspan='7' style='color:#555;text-align:center;padding:20px'>No products yet</td></tr>"
+
+    # 7-day revenue for sparkline (server-side)
+    _spark_vals = []
+    _spark_labels = []
+    for _i in range(6, -1, -1):
+        _d      = datetime.date.today() - datetime.timedelta(days=_i)
+        _day_ms = int(datetime.datetime.combine(_d, datetime.time.min).timestamp() * 1000)
+        _rev    = db.execute(
+            "SELECT COALESCE(SUM(total_amount),0) FROM sales "
+            "WHERE timestamp_ms >= ? AND timestamp_ms < ?",
+            (_day_ms, _day_ms + 86_400_000)
+        ).fetchone()[0]
+        _spark_vals.append(float(_rev))
+        _spark_labels.append(_d.strftime("%a"))
+    sparkline_svg = _sparkline_svg(_spark_vals)
+    spark_labels_html = "".join(
+        f'<span style="flex:1;text-align:center;font-size:9px;color:#444">{lbl}</span>'
+        for lbl in _spark_labels
+    )
+    inv_count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    low_stock_count = len(low_stock)
 
     nav = _admin_nav("dashboard")
     html = f"""<!DOCTYPE html>
@@ -3501,6 +4038,11 @@ def admin_dashboard():
   .form-grid label{{display:block;color:#666;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}}
   .btn-del{{background:none;border:1px solid #c62828;color:#c62828;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}}
   .btn-del:hover{{background:#c62828;color:#fff}}
+  .btn-sell{{background:none;border:1px solid #4caf50;color:#4caf50;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;margin-right:4px}}
+  .btn-sell:hover{{background:#4caf50;color:#000}}
+  .btn-sell:disabled{{border-color:#333;color:#444;cursor:default}}
+  .sparkline-panel{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px;flex:2;min-width:220px}}
+  .sparkline-panel label{{color:#777;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:8px}}
   #add-product{{scroll-margin-top:80px}}
 
   /* ── Price flash overlay ─────────────────────────────────────────────── */
@@ -3576,11 +4118,27 @@ def admin_dashboard():
   &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;">⬇ APK</a>
 </div>
 
-<div class="cards">
-  <div class="card"><label>Today's Sales</label><div class="value green">{today_sales['count']}</div></div>
-  <div class="card"><label>Revenue Today</label><div class="value">${today_sales['revenue']:.2f}</div></div>
-  <div class="card"><label>Tax Collected</label><div class="value">${today_sales['tax']:.2f}</div></div>
-  <div class="card"><label>Tips Today</label><div class="value">${today_sales['tips']:.2f}</div></div>
+<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px;align-items:stretch">
+  <div style="display:flex;flex-direction:column;gap:14px;flex:1;min-width:220px">
+    <div class="cards" style="margin-bottom:0">
+      <div class="card"><label>Today's Sales</label><div class="value green" id="stat-count">{today_sales['count']}</div></div>
+      <div class="card"><label>Revenue Today</label><div class="value" id="stat-rev">${today_sales['revenue']:.2f}</div></div>
+    </div>
+    <div class="cards" style="margin-bottom:0">
+      <div class="card"><label>Tax Collected</label><div class="value" id="stat-tax">${today_sales['tax']:.2f}</div></div>
+      <div class="card"><label>Tips Today</label><div class="value" id="stat-tips">${today_sales['tips']:.2f}</div></div>
+    </div>
+    <div class="cards" style="margin-bottom:0">
+      <div class="card"><label>Inventory Items</label><div class="value" id="stat-inv">{inv_count}</div></div>
+      <div class="card"><label>Low Stock Items</label><div class="value{'red' if low_stock_count > 0 else ''}" id="stat-low">{low_stock_count}</div></div>
+    </div>
+  </div>
+  <div class="sparkline-panel">
+    <label>7-Day Revenue</label>
+    <div id="sparkline-svg">{sparkline_svg}</div>
+    <div style="display:flex;margin-top:4px">{spark_labels_html}</div>
+    <div style="font-size:10px;color:#333;margin-top:6px" id="spark-last-refresh">Loaded at page render</div>
+  </div>
 </div>
 
 <div class="form-panel" style="border-color:#4caf50;background:#001a05">
@@ -3642,7 +4200,7 @@ def admin_dashboard():
 
 <h2>Full Inventory ({len(inventory)} products)</h2>
 <table>
-<thead><tr><th>Name</th><th>QR Code</th><th>Stock</th><th>Price</th><th>Category</th><th></th></tr></thead>
+<thead><tr><th>Name</th><th>QR Code</th><th>Stock</th><th>Price</th><th>Category</th><th>Actions</th></tr></thead>
 <tbody id="tbody-inv">{rows_inv}</tbody>
 </table>
 
@@ -3729,6 +4287,55 @@ function pfDismiss() {{
   clearTimeout(_pfTimer);
   document.getElementById('price-flash').classList.remove('visible');
 }}
+
+/* ── Keyboard shortcuts ─────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {{
+  if (e.key === 'Escape') pfDismiss();
+}});
+
+/* ── Sell 1 quick button ────────────────────────────────────────────── */
+async function sellOne(qr, name, price) {{
+  if (!confirm('Sell 1 × ' + name + ' @ $' + parseFloat(price).toFixed(2) + '?')) return;
+  try {{
+    const r = await fetch('/admin/sell-one/' + encodeURIComponent(qr), {{method:'POST'}});
+    const d = await r.json();
+    if (!r.ok) {{ toast(d.error || 'Sell failed', true); return; }}
+    toast('✓ Sold 1 × ' + name + ' (stock now ' + d.new_stock + ')');
+    const cell = document.getElementById('stock-' + qr);
+    if (cell) cell.textContent = d.new_stock;
+    const btn = cell && cell.closest('tr').querySelector('.btn-sell');
+    if (btn && d.new_stock <= 0) {{ btn.disabled = true; btn.title = 'Out of stock'; }}
+  }} catch(err) {{ toast('Network error: ' + err.message, true); }}
+}}
+
+/* ── Stats auto-refresh every 30 s ─────────────────────────────────── */
+async function refreshStats() {{
+  try {{
+    const r = await fetch('/admin/stats-partial');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('stat-count').textContent  = d.sales_count;
+    document.getElementById('stat-rev').textContent    = '$' + d.revenue.toFixed(2);
+    document.getElementById('stat-tax').textContent    = '$' + d.tax.toFixed(2);
+    document.getElementById('stat-tips').textContent   = '$' + d.tips.toFixed(2);
+    document.getElementById('stat-inv').textContent    = d.inv_count;
+    document.getElementById('stat-low').textContent    = d.low_stock;
+    // Refresh sparkline from the same response
+    const vals = d.seven_days.map(x => x.revenue);
+    const max  = Math.max(...vals, 1);
+    const W=260, H=60, PAD=4;
+    const step = (W - PAD*2) / Math.max(vals.length - 1, 1);
+    const pts  = vals.map((v,i) => (PAD + i*step).toFixed(1) + ',' + (H - PAD - ((v/max)*(H-PAD*2))).toFixed(1)).join(' ');
+    document.getElementById('sparkline-svg').innerHTML =
+      `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%" preserveAspectRatio="none" style="display:block">
+        <polyline points="${{pts}}" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        ${{vals.map((v,i) => v > 0 ? `<circle cx="${{(PAD+i*step).toFixed(1)}}" cy="${{(H-PAD-((v/max)*(H-PAD*2))).toFixed(1)}}" r="3" fill="#FFD700"/>` : '').join('')}}
+      </svg>`;
+    document.getElementById('spark-last-refresh').textContent =
+      'Refreshed ' + new Date().toLocaleTimeString();
+  }} catch(e) {{ /* silent */ }}
+}}
+setInterval(refreshStats, 30000);
 
 /* ── SSE scan stream → price flash ─────────────────────────────────── */
 function connectScanStream() {{
