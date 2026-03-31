@@ -3940,19 +3940,25 @@ def system_service_action():
 
 
 # ---------------------------------------------------------------------------
-# /system/backup-db  — copy vault_pos.db to a timestamped backup
+# /system/backup-db  — pg_dump the PostgreSQL database to a timestamped SQL file
 # ---------------------------------------------------------------------------
 
 @app.route("/system/backup-db", methods=["POST"])
 def system_backup_db():
-    if not os.path.exists(DB_PATH):
-        return jsonify({"ok": False, "error": "DB not found"}), 404
+    import subprocess
     ts      = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup  = DB_PATH.replace(".db", f"_backup_{ts}.db")
+    backup  = f"/app/data/vaultpos_backup_{ts}.sql"
     try:
-        import shutil
-        shutil.copy2(DB_PATH, backup)
-        return jsonify({"ok": True, "path": backup})
+        result = subprocess.run(
+            ["pg_dump", "--no-password", DATABASE_URL, "-f", backup],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": result.stderr.strip()}), 500
+        size = os.path.getsize(backup)
+        return jsonify({"ok": True, "path": backup, "size_kb": round(size / 1024, 1)})
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "pg_dump not found — install postgresql-client"}), 500
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
