@@ -59,6 +59,7 @@ import csv
 import io
 from flask import Flask, request, jsonify, redirect, g
 from flask_compress import Compress
+from cachetools import TTLCache
 
 # ---------------------------------------------------------------------------
 # Zettle OAuth + Payment configuration
@@ -127,6 +128,32 @@ app = Flask(__name__)
 Compress(app)  # gzip all responses automatically
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault_pos.db")
+
+# ---------------------------------------------------------------------------
+# In-memory caches — dramatically reduces SQLite hits on hot endpoints
+# ---------------------------------------------------------------------------
+_cache_lock      = threading.Lock()
+_inventory_cache = TTLCache(maxsize=1, ttl=30)    # /inventory — 30 s TTL
+_scan_cache      = TTLCache(maxsize=1, ttl=1)     # /scan/pending — 1 s TTL
+_health_cache    = TTLCache(maxsize=1, ttl=5)     # /health — 5 s TTL
+_cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
+                    "scan_hits": 0,      "scan_misses": 0}
+
+
+def _cache_get(cache, key):
+    with _cache_lock:
+        return cache.get(key)
+
+
+def _cache_set(cache, key, value):
+    with _cache_lock:
+        cache[key] = value
+
+
+def _invalidate_inventory():
+    """Call whenever inventory data changes so next request re-reads from DB."""
+    with _cache_lock:
+        _inventory_cache.clear()
 
 CLOUD_INVENTORY_SOURCES = [
     "https://inventory-scanner-ngansen84.replit.app/api/inventory",
@@ -353,15 +380,30 @@ def handle_options():
 
 @app.route("/health", methods=["GET"])
 def health():
+    cached = _cache_get(_health_cache, "h")
+    if cached:
+        return jsonify(cached)
     db = get_db()
-    inv_count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    inv_count  = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     sale_count = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+    data = {
+        "status":      "ok",
+        "server":      "HanryxVault Pi",
+        "time_ms":     int(_time.time() * 1000),
+        "inventory":   inv_count,
+        "total_sales": sale_count,
+    }
+    _cache_set(_health_cache, "h", data)
+    return jsonify(data)
+
+
+@app.route("/cache/stats", methods=["GET"])
+def cache_stats():
+    """Performance stats — consumed by desktop monitor."""
     return jsonify({
-        "status":        "ok",
-        "server":        "HanryxVault Pi",
-        "time_ms":       int(_time.time() * 1000),
-        "inventory":     inv_count,
-        "total_sales":   sale_count,
+        "inventory_cache_size": len(_inventory_cache),
+        "scan_cache_size":      len(_scan_cache),
+        "stats":                _cache_stats,
     })
 
 
@@ -431,13 +473,19 @@ def scan_post():
 
 @app.route("/scan/pending", methods=["GET"])
 def scan_pending():
+    cached = _cache_get(_scan_cache, "p")
+    if cached is not None:
+        _cache_stats["scan_hits"] += 1
+        return jsonify(cached)
+    _cache_stats["scan_misses"] += 1
     db  = get_db()
     row = db.execute(
         "SELECT id, qr_code FROM scan_queue WHERE processed = 0 ORDER BY id ASC LIMIT 1"
     ).fetchone()
-    if row:
-        return jsonify({"id": row["id"], "qrCode": row["qr_code"]})
-    return jsonify({"id": 0, "qrCode": ""})
+    result = {"id": row["id"], "qrCode": row["qr_code"]} if row \
+             else {"id": 0, "qrCode": ""}
+    _cache_set(_scan_cache, "p", result)
+    return jsonify(result)
 
 
 @app.route("/scan/ack/<int:scan_id>", methods=["POST"])
@@ -539,6 +587,7 @@ def inventory_deduct():
             unknown += 1
 
     db.commit()
+    _invalidate_inventory()
     print(f"[inventory/deduct] deducted={deducted} unknown_sku={unknown}")
     return jsonify({"deducted": deducted, "unknown_skus": unknown}), 200
 
@@ -549,9 +598,19 @@ def inventory_deduct():
 
 @app.route("/inventory", methods=["GET"])
 def get_inventory():
-    db     = get_db()
     search = request.args.get("q", "").strip().lower()
     since  = request.args.get("since", "")
+
+    # Use cache only for the common unfiltered full-catalogue request
+    cache_key = f"{search}|{since}"
+    if not search and not since:
+        cached = _cache_get(_inventory_cache, "all")
+        if cached is not None:
+            _cache_stats["inventory_hits"] += 1
+            return jsonify(cached)
+        _cache_stats["inventory_misses"] += 1
+
+    db     = get_db()
 
     since_clause = ""
     since_args   = []
@@ -577,7 +636,7 @@ def get_inventory():
             FROM inventory {since_clause} ORDER BY name ASC
         """, since_args).fetchall()
 
-    return jsonify([{
+    products = [{
         "qrCode":        r["qr_code"],
         "name":          r["name"],
         "price":         r["price"],
@@ -587,7 +646,11 @@ def get_inventory():
         "description":   r["description"] or "",
         "stockQuantity": r["stock"],
         "lastUpdated":   r["last_updated"],
-    } for r in rows])
+    } for r in rows]
+
+    if not search and not since:
+        _cache_set(_inventory_cache, "all", products)
+    return jsonify(products)
 
 
 # ---------------------------------------------------------------------------
@@ -636,6 +699,7 @@ def push_inventory():
             errors += 1
 
     db.commit()
+    _invalidate_inventory()
     return jsonify({"upserted": upserted, "errors": errors}), 200
 
 
@@ -680,6 +744,7 @@ def push_inventory_csv():
             skipped += 1
 
     db.commit()
+    _invalidate_inventory()
     return jsonify({"upserted": upserted, "skipped": skipped}), 200
 
 
@@ -691,6 +756,7 @@ def push_inventory_csv():
 def admin_sync_cloud():
     force  = request.args.get("force", "0") == "1"
     result = sync_inventory_from_cloud(force=force)
+    _invalidate_inventory()
     return jsonify(result)
 
 
@@ -735,6 +801,7 @@ def admin_add_product():
         data.get("description", ""), int(data.get("stock", 0)), _now_ms(),
     ))
     db.commit()
+    _invalidate_inventory()
     return jsonify({"ok": True, "qrCode": qr_code})
 
 
@@ -743,6 +810,7 @@ def admin_delete_product(qr_code):
     db = get_db()
     db.execute("DELETE FROM inventory WHERE qr_code = ?", (qr_code,))
     db.commit()
+    _invalidate_inventory()
     return jsonify({"ok": True, "deleted": qr_code})
 
 
