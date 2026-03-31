@@ -240,12 +240,57 @@ systemctl enable fail2ban --quiet
 systemctl start fail2ban
 
 # ── Performance tuning ────────────────────────────────────────────────────────
-log "Step 10/10 — Applying performance & reliability tuning..."
+log "Step 10/11 — Applying performance & reliability tuning..."
 PERF_SCRIPT="${SCRIPT_DIR}/scripts/setup-performance.sh"
 if [[ -f "$PERF_SCRIPT" ]]; then
     bash "$PERF_SCRIPT"
 else
     warn "  setup-performance.sh not found — run it manually: sudo bash scripts/setup-performance.sh"
+fi
+
+# ── QR Scan Hub ───────────────────────────────────────────────────────────────
+log "Step 11/11 — Installing QR scan hub (USB + Bluetooth HID → all apps)..."
+SCAN_HUB_SRC="${SCRIPT_DIR}/scripts/barcode_daemon.py"
+if [[ -f "$SCAN_HUB_SRC" ]]; then
+    cp "$SCAN_HUB_SRC" "${INSTALL_DIR}/barcode_daemon.py"
+    chown root:root "${INSTALL_DIR}/barcode_daemon.py"
+    chmod 644 "${INSTALL_DIR}/barcode_daemon.py"
+
+    # evdev reads raw /dev/input devices — requires root
+    "${INSTALL_DIR}/venv/bin/pip" install --quiet evdev
+
+    # Default scan_endpoints.conf — lists every app that should receive scans
+    ENDPOINTS_CONF="${INSTALL_DIR}/scan_endpoints.conf"
+    if [[ ! -f "$ENDPOINTS_CONF" ]]; then
+        cat > "$ENDPOINTS_CONF" << 'EOF'
+# HanryxVault Scan Endpoints
+# One URL per line — every QR scan is forwarded to ALL listed apps simultaneously.
+# Blank lines and lines starting with # are ignored.
+# Restart hanryxvault-scan-hub after editing:
+#   sudo systemctl restart hanryxvault-scan-hub
+
+# POS server (always include this)
+http://localhost:8080/scan
+
+# Add your other apps here:
+#   http://localhost:8081/scan   ← Pokémon lookup app
+#   http://localhost:8082/scan   ← another project
+EOF
+        chown root:root "$ENDPOINTS_CONF"
+        chmod 644 "$ENDPOINTS_CONF"
+        log "  Created scan_endpoints.conf"
+    else
+        log "  scan_endpoints.conf already exists — not overwritten"
+    fi
+
+    cp "${SCRIPT_DIR}/systemd/hanryxvault-barcode.service" \
+       /etc/systemd/system/hanryxvault-scan-hub.service
+    systemctl daemon-reload
+    systemctl enable --now hanryxvault-scan-hub.service
+    log "  QR scan hub installed and running on port 8765"
+    log "  Add apps to ${ENDPOINTS_CONF} to receive scans"
+else
+    warn "  barcode_daemon.py not found — skipping scan hub setup"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -274,4 +319,10 @@ echo "     sudo bash scripts/enable-https.sh hanryxvault.tailcfc0a3.ts.net"
 echo ""
 echo "  4. Check POS server logs anytime:"
 echo "     sudo journalctl -u hanryxvault -f"
+echo ""
+echo "  5. QR scanner (USB or Bluetooth HID) is handled by the scan hub:"
+echo "     sudo journalctl -u hanryxvault-scan-hub -f"
+echo "     curl http://localhost:8765/health"
+echo "     To add another app: edit /opt/hanryxvault/scan_endpoints.conf"
+echo "     Pair BT scanner:    sudo bluetoothctl → pair <MAC> → trust → connect"
 echo ""

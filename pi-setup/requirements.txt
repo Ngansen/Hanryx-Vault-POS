@@ -3,7 +3,7 @@ flask-compress>=1.14
 gunicorn>=21.2.0
 cachetools>=5.3.0
 
-# Bluetooth/USB barcode scanner daemon
+# QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
 evdev>=1.6.1
 
 # Receipt printer (optional — server uses raw ESC/POS bytes by default)

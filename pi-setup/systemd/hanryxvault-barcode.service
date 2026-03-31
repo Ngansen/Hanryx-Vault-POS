@@ -1,5 +1,5 @@
 [Unit]
-Description=HanryxVault Barcode Scanner Daemon (USB + Bluetooth HID)
+Description=HanryxVault QR Scan Hub (USB + Bluetooth HID, broadcasts to all apps)
 After=hanryxvault.service bluetooth.target
 Wants=bluetooth.target
 
@@ -7,12 +7,14 @@ Wants=bluetooth.target
 Type=simple
 User=root
 WorkingDirectory=/opt/hanryxvault
+Environment=HANRYX_DIR=/opt/hanryxvault
+Environment=SCAN_HUB_PORT=8765
 ExecStart=/opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/barcode_daemon.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hanryxvault-barcode
+SyslogIdentifier=hanryxvault-scan-hub
 
 [Install]
 WantedBy=multi-user.target

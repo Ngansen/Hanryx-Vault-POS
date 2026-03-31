@@ -209,20 +209,41 @@ systemctl daemon-reload
 systemctl enable hanryxvault-satellite-sync.service
 info "Sync monitor enabled — runs continuously, syncs whenever connection returns"
 
-# ── Step 6: Install barcode daemon ────────────────────────────────────────────
-step "Installing Bluetooth/USB barcode scanner daemon"
+# ── Step 6: Install QR scan hub ───────────────────────────────────────────────
+step "Installing QR scan hub (USB + Bluetooth HID → all apps)"
 
-BARCODE_SRC="$SCRIPT_DIR/../scripts/barcode_daemon.py"
-if [[ -f "$BARCODE_SRC" ]]; then
-    cp "$BARCODE_SRC" "$INSTALL_DIR/barcode_daemon.py"
+SCAN_HUB_SRC="$SCRIPT_DIR/../scripts/barcode_daemon.py"
+if [[ -f "$SCAN_HUB_SRC" ]]; then
+    cp "$SCAN_HUB_SRC" "$INSTALL_DIR/barcode_daemon.py"
     chown root:root "$INSTALL_DIR/barcode_daemon.py"
     chmod 644 "$INSTALL_DIR/barcode_daemon.py"
 
     "$INSTALL_DIR/venv/bin/pip" install --quiet evdev
 
-    cat > /etc/systemd/system/hanryxvault-barcode.service << 'EOSVC'
+    # Create scan_endpoints.conf if it doesn't already exist
+    ENDPOINTS_CONF="$INSTALL_DIR/scan_endpoints.conf"
+    if [[ ! -f "$ENDPOINTS_CONF" ]]; then
+        cat > "$ENDPOINTS_CONF" << 'EOF'
+# HanryxVault Scan Endpoints
+# One URL per line — every QR scan is forwarded to ALL listed apps simultaneously.
+# Blank lines and lines starting with # are ignored.
+# Restart hanryxvault-scan-hub after editing:
+#   sudo systemctl restart hanryxvault-scan-hub
+
+# POS server (always include this)
+http://localhost:8080/scan
+
+# Add your other apps here:
+#   http://localhost:8081/scan   ← Pokémon lookup app
+#   http://localhost:8082/scan   ← another project
+EOF
+        chown root:root "$ENDPOINTS_CONF"
+        chmod 644 "$ENDPOINTS_CONF"
+    fi
+
+    cat > /etc/systemd/system/hanryxvault-scan-hub.service << 'EOSVC'
 [Unit]
-Description=HanryxVault Barcode Scanner Daemon (USB + Bluetooth HID)
+Description=HanryxVault QR Scan Hub (USB + Bluetooth HID, broadcasts to all apps)
 After=hanryxvault.service bluetooth.target
 Wants=bluetooth.target
 
@@ -230,22 +251,25 @@ Wants=bluetooth.target
 Type=simple
 User=root
 WorkingDirectory=/opt/hanryxvault
+Environment=HANRYX_DIR=/opt/hanryxvault
+Environment=SCAN_HUB_PORT=8765
 ExecStart=/opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/barcode_daemon.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hanryxvault-barcode
+SyslogIdentifier=hanryxvault-scan-hub
 
 [Install]
 WantedBy=multi-user.target
 EOSVC
 
     systemctl daemon-reload
-    systemctl enable --now hanryxvault-barcode.service
-    info "Barcode daemon installed and running"
+    systemctl enable --now hanryxvault-scan-hub.service
+    info "QR scan hub installed and running on port 8765"
+    info "Edit $ENDPOINTS_CONF to add more apps"
 else
-    warn "barcode_daemon.py not found — skipping barcode setup"
+    warn "barcode_daemon.py not found — skipping scan hub setup"
 fi
 
 # ── Step 7: WiFi manager desktop app ──────────────────────────────────────────
@@ -328,4 +352,7 @@ info "  VPN status             : sudo wg show"
 info "  VPN reconnect          : sudo systemctl restart wg-quick@${WG_INTERFACE}"
 fi
 info "  Bluetooth printer      : sudo bash scripts/setup-bluetooth-printer.sh"
-info "  Pair BT scanner        : sudo bluetoothctl → pair <MAC> → trust → connect"
+info "  Pair BT QR scanner     : sudo bluetoothctl → pair <MAC> → trust → connect"
+info "  Scan hub logs          : sudo journalctl -u hanryxvault-scan-hub -f"
+info "  Scan hub health        : curl http://localhost:8765/health"
+info "  Add app to scan hub    : edit /opt/hanryxvault/scan_endpoints.conf"
