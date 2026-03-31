@@ -188,7 +188,10 @@ def _refresh_token_if_needed():
 app = Flask(__name__)
 Compress(app)  # gzip all responses automatically
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault_pos.db")
+DB_PATH = os.environ.get(
+    "DATABASE_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault_pos.db"),
+)
 
 # ---------------------------------------------------------------------------
 # In-memory caches — dramatically reduces SQLite hits on hot endpoints

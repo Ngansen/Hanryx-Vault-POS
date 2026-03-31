@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.env
+.env.*
+*.log
+nginx/
+systemd/
+satellite/
+scripts/
+install.sh
+setup-*.sh
+README.md
+desktop_monitor.py
