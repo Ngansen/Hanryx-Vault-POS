@@ -2289,6 +2289,1131 @@ def download_apk():
 
 
 # ---------------------------------------------------------------------------
+# System monitoring helpers  (shared by /system/stats, /admin/system, /admin/logs)
+# ---------------------------------------------------------------------------
+
+def _sys_run(cmd: str) -> str:
+    try:
+        return subprocess.check_output(
+            cmd, shell=True, stderr=subprocess.DEVNULL, timeout=3
+        ).decode().strip()
+    except Exception:
+        return ""
+
+
+def _sys_cpu_percent() -> float:
+    try:
+        line = _sys_run("top -bn1 | grep 'Cpu(s)'")
+        idle = float(line.split(",")[3].split()[0])
+        return round(100 - idle, 1)
+    except Exception:
+        try:
+            avg = float(open("/proc/loadavg").read().split()[0])
+            return round(min(avg * 12.5, 100), 1)
+        except Exception:
+            return 0.0
+
+
+def _sys_cpu_temp() -> float:
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return round(float(f.read().strip()) / 1000, 1)
+    except Exception:
+        return 0.0
+
+
+def _sys_ram_info() -> dict:
+    try:
+        out = _sys_run("free -m | grep Mem")
+        p = out.split()
+        total, used = int(p[1]), int(p[2])
+        return {"used_mb": used, "total_mb": total, "pct": round(used / total * 100, 1)}
+    except Exception:
+        return {"used_mb": 0, "total_mb": 0, "pct": 0}
+
+
+def _sys_disk_info() -> dict:
+    try:
+        out = _sys_run("df -h / | tail -1")
+        p = out.split()
+        pct = int(p[4].replace("%", ""))
+        return {"used": p[2], "total": p[1], "pct": pct}
+    except Exception:
+        return {"used": "?", "total": "?", "pct": 0}
+
+
+def _sys_service_up(name: str) -> bool:
+    return _sys_run(f"systemctl is-active {name} 2>/dev/null") == "active"
+
+
+def _sys_wg_peers() -> int:
+    try:
+        out = _sys_run("wg show wg0 peers 2>/dev/null | wc -l")
+        return int(out) if out else 0
+    except Exception:
+        return 0
+
+
+def _sys_ping(url: str) -> tuple:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "HanryxVault-Monitor/1.0"})
+        t0  = _time.time()
+        with urllib.request.urlopen(req, timeout=4) as r:
+            ms = int((_time.time() - t0) * 1000)
+            return r.status, ms
+    except Exception:
+        return 0, 0
+
+
+_SYS_SERVICES = [
+    ("POS Server", "hanryxvault"),
+    ("nginx",      "nginx"),
+    ("WireGuard",  "wg-quick@wg0"),
+    ("fail2ban",   "fail2ban"),
+]
+
+_SYS_WEBSITES = [
+    ("hanryxvault.cards", "https://hanryxvault.cards"),
+    ("hanryxvault.app",   "https://hanryxvault.app"),
+]
+
+_SYS_LOG_SOURCES = {
+    "hanryxvault": "/var/log/hanryxvault/error.log",
+    "nginx":       "/var/log/nginx/error.log",
+    "syslog":      "/var/log/syslog",
+}
+
+# ---------------------------------------------------------------------------
+# Shared admin style + nav helper
+# ---------------------------------------------------------------------------
+
+_ADMIN_BASE_CSS = """
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;padding:0}
+  .admin-nav{display:flex;align-items:center;background:#111;border-bottom:1px solid #222;padding:0 20px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+  .nav-logo{color:#FFD700;font-weight:900;font-size:16px;letter-spacing:1px;padding:14px 18px 14px 0;border-right:1px solid #222;margin-right:8px;white-space:nowrap}
+  .nav-item{color:#777;text-decoration:none;padding:15px 14px;font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
+  .nav-item:hover{color:#FFD700;text-decoration:none}
+  .nav-active{color:#FFD700 !important;border-bottom-color:#FFD700}
+  .nav-clock{margin-left:auto;color:#444;font-size:12px;padding:15px 0;white-space:nowrap}
+  .wrap{padding:24px;max-width:1200px;margin:0 auto}
+  h1{color:#FFD700;font-size:22px;margin-bottom:4px}
+  .subtitle{color:#666;font-size:13px;margin-bottom:24px}
+  h2{color:#aaa;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;margin-top:28px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:#555;padding:8px 10px;border-bottom:1px solid #222}
+  td{padding:8px 10px;border-bottom:1px solid #1a1a1a}
+  tr:hover td{background:#1a1a1a}
+  a{color:#FFD700;text-decoration:none}
+  a:hover{text-decoration:underline}
+  #toast{position:fixed;bottom:24px;right:24px;background:#4caf50;color:#fff;padding:12px 20px;border-radius:8px;font-weight:bold;display:none;z-index:99}
+  #toast.err{background:#c62828}
+  .btn-gold{background:#FFD700;color:#000;border:none;border-radius:6px;padding:10px 22px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:.5px}
+  .btn-gold:hover{background:#ffe033}
+"""
+
+
+def _admin_nav(active: str = "dashboard") -> str:
+    pages = [
+        ("dashboard", "/admin",         "🏠 Dashboard"),
+        ("market",    "/admin/market",  "📈 Market Prices"),
+        ("system",    "/admin/system",  "⚙️ System"),
+        ("logs",      "/admin/logs",    "📋 Logs"),
+    ]
+    items = "".join(
+        f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
+        for k, href, lbl in pages
+    )
+    return (
+        f'<nav class="admin-nav">'
+        f'<span class="nav-logo">🔐 HANRYX</span>'
+        f'{items}'
+        f'<span class="nav-clock" id="clock"></span>'
+        f'</nav>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# System stats / logs API endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/system/stats", methods=["GET"])
+def system_stats():
+    svcs = {svc: _sys_service_up(svc) for _, svc in _SYS_SERVICES}
+    sites = {}
+    for name, url in _SYS_WEBSITES:
+        sc, ms = _sys_ping(url)
+        sites[name] = {"status": sc, "ms": ms, "ok": sc in (200, 301, 302)}
+    db_size = "not found"
+    if os.path.exists(DB_PATH):
+        db_size = f"{os.path.getsize(DB_PATH) / 1024:.1f} KB"
+    return jsonify({
+        "cpu_pct":  _sys_cpu_percent(),
+        "cpu_temp": _sys_cpu_temp(),
+        "ram":      _sys_ram_info(),
+        "disk":     _sys_disk_info(),
+        "vpn":      {"active": svcs.get("wg-quick@wg0", False), "peers": _sys_wg_peers()},
+        "services": svcs,
+        "sites":    sites,
+        "db_size":  db_size,
+    })
+
+
+@app.route("/system/logs", methods=["GET"])
+def system_logs():
+    svc  = request.args.get("service", "hanryxvault")
+    n    = min(int(request.args.get("lines", 120)), 500)
+    path = _SYS_LOG_SOURCES.get(svc)
+    if path and os.path.exists(path):
+        out = _sys_run(f"tail -n {n} {path!r}")
+    else:
+        out = _sys_run(f"journalctl -u {svc} -n {n} --no-pager 2>/dev/null")
+    return jsonify({"service": svc, "log": out or "(no log entries found)"})
+
+
+# ---------------------------------------------------------------------------
+# Market search endpoint  (TCG variant list for the market page)
+# ---------------------------------------------------------------------------
+
+@app.route("/market/search", methods=["GET"])
+def market_search_api():
+    name = request.args.get("name", "").strip()
+    if len(name) < 2:
+        return jsonify({"results": [], "count": 0})
+    results = _tcg_search(name=name, limit=24)
+    out = []
+    for r in results:
+        s = _tcg_to_summary(r)
+        tiers = {}
+        for tier, pdata in (r.get("tcgplayer", {}).get("prices") or {}).items():
+            mkt = pdata.get("market") or pdata.get("mid")
+            if mkt:
+                tiers[tier] = round(mkt, 2)
+        best = min(tiers.values()) if tiers else None
+        out.append({
+            "id":         r.get("id", ""),
+            "name":       r.get("name", ""),
+            "set_name":   (r.get("set") or {}).get("name", ""),
+            "number":     r.get("number", ""),
+            "rarity":     r.get("rarity", ""),
+            "image":      (r.get("images") or {}).get("small", ""),
+            "price_tiers": tiers,
+            "best_price": best,
+        })
+    return jsonify({"results": out, "count": len(out)})
+
+
+# ---------------------------------------------------------------------------
+# /admin/market  — Market Price Intelligence page
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/market", methods=["GET"])
+def admin_market():
+    nav = _admin_nav("market")
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Market Prices</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
+  .search-row input{{flex:1;min-width:200px;background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;color:#e0e0e0;font-size:15px;outline:none;transition:.2s}}
+  .search-row input:focus{{border-color:#FFD700}}
+  .search-row select{{background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px;color:#e0e0e0;font-size:13px;outline:none;cursor:pointer}}
+  .hint{{font-size:11px;color:#444;margin-bottom:22px}}
+  /* variant strip */
+  .vstrip-wrap{{display:none;margin-bottom:18px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:12px;padding:14px 16px}}
+  .vstrip-wrap.visible{{display:block}}
+  .vstrip-hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}}
+  .vstrip-title{{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.8px}}
+  .vstrip{{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:#333 transparent}}
+  .vstrip::-webkit-scrollbar{{height:4px}}.vstrip::-webkit-scrollbar-thumb{{background:#333;border-radius:2px}}
+  .vcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:10px;cursor:pointer;min-width:120px;max-width:140px;flex-shrink:0;transition:.15s;text-align:center}}
+  .vcard:hover{{border-color:#444;background:#1a1a1a}}
+  .vcard.sel{{border-color:#FFD700;background:#1a1400}}
+  .vcard img{{width:100%;border-radius:6px;min-height:55px;object-fit:contain;display:block;margin-bottom:6px}}
+  .vcard .vp{{font-size:13px;font-weight:800;color:#FFD700}}
+  .vcard .vs{{font-size:10px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}}
+  .vcard .vn{{font-size:10px;color:#555}}
+  /* result area */
+  .result{{display:none;background:#141414;border:1px solid #222;border-radius:14px;padding:24px}}
+  .result.visible{{display:block}}
+  .res-layout{{display:flex;gap:24px;flex-wrap:wrap}}
+  .res-img-col{{flex-shrink:0}}
+  .res-img-col img{{width:160px;border-radius:10px;border:1px solid #333;display:block}}
+  .res-img-col .no-img{{width:160px;height:220px;background:#1a1a1a;border-radius:10px;border:1px solid #222;display:flex;align-items:center;justify-content:center;color:#444;font-size:11px}}
+  .res-detail{{flex:1;min-width:240px}}
+  .res-name{{font-size:20px;font-weight:800;color:#fff;margin-bottom:4px}}
+  .res-sub{{font-size:13px;color:#777;margin-bottom:14px}}
+  .tag-row{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}}
+  .tag{{background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:3px 10px;font-size:11px;color:#aaa}}
+  .tag.hp{{background:#1a0000;border-color:#5a1a1a;color:#ff8a80}}
+  .tag.type{{background:#001a2a;border-color:#1a4a5a;color:#80d4ff}}
+  /* price tiers */
+  .price-tiers{{background:#1a1a1a;border-radius:10px;overflow:hidden;margin-bottom:16px}}
+  .tier-row{{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #222}}
+  .tier-row:last-child{{border-bottom:none}}
+  .tier-row.best{{background:#1a1400}}
+  .tier-label{{font-size:12px;color:#888}}
+  .tier-price{{font-size:15px;font-weight:800;color:#FFD700}}
+  .tier-na{{color:#444}}
+  /* condition */
+  .cond-row{{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
+  .cond-row label{{font-size:12px;color:#666}}
+  .cond-row select{{background:#141414;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
+  .cond-row select:focus{{border-color:#FFD700}}
+  /* market avg */
+  .mkt-box{{background:#1a1400;border:1px solid #FFD70033;border-radius:10px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}}
+  .mkt-avg{{font-size:32px;font-weight:900;color:#FFD700}}
+  .trade-val{{font-size:22px;font-weight:800;color:#60a5fa}}
+  /* language grid */
+  .lang-wrap{{background:#111827;border:1px solid #1e3a5f;border-radius:10px;padding:14px 16px;margin-bottom:16px}}
+  .lang-title{{font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}}
+  .lang-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
+  @media(max-width:520px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
+  .lang-cell{{background:#0f172a;border-radius:8px;padding:10px;text-align:center}}
+  .lang-flag{{font-size:18px;line-height:1;margin-bottom:3px}}
+  .lang-code{{font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1px;margin-bottom:4px}}
+  .lang-price{{font-size:15px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
+  .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 6px;display:inline-block}}
+  /* local status */
+  .local-box{{background:#0d1f0d;border:1px solid #15803d33;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;display:none}}
+  .local-box.visible{{display:flex}}
+  /* add button */
+  .btn-add{{background:#4caf50;color:#000;border:none;border-radius:6px;padding:10px 22px;font-weight:900;font-size:13px;cursor:pointer}}
+  .btn-add:hover{{background:#66bb6a}}
+  /* empty state */
+  .empty{{text-align:center;padding:48px 24px}}
+  .empty-icon{{font-size:48px;margin-bottom:12px}}
+  .empty-title{{font-size:16px;font-weight:700;margin-bottom:8px}}
+  .empty-sub{{font-size:13px;color:#555;max-width:400px;margin:0 auto 20px;line-height:1.6}}
+  .chips{{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}}
+  .chip{{background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:6px 14px;font-size:12px;color:#aaa;cursor:pointer;transition:.15s}}
+  .chip:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  /* loading */
+  .skeleton{{background:linear-gradient(90deg,#1a1a1a 25%,#222 50%,#1a1a1a 75%);background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:8px;height:20px;margin-bottom:8px}}
+  @keyframes shimmer{{0%{{background-position:200% 0}}100%{{background-position:-200% 0}}}}
+  .loading{{display:none}}.loading.visible{{display:block}}
+  .err-box{{background:#1a0000;border:1px solid #7f1d1d;border-radius:10px;padding:14px;color:#f87171;font-size:13px;display:none;margin-bottom:16px}}
+  .err-box.visible{{display:block}}
+  .conf-badge{{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;margin-left:8px}}
+  .conf-HIGH{{background:#14532d;color:#4ade80}}
+  .conf-MED{{background:#7c2d12;color:#fbbf24}}
+  .conf-LOW{{background:#1e1e2e;color:#94a3b8}}
+</style>
+</head>
+<body>
+{nav}
+<div class="wrap">
+  <h1>📈 Market Price Intelligence</h1>
+  <p class="subtitle">Search any Pokémon card for live TCGPlayer prices, condition multipliers &amp; language variant pricing.</p>
+
+  <div class="search-row">
+    <input type="text" id="cardInput" placeholder="e.g. Charizard Holo Base Set  or  sv1-1" autocomplete="off">
+    <select id="condSelect">
+      <option value="1.00">Mint NM (100%)</option>
+      <option value="0.85">LP (85%)</option>
+      <option value="0.65">MP (65%)</option>
+      <option value="0.40">HP (40%)</option>
+      <option value="0.25">Damaged (25%)</option>
+    </select>
+    <select id="langSelect">
+      <option value="EN">🇺🇸 EN</option>
+      <option value="JP">🇯🇵 JP</option>
+      <option value="KR">🇰🇷 KR</option>
+      <option value="CN">🇨🇳 CN</option>
+    </select>
+  </div>
+  <p class="hint">Type 2+ characters for instant search &bull; 400 ms debounce &bull; Click a variant card to select it</p>
+
+  <div class="vstrip-wrap" id="vstripWrap">
+    <div class="vstrip-hdr">
+      <span class="vstrip-title" id="vstripTitle">Variants</span>
+    </div>
+    <div class="vstrip" id="vstrip"></div>
+  </div>
+
+  <div class="err-box" id="errBox"></div>
+
+  <div class="loading" id="loading">
+    <div class="skeleton" style="height:28px;width:45%;margin-bottom:16px"></div>
+    <div style="display:flex;gap:20px">
+      <div class="skeleton" style="width:160px;height:220px;flex-shrink:0"></div>
+      <div style="flex:1">
+        <div class="skeleton" style="height:20px;width:60%;margin-bottom:10px"></div>
+        <div class="skeleton" style="height:14px;margin-bottom:8px"></div>
+        <div class="skeleton" style="height:14px;width:80%;margin-bottom:8px"></div>
+        <div class="skeleton" style="height:80px;margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="res-layout">
+      <div class="res-img-col">
+        <img id="rImg" src="" alt="card" style="display:none">
+        <div class="no-img" id="rNoImg">No Image</div>
+      </div>
+      <div class="res-detail">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+          <span class="res-name" id="rName"></span>
+          <span class="conf-badge" id="rConf"></span>
+        </div>
+        <div class="res-sub" id="rSub"></div>
+        <div class="tag-row" id="rTags"></div>
+
+        <div style="margin-bottom:8px"><span style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">Price Tiers (TCGPlayer)</span></div>
+        <div class="price-tiers" id="priceTiers"></div>
+
+        <div class="cond-row" style="margin-top:14px">
+          <label>Condition multiplier:</label>
+          <select id="condDisplay" onchange="applyCond()">
+            <option value="1.00">Mint NM (100%)</option>
+            <option value="0.85">LP (85%)</option>
+            <option value="0.65">MP (65%)</option>
+            <option value="0.40">HP (40%)</option>
+            <option value="0.25">Damaged (25%)</option>
+          </select>
+        </div>
+
+        <div class="mkt-box">
+          <div>
+            <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">📈 Market Average</div>
+            <span class="mkt-avg" id="rAvg">—</span>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🤝 Trade-In Value</div>
+            <span class="trade-val" id="rTrade">—</span>
+            <div style="font-size:10px;color:#555;margin-top:2px">Suggested cash buy</div>
+          </div>
+        </div>
+
+        <div class="lang-wrap">
+          <div class="lang-title">🌐 Language Variant Pricing</div>
+          <div class="lang-grid" id="langGrid"></div>
+        </div>
+
+        <div class="local-box" id="localBox">
+          <div>
+            <div style="font-size:12px;color:#4ade80;font-weight:600">🏷️ In Your Inventory</div>
+            <div style="font-size:11px;color:#555;margin-top:2px" id="localSub"></div>
+          </div>
+          <div style="font-size:18px;font-weight:800;color:#86efac" id="localPrice"></div>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn-add" id="btnAdd" onclick="addToInventory()">+ Add to Inventory</button>
+          <button class="btn-gold" onclick="location.href='/admin'" style="background:#1a1a2a;color:#aaa;border:1px solid #333">↩ Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty" id="emptyState">
+    <div class="empty-icon">🔍</div>
+    <div class="empty-title">Search any card above</div>
+    <div class="empty-sub">TCGPlayer market prices, all print variants with card images, condition &amp; language multipliers — all from your Pi.</div>
+    <div class="chips">
+      <span class="chip" onclick="qs('Charizard Holo')">Charizard Holo</span>
+      <span class="chip" onclick="qs('Pikachu VMAX')">Pikachu VMAX</span>
+      <span class="chip" onclick="qs('Umbreon VMAX')">Umbreon VMAX</span>
+      <span class="chip" onclick="qs('Rayquaza EX')">Rayquaza EX</span>
+      <span class="chip" onclick="qs('Blastoise Base')">Blastoise Base</span>
+      <span class="chip" onclick="qs('Mewtwo ex')">Mewtwo ex</span>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+let _timer   = null;
+let _vTimer  = null;
+let _lastData = null;
+let _rawTiers = {{}};
+let _langFact = {{JP:20, KR:45, CN:40}};
+let _selId    = null;
+
+const inp   = document.getElementById('cardInput');
+const condS = document.getElementById('condSelect');
+const condD = document.getElementById('condDisplay');
+const langS = document.getElementById('langSelect');
+
+function clock() {{ document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }}
+setInterval(clock,1000); clock();
+
+inp.addEventListener('input', () => {{
+  clearTimeout(_timer); clearTimeout(_vTimer);
+  if (!inp.value.trim()) {{ show('emptyState'); hide('result'); hide('loading'); hide('errBox'); hideVariants(); return; }}
+  _timer  = setTimeout(doSearch, 400);
+  _vTimer = setTimeout(fetchVariants, 280);
+}});
+condS.addEventListener('change', () => {{ condD.value = condS.value; if (_lastData) applyCond(); }});
+condD.addEventListener('change', () => {{ condS.value = condD.value; if (_lastData) applyCond(); }});
+langS.addEventListener('change', () => {{ if (_lastData) applyCond(); }});
+
+function qs(name) {{ inp.value = name; inp.dispatchEvent(new Event('input')); }}
+function show(id) {{ document.getElementById(id).classList.add('visible'); }}
+function hide(id) {{ document.getElementById(id).classList.remove('visible'); }}
+
+// ── Variant strip ─────────────────────────────────────────────────────────
+
+async function fetchVariants() {{
+  const name = inp.value.trim();
+  if (name.length < 2) {{ hideVariants(); return; }}
+  try {{
+    const r = await fetch('/market/search?' + new URLSearchParams({{name}}));
+    const d = await r.json();
+    renderVariants(d.results || []);
+  }} catch(e) {{ hideVariants(); }}
+}}
+
+function hideVariants() {{
+  document.getElementById('vstrip').innerHTML = '';
+  document.getElementById('vstripWrap').classList.remove('visible');
+  _selId = null;
+}}
+
+function renderVariants(variants) {{
+  const wrap  = document.getElementById('vstripWrap');
+  const strip = document.getElementById('vstrip');
+  const title = document.getElementById('vstripTitle');
+  if (!variants.length) {{ wrap.classList.remove('visible'); return; }}
+  wrap.classList.add('visible');
+  title.textContent = variants.length + ' variant' + (variants.length===1?'':'s') + ' found';
+  strip.innerHTML = variants.map((v,i) => {{
+    const price = v.best_price != null ? '$' + v.best_price.toFixed(2) : 'N/A';
+    const imgTag = v.image ? `<img src="${{v.image}}" loading="lazy" onerror="this.style.display='none'">` : '';
+    const sel = v.id === _selId ? ' sel' : '';
+    return `<div class="vcard${{sel}}" onclick="selectVariant('${{v.id}}','${{v.name.replace(/'/g,"\\\\'")}}')" title="${{v.set_name}} #${{v.number}}">
+      ${{imgTag}}
+      <div class="vp">${{price}}</div>
+      <div class="vs">${{v.set_name||'—'}}</div>
+      <div class="vn">#${{v.number}}${{v.rarity?' · '+v.rarity:''}}</div>
+    </div>`;
+  }}).join('');
+}}
+
+function selectVariant(id, name) {{
+  _selId = id;
+  // re-render to show selection
+  document.querySelectorAll('.vcard').forEach(el => {{
+    el.classList.toggle('sel', el.getAttribute('onclick').includes("'"+id+"'"));
+  }});
+  doSearchWithId(id);
+}}
+
+// ── Price fetch ───────────────────────────────────────────────────────────
+
+async function doSearch() {{
+  const raw = inp.value.trim();
+  if (!raw) return;
+  // if it looks like a card ID (sv1-1, base1-4, etc.) use enrich by QR
+  if (/^[a-z0-9]{{2,8}}-\d+$/i.test(raw)) {{
+    doSearchWithId(raw.toLowerCase());
+  }} else {{
+    doSearchByName(raw);
+  }}
+}}
+
+async function doSearchByName(name) {{
+  hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  try {{
+    const r = await fetch('/card/enrich?' + new URLSearchParams({{name}}));
+    const d = await r.json();
+    hide('loading');
+    if (d.error) {{ showErr(d.error); return; }}
+    renderResult(d);
+  }} catch(e) {{ hide('loading'); showErr('Network error'); }}
+}}
+
+async function doSearchWithId(id) {{
+  hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  try {{
+    const r = await fetch('/card/enrich?' + new URLSearchParams({{qr: id}}));
+    const d = await r.json();
+    hide('loading');
+    if (d.error) {{ showErr(d.error); return; }}
+    renderResult(d);
+  }} catch(e) {{ hide('loading'); showErr('Network error'); }}
+}}
+
+function showErr(msg) {{
+  const el = document.getElementById('errBox');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}}
+
+// ── Render result ─────────────────────────────────────────────────────────
+
+function renderResult(d) {{
+  _lastData = d;
+  const t = d.tcgData || {{}};
+  const name    = d.name || t.name || '—';
+  const rarity  = d.rarity || t.rarity || '';
+  const setName = (t.set && t.set.name) || d.setCode || '';
+  const num     = t.number || '';
+  const hp      = t.hp || '';
+  const types   = t.types || [];
+  const imgUrl  = d.imageUrl || (t.images && (t.images.large || t.images.small)) || '';
+
+  // name + confidence
+  document.getElementById('rName').textContent = name;
+  const hasTCG = !!t.name;
+  const conf   = document.getElementById('rConf');
+  conf.textContent = hasTCG ? '✓ TCG Data' : 'No TCG data';
+  conf.className   = 'conf-badge ' + (hasTCG ? 'conf-HIGH' : 'conf-LOW');
+
+  // subtitle
+  let sub = [];
+  if (setName) sub.push(setName);
+  if (num)     sub.push('#' + num);
+  if (rarity)  sub.push(rarity);
+  document.getElementById('rSub').textContent = sub.join(' · ') || 'Unknown card';
+
+  // tags
+  let tags = '';
+  if (hp)    tags += `<span class="tag hp">HP ${{hp}}</span>`;
+  types.forEach(ty => {{ tags += `<span class="tag type">${{ty}}</span>`; }});
+  if (d.isDuplicate) tags += `<span class="tag" style="background:#1a0a00;border-color:#7c2d12;color:#f97316">⚠ Already In Stock</span>`;
+  document.getElementById('rTags').innerHTML = tags || '<span class="tag">Trading Card</span>';
+
+  // image
+  const imgEl   = document.getElementById('rImg');
+  const noImgEl = document.getElementById('rNoImg');
+  if (imgUrl) {{ imgEl.src = imgUrl; imgEl.style.display = 'block'; noImgEl.style.display = 'none'; }}
+  else         {{ imgEl.style.display = 'none'; noImgEl.style.display = 'flex'; }}
+
+  // price tiers
+  const priceTiersData = (t.tcgplayer && t.tcgplayer.priceTiers) || {{}};
+  _rawTiers = {{}};
+  const tierLabels = {{
+    holofoil:       'Holo Rare',
+    reverseHolofoil:'Reverse Holo',
+    normal:         'Normal',
+    '1stEditionHolofoil': '1st Ed. Holo',
+    '1stEditionNormal':   '1st Ed. Normal',
+  }};
+  const tierOrder = ['holofoil','1stEditionHolofoil','reverseHolofoil','normal','1stEditionNormal'];
+  for (const tier of tierOrder) {{
+    const p = priceTiersData[tier];
+    if (p && (p.market || p.mid)) _rawTiers[tier] = p.market || p.mid;
+  }}
+  // also use suggestedPrice / marketPrice as fallback
+  if (!Object.keys(_rawTiers).length) {{
+    const fb = d.suggestedPrice || t.tcgplayer && t.tcgplayer.marketPrice;
+    if (fb) _rawTiers['market'] = fb;
+  }}
+  renderTiers();
+
+  // local inventory
+  const localBox = document.getElementById('localBox');
+  if (d.inLocalInventory && d.price > 0) {{
+    localBox.classList.add('visible');
+    document.getElementById('localPrice').textContent = '$' + d.price.toFixed(2);
+    document.getElementById('localSub').textContent =
+      (d.stockQuantity||0) + ' in stock · your price';
+  }} else {{
+    localBox.classList.remove('visible');
+  }}
+
+  show('result');
+  hide('emptyState');
+}}
+
+function renderTiers() {{
+  const m    = parseFloat(condD.value) || 1;
+  const tierLabels = {{holofoil:'Holo Rare',reverseHolofoil:'Reverse Holo',normal:'Normal','1stEditionHolofoil':'1st Ed. Holo','1stEditionNormal':'1st Ed. Normal',market:'Market'}}; 
+  const html = Object.entries(_rawTiers).map(([tier, raw]) => {{
+    const adj = (raw * m).toFixed(2);
+    return `<div class="tier-row ${{tier==='holofoil'||tier==='market'?'best':''}}">
+      <span class="tier-label">${{tierLabels[tier]||tier}}</span>
+      <span class="tier-price">$${{adj}} <span style="font-size:10px;color:#888;font-weight:400">(raw $${{raw.toFixed(2)}})</span></span>
+    </div>`;
+  }}).join('') || '<div class="tier-row"><span class="tier-label">No pricing data</span><span class="tier-na">N/A</span></div>';
+  document.getElementById('priceTiers').innerHTML = html;
+  applyCond();
+}}
+
+function applyCond() {{
+  if (!_lastData && !Object.keys(_rawTiers).length) return;
+  const m = parseFloat(condD.value) || 1;
+  renderTiersOnly(m);
+  const d     = _lastData || {{}};
+  const t     = d.tcgData || {{}};
+  const raw   = Object.values(_rawTiers)[0] || d.suggestedPrice || (t.tcgplayer && t.tcgplayer.marketPrice) || 0;
+  const mktM  = raw * m;
+  const trade = mktM * 0.80;
+
+  document.getElementById('rAvg').textContent   = raw > 0 ? '$' + mktM.toFixed(2) : '—';
+  document.getElementById('rTrade').textContent = raw > 0 ? '$' + trade.toFixed(2) : '—';
+
+  // language grid
+  const lang = langS.value;
+  const langs = [
+    {{code:'EN',flag:'🇺🇸',cls:'',pct:null}},
+    {{code:'JP',flag:'🇯🇵',cls:'pct-jp',pct:_langFact.JP}},
+    {{code:'KR',flag:'🇰🇷',cls:'pct-kr',pct:_langFact.KR}},
+    {{code:'CN',flag:'🇨🇳',cls:'pct-cn',pct:_langFact.CN}},
+  ];
+  document.getElementById('langGrid').innerHTML = langs.map(l => {{
+    const price = l.pct ? mktM*(1-l.pct/100) : mktM;
+    const badge = l.pct ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{l.pct}}% off</span>` : `<span class="lang-pct" style="background:#1a1400;color:#FFD700">Base</span>`;
+    const sel   = l.code === lang ? 'border:1px solid #FFD700' : '';
+    return `<div class="lang-cell" style="${{sel}}">
+      <div class="lang-flag">${{l.flag}}</div>
+      <div class="lang-code">${{l.code}}</div>
+      <div class="lang-price">${{mktM>0?'$'+price.toFixed(2):'N/A'}}</div>
+      ${{badge}}
+    </div>`;
+  }}).join('');
+}}
+
+function renderTiersOnly(m) {{
+  const tierLabels = {{holofoil:'Holo Rare',reverseHolofoil:'Reverse Holo',normal:'Normal','1stEditionHolofoil':'1st Ed. Holo','1stEditionNormal':'1st Ed. Normal',market:'Market'}};
+  if (!Object.keys(_rawTiers).length) return;
+  document.getElementById('priceTiers').innerHTML = Object.entries(_rawTiers).map(([tier, raw]) => {{
+    return `<div class="tier-row ${{tier==='holofoil'||tier==='market'?'best':''}}">
+      <span class="tier-label">${{tierLabels[tier]||tier}}</span>
+      <span class="tier-price">$${{(raw*m).toFixed(2)}} <span style="font-size:10px;color:#888;font-weight:400">(raw $${{raw.toFixed(2)}})</span></span>
+    </div>`;
+  }}).join('');
+}}
+
+// ── Add to inventory ──────────────────────────────────────────────────────
+
+function addToInventory() {{
+  if (!_lastData) return;
+  const d  = _lastData;
+  const t  = d.tcgData || {{}};
+  const qr = d.tcgId || _selId || '';
+  // Store form values in sessionStorage and redirect to dashboard
+  const pre = {{
+    qr:      qr,
+    name:    d.name || t.name || '',
+    price:   (d.price || d.suggestedPrice || (t.tcgplayer && t.tcgplayer.marketPrice) || 0),
+    rarity:  d.rarity || t.rarity || '',
+    set:     (t.set && t.set.ptcgoCode) || d.setCode || '',
+    imgurl:  d.imageUrl || (t.images && (t.images.large || t.images.small)) || '',
+    tcgid:   d.tcgId || (t.id) || '',
+  }};
+  sessionStorage.setItem('prefillData', JSON.stringify(pre));
+  location.href = '/admin#add-product';
+}}
+
+function toast(msg, err=false) {{
+  const t = document.getElementById('toast');
+  t.textContent=msg; t.className=err?'err':'';
+  t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
+}}
+</script>
+</body>
+</html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
+# /admin/system  — System monitoring (desktop GUI as web page)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/system", methods=["GET"])
+def admin_system():
+    nav = _admin_nav("system")
+    svc_rows = "".join(
+        f'<tr><td>{name}</td>'
+        f'<td><span class="dot" id="svc-{_html.escape(svc)}">●</span></td>'
+        f'<td id="svc-lbl-{_html.escape(svc)}" style="color:#555">checking…</td>'
+        f'<td><button onclick="svcAction(\'restart\',\'{_html.escape(svc,quote=True)}\')" class="act-btn">Restart</button>'
+        f'<button onclick="svcAction(\'stop\',\'{_html.escape(svc,quote=True)}\')" class="act-btn stop">Stop</button></td></tr>'
+        for name, svc in _SYS_SERVICES
+    )
+    site_rows = "".join(
+        f'<tr><td><a href="{url}" target="_blank" style="color:#FFD700">{name}</a></td>'
+        f'<td><span class="dot" id="site-{_html.escape(name)}">●</span></td>'
+        f'<td id="site-lbl-{_html.escape(name)}" style="color:#555">checking…</td></tr>'
+        for name, url in _SYS_WEBSITES
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — System Monitor</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .stat-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px}}
+  .stat-card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px}}
+  .stat-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
+  .stat-value{{font-size:30px;font-weight:900;color:#FFD700;line-height:1}}
+  .stat-sub{{font-size:11px;color:#555;margin-top:4px}}
+  .bar-wrap{{background:#222;border-radius:4px;height:6px;margin-top:8px;overflow:hidden}}
+  .bar-fill{{height:6px;border-radius:4px;background:linear-gradient(90deg,#FFD700,#f59e0b);transition:width .6s ease}}
+  .bar-fill.warn{{background:linear-gradient(90deg,#ff9800,#f59e0b)}}
+  .bar-fill.crit{{background:linear-gradient(90deg,#f44336,#c62828)}}
+  .dot{{font-size:14px;color:#555;transition:.3s}}
+  .dot.on{{color:#4caf50}}
+  .dot.off{{color:#f44336}}
+  .panel{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px;margin-bottom:20px}}
+  .panel-title{{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px}}
+  .act-btn{{background:#1a1a2a;border:1px solid #3a3a5a;color:#a78bfa;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;margin-right:4px}}
+  .act-btn:hover{{background:#2a2a3a}}
+  .act-btn.stop{{border-color:#5a1a1a;color:#f87171}}
+  .act-btn.stop:hover{{background:#2a1a1a}}
+  .quick-actions{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}}
+  .qa-btn{{background:#141414;border:1px solid #333;color:#e0e0e0;border-radius:8px;padding:12px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px}}
+  .qa-btn:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  #refreshStatus{{font-size:12px;color:#555;margin-left:auto;align-self:center}}
+</style>
+</head>
+<body>
+{nav}
+<div class="wrap">
+  <h1>⚙️ System Monitor</h1>
+  <p class="subtitle">Live Raspberry Pi performance &bull; Services &bull; Websites &bull; VPN &bull; auto-refreshes every 3 s</p>
+
+  <div class="quick-actions">
+    <button class="qa-btn" onclick="quickAction('restart-server')">🔄 Restart POS Server</button>
+    <button class="qa-btn" onclick="quickAction('backup-db')">💾 Backup Database</button>
+    <button class="qa-btn" onclick="quickAction('sync-inventory')">📦 Sync Inventory</button>
+    <button class="qa-btn" onclick="window.open('/admin/logs','_self')">📋 View Logs</button>
+    <button class="qa-btn" onclick="window.open('/health')">❤️ Health Check</button>
+    <span id="refreshStatus">Last refresh: —</span>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">CPU Usage</div>
+      <div class="stat-value" id="sCpu">—</div>
+      <div class="bar-wrap"><div class="bar-fill" id="bCpu" style="width:0%"></div></div>
+      <div class="stat-sub" id="sTemp">Temp: —°C</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">RAM Used</div>
+      <div class="stat-value" id="sRam">—</div>
+      <div class="bar-wrap"><div class="bar-fill" id="bRam" style="width:0%"></div></div>
+      <div class="stat-sub" id="sRamSub">— MB / — MB</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Disk Used</div>
+      <div class="stat-value" id="sDisk">—</div>
+      <div class="bar-wrap"><div class="bar-fill" id="bDisk" style="width:0%"></div></div>
+      <div class="stat-sub" id="sDiskSub">— / —</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">VPN (WireGuard)</div>
+      <div class="stat-value" id="sVpn" style="font-size:18px;padding-top:8px">—</div>
+      <div class="stat-sub" id="sVpnPeers">Connected clients: —</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Database Size</div>
+      <div class="stat-value" id="sDb" style="font-size:18px;padding-top:8px">—</div>
+      <div class="stat-sub">vault_pos.db</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">POS Server Ping</div>
+      <div class="stat-value" id="sPing" style="font-size:18px;padding-top:8px">—</div>
+      <div class="stat-sub" id="sPingSub">127.0.0.1:8080</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Services</div>
+    <table>
+      <thead><tr><th>Service</th><th>●</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>{svc_rows}</tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Websites</div>
+    <table>
+      <thead><tr><th>URL</th><th>●</th><th>Response</th></tr></thead>
+      <tbody>{site_rows}</tbody>
+    </table>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+function clock() {{ document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }}
+setInterval(clock,1000); clock();
+
+function toast(msg, err=false) {{
+  const t = document.getElementById('toast');
+  t.textContent=msg; t.className=err?'err':'';
+  t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
+}}
+
+function bar(id, pct) {{
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.width = Math.min(pct,100)+'%';
+  el.className = 'bar-fill' + (pct>85?' crit':pct>65?' warn':'');
+}}
+
+async function refresh() {{
+  try {{
+    const r = await fetch('/system/stats');
+    const d = await r.json();
+
+    // CPU
+    document.getElementById('sCpu').textContent   = d.cpu_pct + '%';
+    document.getElementById('sTemp').textContent  = 'Temp: ' + d.cpu_temp + '°C' + (d.cpu_temp > 75 ? ' 🔥' : d.cpu_temp > 65 ? ' ⚠' : '');
+    bar('bCpu', d.cpu_pct);
+
+    // RAM
+    document.getElementById('sRam').textContent    = d.ram.pct + '%';
+    document.getElementById('sRamSub').textContent = d.ram.used_mb + ' MB / ' + d.ram.total_mb + ' MB';
+    bar('bRam', d.ram.pct);
+
+    // Disk
+    document.getElementById('sDisk').textContent    = d.disk.pct + '%';
+    document.getElementById('sDiskSub').textContent = d.disk.used + ' / ' + d.disk.total;
+    bar('bDisk', d.disk.pct);
+
+    // VPN
+    const vpnOk = d.vpn.active;
+    document.getElementById('sVpn').textContent      = vpnOk ? '✓ Online' : '✗ Offline';
+    document.getElementById('sVpn').style.color      = vpnOk ? '#4caf50' : '#f44336';
+    document.getElementById('sVpnPeers').textContent = 'Connected clients: ' + d.vpn.peers;
+
+    // DB
+    document.getElementById('sDb').textContent = d.db_size;
+
+    // Services
+    Object.entries(d.services).forEach(([svc, on]) => {{
+      const dot = document.getElementById('svc-' + svc);
+      const lbl = document.getElementById('svc-lbl-' + svc);
+      if (dot) {{ dot.className = 'dot ' + (on?'on':'off'); }}
+      if (lbl) {{ lbl.textContent = on ? 'running' : 'stopped'; lbl.style.color = on?'#4caf50':'#f44336'; }}
+    }});
+
+    // Websites
+    Object.entries(d.sites).forEach(([name, info]) => {{
+      const dot = document.getElementById('site-' + name);
+      const lbl = document.getElementById('site-lbl-' + name);
+      if (dot) {{ dot.className = 'dot ' + (info.ok?'on':'off'); }}
+      if (lbl) {{ lbl.textContent = info.ok ? info.status+' · '+info.ms+'ms' : 'offline'; lbl.style.color = info.ok?'#4caf50':'#f44336'; }}
+    }});
+
+    // Server self-ping
+    document.getElementById('sPing').textContent    = d.sites['hanryxvault.cards'] && d.sites['hanryxvault.cards'].ok ? 'Online' : 'Online (local)';
+    document.getElementById('sPing').style.color    = '#4caf50';
+
+    document.getElementById('refreshStatus').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
+  }} catch(e) {{
+    document.getElementById('refreshStatus').textContent = 'Refresh failed: ' + e.message;
+  }}
+}}
+
+async function svcAction(action, svc) {{
+  toast('Running: systemctl ' + action + ' ' + svc + '…');
+  try {{
+    const r = await fetch('/system/service-action', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action,service:svc}})}});
+    const d = await r.json();
+    toast(d.ok ? action + ' sent ✓' : 'Error: ' + d.error, !d.ok);
+    setTimeout(refresh, 1500);
+  }} catch(e) {{ toast('Error: ' + e.message, true); }}
+}}
+
+async function quickAction(action) {{
+  if (action === 'restart-server') {{
+    if (!confirm('Restart the POS server? Active sessions will be dropped for ~3s.')) return;
+    svcAction('restart', 'hanryxvault');
+  }} else if (action === 'backup-db') {{
+    toast('Triggering DB backup…');
+    try {{
+      const r = await fetch('/system/backup-db', {{method:'POST'}});
+      const d = await r.json();
+      toast(d.ok ? 'Backup created: ' + (d.path||'') : 'Error: '+d.error, !d.ok);
+    }} catch(e) {{ toast('Error: '+e.message, true); }}
+  }} else if (action === 'sync-inventory') {{
+    toast('Syncing from cloud…');
+    const r = await fetch('/admin/sync-from-cloud?force=0', {{method:'POST'}});
+    const d = await r.json();
+    toast('Done — upserted: ' + (d.upserted||0));
+  }}
+}}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
+# /admin/logs  — Live log viewer
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/logs", methods=["GET"])
+def admin_logs():
+    nav = _admin_nav("logs")
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Live Logs</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .log-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
+  .log-controls label{{font-size:12px;color:#666}}
+  .log-controls select{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
+  .log-controls select:focus{{border-color:#FFD700}}
+  .log-controls input[type=range]{{accent-color:#FFD700;width:100px}}
+  .toggle{{display:flex;align-items:center;gap:6px;font-size:12px;color:#888;cursor:pointer;padding:7px 14px;background:#1a1a1a;border:1px solid #333;border-radius:6px}}
+  .toggle input{{accent-color:#FFD700}}
+  #logBox{{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#a0a0a0;height:65vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.55}}
+  .log-status{{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}}
+  .log-status-txt{{font-size:11px;color:#444}}
+  .log-line-err{{color:#f87171}}
+  .log-line-warn{{color:#fbbf24}}
+  .log-line-ok{{color:#4ade80}}
+  #searchInp{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none;width:200px}}
+  #searchInp:focus{{border-color:#FFD700}}
+  .highlight{{background:#FFD70044;border-radius:2px}}
+</style>
+</head>
+<body>
+{nav}
+<div class="wrap">
+  <h1>📋 Live Logs</h1>
+  <p class="subtitle">Tail service logs from your Pi in real-time.</p>
+
+  <div class="log-controls">
+    <label>Service:</label>
+    <select id="svcSelect" onchange="loadLogs()">
+      <option value="hanryxvault">POS Server (hanryxvault)</option>
+      <option value="nginx">nginx</option>
+      <option value="syslog">syslog</option>
+    </select>
+    <label>Lines:</label>
+    <input type="range" id="linesRange" min="20" max="500" step="20" value="120" oninput="linesLbl.textContent=this.value">
+    <span id="linesLbl" style="font-size:12px;color:#888;min-width:32px">120</span>
+    <label class="toggle"><input type="checkbox" id="autoRefresh" checked onchange="toggleAuto()"> Auto-refresh (5s)</label>
+    <button onclick="loadLogs()" class="btn-gold" style="padding:8px 18px">↺ Refresh</button>
+    <input type="text" id="searchInp" placeholder="Search in logs…" oninput="highlightSearch()">
+  </div>
+
+  <div class="log-status">
+    <span class="log-status-txt" id="logStatus">Loading…</span>
+    <span class="log-status-txt" id="logTime"></span>
+  </div>
+  <div id="logBox">Loading logs…</div>
+</div>
+<div id="toast"></div>
+
+<script>
+let _autoTimer = null;
+function clock() {{ document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }}
+setInterval(clock,1000); clock();
+
+function toast(msg,err=false){{const t=document.getElementById('toast');t.textContent=msg;t.className=err?'err':'';t.style.display='block';setTimeout(()=>t.style.display='none',3000);}}
+
+async function loadLogs() {{
+  const svc   = document.getElementById('svcSelect').value;
+  const lines = document.getElementById('linesRange').value;
+  document.getElementById('logStatus').textContent = 'Loading…';
+  try {{
+    const r = await fetch('/system/logs?' + new URLSearchParams({{service:svc,lines}}));
+    const d = await r.json();
+    const box = document.getElementById('logBox');
+    const raw = d.log || '';
+    // colour lines
+    box.innerHTML = raw.split('\\n').map(line => {{
+      const cls = /error|exception|traceback|critical/i.test(line) ? 'log-line-err'
+                : /warn/i.test(line)   ? 'log-line-warn'
+                : /start|ready|listen|ok|success/i.test(line) ? 'log-line-ok'
+                : '';
+      const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return cls ? `<span class="${{cls}}">${{esc}}</span>` : esc;
+    }}).join('\\n');
+    box.scrollTop = box.scrollHeight;
+    const n = raw.split('\\n').length;
+    document.getElementById('logStatus').textContent = svc + ' · ' + n + ' lines';
+    document.getElementById('logTime').textContent   = 'Updated: ' + new Date().toLocaleTimeString();
+    highlightSearch();
+  }} catch(e) {{
+    document.getElementById('logBox').textContent = 'Error loading logs: ' + e.message;
+    document.getElementById('logStatus').textContent = 'Error';
+  }}
+}}
+
+function toggleAuto() {{
+  clearInterval(_autoTimer);
+  if (document.getElementById('autoRefresh').checked) {{
+    _autoTimer = setInterval(loadLogs, 5000);
+    toast('Auto-refresh on');
+  }} else {{
+    toast('Auto-refresh off');
+  }}
+}}
+
+function highlightSearch() {{
+  const q = document.getElementById('searchInp').value.trim();
+  if (!q) return;
+  const box = document.getElementById('logBox');
+  box.innerHTML = box.innerHTML.replace(/<mark[^>]*>(.*?)<\/mark>/g, '$1');
+  if (q.length < 2) return;
+  const re = new RegExp('(' + q.replace(/[.*+?^${{}}()|[\\]\\\\]/g,'\\\\$&') + ')', 'gi');
+  box.innerHTML = box.innerHTML.replace(re, '<mark class="highlight">$1</mark>');
+}}
+
+loadLogs();
+toggleAuto();
+</script>
+</body>
+</html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
+# /system/service-action  — restart / stop a systemd service
+# ---------------------------------------------------------------------------
+
+@app.route("/system/service-action", methods=["POST"])
+def system_service_action():
+    data    = request.get_json(silent=True) or {}
+    action  = data.get("action", "")
+    service = data.get("service", "")
+    allowed_actions  = {"restart", "stop", "start", "status"}
+    allowed_services = {svc for _, svc in _SYS_SERVICES}
+    if action not in allowed_actions:
+        return jsonify({"ok": False, "error": "Unknown action"}), 400
+    if service not in allowed_services:
+        return jsonify({"ok": False, "error": "Service not allowed"}), 400
+    try:
+        subprocess.Popen(
+            ["sudo", "systemctl", action, service],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return jsonify({"ok": True, "message": f"{action} sent to {service}"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# /system/backup-db  — copy vault_pos.db to a timestamped backup
+# ---------------------------------------------------------------------------
+
+@app.route("/system/backup-db", methods=["POST"])
+def system_backup_db():
+    if not os.path.exists(DB_PATH):
+        return jsonify({"ok": False, "error": "DB not found"}), 404
+    ts      = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup  = DB_PATH.replace(".db", f"_backup_{ts}.db")
+    try:
+        import shutil
+        shutil.copy2(DB_PATH, backup)
+        return jsonify({"ok": True, "path": backup})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Admin dashboard (HTML)
 # ---------------------------------------------------------------------------
 
@@ -2354,41 +3479,29 @@ def admin_dashboard():
         for r in inventory
     ) or "<tr><td colspan='6' style='color:#555;text-align:center;padding:20px'>No products yet</td></tr>"
 
+    nav = _admin_nav("dashboard")
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HanryxVault POS — Pi Dashboard</title>
+<title>HanryxVault POS — Dashboard</title>
 <style>
-  *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;padding:24px}}
-  h1{{color:#FFD700;font-size:22px;margin-bottom:4px}}
-  .subtitle{{color:#666;font-size:13px;margin-bottom:24px}}
-  .cards{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:28px}}
-  .card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 24px;min-width:160px;flex:1}}
-  .card label{{color:#888;font-size:11px;letter-spacing:1px;text-transform:uppercase}}
-  .card .value{{color:#FFD700;font-size:28px;font-weight:900;margin-top:4px}}
+{_ADMIN_BASE_CSS}
+  .cards{{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}}
+  .card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px;min-width:150px;flex:1}}
+  .card label{{color:#777;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:4px}}
+  .card .value{{color:#FFD700;font-size:28px;font-weight:900}}
   .card .value.green{{color:#4caf50}}
-  h2{{color:#aaa;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;margin-top:28px}}
-  table{{width:100%;border-collapse:collapse;font-size:13px}}
-  th{{text-align:left;color:#555;padding:8px 10px;border-bottom:1px solid #222}}
-  td{{padding:8px 10px;border-bottom:1px solid #1a1a1a}}
-  tr:hover td{{background:#1a1a1a}}
-  a{{color:#FFD700;text-decoration:none}}
-  a:hover{{text-decoration:underline}}
-  .form-panel{{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:20px;margin-top:28px}}
-  .form-panel h2{{margin-top:0;margin-bottom:16px}}
+  .form-panel{{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:20px;margin-top:24px}}
+  .form-panel h2{{margin-top:0;margin-bottom:14px;font-size:11px;color:#555;letter-spacing:1.5px;text-transform:uppercase}}
   .form-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}}
   .form-grid input,.form-grid select{{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:13px}}
   .form-grid input:focus,.form-grid select:focus{{outline:none;border-color:#FFD700}}
   .form-grid label{{display:block;color:#666;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}}
-  .btn-gold{{background:#FFD700;color:#000;border:none;border-radius:6px;padding:10px 24px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:1px}}
-  .btn-gold:hover{{background:#ffe033}}
   .btn-del{{background:none;border:1px solid #c62828;color:#c62828;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}}
   .btn-del:hover{{background:#c62828;color:#fff}}
-  #toast{{position:fixed;bottom:24px;right:24px;background:#4caf50;color:#fff;padding:12px 20px;border-radius:8px;font-weight:bold;display:none;z-index:99}}
-  #toast.err{{background:#c62828}}
+  #add-product{{scroll-margin-top:80px}}
 
   /* ── Price flash overlay ─────────────────────────────────────────────── */
   #price-flash{{
@@ -2454,12 +3567,13 @@ def admin_dashboard():
 </style>
 </head>
 <body>
-<h1>HanryxVault POS</h1>
-<div class="subtitle">Raspberry Pi Dashboard &nbsp;·&nbsp; <span id="clock"></span>
-  &nbsp;·&nbsp; <a href="/admin/sales">Sales JSON</a>
-  &nbsp;·&nbsp; <a href="/admin/inventory">Inventory JSON</a>
-  &nbsp;·&nbsp; <a href="/zettle/status">Zettle Status</a>
-  &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 10px;border-radius:4px;font-weight:bold;">⬇ APK</a>
+{nav}
+<div class="wrap">
+<h1>🏠 Dashboard</h1>
+<div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp; <span id="clock"></span>
+  &nbsp;·&nbsp; <a href="/admin/market">📈 Market Prices</a>
+  &nbsp;·&nbsp; <a href="/admin/system">⚙️ System</a>
+  &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;">⬇ APK</a>
 </div>
 
 <div class="cards">
@@ -2492,7 +3606,7 @@ def admin_dashboard():
 <tbody>{rows_low}</tbody>
 </table>
 
-<div class="form-panel">
+<div class="form-panel" id="add-product">
   <h2>Add / Update Product</h2>
   <div style="display:flex;gap:10px;margin-bottom:14px;align-items:flex-end;flex-wrap:wrap">
     <div style="flex:1;min-width:180px">
@@ -2733,7 +3847,32 @@ async function syncCloud(force) {{
     d.skipped ? `Skipped — already have ${{d.existing}} products (use Force Re-Sync)` :
     `Done — upserted: ${{d.upserted}}, skipped rows: ${{d.skipped}}`;
 }}
+
+// ── Prefill from market page (sessionStorage handoff) ─────────────────────
+(function applyPrefill() {{
+  try {{
+    const raw = sessionStorage.getItem('prefillData');
+    if (!raw) return;
+    sessionStorage.removeItem('prefillData');
+    const p = JSON.parse(raw);
+    if (p.qr)     document.getElementById('f-qr').value     = p.qr;
+    if (p.name)   document.getElementById('f-name').value   = p.name;
+    if (p.price)  document.getElementById('f-price').value  = Number(p.price).toFixed(2);
+    if (p.rarity) document.getElementById('f-rarity').value = p.rarity;
+    if (p.set)    document.getElementById('f-set').value    = p.set;
+    if (p.imgurl) {{
+      document.getElementById('f-imgurl').value = p.imgurl;
+      document.getElementById('f-img-preview').src = p.imgurl;
+      document.getElementById('prefill-img').style.display = 'block';
+    }}
+    if (p.tcgid) document.getElementById('f-tcgid').value = p.tcgid;
+    const addEl = document.getElementById('add-product');
+    if (addEl) {{ addEl.scrollIntoView({{behavior:'smooth'}}); }}
+    toast('✓ Prefilled from Market Prices — review and save');
+  }} catch(e) {{}}
+}})();
 </script>
+</div><!-- /wrap -->
 </body>
 </html>"""
     return html
