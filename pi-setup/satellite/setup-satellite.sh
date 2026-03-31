@@ -226,6 +226,17 @@ else
     warn "barcode_daemon.py not found — skipping barcode setup"
 fi
 
+# ── Step 7: Network auto-failover (WiFi primary, USB phone tethering backup) ──
+step "Setting up network auto-failover"
+
+NETFAIL_SCRIPT="$SCRIPT_DIR/../scripts/setup-network-failover.sh"
+if [[ -f "$NETFAIL_SCRIPT" ]]; then
+    bash "$NETFAIL_SCRIPT"
+else
+    warn "setup-network-failover.sh not found at $NETFAIL_SCRIPT — skipping"
+    warn "Run it manually later:  sudo bash scripts/setup-network-failover.sh"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}"
@@ -237,20 +248,25 @@ info "Home Pi URL : ${HOME_URL}"
 info "VPN enabled : ${VPN_ENABLED}"
 info "Local POS   : http://localhost:8080/admin"
 echo ""
-info "The sync monitor runs continuously in the background:"
-info "  • Checks for connection every 30 seconds"
-info "  • Pushes offline sales + stock changes the instant internet returns"
-info "  • Pulls fresh inventory from home Pi after each successful push"
-info "  • Logs pending sale count while offline so you always know what's waiting"
-info "  • All sales are safe in local SQLite — nothing is ever lost offline"
+info "Network (auto-failover):"
+info "  • WiFi is the primary connection (metric 100 — always preferred)"
+info "  • Plug in your phone via USB → enable tethering → Pi switches over automatically"
+info "  • Returns to WiFi automatically when WiFi comes back"
+info "  • WireGuard VPN tunnels over whichever connection is active — no extra setup"
+echo ""
+info "Offline sales sync:"
+info "  • All sales stored locally in SQLite — nothing lost while offline"
+info "  • Monitor checks every 30s and syncs the instant connection is restored"
+info "  • Logs pending count while offline so you know what's waiting"
 echo ""
 info "Useful commands:"
-info "  Watch sync logs     : sudo journalctl -u hanryxvault-satellite-sync -f"
-info "  Force manual sync   : /opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/satellite_sync.py"
-info "  Monitor status      : sudo systemctl status hanryxvault-satellite-sync"
+info "  Watch sync logs        : sudo journalctl -u hanryxvault-satellite-sync -f"
+info "  Force manual sync      : /opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/satellite_sync.py"
+info "  Network interfaces     : nmcli device status"
+info "  Current routes         : ip route show"
 if [[ "$VPN_ENABLED" == "true" ]]; then
-info "  VPN status          : sudo wg show"
-info "  VPN reconnect       : sudo systemctl restart wg-quick@${WG_INTERFACE}"
+info "  VPN status             : sudo wg show"
+info "  VPN reconnect          : sudo systemctl restart wg-quick@${WG_INTERFACE}"
 fi
-info "  Bluetooth printer   : sudo bash scripts/setup-bluetooth-printer.sh"
-info "  Pair BT scanner     : sudo bluetoothctl → pair <MAC> → trust → connect"
+info "  Bluetooth printer      : sudo bash scripts/setup-bluetooth-printer.sh"
+info "  Pair BT scanner        : sudo bluetoothctl → pair <MAC> → trust → connect"
