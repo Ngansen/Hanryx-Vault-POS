@@ -9,7 +9,7 @@ User=hanryxvault
 Group=hanryxvault
 WorkingDirectory=/opt/hanryxvault
 ExecStart=/opt/hanryxvault/venv/bin/gunicorn \
-    --workers 2 \
+    --workers 4 \
     --bind 127.0.0.1:8080 \
     --timeout 60 \
     --keep-alive 5 \

@@ -41,12 +41,14 @@ Run manually (dev):
   python3 server.py
 
 Run via gunicorn (production — handled by systemd):
-  gunicorn -w 2 -b 127.0.0.1:8080 --timeout 60 server:app
+  gunicorn -w 4 -b 127.0.0.1:8080 --timeout 60 server:app
 """
 
 import sqlite3
 import json
 import datetime
+import hashlib
+import html as _html
 import os
 import subprocess
 import threading
@@ -95,11 +97,47 @@ def _token_post(form_data):
         return json.loads(resp.read())
 
 
+def _persist_tokens():
+    """Write current token state to DB so it survives server restarts."""
+    try:
+        db = sqlite3.connect(DB_PATH)
+        db.execute("PRAGMA busy_timeout=3000")
+        with _token_lock:
+            payload = json.dumps(_zettle_state)
+        db.execute(
+            "INSERT OR REPLACE INTO server_state (key, value) VALUES ('zettle_tokens', ?)",
+            (payload,)
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[zettle] Token persist failed: {e}")
+
+
+def _load_tokens_from_db():
+    """Restore persisted Zettle tokens from DB on startup."""
+    try:
+        db = sqlite3.connect(DB_PATH)
+        row = db.execute(
+            "SELECT value FROM server_state WHERE key='zettle_tokens'"
+        ).fetchone()
+        db.close()
+        if row:
+            saved = json.loads(row[0])
+            with _token_lock:
+                _zettle_state.update(saved)
+            if _zettle_state.get("access_token"):
+                print("[zettle] Restored tokens from DB — no re-auth needed")
+    except Exception as e:
+        print(f"[zettle] Token restore failed (first run?): {e}")
+
+
 def _store_tokens(result):
     with _token_lock:
         _zettle_state["access_token"]  = result.get("access_token")
         _zettle_state["refresh_token"] = result.get("refresh_token")
         _zettle_state["expires_at"]    = _time.time() + result.get("expires_in", 7200) - 60
+    _persist_tokens()
 
 
 def _refresh_token_if_needed():
@@ -164,9 +202,6 @@ CLOUD_INVENTORY_SOURCES = [
 # Database — thread-local connections (gunicorn multi-worker safe)
 # ---------------------------------------------------------------------------
 
-_local = threading.local()
-
-
 def get_db():
     """Return a per-request SQLite connection stored on Flask's g object."""
     if "db" not in g:
@@ -177,6 +212,8 @@ def get_db():
         conn.execute("PRAGMA cache_size=4000")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA busy_timeout=5000")     # wait up to 5 s on lock instead of crashing
+        conn.execute("PRAGMA mmap_size=268435456")   # 256 MB memory-mapped I/O — free read speedup
         g.db = conn
     return g.db
 
@@ -254,6 +291,11 @@ def init_db():
         );
 
         CREATE INDEX IF NOT EXISTS idx_sale_history_name ON sale_history(name, sold_at);
+
+        CREATE TABLE IF NOT EXISTS server_state (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
     """)
     db.commit()
     db.close()
@@ -340,11 +382,14 @@ def _cleanup_scan_queue():
     try:
         cutoff = int((_time.time() - 3600) * 1000)
         db = sqlite3.connect(DB_PATH)
+        db.execute("PRAGMA busy_timeout=5000")
         db.execute("DELETE FROM scan_queue WHERE processed = 1 AND scanned_at < ?", (cutoff,))
         db.commit()
+        deleted = db.execute("SELECT changes()").fetchone()[0]
         db.close()
-    except Exception:
-        pass
+        print(f"[cleanup] Removed {deleted} stale scan_queue rows")
+    except Exception as e:
+        print(f"[cleanup] scan_queue cleanup failed: {e}")
     threading.Timer(3600, _cleanup_scan_queue).start()
 
 
@@ -353,7 +398,7 @@ def _cleanup_scan_queue():
 # ---------------------------------------------------------------------------
 
 def _now_ms():
-    return int(datetime.datetime.now().timestamp() * 1000)
+    return int(_time.time() * 1000)
 
 
 def _cors(response):
@@ -368,8 +413,16 @@ def after_request(response):
     return _cors(response)
 
 
+_worker_init_done = False
+
 @app.before_request
 def handle_options():
+    # One-time per-worker init (gunicorn preforking — each worker is its own process)
+    global _worker_init_done
+    if not _worker_init_done:
+        _worker_init_done = True
+        _load_tokens_from_db()
+
     if request.method == "OPTIONS":
         return _cors(jsonify({}))
 
@@ -467,6 +520,9 @@ def scan_post():
     db = get_db()
     db.execute("INSERT INTO scan_queue (qr_code) VALUES (?)", (qr_code,))
     db.commit()
+    # Bust the 1 s scan cache so the tablet picks this up on its very next poll
+    with _cache_lock:
+        _scan_cache.clear()
     print(f"[scan] Queued: {qr_code}")
     return jsonify({"ok": True, "queued": qr_code}), 201
 
@@ -493,6 +549,9 @@ def scan_ack(scan_id):
     db = get_db()
     db.execute("UPDATE scan_queue SET processed = 1 WHERE id = ?", (scan_id,))
     db.commit()
+    # Clear scan cache so next poll immediately returns the next pending item
+    with _cache_lock:
+        _scan_cache.clear()
     return jsonify({"ok": True, "acked": scan_id})
 
 
@@ -602,7 +661,6 @@ def get_inventory():
     since  = request.args.get("since", "")
 
     # Use cache only for the common unfiltered full-catalogue request
-    cache_key = f"{search}|{since}"
     if not search and not since:
         cached = _cache_get(_inventory_cache, "all")
         if cached is not None:
@@ -650,7 +708,15 @@ def get_inventory():
 
     if not search and not since:
         _cache_set(_inventory_cache, "all", products)
-    return jsonify(products)
+
+    # ETag — lets the tablet skip re-processing an identical catalogue
+    etag = hashlib.md5(json.dumps(products, sort_keys=True).encode()).hexdigest()
+    if request.headers.get("If-None-Match") == etag:
+        return "", 304
+    resp = jsonify(products)
+    resp.headers["ETag"]          = etag
+    resp.headers["Cache-Control"] = "private, max-age=28"
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -869,26 +935,29 @@ def admin_dashboard():
             return "—"
         return datetime.datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M")
 
+    e = _html.escape  # shorthand — always escape user-sourced strings into HTML
+
     rows_recent = "".join(
-        f"<tr><td>{r['transaction_id'][:12]}…</td><td>${r['total_amount']:.2f}</td>"
-        f"<td>{r['payment_method']}</td><td>{r['employee_id']}</td>"
+        f"<tr><td>{e(r['transaction_id'][:12])}…</td><td>${r['total_amount']:.2f}</td>"
+        f"<td>{e(r['payment_method'])}</td><td>{e(r['employee_id'])}</td>"
         f"<td>{fmt_time(r['timestamp_ms'])}</td></tr>"
         for r in recent_sales
     )
 
     rows_low = "".join(
         f"<tr style='color:{'#f44336' if r['stock']==0 else '#ff9800'}'>"
-        f"<td>{r['name']}</td><td>{r['qr_code']}</td>"
-        f"<td><b>{r['stock']}</b></td><td>${r['price']:.2f}</td><td>{r['category']}</td></tr>"
+        f"<td>{e(r['name'])}</td><td>{e(r['qr_code'])}</td>"
+        f"<td><b>{r['stock']}</b></td><td>${r['price']:.2f}</td><td>{e(r['category'])}</td></tr>"
         for r in low_stock
     ) or "<tr><td colspan='5' style='color:#4caf50'>All stock levels healthy ✓</td></tr>"
 
     rows_inv = "".join(
-        f"<tr data-qr=\"{r['qr_code']}\" data-name=\"{r['name']}\" data-price=\"{r['price']}\" "
-        f"data-cat=\"{r['category']}\" data-stock=\"{r['stock']}\" style=\"cursor:pointer\">"
-        f"<td>{r['name']}</td><td><code style='color:#aaa'>{r['qr_code']}</code></td>"
-        f"<td>{r['stock']}</td><td>${r['price']:.2f}</td><td>{r['category']}</td>"
-        f"<td><button class='btn-del' onclick=\"event.stopPropagation();deleteProduct('{r['qr_code']}')\">DEL</button></td></tr>"
+        f"<tr data-qr=\"{e(r['qr_code'], quote=True)}\" "
+        f"data-name=\"{e(r['name'], quote=True)}\" data-price=\"{r['price']}\" "
+        f"data-cat=\"{e(r['category'], quote=True)}\" data-stock=\"{r['stock']}\" style=\"cursor:pointer\">"
+        f"<td>{e(r['name'])}</td><td><code style='color:#aaa'>{e(r['qr_code'])}</code></td>"
+        f"<td>{r['stock']}</td><td>${r['price']:.2f}</td><td>{e(r['category'])}</td>"
+        f"<td><button class='btn-del' onclick=\"event.stopPropagation();deleteProduct('{e(r['qr_code'], quote=True)}')\">DEL</button></td></tr>"
         for r in inventory
     ) or "<tr><td colspan='6' style='color:#555;text-align:center;padding:20px'>No products yet</td></tr>"
 
@@ -1048,6 +1117,7 @@ async function syncCloud(force) {{
 
 if __name__ == "__main__":
     init_db()
+    _load_tokens_from_db()
     threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
     _cleanup_scan_queue()
     print("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
