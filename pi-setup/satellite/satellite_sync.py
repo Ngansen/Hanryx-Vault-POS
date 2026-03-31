@@ -25,12 +25,18 @@ import datetime
 import urllib.request
 import urllib.error
 
-CONF_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "satellite.conf")
-DB_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vault_pos.db")
+# Path discovery — works both in source tree (pi-setup/satellite/) and when
+# installed (/opt/hanryxvault/).  Checks current dir first, falls back to parent.
+def _find_base_dir() -> str:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(os.path.join(script_dir, "vault_pos.db")) or \
+       os.path.exists(os.path.join(script_dir, "satellite.conf")):
+        return script_dir
+    return os.path.realpath(os.path.join(script_dir, ".."))
 
-# Resolve paths relative to the script location
-CONF_PATH = os.path.realpath(CONF_PATH)
-DB_PATH   = os.path.realpath(DB_PATH)
+BASE_DIR  = _find_base_dir()
+CONF_PATH = os.path.join(BASE_DIR, "satellite.conf")
+DB_PATH   = os.path.join(BASE_DIR, "vault_pos.db")
 
 # Default config — overridden by satellite.conf
 _DEFAULTS = {

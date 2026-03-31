@@ -1,21 +1,22 @@
 [Unit]
-Description=HanryxVault Satellite Sync (push sales to home Pi, pull inventory)
-# Wait for: internet AND WireGuard VPN AND local POS server
+Description=HanryxVault Satellite Monitor (offline sales storage + auto-sync on reconnect)
 After=network-online.target wg-quick@wg0.service hanryxvault.service
 Wants=network-online.target wg-quick@wg0.service
 Requires=hanryxvault.service
 
 [Service]
-Type=oneshot
+Type=simple
 User=hanryxvault
 WorkingDirectory=/opt/hanryxvault
-# Small pre-delay lets the WireGuard tunnel fully establish before we try to connect
-ExecStartPre=/bin/sleep 5
-ExecStart=/opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/satellite_sync.py
+# Brief delay to let WireGuard tunnel establish before first connectivity check
+ExecStartPre=/bin/sleep 8
+ExecStart=/opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/satellite_monitor.py
+Restart=always
+RestartSec=15
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hanryxvault-sync
-TimeoutStartSec=120
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
