@@ -18,10 +18,17 @@ Endpoints consumed by the tablet app:
   POST /push/inventory      — push products from scanner/websites (JSON)
   POST /push/inventory/csv  — bulk import products from CSV file
 
-Scanner relay (Expo scanner app):
-  POST /scan                — queue a scanned QR code
-  GET  /scan/pending        — tablet polls this every 1.5 s
+Scanner relay (Expo scanner app on phone):
+  POST /scan                — queue a scanned QR code (normalises Pokémon TCG URLs automatically)
+  GET  /scan/pending        — tablet polls this; now includes resolvedProduct if card matched
   POST /scan/ack/<id>       — tablet marks scan as handled
+  GET  /scan/stream         — SSE: instant push instead of polling
+
+Card lookup (website camera scanner):
+  GET  /card/lookup?q=charizard          — fuzzy name search
+  GET  /card/lookup?qr=<raw_scan>        — resolve any scan value to a card
+  GET  /card/lookup?name=X&set=SV1&num=1 — explicit fields
+  POST /card/lookup                      — same, JSON body
 
 Zettle OAuth:
   GET  /zettle/auth         — begin OAuth flow
