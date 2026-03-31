@@ -28,6 +28,10 @@ Zettle OAuth:
   GET  /zettle/callback     — OAuth callback (must be HTTPS)
   GET  /zettle/status       — token status
 
+Receipt printer (Bluetooth SPP / USB ESC/POS thermal):
+  POST /print/receipt       — print receipt (non-blocking, sale JSON body)
+  GET  /print/status        — which printer device is currently connected
+
 Admin dashboard:
   GET  /admin               — web UI (today's sales + inventory)
   GET  /admin/sales         — JSON dump of all sales
@@ -878,6 +882,218 @@ def admin_delete_product(qr_code):
     db.commit()
     _invalidate_inventory()
     return jsonify({"ok": True, "deleted": qr_code})
+
+
+# ---------------------------------------------------------------------------
+# Receipt Printer — ESC/POS over Bluetooth (/dev/rfcomm0) or USB (/dev/usb/lp0)
+# ---------------------------------------------------------------------------
+
+_PRINTER_CONF_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "printer.conf")
+
+# ESC/POS byte commands — no external library needed
+_ESC             = b'\x1b'
+_GS              = b'\x1d'
+_PR_INIT         = _ESC + b'@'           # initialise printer
+_PR_BOLD_ON      = _ESC + b'E\x01'
+_PR_BOLD_OFF     = _ESC + b'E\x00'
+_PR_CENTER       = _ESC + b'a\x01'
+_PR_LEFT         = _ESC + b'a\x00'
+_PR_DOUBLE       = _ESC + b'!\x30'       # double width + double height
+_PR_NORMAL       = _ESC + b'!\x00'
+_PR_CUT          = _GS  + b'V\x42\x00'  # partial cut + feed
+_PR_LF           = b'\n'
+_PR_DIVIDER_WIDE = b'-' * 42 + b'\n'    # 80 mm paper (42 chars)
+_PR_DIVIDER_NARR = b'-' * 32 + b'\n'    # 58 mm paper (32 chars)
+
+
+def _load_printer_conf() -> dict:
+    conf = {
+        "printer_path":   None,
+        "printer_type":   "auto",
+        "printer_usb_path": "/dev/usb/lp0",
+        "receipt_header":   "HanryxVault",
+        "receipt_subheader": "Trading Card Shop",
+        "receipt_footer":   "hanryxvault.cards",
+    }
+    if os.path.exists(_PRINTER_CONF_PATH):
+        with open(_PRINTER_CONF_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    conf[k.strip()] = v.strip() or None
+    return conf
+
+
+def _open_printer():
+    """Return an open writable file handle to the first available printer."""
+    conf = _load_printer_conf()
+
+    # Order of preference: Bluetooth rfcomm → USB lp → rfcomm1 fallback
+    candidates = []
+    if conf.get("printer_path"):
+        candidates.append(conf["printer_path"])
+    candidates += ["/dev/rfcomm0", "/dev/usb/lp0", "/dev/rfcomm1", "/dev/ttyUSB0"]
+
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                fh = open(path, "wb")
+                return fh, path, conf
+            except OSError:
+                continue
+
+    # Last resort: CUPS lp command
+    return None, "cups", conf
+
+
+def _format_receipt(sale: dict, conf: dict) -> bytes:
+    """Build ESC/POS byte string for one sale receipt."""
+    header    = (conf.get("receipt_header")    or "HanryxVault").encode()
+    subheader = (conf.get("receipt_subheader") or "Trading Card Shop").encode()
+    footer    = (conf.get("receipt_footer")    or "hanryxvault.cards").encode()
+
+    divider = _PR_DIVIDER_NARR   # default 58 mm
+
+    timestamp = sale.get("timestamp", 0)
+    if timestamp:
+        dt_str = datetime.datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d  %H:%M")
+    else:
+        dt_str = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M")
+
+    txn_id  = (sale.get("transactionId") or sale.get("transaction_id") or "")[:16]
+    method  = sale.get("paymentMethod")  or sale.get("payment_method") or "CARD"
+    items   = sale.get("items", [])
+
+    # ── Build receipt bytes ──────────────────────────────────────────────────
+    out = bytearray()
+    out += _PR_INIT
+    out += _PR_LF
+
+    # Header
+    out += _PR_CENTER + _PR_DOUBLE + header + _PR_LF
+    out += _PR_NORMAL + subheader  + _PR_LF + _PR_LEFT
+    out += _PR_LF + divider
+
+    # Date / transaction
+    out += f"{dt_str}\n".encode()
+    if txn_id:
+        out += f"Txn: {txn_id}\n".encode()
+    out += divider
+
+    # Line items
+    for item in items:
+        name  = (item.get("name") or "Item")[:22]
+        qty   = int(item.get("quantity") or 1)
+        price = float(item.get("unitPrice") or item.get("price") or 0)
+        total = float(item.get("lineTotal") or (price * qty))
+        line  = f"{name:<22} ${total:>7.2f}\n"
+        if qty > 1:
+            line = f"  x{qty} {name:<19} ${total:>7.2f}\n"
+        out += line.encode()
+
+    out += divider
+
+    # Totals
+    subtotal = float(sale.get("subtotal",   0))
+    tax      = float(sale.get("taxAmount",  0))
+    tip      = float(sale.get("tipAmount",  0))
+    total    = float(sale.get("totalAmount",0))
+    out += f"{'Subtotal':<22} ${subtotal:>7.2f}\n".encode()
+    if tax > 0:
+        out += f"{'Tax':<22} ${tax:>7.2f}\n".encode()
+    if tip > 0:
+        out += f"{'Tip':<22} ${tip:>7.2f}\n".encode()
+    out += _PR_BOLD_ON
+    out += f"{'TOTAL':<22} ${total:>7.2f}\n".encode()
+    out += _PR_BOLD_OFF
+
+    # Payment
+    out += f"Payment: {method}\n".encode()
+    cash = float(sale.get("cashReceived") or sale.get("cash_received") or 0)
+    if cash > 0:
+        change = float(sale.get("changeGiven") or sale.get("change_given") or 0)
+        out += f"Cash: ${cash:.2f}  Change: ${change:.2f}\n".encode()
+
+    out += divider
+    out += _PR_CENTER
+    out += f"{footer.decode()}\n".encode()
+    out += b"Thank you!\n"
+    out += _PR_NORMAL + _PR_LEFT
+
+    # Feed + cut
+    out += _PR_LF * 4
+    out += _PR_CUT
+
+    return bytes(out)
+
+
+def _do_print(sale: dict):
+    """Background-thread print job — tries BT/USB/CUPS in order."""
+    fh, path, conf = _open_printer()
+
+    try:
+        receipt_bytes = _format_receipt(sale, conf)
+
+        if fh is not None:
+            fh.write(receipt_bytes)
+            fh.flush()
+            fh.close()
+            print(f"[print] Receipt sent to {path}", flush=True)
+
+        elif path == "cups":
+            # Write temp file and submit via lp
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+                tmp.write(receipt_bytes)
+                tmp_path = tmp.name
+            result = subprocess.run(
+                ["lp", "-o", "raw", tmp_path],
+                capture_output=True, timeout=10
+            )
+            os.unlink(tmp_path)
+            if result.returncode == 0:
+                print(f"[print] Receipt submitted via CUPS lp", flush=True)
+            else:
+                print(f"[print] CUPS lp failed: {result.stderr.decode()}", flush=True)
+
+        else:
+            print("[print] No printer found — receipt not printed", flush=True)
+
+    except Exception as e:
+        print(f"[print] Print error: {e}", flush=True)
+        if fh:
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+
+@app.route("/print/receipt", methods=["POST"])
+def print_receipt():
+    """
+    Print a receipt on the connected Bluetooth or USB thermal printer.
+    Body: sale JSON (same format as /sync/sales items).
+    Tablet app calls this after every completed sale.
+    Non-blocking — returns immediately, prints in background.
+    """
+    sale = request.get_json(force=True, silent=True) or {}
+    if not sale:
+        return jsonify({"error": "Sale JSON body required"}), 400
+
+    threading.Thread(target=_do_print, args=(sale,), daemon=True).start()
+    return jsonify({"ok": True, "queued": True}), 202
+
+
+@app.route("/print/status", methods=["GET"])
+def print_status():
+    """Returns which printer device is currently available."""
+    _, path, conf = _open_printer()
+    return jsonify({
+        "printer_available": path is not None,
+        "printer_path":      path,
+        "bt_mac":            conf.get("printer_bt_mac"),
+    })
 
 
 # ---------------------------------------------------------------------------

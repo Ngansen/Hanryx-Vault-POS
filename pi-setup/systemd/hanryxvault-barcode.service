@@ -1,0 +1,18 @@
+[Unit]
+Description=HanryxVault Barcode Scanner Daemon (USB + Bluetooth HID)
+After=hanryxvault.service bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hanryxvault
+ExecStart=/opt/hanryxvault/venv/bin/python3 /opt/hanryxvault/barcode_daemon.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hanryxvault-barcode
+
+[Install]
+WantedBy=multi-user.target
