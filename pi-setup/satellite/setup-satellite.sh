@@ -6,12 +6,14 @@
 #    sudo bash setup-satellite.sh
 #
 #  What it does:
-#  1. Installs the full POS server stack (identical to the home Pi install)
-#  2. Installs the satellite sync agent that runs on every boot
-#  3. Prompts for your home Pi URL so it knows where to sync
+#  1. Installs the full POS server stack (same as home Pi)
+#  2. Installs the satellite sync agent (runs on every boot)
+#  3. Installs WireGuard VPN client so the trade show Pi tunnels to home Pi
+#     over the internet when plugged in anywhere — hotel, show floor, anywhere
+#  4. Sets up barcode scanner daemon
 #
-#  The trade show Pi is completely standalone — it works offline at shows.
-#  Sync only happens when powered on AND home Pi is reachable.
+#  The trade show Pi is fully standalone — works completely offline.
+#  VPN + sync only fires when the Pi is powered on AND has internet.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -19,12 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/hanryxvault"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()    { echo -e "${GREEN}[satellite]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[satellite]${NC} $*"; }
-step()    { echo -e "${CYAN}══ $* ══${NC}"; }
-error()   { echo -e "${RED}[satellite] ERROR:${NC} $*"; exit 1; }
+info()  { echo -e "${GREEN}[satellite]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[satellite]${NC} $*"; }
+step()  { echo -e "${CYAN}══ $* ══${NC}"; }
+error() { echo -e "${RED}[satellite] ERROR:${NC} $*"; exit 1; }
 
 [[ $EUID -ne 0 ]] && error "Run with sudo"
+
+VPN_ENABLED=false
+WG_INTERFACE="wg0"
 
 echo ""
 echo -e "${CYAN}"
@@ -34,53 +39,120 @@ echo "  ║  Trade Show / Away-Game Setup            ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# ── Step 1: Run main installer ────────────────────────────────────────────────
+# ── Step 1: Run main POS server installer ─────────────────────────────────────
 step "Installing POS server stack"
 PARENT_INSTALL="$SCRIPT_DIR/../install.sh"
-if [[ -f "$PARENT_INSTALL" ]]; then
-    bash "$PARENT_INSTALL"
-else
-    error "Could not find install.sh at $PARENT_INSTALL — run from the pi-setup/satellite directory"
-fi
+[[ -f "$PARENT_INSTALL" ]] || error "Cannot find install.sh at $PARENT_INSTALL"
+bash "$PARENT_INSTALL"
 
-# ── Step 2: Install satellite sync agent ─────────────────────────────────────
+# ── Step 2: Install satellite sync agent ──────────────────────────────────────
 step "Installing satellite sync agent"
-
 cp "$SCRIPT_DIR/satellite_sync.py" "$INSTALL_DIR/satellite_sync.py"
 chown hanryxvault:hanryxvault "$INSTALL_DIR/satellite_sync.py"
 chmod 644 "$INSTALL_DIR/satellite_sync.py"
 info "Installed satellite_sync.py"
 
-# ── Step 3: Configure home Pi URL ─────────────────────────────────────────────
+# ── Step 3: WireGuard VPN client ──────────────────────────────────────────────
+step "WireGuard VPN (internet tunnel to home Pi)"
+echo ""
+echo "WireGuard lets this Pi reach your home Pi from anywhere — trade shows,"
+echo "hotels, phone hotspot — as long as it has any internet connection."
+echo ""
+echo "Before continuing, run this on your HOME Pi to generate the client config:"
+echo ""
+echo -e "  ${CYAN}sudo bash scripts/add-vpn-client.sh satellite-pi${NC}"
+echo ""
+echo "That creates a file like /tmp/satellite-pi.conf — copy it here via:"
+echo "  USB drive, SCP, or paste the contents into a file."
+echo ""
+read -rp "Path to WireGuard client config file (Enter to skip VPN for now): " WG_CONF_SRC
+
+if [[ -n "$WG_CONF_SRC" ]]; then
+    if [[ ! -f "$WG_CONF_SRC" ]]; then
+        warn "File not found: $WG_CONF_SRC — skipping VPN setup"
+    else
+        info "Installing WireGuard..."
+        apt-get install -y --no-install-recommends wireguard-tools >/dev/null
+
+        WG_CONF_DST="/etc/wireguard/${WG_INTERFACE}.conf"
+        cp "$WG_CONF_SRC" "$WG_CONF_DST"
+        chmod 600 "$WG_CONF_DST"
+
+        # Extract home Pi VPN IP from AllowedIPs / Endpoint in the conf
+        HOME_VPN_IP=$(grep -i 'Endpoint' "$WG_CONF_DST" \
+                      | head -1 | sed 's/.*Endpoint\s*=\s*//' | cut -d: -f1 || true)
+
+        systemctl enable wg-quick@${WG_INTERFACE}
+        systemctl start  wg-quick@${WG_INTERFACE} || \
+            warn "VPN did not start immediately — will connect on next boot or when internet is available"
+
+        VPN_ENABLED=true
+        info "WireGuard VPN enabled (interface: ${WG_INTERFACE})"
+        info "Trade show Pi will auto-connect to home Pi VPN on every boot"
+    fi
+else
+    warn "Skipping VPN — sync will use whatever URL you set in satellite.conf"
+fi
+
+# ── Step 4: Configure home Pi URL ─────────────────────────────────────────────
 step "Configuring home Pi connection"
 
 echo ""
-echo "Enter the URL of your HOME Pi. Options:"
-echo "  Via WireGuard VPN : http://10.10.0.1:8080  (most reliable)"
-echo "  Via Tailscale     : http://hanryxvault.tailcfc0a3.ts.net"
-echo "  Via LAN           : http://192.168.1.50:8080"
+if [[ "$VPN_ENABLED" == "true" ]]; then
+    echo "VPN is enabled. Your home Pi's WireGuard IP is typically 10.10.0.1."
+    echo "Check your WireGuard server config on the home Pi to confirm."
+    DEFAULT_URL="http://10.10.0.1:8080"
+else
+    echo "Enter the URL of your HOME Pi:"
+    echo "  Via WireGuard VPN (recommended): http://10.10.0.1:8080"
+    echo "  Via Tailscale                  : http://hanryxvault.tailcfc0a3.ts.net"
+    echo "  Via LAN (same network only)    : http://192.168.1.50:8080"
+    DEFAULT_URL="http://10.10.0.1:8080"
+fi
 echo ""
-read -rp "Home Pi URL: " HOME_URL
-HOME_URL="${HOME_URL:-http://10.10.0.1:8080}"
+read -rp "Home Pi URL [${DEFAULT_URL}]: " HOME_URL
+HOME_URL="${HOME_URL:-$DEFAULT_URL}"
 
 CONF_FILE="$INSTALL_DIR/satellite.conf"
 cat > "$CONF_FILE" << EOF
-# HanryxVault Satellite Configuration — auto-generated by setup-satellite.sh
+# HanryxVault Satellite Configuration — generated by setup-satellite.sh
+# Edit this file to change the home Pi connection URL.
+
+# Primary connection — WireGuard VPN IP (home Pi is always 10.10.0.1 on VPN)
 home_pi_url=${HOME_URL}
-timeout_s=15
+
+# How long to wait for a response before giving up (seconds)
+timeout_s=20
+
+# Retries before marking a sync step as failed
 retry_count=2
+
+# WireGuard interface name (used by sync agent to check tunnel status)
+vpn_interface=${WG_INTERFACE}
+
+# Seconds to wait for VPN tunnel to stabilise after boot before first sync attempt
+vpn_wait_s=8
 EOF
 chown hanryxvault:hanryxvault "$CONF_FILE"
-info "Saved config: home_pi_url=$HOME_URL"
+info "Saved config  →  home_pi_url=${HOME_URL}"
 
-# ── Step 4: Install systemd sync service ──────────────────────────────────────
+# ── Step 5: Install systemd sync service ──────────────────────────────────────
 step "Installing sync systemd service"
 
-cat > /etc/systemd/system/hanryxvault-satellite-sync.service << 'EOF'
+# Build After= line — include wg-quick if VPN is enabled
+if [[ "$VPN_ENABLED" == "true" ]]; then
+    AFTER_LINE="After=network-online.target wg-quick@${WG_INTERFACE}.service hanryxvault.service"
+    WANTS_LINE="Wants=network-online.target wg-quick@${WG_INTERFACE}.service"
+else
+    AFTER_LINE="After=network-online.target hanryxvault.service"
+    WANTS_LINE="Wants=network-online.target"
+fi
+
+cat > /etc/systemd/system/hanryxvault-satellite-sync.service << EOF
 [Unit]
-Description=HanryxVault Satellite Sync (push sales, pull inventory)
-After=network-online.target hanryxvault.service
-Wants=network-online.target
+Description=HanryxVault Satellite Sync (push sales to home, pull inventory)
+${AFTER_LINE}
+${WANTS_LINE}
 Requires=hanryxvault.service
 
 [Service]
@@ -99,9 +171,9 @@ EOF
 
 systemctl daemon-reload
 systemctl enable hanryxvault-satellite-sync.service
-info "Sync service enabled — will run automatically on every boot"
+info "Sync service enabled — fires automatically on every boot"
 
-# ── Step 5: Install barcode daemon ────────────────────────────────────────────
+# ── Step 6: Install barcode daemon ────────────────────────────────────────────
 step "Installing Bluetooth/USB barcode scanner daemon"
 
 BARCODE_SRC="$SCRIPT_DIR/../scripts/barcode_daemon.py"
@@ -112,7 +184,7 @@ if [[ -f "$BARCODE_SRC" ]]; then
 
     "$INSTALL_DIR/venv/bin/pip" install --quiet evdev
 
-    cat > /etc/systemd/system/hanryxvault-barcode.service << 'EOF'
+    cat > /etc/systemd/system/hanryxvault-barcode.service << 'EOSVC'
 [Unit]
 Description=HanryxVault Barcode Scanner Daemon (USB + Bluetooth HID)
 After=hanryxvault.service bluetooth.target
@@ -131,7 +203,7 @@ SyslogIdentifier=hanryxvault-barcode
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOSVC
 
     systemctl daemon-reload
     systemctl enable --now hanryxvault-barcode.service
@@ -144,16 +216,25 @@ fi
 echo ""
 echo -e "${GREEN}"
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║  Satellite Pi setup complete!            ║"
+echo "  ║  Trade show Pi is ready!                 ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
-info "Home Pi     : $HOME_URL"
-info "Local POS   : http://localhost:8080"
-info "Sync runs   : automatically on every boot when home Pi is reachable"
-info ""
-info "Next steps:"
-info "  • Set up Bluetooth printer: sudo bash scripts/setup-bluetooth-printer.sh"
-info "  • Pair your BT barcode scanner via: sudo bluetoothctl"
-info "    (pair, trust, connect) — the barcode daemon will auto-detect it"
-info "  • To trigger a manual sync: sudo systemctl start hanryxvault-satellite-sync"
-info "  • View sync logs:           sudo journalctl -u hanryxvault-satellite-sync -f"
+info "Home Pi URL : ${HOME_URL}"
+info "VPN enabled : ${VPN_ENABLED}"
+info "Local POS   : http://localhost:8080/admin"
+echo ""
+info "On every boot this Pi will:"
+info "  1. Connect to home Pi VPN tunnel (if internet available)"
+info "  2. Push any offline sales + stock changes to home Pi"
+info "  3. Pull fresh inventory from home Pi"
+info "  4. Continue working whether sync succeeded or not"
+echo ""
+info "Useful commands:"
+info "  Force manual sync   : sudo systemctl start hanryxvault-satellite-sync"
+info "  Watch sync logs     : sudo journalctl -u hanryxvault-satellite-sync -f"
+if [[ "$VPN_ENABLED" == "true" ]]; then
+info "  VPN status          : sudo wg show"
+info "  VPN reconnect       : sudo systemctl restart wg-quick@${WG_INTERFACE}"
+fi
+info "  Bluetooth printer   : sudo bash scripts/setup-bluetooth-printer.sh"
+info "  Pair BT scanner     : sudo bluetoothctl → pair <MAC> → trust → connect"

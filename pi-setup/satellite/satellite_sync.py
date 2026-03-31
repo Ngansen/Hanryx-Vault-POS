@@ -18,6 +18,7 @@ Config: /opt/hanryxvault/satellite.conf
 import sqlite3
 import json
 import os
+import subprocess
 import sys
 import time
 import datetime
@@ -33,9 +34,11 @@ DB_PATH   = os.path.realpath(DB_PATH)
 
 # Default config — overridden by satellite.conf
 _DEFAULTS = {
-    "home_pi_url": "http://10.10.0.1:8080",
-    "timeout_s":   "15",
-    "retry_count": "2",
+    "home_pi_url":   "http://10.10.0.1:8080",
+    "timeout_s":     "15",
+    "retry_count":   "2",
+    "vpn_interface": "wg0",   # WireGuard interface name
+    "vpn_wait_s":    "8",     # seconds to let VPN tunnel stabilise before first attempt
 }
 
 
@@ -215,21 +218,64 @@ def pull_inventory(db: sqlite3.Connection, home_url: str, timeout: int) -> int:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _vpn_is_up(interface: str) -> bool:
+    """Return True if the WireGuard interface is present and has a peer handshake."""
+    try:
+        result = subprocess.run(
+            ["wg", "show", interface],
+            capture_output=True, text=True, timeout=5
+        )
+        # 'latest handshake' line only appears after a successful handshake
+        return "latest handshake" in result.stdout
+    except Exception:
+        return False
+
+
+def _wait_for_vpn(interface: str, wait_s: int):
+    """Wait up to wait_s seconds for WireGuard tunnel to establish."""
+    if not interface:
+        return
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        if _vpn_is_up(interface):
+            log(f"VPN tunnel up on {interface} ✓")
+            return
+        time.sleep(2)
+    log(f"VPN tunnel not yet confirmed on {interface} — proceeding anyway")
+
+
 def main():
-    conf     = load_conf()
-    home_url = conf["home_pi_url"].rstrip("/")
-    timeout  = int(conf.get("timeout_s", 15))
+    conf      = load_conf()
+    home_url  = conf["home_pi_url"].rstrip("/")
+    timeout   = int(conf.get("timeout_s",   15))
+    vpn_iface = conf.get("vpn_interface", "wg0").strip()
+    vpn_wait  = int(conf.get("vpn_wait_s", 8))
 
     log(f"Satellite sync starting — home Pi: {home_url}")
 
-    # ── Reachability check ────────────────────────────────────────────────────
-    try:
-        health = _api_get(f"{home_url}/health", timeout=5)
-        log(f"Home Pi reachable  inventory={health.get('inventory','?')}  "
-            f"total_sales={health.get('total_sales','?')}")
-    except Exception as e:
-        log(f"Home Pi not reachable ({e}) — running offline, no sync performed")
-        sys.exit(0)   # not an error — this is expected when offline at shows
+    # ── Wait for VPN tunnel if WireGuard is installed ─────────────────────────
+    if subprocess.run(["which", "wg"], capture_output=True).returncode == 0:
+        if vpn_iface:
+            log(f"Waiting up to {vpn_wait}s for WireGuard tunnel ({vpn_iface}) to establish...")
+            _wait_for_vpn(vpn_iface, vpn_wait)
+    else:
+        log("WireGuard not installed — connecting directly")
+
+    # ── Reachability check (with one retry after brief pause) ─────────────────
+    health = None
+    for attempt in (1, 2):
+        try:
+            health = _api_get(f"{home_url}/health", timeout=5)
+            log(f"Home Pi reachable  inventory={health.get('inventory','?')}  "
+                f"total_sales={health.get('total_sales','?')}")
+            break
+        except Exception as e:
+            if attempt == 1:
+                log(f"Attempt {attempt}: home Pi not responding ({e}) — retrying in 5 s")
+                time.sleep(5)
+            else:
+                log(f"Home Pi not reachable after {attempt} attempts — running offline, no sync")
+                sys.exit(0)   # not an error — expected when offline at shows
 
     # ── Determine sync window ─────────────────────────────────────────────────
     if not os.path.exists(DB_PATH):
