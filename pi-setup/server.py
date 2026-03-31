@@ -1140,14 +1140,15 @@ def health():
     except Exception:
         pass  # column may not exist on very old DBs
 
-    # DB file sizes
+    # PostgreSQL DB size (replaces old SQLite file-size stats)
     db_size_mb  = 0.0
-    wal_size_mb = 0.0
+    wal_size_mb = 0.0  # not applicable for PostgreSQL
     try:
-        db_size_mb  = round(os.path.getsize(DB_PATH) / (1024 * 1024), 2)
-        wal_path    = DB_PATH + "-wal"
-        if os.path.exists(wal_path):
-            wal_size_mb = round(os.path.getsize(wal_path) / (1024 * 1024), 2)
+        row = get_db().execute(
+            "SELECT pg_database_size(current_database())"
+        ).fetchone()
+        if row:
+            db_size_mb = round(row[0] / (1024 * 1024), 2)
     except Exception:
         pass
 
@@ -1669,7 +1670,8 @@ def webhook_config_set():
     url  = (body.get("url") or "").strip()
     db   = get_db()
     db.execute(
-        "INSERT OR REPLACE INTO server_state (key, value) VALUES ('webhook_url', ?)", (url,)
+        "INSERT INTO server_state (key, value) VALUES ('webhook_url', %s) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (url,)
     )
     db.commit()
     action = "cleared" if not url else "saved"
@@ -1743,12 +1745,13 @@ def sync_sales():
             skipped += 1
             continue
         try:
-            db.execute("""
-                INSERT OR IGNORE INTO sales
+            cur = db.execute("""
+                INSERT INTO sales
                     (transaction_id, timestamp_ms, subtotal, tax_amount, tip_amount,
                      total_amount, payment_method, employee_id, items_json,
                      cash_received, change_given, is_refunded, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (transaction_id) DO NOTHING
             """, (
                 transaction_id,
                 sale.get("timestamp", _now_ms()),
@@ -1764,7 +1767,7 @@ def sync_sales():
                 1 if sale.get("isRefunded", False) else 0,
                 sale.get("source", source),
             ))
-            if db.execute("SELECT changes()").fetchone()[0] > 0:
+            if cur.rowcount > 0:
                 inserted += 1
             else:
                 skipped += 1
@@ -2045,7 +2048,8 @@ def admin_set_satellite_token():
 
     db = get_db()
     db.execute(
-        "INSERT OR REPLACE INTO server_state(key, value) VALUES ('satellite_token', ?)",
+        "INSERT INTO server_state (key, value) VALUES ('satellite_token', %s) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
         (token,)
     )
     db.commit()
@@ -2454,8 +2458,8 @@ def _sys_wg_peer_list() -> list:
             return []
         # Fetch all name mappings at once with a direct connection
         try:
-            _nc = sqlite3.connect(DB_PATH)
-            names_map = {r[0]: r[1] for r in
+            _nc = _direct_db()
+            names_map = {r["pubkey"]: r["friendly_name"] for r in
                          _nc.execute("SELECT pubkey, friendly_name FROM wg_peer_names").fetchall()}
             _nc.close()
         except Exception:
@@ -2643,9 +2647,13 @@ def system_stats():
     for name, url in _SYS_WEBSITES:
         sc, ms = _sys_ping(url)
         sites[name] = {"status": sc, "ms": ms, "ok": sc in (200, 301, 302)}
-    db_size = "not found"
-    if os.path.exists(DB_PATH):
-        db_size = f"{os.path.getsize(DB_PATH) / 1024:.1f} KB"
+    try:
+        row = get_db().execute(
+            "SELECT pg_size_pretty(pg_database_size(current_database()))"
+        ).fetchone()
+        db_size = row[0] if row else "unavailable"
+    except Exception:
+        db_size = "unavailable"
     return jsonify({
         "cpu_pct":  _sys_cpu_percent(),
         "cpu_temp": _sys_cpu_temp(),
@@ -4522,6 +4530,5 @@ if __name__ == "__main__":
     _load_tokens_from_db()
     threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
     _cleanup_scan_queue()
-    _wal_checkpoint()
     print("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

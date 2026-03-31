@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vaultpos
+      POSTGRES_USER: vaultpos
+      POSTGRES_PASSWORD: vaultpos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultpos -d vaultpos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://vaultpos:vaultpos@db:5432/vaultpos
+      FLASK_ENV: production
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
