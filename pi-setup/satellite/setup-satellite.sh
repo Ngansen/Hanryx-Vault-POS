@@ -226,7 +226,19 @@ else
     warn "barcode_daemon.py not found — skipping barcode setup"
 fi
 
-# ── Step 7: Network auto-failover (WiFi primary, USB phone tethering backup) ──
+# ── Step 7: WiFi manager desktop app ──────────────────────────────────────────
+step "Installing WiFi Manager desktop app"
+
+WIFI_MGR_SRC="$SCRIPT_DIR/../scripts/wifi_manager.py"
+WIFI_MGR_INSTALL="$SCRIPT_DIR/../scripts/install-wifi-manager.sh"
+
+if [[ -f "$WIFI_MGR_INSTALL" ]]; then
+    bash "$WIFI_MGR_INSTALL"
+else
+    warn "install-wifi-manager.sh not found — skipping desktop app"
+fi
+
+# ── Step 8: Network auto-failover (WiFi primary, USB phone tethering backup) ──
 step "Setting up network auto-failover"
 
 NETFAIL_SCRIPT="$SCRIPT_DIR/../scripts/setup-network-failover.sh"

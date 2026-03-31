@@ -139,17 +139,40 @@ def _count_pending() -> tuple[int, int]:
 
 # ── Connectivity check ────────────────────────────────────────────────────────
 
-def _home_pi_reachable(home_url: str, timeout: int) -> bool:
-    """Quick /health ping — returns True if home Pi responds."""
+def _has_internet(timeout: int = 4) -> bool:
+    """
+    Quick check for general internet connectivity before trying the home Pi.
+    Tries two well-known DNS servers — if neither responds, we're offline.
+    """
+    for host in ("1.1.1.1", "8.8.8.8"):
+        try:
+            req = urllib.request.Request(
+                f"http://{host}",
+                headers={"User-Agent": "HanryxVaultMonitor/1.0"},
+            )
+            urllib.request.urlopen(req, timeout=timeout)
+            return True
+        except urllib.error.HTTPError:
+            return True   # got an HTTP error = server responded = we have internet
+        except Exception:
+            continue
+    return False
+
+
+def _home_pi_reachable(home_url: str, timeout: int) -> tuple[bool, str]:
+    """
+    Check home Pi /health endpoint.
+    Returns (reachable, reason) — reason is used for logging only.
+    """
     try:
         req = urllib.request.Request(
             f"{home_url}/health",
             headers={"User-Agent": "HanryxVaultMonitor/1.0"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+            return resp.status == 200, "ok"
+    except Exception as e:
+        return False, str(e)[:80]
 
 
 # ── Sync trigger ──────────────────────────────────────────────────────────────
@@ -215,11 +238,23 @@ def main():
     last_offline_log   = 0.0   # time.time() of last offline status log
 
     while not _stop_event.is_set():
-        now       = time.time()
-        reachable = _home_pi_reachable(home_url, timeout)
+        now = time.time()
+
+        # ── Two-level connectivity check ──────────────────────────────────────
+        # Level 1: do we have any internet at all?
+        # Level 2: can we reach the home Pi specifically?
+        # This gives much clearer log messages when something is wrong.
+        internet_up = _has_internet(timeout=4)
+        reachable   = False
+        reach_reason = ""
+
+        if internet_up:
+            reachable, reach_reason = _home_pi_reachable(home_url, timeout)
+        else:
+            reach_reason = "no internet"
 
         if reachable:
-            # ── Online ────────────────────────────────────────────────────────
+            # ── Home Pi reachable ─────────────────────────────────────────────
             pending_sales, pending_ded = _count_pending()
             pending_total = pending_sales + pending_ded
 
@@ -237,23 +272,31 @@ def main():
                 last_online_sync = now
 
             else:
-                # Online and nothing to do
+                # Online and up to date
                 if pending_total > 0:
+                    secs_left = int(online_s - (now - last_online_sync))
                     log(f"Online — {pending_sales} sales + {pending_ded} deductions pending "
-                        f"(next sync in {int(online_s - (now - last_online_sync))}s)")
+                        f"(next sync in {secs_left}s)")
 
         else:
-            # ── Offline ───────────────────────────────────────────────────────
+            # ── Offline or home Pi unreachable ────────────────────────────────
             if was_reachable:
-                log(f"Lost connection to home Pi ({home_url}) — operating offline")
+                if not internet_up:
+                    log("Internet lost — operating offline (sales saving to local DB)")
+                else:
+                    log(f"Home Pi unreachable — internet is up but VPN/tunnel may be down "
+                        f"({reach_reason})")
 
             if (now - last_offline_log) >= offline_s:
                 pending_sales, pending_ded = _count_pending()
-                if pending_sales + pending_ded > 0:
-                    log(f"OFFLINE — {pending_sales} sales + {pending_ded} deductions "
-                        f"stored locally, will push when connection returns")
+                total = pending_sales + pending_ded
+                status = "no internet" if not internet_up else f"home Pi: {reach_reason}"
+                if total > 0:
+                    log(f"OFFLINE [{status}] — "
+                        f"{pending_sales} sales + {pending_ded} deductions stored locally, "
+                        f"will push when connection returns")
                 else:
-                    log(f"OFFLINE — no pending data (all synced before going offline)")
+                    log(f"OFFLINE [{status}] — no pending data")
                 last_offline_log = now
 
         was_reachable = reachable

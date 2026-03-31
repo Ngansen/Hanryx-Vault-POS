@@ -14,7 +14,7 @@
 #    • Any device that presents as a USB network adapter
 #
 #  Routing metric strategy:
-#    WiFi          → metric 100  (always preferred when up)
+#    WiFi          → metric  50  (top priority — always wins)
 #    USB tethering → metric 200  (used only when WiFi has no route)
 #
 #  Run this on the TRADE SHOW Pi:
@@ -88,23 +88,37 @@ if [[ -z "$WIFI_IFACE" ]]; then
 fi
 info "WiFi interface: ${WIFI_IFACE}"
 
-# ── Step 4: Set WiFi connection metric ────────────────────────────────────────
-step "Setting WiFi routing metric (lower = preferred)"
+# ── Step 4: Set WiFi metric to TOP priority on ALL saved profiles ─────────────
+step "Setting WiFi to top priority (metric 50)"
 
-# Find the active WiFi connection profile name
-WIFI_CON=$(nmcli -t -f NAME,DEVICE con show --active \
-    | awk -F: -v iface="$WIFI_IFACE" '$2==iface{print $1; exit}')
+# Apply metric 50 to every saved WiFi profile — including ones not currently active.
+# This means WiFi is always preferred over USB tethering (200) and ethernet (100)
+# even for networks you haven't connected to on this Pi yet.
+WIFI_PROFILES=$(nmcli -t -f NAME,TYPE connection show \
+    | awk -F: '$2=="802-11-wireless"{print $1}')
 
-if [[ -n "$WIFI_CON" ]]; then
-    nmcli connection modify "$WIFI_CON" \
-        ipv4.route-metric 100 \
-        ipv6.route-metric 100
-    nmcli connection up "$WIFI_CON" 2>/dev/null || true
-    info "Set metric 100 on WiFi connection: '${WIFI_CON}'"
+if [[ -n "$WIFI_PROFILES" ]]; then
+    while IFS= read -r CON; do
+        nmcli connection modify "$CON" \
+            ipv4.route-metric 50 \
+            ipv6.route-metric 50 2>/dev/null || true
+        info "  Set metric 50 on WiFi profile: '${CON}'"
+    done <<< "$WIFI_PROFILES"
 else
-    warn "No active WiFi connection found — connect to WiFi first, then re-run"
-    warn "Or set the metric manually: nmcli connection modify <name> ipv4.route-metric 100"
+    info "No saved WiFi profiles yet — new connections will get metric 50 automatically"
 fi
+
+# ── Global NM config: any NEW WiFi connection automatically gets metric 50 ─────
+# This uses NetworkManager's per-connection-type default metric so you never
+# have to think about it again even when connecting to a brand-new network.
+NM_WIFI_CONF="/etc/NetworkManager/conf.d/10-wifi-priority.conf"
+cat > "$NM_WIFI_CONF" << 'EOF'
+[connection-wifi]
+match-device=type:wifi
+ipv4.route-metric=50
+ipv6.route-metric=50
+EOF
+info "Global WiFi metric default set to 50 for all future connections"
 
 # ── Step 5: NetworkManager dispatcher — auto-configure USB tethering ──────────
 step "Installing USB tethering auto-configuration dispatcher"
@@ -225,7 +239,7 @@ echo "  ║  Network failover configured!                 ║"
 echo "  ╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 info "How it works:"
-info "  WiFi (metric 100)          — always used when available"
+info "  WiFi (metric 50)           — always used when available (top priority)"
 info "  USB phone tethering (200)  — takes over automatically when WiFi drops"
 info "  Returns to WiFi            — automatically when WiFi comes back"
 echo ""
