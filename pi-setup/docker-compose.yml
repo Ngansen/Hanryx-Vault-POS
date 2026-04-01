@@ -28,7 +28,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"   # nginx proxies on LAN/VPN; Android uses LAN direct
+      - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
     environment:
       DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
       FLASK_ENV:        production
@@ -40,7 +40,9 @@ services:
       # Pull inventory from the local storefront (internal Docker network)
       CLOUD_INVENTORY_SOURCES: http://storefront:3000/api/products
 
-      # Satellite Pi auth token — set before deploying
+      # Satellite Pi auth token — REQUIRED if you use a satellite trade-show Pi
+      # Generate with: openssl rand -hex 32
+      # Also register the same value in satellite.conf on the trade-show Pi.
       # SATELLITE_TOKEN: your-secret-token
 
       # Zettle OAuth
