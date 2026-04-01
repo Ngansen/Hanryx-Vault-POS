@@ -4,6 +4,37 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## Pi Deployment Architecture (`pi-setup/`)
+
+All services run on the Raspberry Pi 5 via Docker Compose. Three containers share one PostgreSQL instance.
+
+| Service | Port | Access | Description |
+|---|---|---|---|
+| `pos` | 8080 | LAN + Tailscale VPN | Flask POS server + admin dashboard |
+| `storefront` | 3000 | Public (via nginx) | HanRyx-Vault Node.js customer website |
+| `db` | 5432 (internal) | Docker network only | PostgreSQL — databases: `vaultpos` + `storefront` |
+
+**nginx routing** (`pi-setup/nginx/hanryxvault.conf`):
+- `hanryxvault.duckdns.org` → storefront (:3000) — public, HTTPS via certbot
+- `hanryxvault.tailcfc0a3.ts.net` + LAN catch-all → Flask POS (:8080)
+
+**Internal service wiring:**
+- POS `CLOUD_INVENTORY_SOURCES=http://storefront:3000/api/products` — POS pulls from storefront
+- Storefront `HANRYX_POS_PUSH_URL=http://pos:8080/push/inventory` — storefront pushes to POS
+
+**Storefront build** (`pi-setup/services/storefront/Dockerfile`):
+- Clones `Ngansen/HanRyx-Vault` from GitHub at build time (multi-stage Node 20)
+- Runs `drizzle-kit push` on first start to migrate the `storefront` database
+
+**PostgreSQL init** (`pi-setup/init-db/01-create-storefront-db.sh`):
+- Runs once on first volume init — creates `storefront` database alongside `vaultpos`
+
+**Deploy command:**
+```bash
+cd pi-setup && cp .env.example .env  # edit .env
+docker compose up -d --build
+```
+
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:

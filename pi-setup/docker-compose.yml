@@ -1,37 +1,88 @@
 services:
+
+  # ── PostgreSQL — shared database server ───────────────────────────────────────
+  # Two databases are created automatically on first start:
+  #   vaultpos   — Flask POS server (inventory, sales, scan queue, etc.)
+  #   storefront — HanRyx-Vault public storefront (products, orders, users)
   db:
     image: postgres:16-bookworm
     restart: unless-stopped
     environment:
-      POSTGRES_DB: vaultpos
-      POSTGRES_USER: vaultpos
-      POSTGRES_PASSWORD: vaultpos
+      POSTGRES_DB:       vaultpos
+      POSTGRES_USER:     vaultpos
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vaultpos}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vaultpos -d vaultpos"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  app:
+  # ── Flask POS server ──────────────────────────────────────────────────────────
+  # Handles: tablet POS, admin dashboard, scan queue, Zettle, BT receipt printer
+  # Accessible: LAN (port 8080) + Tailscale VPN hostname
+  # Android app should connect to http://<pi-ip>:8080 (LAN) or via WireGuard
+  pos:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"   # nginx proxies on LAN/VPN; Android uses LAN direct
     environment:
-      DATABASE_URL: postgresql://vaultpos:vaultpos@db:5432/vaultpos
-      FLASK_ENV: production
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
-      # Security — override these on the Pi before deploying
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-hanryxvault}
-      # Optional — comma-separated cloud inventory URLs
-      # CLOUD_INVENTORY_SOURCES: https://example.com/api/inventory,https://other.com/api/products
+
+      SESSION_SECRET:   ${SESSION_SECRET:-change-me-on-the-pi}
+      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-hanryxvault}
+
+      # Pull inventory from the local storefront (internal Docker network)
+      CLOUD_INVENTORY_SOURCES: http://storefront:3000/api/products
+
+      # Satellite Pi auth token — set before deploying
+      # SATELLITE_TOKEN: your-secret-token
+
       # Zettle OAuth
-      # ZETTLE_CLIENT_ID: your-client-id
+      # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
-      # Pokémon TCG API key (free tier = 1k/day; with key = 20k/day)
+
+      # Pokémon TCG API key (free = 1k/day; with key = 20k/day)
+      # PTCG_API_KEY: your-api-key
+
+      # Gmail SMTP for sale alerts
+      # SMTP_USER:         you@gmail.com
+      # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
+      # NOTIFY_EMAIL:      alerts@example.com
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
+  # Public-facing React + Express customer website with PayPal checkout.
+  # nginx routes the public domain to this service on port 3000.
+  # Cloned from https://github.com/Ngansen/HanRyx-Vault at build time.
+  storefront:
+    build: ./services/storefront
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # nginx proxies the public domain here
+    environment:
+      DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/storefront
+      PORT:         "3000"
+      NODE_ENV:     production
+
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}
+
+      # The storefront pushes inventory updates to the POS (internal Docker network)
+      # Set this so the storefront notifies the POS when you add/update products.
+      HANRYX_POS_PUSH_URL: http://pos:8080/push/inventory
+
+      # PayPal credentials for the checkout flow
+      # PAYPAL_CLIENT_ID:     your-paypal-client-id
+      # PAYPAL_CLIENT_SECRET: your-paypal-client-secret
+
+      # Pokémon TCG API key (shared with POS)
       # PTCG_API_KEY: your-api-key
     depends_on:
       db:
