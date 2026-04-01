@@ -1708,6 +1708,20 @@ def cache_stats():
 # Zettle OAuth
 # ---------------------------------------------------------------------------
 
+@app.route("/zettle/login", methods=["GET"])
+def zettle_login():
+    """APK-compatible alias — redirects to Zettle OAuth without CSRF state check."""
+    if not ZETTLE_CLIENT_ID or not ZETTLE_CLIENT_SECRET:
+        return jsonify({"error": "ZETTLE_CLIENT_ID / ZETTLE_CLIENT_SECRET not configured"}), 500
+    params = urllib.parse.urlencode({
+        "response_type": "code",
+        "client_id":     ZETTLE_CLIENT_ID,
+        "redirect_uri":  ZETTLE_REDIRECT_URI,
+        "scope":         "READ:PURCHASE WRITE:PURCHASE READ:FINANCE WRITE:PAYMENT",
+    })
+    return redirect(f"{ZETTLE_OAUTH_BASE}/authorize?{params}")
+
+
 @app.route("/zettle/auth", methods=["GET"])
 def zettle_auth():
     import secrets
@@ -1757,6 +1771,51 @@ def zettle_status():
         "authenticated": has_token,
         "expires_in_s":  max(0, int(expires - _time.time())) if has_token else 0,
     })
+
+
+@app.route("/zettle/pay", methods=["POST"])
+def zettle_pay():
+    """Initiate a card payment via the Zettle POS API (called by the APK)."""
+    token = _refresh_token_if_needed()
+    if not token:
+        return jsonify({"error": "Not authenticated — visit /zettle/login first"}), 401
+
+    body      = request.get_json(force=True, silent=True) or {}
+    amount    = body.get("amount")
+    currency  = body.get("currency", "GBP")
+    reference = body.get("reference", "")
+
+    if not amount:
+        return jsonify({"error": "amount is required"}), 400
+
+    payload = json.dumps({
+        "type":       "CARD",
+        "amount":     amount,
+        "currency":   currency,
+        "references": {"paymentReference": reference},
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{ZETTLE_POS_BASE}/v1/payments",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type":  "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return jsonify({"ok": True, "payment": json.loads(resp.read())})
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode()
+        if e.code == 401:
+            with _token_lock:
+                _zettle_state["access_token"] = None
+            return jsonify({"error": "Token expired — re-authenticate via /zettle/login", "detail": body_err}), 401
+        return jsonify({"error": f"Zettle API error {e.code}", "detail": body_err}), e.code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -2628,6 +2687,62 @@ def sync_sales():
     return jsonify({"inserted": inserted, "skipped": skipped, "source": source}), 200
 
 
+@app.route("/sales", methods=["POST"])
+def record_sale_history():
+    """
+    APK lightweight sale recorder.
+    Accepts: { items: [{name, price, quantity}], sold_at: <epoch_ms> }
+    Stores each line item in sale_history for local market price calculation.
+    No auth required — called by the APK on the local network.
+    """
+    data    = request.get_json(force=True, silent=True) or {}
+    items   = data.get("items", [])
+    sold_at = int(data.get("sold_at") or _now_ms())
+
+    if not items:
+        return jsonify({"ok": True, "recorded": 0}), 200
+
+    db       = get_db()
+    recorded = 0
+    for item in items:
+        name  = (item.get("name") or "").strip()
+        price = float(item.get("price") or 0)
+        qty   = int(item.get("quantity") or 1)
+        if not name or price <= 0:
+            continue
+        db.execute(
+            "INSERT INTO sale_history (name, price, quantity, sold_at) VALUES (%s, %s, %s, %s)",
+            (name, price, qty, sold_at)
+        )
+        recorded += 1
+    db.commit()
+    log.info("[/sales POST] recorded=%d", recorded)
+    return jsonify({"ok": True, "recorded": recorded}), 200
+
+
+@app.route("/sales", methods=["GET"])
+def get_sale_history_public():
+    """
+    APK-facing read endpoint — returns the last 500 sale line items as JSON.
+    Optional ?limit=N and ?name=... query params.
+    """
+    limit  = min(int(request.args.get("limit", 500)), 1000)
+    name_q = request.args.get("name", "").strip().lower()
+    db     = get_db()
+    if name_q:
+        rows = db.execute(
+            "SELECT name, price, quantity, sold_at FROM sale_history "
+            "WHERE LOWER(name) LIKE %s ORDER BY sold_at DESC LIMIT %s",
+            (f"%{name_q}%", limit)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT name, price, quantity, sold_at FROM sale_history "
+            "ORDER BY sold_at DESC LIMIT %s", (limit,)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 # ---------------------------------------------------------------------------
 # Inventory deduction
 # ---------------------------------------------------------------------------
@@ -2703,6 +2818,46 @@ def inventory_deduct():
         "oversold":     oversold,      # items where satellite sold more than was in stock
         "stock_levels": stock_levels,  # qr_code → new stock level after deduction
     }), 200
+
+
+@app.route("/inventory/decrement", methods=["POST"])
+def inventory_decrement():
+    """
+    APK / cloud-compatible alias for /inventory/deduct.
+    Accepts [{ qrCode, quantity }] — lighter payload, no auth token required
+    (used by the Android APK on the local network).
+    Stock never goes below 0.
+    """
+    data = request.get_json(force=True, silent=True)
+    if not data or not isinstance(data, list):
+        return jsonify({"error": "Expected a JSON array of {qrCode, quantity}"}), 400
+
+    db      = get_db()
+    updated = 0
+    errors  = []
+
+    for item in data:
+        qr  = (item.get("qrCode") or item.get("qr_code") or "").strip()
+        qty = int(item.get("quantity") or 1)
+        if not qr or qty <= 0:
+            continue
+        try:
+            result = db.execute(
+                "UPDATE inventory SET stock = GREATEST(0, stock - %s), last_updated = %s WHERE qr_code = %s",
+                (qty, _now_ms(), qr)
+            )
+            if result.rowcount > 0:
+                updated += 1
+                _invalidate_inventory(qr_code=qr)
+        except Exception as e:
+            errors.append({"qrCode": qr, "error": str(e)})
+
+    db.commit()
+    log.info("[inventory/decrement] updated=%d errors=%d", updated, len(errors))
+    resp = {"updated": updated}
+    if errors:
+        resp["errors"] = errors
+    return jsonify(resp), 200
 
 
 # ---------------------------------------------------------------------------
