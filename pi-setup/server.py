@@ -59,6 +59,14 @@ Admin dashboard:
   POST /admin/sync-from-cloud — force re-sync from Replit sites
   GET  /download/apk        — download latest debug APK
 
+QR code generation:
+  GET  /admin/qr/<qr_code>  — PNG QR image for a single card (no auth, cacheable)
+  GET  /admin/qr-sheet      — print-ready page of all in-stock card labels
+  GET  /admin/qr-sheet?q=charizard  — filter by name
+  GET  /admin/qr-sheet?cat=Singles  — filter by category
+  GET  /admin/qr-sheet?zero=1       — include out-of-stock items
+  GET  /admin/qr-sheet?cols=3       — labels per row (2–5, default 4)
+
 Run manually (dev):
   python3 server.py
 
@@ -85,7 +93,9 @@ import base64
 import csv
 import io
 import requests as _requests
-from flask import Flask, request, jsonify, redirect, g, session, render_template_string
+import qrcode as _qrcode
+import qrcode.constants as _qrcode_const
+from flask import Flask, request, jsonify, redirect, g, session, render_template_string, Response, send_file
 from flask_compress import Compress
 from cachetools import TTLCache
 
@@ -1753,6 +1763,196 @@ def admin_export_cards():
         )
 
     return jsonify({"count": len(cards), "cards": cards})
+
+
+# ---------------------------------------------------------------------------
+# QR code generation — single image + full-inventory print sheet
+# ---------------------------------------------------------------------------
+
+def _make_qr_png(text: str, box_size: int = 6, border: int = 2) -> bytes:
+    """Generate a QR code PNG for *text* and return raw bytes."""
+    qr = _qrcode.QRCode(
+        version=None,
+        error_correction=_qrcode_const.ERROR_CORRECT_M,
+        box_size=box_size,
+        border=border,
+    )
+    qr.add_data(text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@app.route("/admin/qr/<path:qr_code>", methods=["GET"])
+def admin_qr_image(qr_code: str):
+    """
+    GET /admin/qr/<qr_code>
+    Returns a QR code PNG for the given qr_code string.
+    No login required so <img> tags in the print sheet load without auth cookies.
+    """
+    size = min(max(int(request.args.get("size", 6)), 2), 15)
+    try:
+        png = _make_qr_png(qr_code, box_size=size)
+    except Exception as e:
+        log.error("[qr] generation failed for %r: %s", qr_code, e)
+        return ("QR error", 500)
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.route("/admin/qr-sheet", methods=["GET"])
+@require_admin
+def admin_qr_sheet():
+    """
+    GET /admin/qr-sheet
+    GET /admin/qr-sheet?q=charizard     — filter by name
+    GET /admin/qr-sheet?cat=Singles     — filter by category
+    GET /admin/qr-sheet?zero=1          — include out-of-stock items too
+    GET /admin/qr-sheet?cols=3          — labels per row (2–5, default 4)
+
+    Returns a print-ready HTML page with one QR label per inventory card.
+    Each label shows: QR code image, card name, set code, price, stock, qr_code text.
+    Print from the browser (Ctrl+P / Cmd+P) — the page CSS hides the nav bar.
+    """
+    q    = request.args.get("q", "").strip().lower()
+    cat  = request.args.get("cat", "").strip().lower()
+    zero = request.args.get("zero", "0") == "1"
+    try:
+        cols = min(max(int(request.args.get("cols", 4)), 2), 5)
+    except ValueError:
+        cols = 4
+
+    db   = get_db()
+    rows = db.execute(
+        "SELECT qr_code, name, price, category, rarity, set_code, stock "
+        "FROM inventory ORDER BY name ASC"
+    ).fetchall()
+
+    items = []
+    for r in rows:
+        if not zero and (r["stock"] or 0) <= 0:
+            continue
+        if q and q not in (r["name"] or "").lower() and q not in (r["qr_code"] or "").lower():
+            continue
+        if cat and cat not in (r["category"] or "").lower():
+            continue
+        items.append(dict(r))
+
+    # Build label HTML
+    label_width_pct = 100 // cols
+    labels_html = ""
+    for it in items:
+        qr    = it["qr_code"] or ""
+        name  = (it["name"] or "Unknown").replace("<", "&lt;").replace(">", "&gt;")
+        price = f"£{it['price']:.2f}" if it.get("price") else "—"
+        stock = it.get("stock") or 0
+        setc  = (it.get("set_code") or "").replace("<", "&lt;")
+        cat_d = (it.get("category") or "").replace("<", "&lt;")
+        stock_style = "color:#c00;font-weight:bold" if stock == 0 else ("color:#e07000" if stock <= 2 else "color:#060")
+        labels_html += f"""
+<div class="label">
+  <img src="/admin/qr/{urllib.parse.quote(qr, safe='')}" alt="QR:{qr}" class="qr-img">
+  <div class="lname">{name}</div>
+  <div class="lmeta">{setc}{' · ' + cat_d if cat_d and cat_d != setc else ''}</div>
+  <div class="lprice">{price} &nbsp; <span style="{stock_style}">Stock: {stock}</span></div>
+  <div class="lcode">{qr.replace('<','&lt;')}</div>
+</div>"""
+
+    total    = len(items)
+    filter_s = ""
+    if q:
+        filter_s += f" · search: <b>{q}</b>"
+    if cat:
+        filter_s += f" · category: <b>{cat}</b>"
+    if not zero:
+        filter_s += " · in-stock only"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QR Label Sheet — HanryxVault</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: Arial, sans-serif; background: #fff; color: #000; }}
+
+  /* ── Screen toolbar ─────────────────────────── */
+  .toolbar {{
+    background: #1a1a1a; color: #fff; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }}
+  .toolbar h1 {{ font-size: 16px; font-weight: bold; flex: 1; }}
+  .toolbar a  {{ color: #FFD700; font-size: 13px; }}
+  .toolbar .info {{ font-size: 13px; color: #aaa; }}
+  .toolbar form {{ display:flex; gap:8px; align-items:center; }}
+  .toolbar input {{ padding:4px 8px; border-radius:4px; border:none; font-size:13px; }}
+  .toolbar select {{ padding:4px; border-radius:4px; border:none; font-size:13px; }}
+  .toolbar button {{ padding:5px 14px; border:none; border-radius:4px; cursor:pointer;
+                     background:#FFD700; font-weight:bold; font-size:13px; }}
+
+  /* ── Label grid ─────────────────────────────── */
+  .grid {{
+    display: flex;
+    flex-wrap: wrap;
+    padding: 8mm;
+    gap: 4mm;
+  }}
+  .label {{
+    width: calc({label_width_pct}% - 4mm);
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    padding: 4mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    page-break-inside: avoid;
+    background: #fff;
+  }}
+  .qr-img  {{ width: 100%; max-width: 120px; height: auto; display: block; margin-bottom: 3mm; }}
+  .lname   {{ font-size: 10pt; font-weight: bold; text-align: center; line-height: 1.2;
+               margin-bottom: 1mm; max-width: 100%; word-break: break-word; }}
+  .lmeta   {{ font-size: 8pt; color: #555; text-align: center; margin-bottom: 1mm; }}
+  .lprice  {{ font-size: 9pt; text-align: center; margin-bottom: 1mm; }}
+  .lcode   {{ font-size: 7pt; color: #777; text-align: center; word-break: break-all; }}
+
+  /* ── Print overrides ────────────────────────── */
+  @media print {{
+    .toolbar {{ display: none !important; }}
+    .grid    {{ padding: 6mm; gap: 3mm; }}
+    body     {{ background: #fff; }}
+  }}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>🏷 QR Label Sheet — HanryxVault</h1>
+  <span class="info">{total} label{'s' if total != 1 else ''}{filter_s}</span>
+  <form method="get" action="/admin/qr-sheet">
+    <input name="q"    placeholder="Search name…" value="{q}">
+    <input name="cat"  placeholder="Category…"    value="{cat}">
+    <select name="cols">
+      {''.join(f'<option value="{c}"{"selected" if c == cols else ""}>{c} per row</option>' for c in range(2,6))}
+    </select>
+    <label style="font-size:13px;color:#ccc">
+      <input type="checkbox" name="zero" value="1" {'checked' if zero else ''}> incl. out-of-stock
+    </label>
+    <button type="submit">Filter</button>
+    <button type="button" onclick="window.print()">🖨 Print</button>
+  </form>
+  <a href="/admin">← Dashboard</a>
+</div>
+
+<div class="grid">
+{labels_html if labels_html else '<p style="padding:20px;color:#888">No items match the current filter.</p>'}
+</div>
+
+</body>
+</html>"""
+
+    return Response(html, mimetype="text/html")
 
 
 # ---------------------------------------------------------------------------
@@ -4726,6 +4926,10 @@ def admin_dashboard():
             f'<td>${r["price"]:.2f}</td><td>{e(r["category"])}</td>'
             f'<td style="white-space:nowrap">'
             f'<button class="btn-sell" onclick="event.stopPropagation();sellOne(\'{qr}\',\'{nm}\',{r["price"]})" {sell_ex}>Sell 1</button> '
+            f'<a href="/admin/qr/{urllib.parse.quote(r["qr_code"], safe="")}" target="_blank" '
+            f'   onclick="event.stopPropagation()" title="View QR code" '
+            f'   style="display:inline-block;padding:3px 8px;background:#1e3a5f;color:#7dd3fc;'
+            f'          border-radius:4px;font-size:11px;text-decoration:none;border:1px solid #2563eb">QR</a> '
             f'<button class="btn-del" onclick="event.stopPropagation();deleteProduct(\'{qr}\')">DEL</button>'
             f'</td></tr>'
         )
@@ -5142,7 +5346,19 @@ def admin_dashboard():
   </div>
 </div>
 
-<h2>Full Inventory ({len(inventory)} products)</h2>
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+  <h2 style="margin:0">Full Inventory ({len(inventory)} products)</h2>
+  <a href="/admin/qr-sheet" target="_blank"
+     style="background:#1e3a5f;color:#7dd3fc;border:1px solid #2563eb;padding:5px 14px;
+            border-radius:6px;font-size:13px;font-weight:bold;text-decoration:none;white-space:nowrap">
+    🖨 Print QR Labels
+  </a>
+  <a href="/admin/qr-sheet?zero=1" target="_blank"
+     style="background:#111;color:#aaa;border:1px solid #444;padding:5px 14px;
+            border-radius:6px;font-size:13px;text-decoration:none;white-space:nowrap">
+    📋 All Items (incl. out-of-stock)
+  </a>
+</div>
 <table>
 <thead><tr><th>Name</th><th>QR Code</th><th>Stock</th><th>Price</th><th>Category</th><th>Actions</th></tr></thead>
 <tbody id="tbody-inv">{rows_inv}</tbody>
