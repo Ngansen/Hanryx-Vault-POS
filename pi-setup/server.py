@@ -291,9 +291,10 @@ def _direct_db() -> _PgConn:
 # In-memory caches — dramatically reduces SQLite hits on hot endpoints
 # ---------------------------------------------------------------------------
 _cache_lock      = threading.Lock()
-_inventory_cache = TTLCache(maxsize=1, ttl=30)    # /inventory — 30 s TTL
-_scan_cache      = TTLCache(maxsize=1, ttl=1)     # /scan/pending — 1 s TTL
-_health_cache    = TTLCache(maxsize=1, ttl=5)     # /health — 5 s TTL
+_inventory_cache = TTLCache(maxsize=1,   ttl=30)   # /inventory — 30 s TTL
+_scan_cache      = TTLCache(maxsize=1,   ttl=1)    # /scan/pending — 1 s TTL
+_health_cache    = TTLCache(maxsize=1,   ttl=5)    # /health — 5 s TTL
+_qr_scan_cache   = TTLCache(maxsize=500, ttl=300)  # /card/scan — 5 min per QR code
 _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
@@ -363,10 +364,15 @@ def _cache_set(cache, key, value):
         cache[key] = value
 
 
-def _invalidate_inventory():
-    """Call whenever inventory data changes so next request re-reads from DB."""
+def _invalidate_inventory(qr_code: str | None = None):
+    """Call whenever inventory data changes so next request re-reads from DB.
+    Pass qr_code to also evict that specific entry from the fast-scan cache."""
     with _cache_lock:
         _inventory_cache.clear()
+        if qr_code:
+            _qr_scan_cache.pop(qr_code, None)
+        else:
+            _qr_scan_cache.clear()
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -1786,6 +1792,103 @@ def card_lookup_post():
 
 
 # ---------------------------------------------------------------------------
+# Fast scanner endpoint — exact QR match + in-memory cache for real-time use
+# ---------------------------------------------------------------------------
+
+@app.route("/card/scan", methods=["GET", "OPTIONS"])
+def card_scan_fast():
+    """
+    Ultra-low-latency QR scan lookup for real-time mobile scanner clients.
+
+    Exact QR match only (no fuzzy search). Results cached in-memory for 5 min
+    so repeated scans of the same card respond without any DB hit.
+
+    Supports CORS so the mobile app can call it directly (bypassing the scanner
+    server proxy) to eliminate one full network round trip.
+
+    GET /card/scan?qr=SV1-4
+
+    Response matches the LookupResult shape the mobile app expects:
+      { found, code, name, sku, description, price, stock, rawResponse }
+    """
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        resp = app.make_default_options_response()
+        resp.headers["Access-Control-Allow-Origin"]  = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-KEY"
+        return resp
+
+    qr = request.args.get("qr", "").strip()
+    if not qr:
+        return jsonify({"error": "qr parameter is required"}), 400
+
+    # Check in-memory cache first
+    with _cache_lock:
+        cached = _qr_scan_cache.get(qr)
+    if cached is not None:
+        resp = jsonify(cached)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["X-Cache"] = "HIT"
+        return resp
+
+    # Exact DB lookup (primary key — extremely fast)
+    db  = get_db()
+    row = db.execute(
+        "SELECT qr_code, name, price, category, rarity, set_code, description, "
+        "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
+        (qr,)
+    ).fetchone()
+
+    if not row:
+        # Try once with normalised QR
+        norm = _normalize_qr(qr)
+        if norm != qr:
+            row = db.execute(
+                "SELECT qr_code, name, price, category, rarity, set_code, description, "
+                "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
+                (norm,)
+            ).fetchone()
+
+    if not row:
+        result = {
+            "found": False, "code": qr,
+            "name": None, "sku": None, "description": None,
+            "price": None, "stock": None, "rawResponse": None,
+        }
+    else:
+        result = {
+            "found": True,
+            "code": row["qr_code"],
+            "name": row["name"],
+            "sku": row["set_code"] or row["qr_code"],
+            "description": row["description"] or "",
+            "price": str(row["price"]) if row["price"] is not None else None,
+            "stock": str(row["stock"])  if row["stock"]  is not None else None,
+            "rawResponse": {
+                "qrCode":        row["qr_code"],
+                "name":          row["name"],
+                "price":         row["price"],
+                "category":      row["category"] or "General",
+                "rarity":        row["rarity"]   or "",
+                "setCode":       row["set_code"] or "",
+                "description":   row["description"] or "",
+                "stockQuantity": row["stock"],
+                "imageUrl":      row["image_url"] or "",
+                "tcgId":         row["tcg_id"]   or "",
+            },
+        }
+
+    with _cache_lock:
+        _qr_scan_cache[qr] = result
+
+    resp = jsonify(result)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["X-Cache"] = "MISS"
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Card enrichment — local inventory + full TCG API data merged
 # ---------------------------------------------------------------------------
 
@@ -2807,7 +2910,7 @@ def api_push_scan():
             last_updated = excluded.last_updated
     """, (qr_code, name, price, category, desc, delta, _now_ms()))
     db.commit()
-    _invalidate_inventory()
+    _invalidate_inventory(qr_code)  # targeted eviction — only this QR
 
     row = db.execute(
         "SELECT stock FROM inventory WHERE qr_code = %s", (qr_code,)
