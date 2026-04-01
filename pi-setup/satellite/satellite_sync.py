@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """
 HanryxVault Satellite Sync
-Runs on the TRADE SHOW Pi as a systemd oneshot service on every boot.
+Runs on the TRADE SHOW Pi — continuously monitors the home Pi connection
+and syncs data whenever the link is available.
 
 What it does (only when powered on and home Pi is reachable):
-  1. Pushes all sales made offline to the home Pi
-  2. Pushes all stock deductions to the home Pi (keeps home inventory accurate)
-  3. Pulls the latest full inventory from the home Pi (so you start each show
-     with current stock levels from home)
+  1. Pushes all offline sales to the home Pi (/sync/sales)
+  2. Pushes all stock deductions to the home Pi (/inventory/deduct)
+  3. Pulls the latest full inventory from the home Pi (/inventory)
+  4. Optionally pushes a sale summary to /sales so the home Pi market pricing
+     stays accurate with trade show prices
 
 If the home Pi is not reachable (no VPN, no internet), it exits silently
 and the trade show Pi continues running fully offline with local data.
+
+HOME PI ENDPOINTS USED
+  POST /sync/sales           ← full transaction push (authenticated)
+  POST /inventory/deduct     ← stock deduction (authenticated with satellite_token)
+  GET  /inventory            ← pull full catalogue
+  POST /sales                ← sale summary for market pricing (unauthenticated)
+  GET  /health               ← reachability check
 
 Config: /opt/hanryxvault/satellite.conf
 """
@@ -40,13 +49,16 @@ DB_PATH   = os.path.join(BASE_DIR, "vault_pos.db")
 
 # Default config — overridden by satellite.conf
 _DEFAULTS = {
-    "home_pi_url":      "http://10.10.0.1:8080",
-    "timeout_s":        "15",
-    "retry_count":      "3",        # retries per sync step before giving up
-    "retry_delay_s":    "4",        # seconds between retries
-    "vpn_interface":    "wg0",      # WireGuard interface name
-    "vpn_wait_s":       "8",        # seconds to let VPN tunnel stabilise before first attempt
-    "satellite_token":  "",         # shared secret — set by setup-satellite.sh
+    "home_pi_url":            "http://10.10.0.1:8080",
+    "timeout_s":              "15",
+    "retry_count":            "3",        # retries per sync step before giving up
+    "retry_delay_s":          "4",        # seconds between retries
+    "vpn_interface":          "wg0",      # WireGuard interface name
+    "vpn_wait_s":             "8",        # seconds to let VPN tunnel stabilise before first attempt
+    "satellite_token":        "",         # shared secret — set by setup-satellite.sh
+    "push_sale_summary":      "true",     # also POST to /sales for market pricing
+    "expo_notify_url":        "",         # optional: POST to Expo scan hub after sync (e.g. http://10.10.0.1:8765/scan)
+    "expo_notify_on_sync":    "false",    # set true to send a scan hub notification after every sync
 }
 
 # Module-level auth token — set once in main() from conf so all helpers share it
@@ -81,14 +93,14 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
-def _api_post(url: str, data, timeout: int) -> dict:
+def _api_post(url: str, data, timeout: int, auth: bool = True) -> dict:
     body    = json.dumps(data).encode()
     headers = {
         "Content-Type":  "application/json",
         "User-Agent":    "HanryxVaultSatellite/1.0",
         "X-Source":      "satellite",
     }
-    if _satellite_token:
+    if auth and _satellite_token:
         headers["X-Satellite-Token"] = _satellite_token
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -148,10 +160,14 @@ def set_last_sync(db: sqlite3.Connection, ts_ms: int):
     db.commit()
 
 
-# ── 1. Push sales ─────────────────────────────────────────────────────────────
+# ── 1. Push sales (full transaction data) ─────────────────────────────────────
 
 def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int,
-               timeout: int, retry_count: int, retry_delay_s: int) -> int:
+               timeout: int, retry_count: int, retry_delay_s: int) -> list:
+    """
+    Push full transaction records to /sync/sales (authenticated).
+    Returns list of sale rows pushed so we can also send a /sales summary.
+    """
     rows = db.execute(
         "SELECT * FROM sales WHERE received_at > ? ORDER BY received_at ASC",
         (since_ms,)
@@ -159,7 +175,7 @@ def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int,
 
     if not rows:
         log("No new sales to push to home Pi")
-        return 0
+        return []
 
     payload = []
     for r in rows:
@@ -176,20 +192,55 @@ def push_sales(db: sqlite3.Connection, home_url: str, since_ms: int,
             "cashReceived":  r["cash_received"],
             "changeGiven":   r["change_given"],
             "isRefunded":    bool(r["is_refunded"]),
-            "source":        "satellite",   # tag so home Pi knows these came from trade show
+            "source":        "satellite",
         })
 
     result = _with_retry(
         "push_sales",
-        lambda: _api_post(f"{home_url}/sync/sales", payload, timeout),
+        lambda: _api_post(f"{home_url}/sync/sales", payload, timeout, auth=True),
         retry_count, retry_delay_s,
     )
-    log(f"Pushed {len(payload)} sales → home  "
+    log(f"Pushed {len(payload)} sales → /sync/sales  "
         f"(inserted={result.get('inserted','?')} skipped={result.get('skipped','?')})")
-    return len(payload)
+    return rows
 
 
-# ── 2. Push stock deductions ──────────────────────────────────────────────────
+# ── 2. Push sale summary for market pricing ───────────────────────────────────
+
+def push_sale_summary(rows, home_url: str, timeout: int):
+    """
+    POST a lightweight sale summary to /sales (no auth required) so the home Pi
+    market pricing database includes trade show sale prices.
+    /sync/sales already writes sale_history on the home Pi, so this is a belt-
+    and-suspenders step — skip if the full push already succeeded.
+    Silently ignores failures (non-critical).
+    """
+    items = []
+    for r in rows:
+        for item in json.loads(r["items_json"] or "[]"):
+            name  = (item.get("name") or item.get("title") or "").strip()
+            price = float(item.get("unitPrice") or item.get("price") or 0)
+            qty   = int(item.get("quantity") or 1)
+            if name and price > 0:
+                items.append({"name": name, "price": price, "quantity": qty})
+
+    if not items:
+        return
+
+    try:
+        result = _api_post(
+            f"{home_url}/sales",
+            {"items": items, "sold_at": int(time.time() * 1000)},
+            timeout,
+            auth=False,
+        )
+        log(f"Market pricing: sent {len(items)} sale line items → /sales "
+            f"(recorded={result.get('recorded', '?')})")
+    except Exception as e:
+        log(f"Market pricing push failed (non-critical): {e}")
+
+
+# ── 3. Push stock deductions ──────────────────────────────────────────────────
 
 def push_deductions(db: sqlite3.Connection, home_url: str, since_ms: int,
                     timeout: int, retry_count: int, retry_delay_s: int) -> int:
@@ -215,17 +266,17 @@ def push_deductions(db: sqlite3.Connection, home_url: str, since_ms: int,
 
     result = _with_retry(
         "push_deductions",
-        lambda: _api_post(f"{home_url}/inventory/deduct", items, timeout),
+        lambda: _api_post(f"{home_url}/inventory/deduct", items, timeout, auth=True),
         retry_count, retry_delay_s,
     )
     oversold = result.get("oversold", 0)
-    log(f"Pushed {len(items)} deductions → home  "
+    log(f"Pushed {len(items)} deductions → /inventory/deduct  "
         f"deducted={result.get('deducted','?')} unknown_skus={result.get('unknown_skus','?')}"
         + (f" ⚠ OVERSOLD {oversold} item(s) on home Pi" if oversold else ""))
     return len(items)
 
 
-# ── 3. Pull inventory from home Pi ────────────────────────────────────────────
+# ── 4. Pull inventory from home Pi ────────────────────────────────────────────
 
 def pull_inventory(db: sqlite3.Connection, home_url: str, timeout: int) -> int:
     products = _api_get(f"{home_url}/inventory", timeout)
@@ -266,6 +317,31 @@ def pull_inventory(db: sqlite3.Connection, home_url: str, timeout: int) -> int:
     return upserted
 
 
+# ── 5. Optional: notify Expo scan hub after sync ──────────────────────────────
+
+def notify_expo(expo_url: str, sales_count: int, inventory_count: int, timeout: int):
+    """
+    If expo_notify_url is set in satellite.conf, send a lightweight notification
+    to the Expo scan hub so the Expo app can refresh its data.
+    The message appears as a special scan event with source='satellite-sync'.
+    """
+    if not expo_url:
+        return
+    try:
+        _api_post(
+            expo_url,
+            {
+                "qrCode": f"__sync__:{sales_count}sales:{inventory_count}items",
+                "source": "satellite-sync",
+            },
+            timeout,
+            auth=False,
+        )
+        log(f"Expo scan hub notified of sync completion → {expo_url}")
+    except Exception as e:
+        log(f"Expo notification failed (non-critical): {e}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def _vpn_is_up(interface: str) -> bool:
@@ -275,7 +351,6 @@ def _vpn_is_up(interface: str) -> bool:
             ["wg", "show", interface],
             capture_output=True, text=True, timeout=5
         )
-        # 'latest handshake' line only appears after a successful handshake
         return "latest handshake" in result.stdout
     except Exception:
         return False
@@ -304,6 +379,9 @@ def main():
     retry_delay  = int(conf.get("retry_delay_s", 4))
     vpn_iface    = conf.get("vpn_interface", "wg0").strip()
     vpn_wait     = int(conf.get("vpn_wait_s",    8))
+    send_summary = conf.get("push_sale_summary", "true").lower() == "true"
+    expo_url     = conf.get("expo_notify_url", "").strip()
+    expo_notify  = conf.get("expo_notify_on_sync", "false").lower() == "true"
 
     _satellite_token = conf.get("satellite_token", "").strip()
 
@@ -312,12 +390,12 @@ def main():
     # ── Wait for VPN tunnel if WireGuard is installed ─────────────────────────
     if subprocess.run(["which", "wg"], capture_output=True).returncode == 0:
         if vpn_iface:
-            log(f"Waiting up to {vpn_wait}s for WireGuard tunnel ({vpn_iface}) to establish...")
+            log(f"Waiting up to {vpn_wait}s for WireGuard tunnel ({vpn_iface}) ...")
             _wait_for_vpn(vpn_iface, vpn_wait)
     else:
         log("WireGuard not installed — connecting directly")
 
-    # ── Reachability check (with one retry after brief pause) ─────────────────
+    # ── Reachability check ────────────────────────────────────────────────────
     health = None
     for attempt in (1, 2):
         try:
@@ -331,7 +409,7 @@ def main():
                 time.sleep(5)
             else:
                 log(f"Home Pi not reachable after {attempt} attempts — running offline, no sync")
-                sys.exit(0)   # not an error — expected when offline at shows
+                sys.exit(0)   # expected when offline at a show — not an error
 
     # ── Determine sync window ─────────────────────────────────────────────────
     if not os.path.exists(DB_PATH):
@@ -345,25 +423,32 @@ def main():
     else:
         since_str = "never (first sync — sending everything)"
     log(f"Last sync: {since_str}")
-
     log(f"Config: retries={retry_count} delay={retry_delay}s"
-        + (" token=<set>" if _satellite_token else " token=<none — open mode>"))
+        + (" token=<set>" if _satellite_token else " token=<none — open mode>")
+        + (f" expo_notify={expo_url}" if expo_url and expo_notify else ""))
 
     # ── Run sync steps ────────────────────────────────────────────────────────
-    errors  = 0
-    stats   = {}
+    errors   = 0
+    stats    = {}
+    sale_rows = []
 
+    # Step 1 — push full transaction data
     try:
-        n = push_sales(db, home_url, since_ms, timeout, retry_count, retry_delay)
-        stats["sales_pushed"] = n
+        sale_rows = push_sales(db, home_url, since_ms, timeout, retry_count, retry_delay)
+        stats["sales_pushed"] = len(sale_rows)
     except RuntimeError as e:
         log(f"FATAL: {e}")
         db.close()
-        sys.exit(2)   # auth error — don't retry automatically
+        sys.exit(2)
     except Exception as e:
         log(f"ERROR pushing sales: {e}")
         errors += 1
 
+    # Step 2 — optionally push sale summary for market pricing
+    if send_summary and sale_rows and errors == 0:
+        push_sale_summary(sale_rows, home_url, timeout)
+
+    # Step 3 — push stock deductions
     try:
         n = push_deductions(db, home_url, since_ms, timeout, retry_count, retry_delay)
         stats["deductions_pushed"] = n
@@ -375,6 +460,7 @@ def main():
         log(f"ERROR pushing deductions: {e}")
         errors += 1
 
+    # Step 4 — pull current inventory from home Pi
     try:
         n = pull_inventory(db, home_url, timeout)
         stats["inventory_products"] = n
@@ -391,6 +477,14 @@ def main():
             f"  deductions={stats.get('deductions_pushed',0)}"
             f"  inventory={stats.get('inventory_products',0)} products"
         )
+        # Step 5 — optional Expo notification
+        if expo_notify and expo_url:
+            notify_expo(
+                expo_url,
+                stats.get("sales_pushed", 0),
+                stats.get("inventory_products", 0),
+                timeout,
+            )
     else:
         log(f"Sync finished with {errors} error(s) — timestamp NOT updated "
             "(will retry everything on next run)")
