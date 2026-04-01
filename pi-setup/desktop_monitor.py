@@ -1,36 +1,85 @@
 #!/usr/bin/env python3
 """
-HanryxVault Pi Monitor — Desktop GUI
-Run on your Raspberry Pi desktop:  python3 desktop_monitor.py
+HanryxVault Monitor  — Desktop GUI
+Works on Windows, Linux, and Raspberry Pi.
 
-Shows live stats for:
-  - POS server (sales, inventory, scan queue)
-  - All services (hanryxvault, nginx, wireguard)
-  - System performance (CPU, RAM, temp, disk)
-  - Both websites (hanryxvault.cards, hanryxvault.app)
-  - Quick action buttons
-  - Live server log tail
+On Windows / remote machine:
+    python desktop_monitor.py
+    (or run the HanryxVaultMonitor.exe built by build_exe.bat)
+
+On Raspberry Pi (local):
+    python3 desktop_monitor.py
+
+The monitor talks to the Pi POS server over HTTP — no direct
+database or filesystem access is required.  Configure the Pi's
+IP/hostname in the Settings tab on first launch.
+
+Dependencies (pip install -r monitor_requirements.txt):
+    psutil >= 5.9.0
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, simpledialog
 import threading
 import subprocess
-import sqlite3
 import datetime
 import os
+import sys
 import json
 import urllib.request
+import urllib.error
 import time
 import platform
+import webbrowser
 
-# ── Config ────────────────────────────────────────────────────────────────────
-DB_PATH      = "/opt/hanryxvault/vault_pos.db"
-SERVER_URL   = "http://127.0.0.1:8080"
-LOG_PATH     = "/var/log/hanryxvault/error.log"
-REFRESH_MS   = 3000   # UI refresh every 3 seconds
-LOG_LINES    = 80     # lines to tail in log viewer
+# ── Try psutil (cross-platform system stats) ──────────────────────────────────
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
+# ── Platform detection ────────────────────────────────────────────────────────
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX   = platform.system() == "Linux"
+IS_PI      = IS_LINUX and os.path.exists("/sys/class/thermal/thermal_zone0/temp")
+
+# ── Persistent config (~/.hanryxvault_monitor.json) ───────────────────────────
+CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".hanryxvault_monitor.json")
+DEFAULT_CFG = {
+    "host":       "127.0.0.1",
+    "port":       "8080",
+    "admin_pass": "",
+}
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH) as f:
+            c = json.load(f)
+        for k, v in DEFAULT_CFG.items():
+            c.setdefault(k, v)
+        return c
+    except Exception:
+        return dict(DEFAULT_CFG)
+
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+
+CFG = load_config()
+
+
+def server_url():
+    return f"http://{CFG['host']}:{CFG['port']}"
+
+
+# ── Colours ───────────────────────────────────────────────────────────────────
 GOLD   = "#FFD700"
 BG     = "#0d0d0d"
 BG2    = "#141414"
@@ -39,8 +88,12 @@ BORDER = "#2a2a2a"
 GREEN  = "#4caf50"
 RED    = "#f44336"
 ORANGE = "#ff9800"
+BLUE   = "#2196F3"
 GREY   = "#666666"
 WHITE  = "#e0e0e0"
+
+REFRESH_MS = 4000   # UI refresh every 4 s
+LOG_LINES  = 80
 
 WEBSITES = [
     ("hanryxvault.cards", "https://hanryxvault.cards"),
@@ -48,165 +101,190 @@ WEBSITES = [
 ]
 
 SERVICES = [
-    ("POS Server",  "hanryxvault"),
-    ("nginx",       "nginx"),
-    ("WireGuard",   "wg-quick@wg0"),
-    ("fail2ban",    "fail2ban"),
-    ("PostgreSQL",  "postgresql"),
+    ("POS Server",  f"http://{{host}}:{{port}}/health"),
+    ("Admin Panel", f"http://{{host}}:{{port}}/admin"),
+    ("nginx",       f"http://{{host}}:80/"),
+    ("Storefront",  f"http://{{host}}:3000/"),
 ]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── HTTP helpers ──────────────────────────────────────────────────────────────
 
-def run(cmd):
+def _get(path, timeout=4):
+    """GET request; returns (status_code, body_dict_or_str, latency_ms)."""
+    url = f"{server_url()}{path}"
     try:
-        return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=3).decode().strip()
-    except Exception:
-        return ""
-
-
-def service_status(name):
-    out = run(f"systemctl is-active {name} 2>/dev/null")
-    return out == "active"
-
-
-def cpu_temp():
-    try:
-        with open("/sys/class/thermal/thermal_zone0/temp") as f:
-            return float(f.read().strip()) / 1000
-    except Exception:
-        return 0.0
-
-
-def cpu_percent():
-    try:
-        line = run("top -bn1 | grep 'Cpu(s)'")
-        idle = float(line.split(',')[3].split()[0])
-        return round(100 - idle, 1)
-    except Exception:
-        return 0.0
-
-
-def ram_info():
-    try:
-        out = run("free -m | grep Mem")
-        parts = out.split()
-        total = int(parts[1])
-        used  = int(parts[2])
-        pct   = round(used / total * 100, 1)
-        return used, total, pct
-    except Exception:
-        return 0, 0, 0
-
-
-def disk_info():
-    try:
-        out = run("df -h / | tail -1")
-        parts = out.split()
-        return parts[2], parts[1], parts[4]  # used, total, percent
-    except Exception:
-        return "?", "?", "?"
-
-
-def db_stats():
-    if not os.path.exists(DB_PATH):
-        return {}
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=2)
-        conn.row_factory = sqlite3.Row
-
-        midnight = int(datetime.datetime.combine(
-            datetime.date.today(), datetime.time.min
-        ).timestamp() * 1000)
-
-        today = conn.execute("""
-            SELECT COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as rev,
-                   COALESCE(SUM(tip_amount),0) as tips
-            FROM sales WHERE timestamp_ms >= ?
-        """, (midnight,)).fetchone()
-
-        total_sales = conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
-        inv_count   = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
-        low_stock   = conn.execute("SELECT COUNT(*) FROM inventory WHERE stock <= 5").fetchone()[0]
-        out_stock   = conn.execute("SELECT COUNT(*) FROM inventory WHERE stock = 0").fetchone()[0]
-        pending_scans = conn.execute("SELECT COUNT(*) FROM scan_queue WHERE processed=0").fetchone()[0]
-
-        conn.close()
-        return {
-            "today_sales": today["cnt"],
-            "today_rev":   today["rev"],
-            "today_tips":  today["tips"],
-            "total_sales": total_sales,
-            "inv_count":   inv_count,
-            "low_stock":   low_stock,
-            "out_stock":   out_stock,
-            "pending_scans": pending_scans,
-        }
-    except Exception:
-        return {}
-
-
-def ping_url(url):
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "HanryxVault-Monitor/1.0"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "HanryxVault-Monitor/2.0"}
+        )
         start = time.time()
-        with urllib.request.urlopen(req, timeout=4) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            ms   = int((time.time() - start) * 1000)
+            body = r.read().decode("utf-8", errors="replace")
+            try:
+                return r.status, json.loads(body), ms
+            except Exception:
+                return r.status, body, ms
+    except urllib.error.HTTPError as e:
+        return e.code, {}, 0
+    except Exception:
+        return 0, {}, 0
+
+
+def _post(path, data=None, timeout=10):
+    payload = json.dumps(data or {}).encode()
+    url = f"{server_url()}{path}"
+    try:
+        req = urllib.request.Request(
+            url, data=payload, method="POST",
+            headers={"Content-Type": "application/json",
+                     "User-Agent":   "HanryxVault-Monitor/2.0"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", errors="replace")
+            try:
+                return r.status, json.loads(body)
+            except Exception:
+                return r.status, body
+    except Exception as e:
+        return 0, str(e)
+
+
+def ping_url(url, timeout=4):
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "HanryxVault-Monitor/2.0"}
+        )
+        start = time.time()
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             ms = int((time.time() - start) * 1000)
             return r.status, ms
-    except Exception as e:
+    except Exception:
         return 0, 0
 
 
-def tail_log():
-    if not os.path.exists(LOG_PATH):
-        return "Log file not found.\nMake sure the server has run at least once."
+# ── System stats (psutil preferred, shell fallback on Linux) ──────────────────
+
+def sys_cpu():
+    if HAS_PSUTIL:
+        return psutil.cpu_percent(interval=0.3)
+    if IS_LINUX:
+        try:
+            line = subprocess.check_output(
+                "top -bn1 | grep 'Cpu(s)'", shell=True,
+                stderr=subprocess.DEVNULL, timeout=3
+            ).decode()
+            idle = float(line.split(',')[3].split()[0])
+            return round(100 - idle, 1)
+        except Exception:
+            pass
+    return 0.0
+
+
+def sys_ram():
+    """Returns (used_mb, total_mb, pct)."""
+    if HAS_PSUTIL:
+        v = psutil.virtual_memory()
+        return round(v.used / 1024**2), round(v.total / 1024**2), v.percent
+    if IS_LINUX:
+        try:
+            out = subprocess.check_output(
+                "free -m | grep Mem", shell=True,
+                stderr=subprocess.DEVNULL, timeout=3
+            ).decode().split()
+            total, used = int(out[1]), int(out[2])
+            return used, total, round(used / total * 100, 1)
+        except Exception:
+            pass
+    return 0, 0, 0.0
+
+
+def sys_disk():
+    """Returns (used_str, total_str, pct_float)."""
+    if HAS_PSUTIL:
+        d = psutil.disk_usage("/")
+        return (
+            f"{d.used / 1024**3:.1f}G",
+            f"{d.total / 1024**3:.1f}G",
+            d.percent,
+        )
+    if IS_LINUX:
+        try:
+            out = subprocess.check_output(
+                "df -h / | tail -1", shell=True,
+                stderr=subprocess.DEVNULL, timeout=3
+            ).decode().split()
+            return out[2], out[1], float(out[4].rstrip("%"))
+        except Exception:
+            pass
+    return "?", "?", 0.0
+
+
+def sys_cpu_temp():
+    """Degrees C, best-effort."""
+    if HAS_PSUTIL:
+        try:
+            temps = psutil.sensors_temperatures()
+            for key in ("cpu_thermal", "coretemp", "k10temp", "acpitz"):
+                if key in temps and temps[key]:
+                    return temps[key][0].current
+        except Exception:
+            pass
+    if IS_PI:
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp") as f:
+                return float(f.read().strip()) / 1000
+        except Exception:
+            pass
+    return None   # unavailable on Windows / non-Pi
+
+
+def run_shell(cmd):
     try:
-        return run(f"tail -n {LOG_LINES} {LOG_PATH}")
+        return subprocess.check_output(
+            cmd, shell=True, stderr=subprocess.DEVNULL, timeout=4
+        ).decode().strip()
     except Exception:
         return ""
 
 
-def wg_peers():
-    try:
-        out = run("wg show wg0 peers 2>/dev/null | wc -l")
-        return int(out) if out else 0
-    except Exception:
-        return 0
-
-
-# ── Main App ──────────────────────────────────────────────────────────────────
+# ── Main application ──────────────────────────────────────────────────────────
 
 class HanryxMonitor(tk.Tk):
+
     def __init__(self):
         super().__init__()
-        self.title("HanryxVault Pi Monitor")
+        self.title("HanryxVault Monitor")
         self.configure(bg=BG)
-        self.geometry("1200x780")
-        self.minsize(900, 600)
-
+        self.geometry("1260x820")
+        self.minsize(960, 640)
         self._build_ui()
         self._refresh()
 
-    # ── UI Build ──────────────────────────────────────────────────────────────
+    # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Header
+        # Header bar
         hdr = tk.Frame(self, bg=BG, pady=10)
         hdr.pack(fill="x", padx=16)
         tk.Label(hdr, text="HanryxVault", font=("Helvetica", 22, "bold"),
                  fg=GOLD, bg=BG).pack(side="left")
-        tk.Label(hdr, text="  Pi Monitor", font=("Helvetica", 16),
+        tk.Label(hdr, text="  Monitor", font=("Helvetica", 16),
                  fg=GREY, bg=BG).pack(side="left")
+        self.lbl_host = tk.Label(
+            hdr, text=f"  ⇒  {server_url()}", font=("Helvetica", 11),
+            fg=GREY, bg=BG)
+        self.lbl_host.pack(side="left")
         self.lbl_time = tk.Label(hdr, text="", font=("Helvetica", 12),
                                   fg=GREY, bg=BG)
         self.lbl_time.pack(side="right")
 
-        # Notebook tabs
+        # Tabs
         style = ttk.Style(self)
         style.theme_use("default")
-        style.configure("TNotebook",       background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab",   background=BG3, foreground=GREY,
-                         padding=[16, 8], font=("Helvetica", 11))
+        style.configure("TNotebook",     background=BG,  borderwidth=0)
+        style.configure("TNotebook.Tab", background=BG3, foreground=GREY,
+                         padding=[14, 8], font=("Helvetica", 11))
         style.map("TNotebook.Tab",
                   background=[("selected", BG2)],
                   foreground=[("selected", GOLD)])
@@ -215,73 +293,74 @@ class HanryxMonitor(tk.Tk):
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=8, pady=4)
 
-        self.tab_dash    = ttk.Frame(nb)
-        self.tab_system  = ttk.Frame(nb)
-        self.tab_sites   = ttk.Frame(nb)
-        self.tab_logs    = ttk.Frame(nb)
+        self.tab_dash     = ttk.Frame(nb)
+        self.tab_business = ttk.Frame(nb)
+        self.tab_system   = ttk.Frame(nb)
+        self.tab_sites    = ttk.Frame(nb)
+        self.tab_logs     = ttk.Frame(nb)
+        self.tab_settings = ttk.Frame(nb)
 
-        nb.add(self.tab_dash,   text="  Dashboard  ")
-        nb.add(self.tab_system, text="  System     ")
-        nb.add(self.tab_sites,  text="  Sites & VPN")
-        nb.add(self.tab_logs,   text="  Live Logs  ")
+        nb.add(self.tab_dash,     text="  Dashboard  ")
+        nb.add(self.tab_business, text="  Business   ")
+        nb.add(self.tab_system,   text="  System     ")
+        nb.add(self.tab_sites,    text="  Sites      ")
+        nb.add(self.tab_logs,     text="  Logs       ")
+        nb.add(self.tab_settings, text="  Settings   ")
 
         self._build_dashboard()
+        self._build_business()
         self._build_system()
         self._build_sites()
         self._build_logs()
+        self._build_settings()
         self._build_actions()
 
-    def _card(self, parent, row, col, label, value="—", color=GOLD, colspan=1):
-        f = tk.Frame(parent, bg=BG3, padx=16, pady=12,
+    # ── Reusable widgets ──────────────────────────────────────────────────────
+
+    def _card(self, parent, row, col, label, value="—", color=GOLD,
+              colspan=1, rowspan=1, font_size=26):
+        f = tk.Frame(parent, bg=BG3, padx=14, pady=10,
                      highlightbackground=BORDER, highlightthickness=1)
-        f.grid(row=row, column=col, columnspan=colspan,
-               sticky="nsew", padx=6, pady=6)
+        f.grid(row=row, column=col, columnspan=colspan, rowspan=rowspan,
+               sticky="nsew", padx=5, pady=5)
         tk.Label(f, text=label.upper(), font=("Helvetica", 9),
                  fg=GREY, bg=BG3, anchor="w").pack(anchor="w")
-        lbl = tk.Label(f, text=value, font=("Helvetica", 26, "bold"),
-                       fg=color, bg=BG3, anchor="w")
+        lbl = tk.Label(f, text=value,
+                        font=("Helvetica", font_size, "bold"),
+                        fg=color, bg=BG3, anchor="w")
         lbl.pack(anchor="w", pady=(2, 0))
         return lbl
 
-    def _status_row(self, parent, row, name):
-        tk.Label(parent, text=name, font=("Helvetica", 12),
-                 fg=WHITE, bg=BG3, anchor="w", width=20).grid(
-            row=row, column=0, sticky="w", padx=12, pady=6)
-        dot = tk.Label(parent, text="●", font=("Helvetica", 14),
-                       fg=GREY, bg=BG3)
-        dot.grid(row=row, column=1, padx=8, pady=6)
-        lbl = tk.Label(parent, text="checking…", font=("Helvetica", 11),
-                       fg=GREY, bg=BG3, anchor="w", width=16)
-        lbl.grid(row=row, column=2, sticky="w", padx=4, pady=6)
-        return dot, lbl
+    def _section(self, parent, title):
+        f = tk.Frame(parent, bg=BG3,
+                     highlightbackground=BORDER, highlightthickness=1)
+        f.pack(fill="x", padx=14, pady=5)
+        tk.Label(f, text=title, font=("Helvetica", 9),
+                 fg=GREY, bg=BG3, padx=12, pady=6).pack(anchor="w")
+        return f
 
     # ── Dashboard tab ─────────────────────────────────────────────────────────
 
     def _build_dashboard(self):
         p = self.tab_dash
-        p.configure(style="TFrame")
 
-        # Sales cards
+        # Row 1: sales KPI cards
         sf = tk.Frame(p, bg=BG)
-        sf.pack(fill="x", padx=8, pady=8)
+        sf.pack(fill="x", padx=8, pady=6)
         for i in range(6):
             sf.columnconfigure(i, weight=1)
 
-        self.c_today_sales = self._card(sf, 0, 0, "Today's Sales",   "—", GREEN)
-        self.c_today_rev   = self._card(sf, 0, 1, "Revenue Today",   "—", GOLD)
-        self.c_today_tips  = self._card(sf, 0, 2, "Tips Today",      "—", GOLD)
-        self.c_total_sales = self._card(sf, 0, 3, "All-Time Sales",  "—", WHITE)
-        self.c_inv_count   = self._card(sf, 0, 4, "Products",        "—", WHITE)
-        self.c_pending     = self._card(sf, 0, 5, "Pending Scans",   "—", ORANGE)
+        self.c_today_sales  = self._card(sf, 0, 0, "Today's Sales",  "—", GREEN)
+        self.c_today_rev    = self._card(sf, 0, 1, "Revenue Today",  "—", GOLD)
+        self.c_today_tips   = self._card(sf, 0, 2, "Tips Today",     "—", GOLD)
+        self.c_total_sales  = self._card(sf, 0, 3, "All-Time Sales", "—", WHITE)
+        self.c_inv_count    = self._card(sf, 0, 4, "Products",       "—", WHITE)
+        self.c_pending      = self._card(sf, 0, 5, "Pending Scans",  "—", ORANGE)
 
         # Stock alerts
-        af = tk.Frame(p, bg=BG3, padx=16, pady=12,
-                      highlightbackground=BORDER, highlightthickness=1)
-        af.pack(fill="x", padx=14, pady=4)
-        tk.Label(af, text="STOCK ALERTS", font=("Helvetica", 9),
-                 fg=GREY, bg=BG3).pack(anchor="w")
+        af = self._section(p, "STOCK ALERTS")
         row2 = tk.Frame(af, bg=BG3)
-        row2.pack(anchor="w", pady=(4, 0))
+        row2.pack(anchor="w", padx=12, pady=(0, 8))
         self.lbl_low_stock = tk.Label(row2, text="Low (≤5): —",
                                        font=("Helvetica", 13), fg=ORANGE, bg=BG3)
         self.lbl_low_stock.pack(side="left", padx=(0, 24))
@@ -289,30 +368,75 @@ class HanryxMonitor(tk.Tk):
                                        font=("Helvetica", 13), fg=RED, bg=BG3)
         self.lbl_out_stock.pack(side="left")
 
-        # Services status
-        svc_frame = tk.Frame(p, bg=BG3, padx=0, pady=0,
-                             highlightbackground=BORDER, highlightthickness=1)
-        svc_frame.pack(fill="x", padx=14, pady=8)
-        tk.Label(svc_frame, text="SERVICES", font=("Helvetica", 9),
-                 fg=GREY, bg=BG3, padx=12, pady=8).grid(
-            row=0, column=0, columnspan=3, sticky="w")
-
-        self.svc_dots = {}
-        self.svc_lbls = {}
-        for i, (name, svc) in enumerate(SERVICES):
-            dot, lbl = self._status_row(svc_frame, i + 1, name)
-            self.svc_dots[svc] = dot
-            self.svc_lbls[svc] = lbl
+        # Services
+        svc_frame = self._section(p, "SERVICE HEALTH")
+        self.svc_labels = {}
+        for i, (name, _url_tpl) in enumerate(SERVICES):
+            row_f = tk.Frame(svc_frame, bg=BG3)
+            row_f.pack(fill="x", padx=12, pady=3)
+            tk.Label(row_f, text=name, font=("Helvetica", 12),
+                     fg=WHITE, bg=BG3, width=18, anchor="w").pack(side="left")
+            dot = tk.Label(row_f, text="●", font=("Helvetica", 14),
+                           fg=GREY, bg=BG3)
+            dot.pack(side="left", padx=6)
+            lbl = tk.Label(row_f, text="checking…", font=("Helvetica", 11),
+                           fg=GREY, bg=BG3, width=22, anchor="w")
+            lbl.pack(side="left")
+            self.svc_labels[name] = (dot, lbl)
 
         # Server ping
-        ping_f = tk.Frame(p, bg=BG3, padx=16, pady=10,
-                          highlightbackground=BORDER, highlightthickness=1)
-        ping_f.pack(fill="x", padx=14, pady=4)
-        tk.Label(ping_f, text="SERVER PING", font=("Helvetica", 9),
-                 fg=GREY, bg=BG3).pack(anchor="w")
+        ping_f = self._section(p, "SERVER PING")
         self.lbl_ping = tk.Label(ping_f, text="—",
                                   font=("Helvetica", 13), fg=GREEN, bg=BG3)
-        self.lbl_ping.pack(anchor="w", pady=(4, 0))
+        self.lbl_ping.pack(anchor="w", padx=12, pady=(0, 8))
+
+    # ── Business tab ──────────────────────────────────────────────────────────
+
+    def _build_business(self):
+        p = self.tab_business
+
+        # Row 1 — operational counts
+        r1 = tk.Frame(p, bg=BG)
+        r1.pack(fill="x", padx=8, pady=6)
+        for i in range(4):
+            r1.columnconfigure(i, weight=1)
+
+        self.c_open_laybys   = self._card(r1, 0, 0, "Open Laybys",    "—", BLUE)
+        self.c_layby_bal     = self._card(r1, 0, 1, "Layby Outstanding", "—", BLUE)
+        self.c_open_pos      = self._card(r1, 0, 2, "Open POs",        "—", ORANGE)
+        self.c_open_trade_in = self._card(r1, 0, 3, "Open Trade-Ins",  "—", ORANGE)
+
+        # Row 2 — 30-day P&L
+        r2 = tk.Frame(p, bg=BG)
+        r2.pack(fill="x", padx=8, pady=4)
+        for i in range(4):
+            r2.columnconfigure(i, weight=1)
+
+        self.c_pl_rev    = self._card(r2, 0, 0, "30d Revenue",   "—", GOLD)
+        self.c_pl_profit = self._card(r2, 0, 1, "30d Profit",    "—", GREEN)
+        self.c_pl_margin = self._card(r2, 0, 2, "30d Margin",    "—", GREEN)
+        self.c_eod       = self._card(r2, 0, 3, "EOD Today",     "—", GREY)
+
+        # Quick-links panel
+        ql = self._section(p, "QUICK LINKS")
+        btn_row = tk.Frame(ql, bg=BG3)
+        btn_row.pack(fill="x", padx=12, pady=(0, 10))
+
+        def qbtn(label, path, color=BG2):
+            def go():
+                webbrowser.open(f"{server_url()}{path}")
+            tk.Button(btn_row, text=label, command=go,
+                      bg=color, fg=GOLD, relief="flat",
+                      font=("Helvetica", 11, "bold"),
+                      padx=12, pady=6, cursor="hand2"
+                      ).pack(side="left", padx=4, pady=4)
+
+        qbtn("📊 P&L Report",        "/admin/profit-loss")
+        qbtn("🏷️ Laybys",            "/admin/layby")
+        qbtn("🛒 Purchase Orders",   "/admin/purchases")
+        qbtn("🔁 Trade-Ins",         "/admin/trade-in")
+        qbtn("🏧 End of Day",        "/admin/eod")
+        qbtn("📥 Import / Export",   "/admin/csv")
 
     # ── System tab ────────────────────────────────────────────────────────────
 
@@ -321,44 +445,50 @@ class HanryxMonitor(tk.Tk):
         for i in range(4):
             p.columnconfigure(i, weight=1)
 
-        self.c_cpu   = self._card(p, 0, 0, "CPU Usage", "—%")
-        self.c_temp  = self._card(p, 0, 1, "CPU Temp",  "—°C",
-                                   color=ORANGE)
-        self.c_ram   = self._card(p, 0, 2, "RAM Used",  "—%")
-        self.c_disk  = self._card(p, 0, 3, "Disk Used", "—")
+        self.c_cpu   = self._card(p, 0, 0, "CPU Usage", "—",   GREEN)
+        self.c_temp  = self._card(p, 0, 1, "CPU Temp",  "N/A", ORANGE)
+        self.c_ram   = self._card(p, 0, 2, "RAM Used",  "—",   WHITE)
+        self.c_disk  = self._card(p, 0, 3, "Disk Used", "—",   WHITE)
 
         # Progress bars
         bars = tk.Frame(p, bg=BG)
         bars.grid(row=1, column=0, columnspan=4, sticky="ew", padx=8, pady=4)
-        bars.columnconfigure(0, weight=1)
+        bars.columnconfigure(1, weight=1)
 
-        def bar_row(parent, row, label):
-            tk.Label(parent, text=label, font=("Helvetica", 10),
+        def bar_row(label, row):
+            tk.Label(bars, text=label, font=("Helvetica", 10),
                      fg=GREY, bg=BG, width=8, anchor="e").grid(
                 row=row, column=0, padx=(0, 8), pady=4)
-            pb = ttk.Progressbar(parent, length=400, maximum=100)
+            pb = ttk.Progressbar(bars, length=400, maximum=100)
             pb.grid(row=row, column=1, sticky="ew", pady=4)
-            lbl = tk.Label(parent, text="", font=("Helvetica", 10),
-                           fg=WHITE, bg=BG, width=10, anchor="w")
+            lbl = tk.Label(bars, text="", font=("Helvetica", 10),
+                           fg=WHITE, bg=BG, width=14, anchor="w")
             lbl.grid(row=row, column=2, padx=8, pady=4)
             return pb, lbl
 
-        bars.columnconfigure(1, weight=1)
-        self.pb_cpu,  self.pb_cpu_lbl  = bar_row(bars, 0, "CPU")
-        self.pb_ram,  self.pb_ram_lbl  = bar_row(bars, 1, "RAM")
-        self.pb_disk, self.pb_disk_lbl = bar_row(bars, 2, "Disk")
+        self.pb_cpu,  self.pb_cpu_lbl  = bar_row("CPU",  0)
+        self.pb_ram,  self.pb_ram_lbl  = bar_row("RAM",  1)
+        self.pb_disk, self.pb_disk_lbl = bar_row("Disk", 2)
 
-        # DB file info
-        db_f = tk.Frame(p, bg=BG3, padx=16, pady=12,
-                        highlightbackground=BORDER, highlightthickness=1)
-        db_f.grid(row=2, column=0, columnspan=4, sticky="ew", padx=14, pady=8)
-        tk.Label(db_f, text="DATABASE", font=("Helvetica", 9),
+        # Server info
+        srv_f = tk.Frame(p, bg=BG3, padx=14, pady=10,
+                         highlightbackground=BORDER, highlightthickness=1)
+        srv_f.grid(row=2, column=0, columnspan=4, sticky="ew", padx=14, pady=8)
+        tk.Label(srv_f, text="SERVER / DATABASE", font=("Helvetica", 9),
                  fg=GREY, bg=BG3).pack(anchor="w")
-        self.lbl_db_info = tk.Label(db_f, text="Loading…",
+        self.lbl_db_info = tk.Label(srv_f, text="Loading…",
                                      font=("Helvetica", 12), fg=WHITE, bg=BG3)
         self.lbl_db_info.pack(anchor="w", pady=(4, 0))
+        self.lbl_uptime = tk.Label(srv_f, text="",
+                                    font=("Helvetica", 12), fg=GREY, bg=BG3)
+        self.lbl_uptime.pack(anchor="w")
 
-    # ── Sites & VPN tab ───────────────────────────────────────────────────────
+        if IS_WINDOWS:
+            tk.Label(p, text="★  Local system stats shown above reflect this Windows machine.",
+                     font=("Helvetica", 10, "italic"), fg=GREY, bg=BG
+                     ).grid(row=3, column=0, columnspan=4, padx=14, pady=4, sticky="w")
+
+    # ── Sites tab ─────────────────────────────────────────────────────────────
 
     def _build_sites(self):
         p = self.tab_sites
@@ -371,46 +501,21 @@ class HanryxMonitor(tk.Tk):
                            highlightbackground=BORDER, highlightthickness=1)
         sites_f.pack(fill="x", padx=14, pady=4)
 
-        for i, (name, url) in enumerate(WEBSITES):
+        for name, url in WEBSITES:
             row_f = tk.Frame(sites_f, bg=BG3)
             row_f.pack(fill="x", padx=8, pady=6)
             tk.Label(row_f, text=name, font=("Helvetica", 13, "bold"),
-                     fg=GOLD, bg=BG3, width=22, anchor="w").pack(side="left")
+                     fg=GOLD, bg=BG3, width=24, anchor="w").pack(side="left")
             dot = tk.Label(row_f, text="●", font=("Helvetica", 14),
                            fg=GREY, bg=BG3)
             dot.pack(side="left", padx=8)
             lbl = tk.Label(row_f, text="checking…", font=("Helvetica", 11),
-                           fg=GREY, bg=BG3, width=20, anchor="w")
+                           fg=GREY, bg=BG3, width=24, anchor="w")
             lbl.pack(side="left")
             ms_lbl = tk.Label(row_f, text="", font=("Helvetica", 11),
                               fg=GREY, bg=BG3)
             ms_lbl.pack(side="left")
             self.site_rows[name] = (dot, lbl, ms_lbl)
-
-        # VPN
-        tk.Label(p, text="WIREGUARD VPN", font=("Helvetica", 9),
-                 fg=GREY, bg=BG, pady=8).pack(anchor="w", padx=14)
-
-        vpn_f = tk.Frame(p, bg=BG3, padx=16, pady=12,
-                         highlightbackground=BORDER, highlightthickness=1)
-        vpn_f.pack(fill="x", padx=14, pady=4)
-        row1 = tk.Frame(vpn_f, bg=BG3)
-        row1.pack(fill="x")
-        tk.Label(row1, text="Status:", font=("Helvetica", 12),
-                 fg=GREY, bg=BG3, width=12, anchor="w").pack(side="left")
-        self.vpn_dot = tk.Label(row1, text="●", font=("Helvetica", 14),
-                                 fg=GREY, bg=BG3)
-        self.vpn_dot.pack(side="left", padx=6)
-        self.vpn_lbl = tk.Label(row1, text="checking…", font=("Helvetica", 12),
-                                 fg=GREY, bg=BG3)
-        self.vpn_lbl.pack(side="left")
-        row2 = tk.Frame(vpn_f, bg=BG3)
-        row2.pack(fill="x", pady=(8, 0))
-        tk.Label(row2, text="Connected clients:", font=("Helvetica", 12),
-                 fg=GREY, bg=BG3, width=20, anchor="w").pack(side="left")
-        self.vpn_peers = tk.Label(row2, text="—", font=("Helvetica", 12, "bold"),
-                                   fg=GOLD, bg=BG3)
-        self.vpn_peers.pack(side="left")
 
     # ── Logs tab ──────────────────────────────────────────────────────────────
 
@@ -419,19 +524,29 @@ class HanryxMonitor(tk.Tk):
 
         ctrl = tk.Frame(p, bg=BG)
         ctrl.pack(fill="x", padx=8, pady=6)
-        tk.Label(ctrl, text="Service:", fg=GREY, bg=BG,
-                 font=("Helvetica", 11)).pack(side="left", padx=(0, 6))
-        self.log_svc = tk.StringVar(value="hanryxvault")
-        for svc, _ in SERVICES[:3]:
-            svc_name = [s for n, s in SERVICES if n == svc][0]
-            tk.Radiobutton(ctrl, text=svc, variable=self.log_svc,
-                           value=svc_name, bg=BG, fg=WHITE,
-                           selectcolor=BG3, activebackground=BG,
-                           font=("Helvetica", 11),
-                           command=self._refresh_logs).pack(side="left", padx=6)
-        tk.Button(ctrl, text="Refresh", command=self._refresh_logs,
-                  bg=BG3, fg=GOLD, relief="flat", font=("Helvetica", 11),
-                  padx=12, pady=4).pack(side="right", padx=4)
+
+        if IS_WINDOWS:
+            tk.Label(ctrl,
+                     text="Log streaming is only available when running directly on the Pi.  "
+                          "Use the buttons below to open the admin dashboard in your browser.",
+                     font=("Helvetica", 11, "italic"), fg=GREY, bg=BG, wraplength=800,
+                     justify="left").pack(side="left", padx=4)
+        else:
+            tk.Label(ctrl, text="Service:", fg=GREY, bg=BG,
+                     font=("Helvetica", 11)).pack(side="left", padx=(0, 6))
+            self.log_svc = tk.StringVar(value="hanryxvault")
+            for display, value in [("POS Server", "hanryxvault"),
+                                   ("nginx", "nginx"),
+                                   ("WireGuard", "wg-quick@wg0")]:
+                tk.Radiobutton(ctrl, text=display, variable=self.log_svc,
+                               value=value, bg=BG, fg=WHITE,
+                               selectcolor=BG3, activebackground=BG,
+                               font=("Helvetica", 11),
+                               command=self._refresh_logs).pack(side="left", padx=6)
+            tk.Button(ctrl, text="Refresh", command=self._refresh_logs,
+                      bg=BG3, fg=GOLD, relief="flat",
+                      font=("Helvetica", 11), padx=12, pady=4
+                      ).pack(side="right", padx=4)
 
         self.log_box = scrolledtext.ScrolledText(
             p, bg="#060606", fg="#c0c0c0",
@@ -439,6 +554,83 @@ class HanryxMonitor(tk.Tk):
             wrap="none", state="disabled"
         )
         self.log_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        if IS_WINDOWS:
+            open_row = tk.Frame(p, bg=BG)
+            open_row.pack(fill="x", padx=8, pady=4)
+            for label, path in [("Open Admin Dashboard", "/admin"),
+                                  ("Open Sales Log", "/admin/sales"),
+                                  ("Open Error Log", "/admin/error-log")]:
+                tk.Button(open_row, text=label,
+                          command=lambda u=f"{server_url()}{path}": webbrowser.open(u),
+                          bg=BG3, fg=GOLD, relief="flat",
+                          font=("Helvetica", 11), padx=12, pady=6
+                          ).pack(side="left", padx=4)
+
+    # ── Settings tab ──────────────────────────────────────────────────────────
+
+    def _build_settings(self):
+        p = self.tab_settings
+
+        frm = tk.Frame(p, bg=BG3, padx=24, pady=20,
+                       highlightbackground=BORDER, highlightthickness=1)
+        frm.pack(padx=40, pady=30, fill="x")
+
+        tk.Label(frm, text="Pi Connection Settings",
+                 font=("Helvetica", 16, "bold"), fg=GOLD, bg=BG3).pack(anchor="w")
+        tk.Label(frm,
+                 text="Enter the IP address (or hostname) and port of your Raspberry Pi POS server.",
+                 font=("Helvetica", 11), fg=GREY, bg=BG3, wraplength=700
+                 ).pack(anchor="w", pady=(4, 16))
+
+        def field(label, default):
+            row = tk.Frame(frm, bg=BG3)
+            row.pack(fill="x", pady=4)
+            tk.Label(row, text=label, font=("Helvetica", 12),
+                     fg=WHITE, bg=BG3, width=16, anchor="w").pack(side="left")
+            var = tk.StringVar(value=default)
+            ent = tk.Entry(row, textvariable=var, font=("Helvetica", 12),
+                           bg=BG, fg=WHITE, relief="flat",
+                           insertbackground=WHITE, width=30)
+            ent.pack(side="left", padx=(8, 0))
+            return var
+
+        self.cfg_host = field("Pi Host / IP",  CFG.get("host", "127.0.0.1"))
+        self.cfg_port = field("Port",           CFG.get("port", "8080"))
+
+        def apply_settings():
+            CFG["host"] = self.cfg_host.get().strip() or "127.0.0.1"
+            CFG["port"] = self.cfg_port.get().strip() or "8080"
+            save_config(CFG)
+            self.lbl_host.config(text=f"  ⇒  {server_url()}")
+            messagebox.showinfo("Settings Saved",
+                                f"Now monitoring: {server_url()}\n\n"
+                                "The dashboard will refresh automatically.")
+
+        tk.Button(frm, text="Save & Apply", command=apply_settings,
+                  bg=GOLD, fg="#000", font=("Helvetica", 12, "bold"),
+                  relief="flat", padx=16, pady=8, cursor="hand2"
+                  ).pack(anchor="w", pady=(16, 0))
+
+        # Platform info
+        info_f = tk.Frame(p, bg=BG3, padx=24, pady=16,
+                          highlightbackground=BORDER, highlightthickness=1)
+        info_f.pack(padx=40, pady=8, fill="x")
+        tk.Label(info_f, text="Environment",
+                 font=("Helvetica", 13, "bold"), fg=GOLD, bg=BG3).pack(anchor="w")
+
+        plat = platform.platform()
+        py_v = sys.version.split()[0]
+        psutil_v = "installed" if HAS_PSUTIL else "NOT installed — run: pip install psutil"
+        info_lines = [
+            f"Platform: {plat}",
+            f"Python:   {py_v}",
+            f"psutil:   {psutil_v}",
+            f"Config:   {CONFIG_PATH}",
+        ]
+        for line in info_lines:
+            tk.Label(info_f, text=line, font=("Courier", 11),
+                     fg=WHITE, bg=BG3, anchor="w").pack(anchor="w")
 
     # ── Action bar ────────────────────────────────────────────────────────────
 
@@ -451,17 +643,21 @@ class HanryxMonitor(tk.Tk):
             tk.Button(bar, text=label, command=cmd,
                       bg=color, fg=fg, relief="flat",
                       font=("Helvetica", 11, "bold"),
-                      padx=14, pady=6,
-                      cursor="hand2").pack(side="left", padx=6, pady=4)
+                      padx=12, pady=6, cursor="hand2"
+                      ).pack(side="left", padx=5, pady=4)
 
-        btn("Restart Server",    self._restart_server)
-        btn("Sync Inventory",    self._sync_inventory)
-        btn("Open Admin",        self._open_admin)
-        btn("Add VPN Client",    self._add_vpn_client)
-        btn("Backup DB",         self._backup_db)
+        btn("Open Admin",       lambda: webbrowser.open(f"{server_url()}/admin"))
+        btn("📊 P&L",           lambda: webbrowser.open(f"{server_url()}/admin/profit-loss"))
+        btn("🏷️ Laybys",        lambda: webbrowser.open(f"{server_url()}/admin/layby"))
+        btn("📥 Export CSV",    lambda: webbrowser.open(f"{server_url()}/admin/inventory/export"))
+        btn("Backup DB",        self._backup_db)
+
+        if not IS_WINDOWS:
+            btn("Restart Server", self._restart_server_pi)
+
         btn("Quit", self.destroy, color="#1a0000", fg=RED)
 
-    # ── Refresh ───────────────────────────────────────────────────────────────
+    # ── Periodic refresh ──────────────────────────────────────────────────────
 
     def _refresh(self):
         self.lbl_time.config(
@@ -471,132 +667,170 @@ class HanryxMonitor(tk.Tk):
         self.after(REFRESH_MS, self._refresh)
 
     def _bg_refresh(self):
-        stats   = db_stats()
-        cpu     = cpu_percent()
-        temp    = cpu_temp()
-        ram_u, ram_t, ram_pct = ram_info()
-        disk_u, disk_t, disk_pct = disk_info()
+        # --- POS stats via HTTP API ---
+        sc, monitor_data, ping_ms = _get("/admin/monitor-stats", timeout=5)
+        _, health_data, _         = _get("/health", timeout=4)
 
-        # Ping POS server
-        status_code, ping_ms = ping_url(f"{SERVER_URL}/health")
+        # --- Service health checks ---
+        svc_results = {}
+        for name, url_tpl in SERVICES:
+            url = url_tpl.format(host=CFG["host"], port=CFG["port"])
+            code, ms = ping_url(url, timeout=3)
+            svc_results[name] = (code in (200, 301, 302), ms)
 
-        # Ping websites (background, don't block)
-        site_results = {}
-        for name, url in WEBSITES:
-            sc, ms = ping_url(url)
-            site_results[name] = (sc, ms)
+        # --- Website pings ---
+        site_results = {name: ping_url(url) for name, url in WEBSITES}
 
-        # VPN
-        vpn_on    = service_status("wg-quick@wg0")
-        vpn_count = wg_peers()
+        # --- Local system (this machine) ---
+        cpu      = sys_cpu()
+        ram_u, ram_t, ram_pct = sys_ram()
+        disk_u, disk_t, disk_pct = sys_disk()
+        temp     = sys_cpu_temp()
 
-        # Services
-        svc_states = {svc: service_status(svc) for _, svc in SERVICES}
-
-        # DB file size
-        db_size = ""
-        if os.path.exists(DB_PATH):
-            sz = os.path.getsize(DB_PATH) / 1024
-            db_size = f"{DB_PATH}   {sz:.1f} KB"
-        else:
-            db_size = f"{DB_PATH}   (not found)"
-
-        # Schedule UI updates on main thread
         self.after(0, self._update_ui,
-                   stats, cpu, temp, ram_u, ram_t, ram_pct,
-                   disk_u, disk_t, disk_pct,
-                   ping_ms, status_code,
-                   site_results, vpn_on, vpn_count, svc_states, db_size)
+                   sc, ping_ms, monitor_data, health_data,
+                   svc_results, site_results,
+                   cpu, ram_u, ram_t, ram_pct,
+                   disk_u, disk_t, disk_pct, temp)
 
-    def _update_ui(self, stats, cpu, temp, ram_u, ram_t, ram_pct,
-                   disk_u, disk_t, disk_pct,
-                   ping_ms, status_code,
-                   site_results, vpn_on, vpn_count, svc_states, db_size):
+    def _update_ui(self, sc, ping_ms, d, health,
+                   svc_results, site_results,
+                   cpu, ram_u, ram_t, ram_pct,
+                   disk_u, disk_t, disk_pct, temp):
 
-        # Dashboard cards
-        self.c_today_sales.config(text=str(stats.get("today_sales", "—")))
-        self.c_today_rev.config(text=f"${stats.get('today_rev', 0):.2f}")
-        self.c_today_tips.config(text=f"${stats.get('today_tips', 0):.2f}")
-        self.c_total_sales.config(text=str(stats.get("total_sales", "—")))
-        self.c_inv_count.config(text=str(stats.get("inv_count", "—")))
+        if not isinstance(d, dict):
+            d = {}
 
-        pending = stats.get("pending_scans", 0)
-        self.c_pending.config(text=str(pending),
-                               fg=ORANGE if pending > 0 else GREEN)
+        # ── Dashboard ─────────────────────────────────────────────────────────
+        self.c_today_sales.config(text=str(d.get("today_sales", "—")))
+        rev  = d.get("today_revenue", None)
+        tips = d.get("today_tips", None)
+        self.c_today_rev.config(
+            text=f"£{rev:.2f}"  if rev  is not None else "—")
+        self.c_today_tips.config(
+            text=f"£{tips:.2f}" if tips is not None else "—")
+        self.c_total_sales.config(text=str(d.get("total_sales", "—")))
+        self.c_inv_count.config(text=str(d.get("inv_count",    "—")))
 
-        low  = stats.get("low_stock",  0)
-        out  = stats.get("out_stock",  0)
-        self.lbl_low_stock.config(text=f"Low (≤5): {low}",
-                                   fg=ORANGE if low > 0 else GREEN)
-        self.lbl_out_stock.config(text=f"Out of stock: {out}",
-                                   fg=RED if out > 0 else GREEN)
+        pending = d.get("pending_scans", 0)
+        self.c_pending.config(text=str(pending) if pending != "—" else "—",
+                               fg=ORANGE if pending else GREEN)
+
+        low = d.get("low_stock", 0)
+        out = d.get("out_stock", 0)
+        self.lbl_low_stock.config(
+            text=f"Low (≤5): {low}", fg=ORANGE if low else GREEN)
+        self.lbl_out_stock.config(
+            text=f"Out of stock: {out}", fg=RED if out else GREEN)
 
         # Services
-        for _, svc in SERVICES:
-            on = svc_states.get(svc, False)
-            self.svc_dots[svc].config(fg=GREEN if on else RED)
-            self.svc_lbls[svc].config(
-                text="running" if on else "stopped",
-                fg=GREEN if on else RED
-            )
+        for name, (ok, ms) in svc_results.items():
+            dot, lbl = self.svc_labels[name]
+            dot.config(fg=GREEN if ok else RED)
+            lbl.config(text=f"ok  {ms}ms" if ok else "unreachable",
+                       fg=GREEN if ok else RED)
 
         # Server ping
-        if ping_ms > 0:
-            color = GREEN if ping_ms < 100 else (ORANGE if ping_ms < 300 else RED)
-            self.lbl_ping.config(
-                text=f"✓  {ping_ms} ms  (HTTP {status_code})", fg=color)
+        if sc in (200, 301, 302) and ping_ms:
+            col = GREEN if ping_ms < 100 else (ORANGE if ping_ms < 300 else RED)
+            self.lbl_ping.config(text=f"✓  {ping_ms} ms  (HTTP {sc})", fg=col)
         else:
-            self.lbl_ping.config(text="✗  No response", fg=RED)
+            self.lbl_ping.config(
+                text=f"✗  No response from {server_url()}", fg=RED)
 
-        # System
-        cpu_color = RED if cpu > 80 else (ORANGE if cpu > 60 else GREEN)
-        self.c_cpu.config(text=f"{cpu}%", fg=cpu_color)
-        temp_color = RED if temp > 75 else (ORANGE if temp > 65 else GREEN)
-        self.c_temp.config(text=f"{temp:.1f}°C", fg=temp_color)
-        self.c_ram.config(text=f"{ram_pct}%",
-                           fg=RED if ram_pct > 85 else WHITE)
+        # ── Business ──────────────────────────────────────────────────────────
+        ol   = d.get("open_laybys", "—")
+        lb   = d.get("layby_outstanding", None)
+        op   = d.get("open_pos", "—")
+        oti  = d.get("open_trade_ins", "—")
+        eod  = d.get("eod_today", None)
+
+        self.c_open_laybys.config(
+            text=str(ol), fg=ORANGE if ol and ol != "—" and ol > 0 else BLUE)
+        self.c_layby_bal.config(
+            text=f"£{lb:.2f}" if lb is not None else "—",
+            fg=ORANGE if lb and lb > 0 else BLUE)
+        self.c_open_pos.config(
+            text=str(op), fg=ORANGE if op and op != "—" and op > 0 else GREEN)
+        self.c_open_trade_in.config(
+            text=str(oti), fg=ORANGE if oti and oti != "—" and oti > 0 else GREEN)
+
+        pl_r = d.get("pl_30d_revenue", None)
+        pl_p = d.get("pl_30d_profit",  None)
+        pl_m = d.get("pl_30d_margin",  None)
+        self.c_pl_rev.config(
+            text=f"£{pl_r:.2f}"  if pl_r is not None else "—")
+        self.c_pl_profit.config(
+            text=f"£{pl_p:.2f}"  if pl_p is not None else "—",
+            fg=GREEN if pl_p and pl_p >= 0 else RED)
+        self.c_pl_margin.config(
+            text=f"{pl_m:.1f}%"  if pl_m is not None else "—",
+            fg=GREEN if pl_m and pl_m >= 0 else RED)
+        if eod is True:
+            self.c_eod.config(text="✓ Done", fg=GREEN)
+        elif eod is False:
+            self.c_eod.config(text="Pending", fg=ORANGE)
+        else:
+            self.c_eod.config(text="—", fg=GREY)
+
+        # ── System ────────────────────────────────────────────────────────────
+        cpu_col = RED if cpu > 80 else (ORANGE if cpu > 60 else GREEN)
+        self.c_cpu.config(text=f"{cpu:.1f}%", fg=cpu_col)
+
+        if temp is not None:
+            temp_col = RED if temp > 75 else (ORANGE if temp > 65 else GREEN)
+            self.c_temp.config(text=f"{temp:.1f}°C", fg=temp_col)
+        else:
+            self.c_temp.config(text="N/A", fg=GREY)
+
+        self.c_ram.config(
+            text=f"{ram_pct:.0f}%", fg=RED if ram_pct > 85 else WHITE)
         self.c_disk.config(text=f"{disk_u}/{disk_t}")
 
         self.pb_cpu["value"]  = cpu
-        self.pb_cpu_lbl.config(text=f"{cpu}%")
+        self.pb_cpu_lbl.config(text=f"{cpu:.1f}%")
         self.pb_ram["value"]  = ram_pct
         self.pb_ram_lbl.config(text=f"{ram_u}/{ram_t} MB")
-
-        disk_pct_num = int(disk_pct.replace("%", "")) if "%" in str(disk_pct) else 0
-        self.pb_disk["value"] = disk_pct_num
+        disk_pct_n = disk_pct if isinstance(disk_pct, (int, float)) else 0
+        self.pb_disk["value"] = disk_pct_n
         self.pb_disk_lbl.config(text=f"{disk_u}/{disk_t}")
 
-        self.lbl_db_info.config(text=db_size)
+        db_mb  = d.get("db_size_mb", None)
+        uptime = d.get("uptime_s", None)
+        db_txt = f"DB size: {db_mb:.2f} MB" if db_mb is not None else "DB: N/A"
+        self.lbl_db_info.config(text=db_txt)
+        if uptime is not None:
+            h, rem = divmod(uptime, 3600)
+            m, s   = divmod(rem, 60)
+            self.lbl_uptime.config(text=f"Server uptime: {h}h {m}m {s}s")
 
-        # Sites
+        # ── Sites ─────────────────────────────────────────────────────────────
         for name, _ in WEBSITES:
-            sc, ms = site_results.get(name, (0, 0))
+            sc2, ms2 = site_results.get(name, (0, 0))
             dot, lbl, ms_lbl = self.site_rows[name]
-            if sc in (200, 301, 302):
+            if sc2 in (200, 301, 302):
                 dot.config(fg=GREEN)
                 lbl.config(text="online", fg=GREEN)
-                ms_lbl.config(text=f"  {ms} ms", fg=GREY)
+                ms_lbl.config(text=f"  {ms2} ms", fg=GREY)
             else:
                 dot.config(fg=RED)
                 lbl.config(text="offline / unreachable", fg=RED)
                 ms_lbl.config(text="")
 
-        # VPN
-        self.vpn_dot.config(fg=GREEN if vpn_on else RED)
-        self.vpn_lbl.config(text="running" if vpn_on else "stopped",
-                             fg=GREEN if vpn_on else RED)
-        self.vpn_peers.config(text=str(vpn_count) if vpn_on else "—")
+    # ── Logs refresh ──────────────────────────────────────────────────────────
 
     def _refresh_logs(self):
+        if IS_WINDOWS:
+            return
         svc = self.log_svc.get()
         try:
             out = subprocess.check_output(
                 f"journalctl -u {svc} -n {LOG_LINES} --no-pager "
                 f"--output=short-iso 2>/dev/null",
-                shell=True, stderr=subprocess.DEVNULL, timeout=4
+                shell=True, stderr=subprocess.DEVNULL, timeout=5
             ).decode()
         except Exception:
-            out = tail_log()
+            out = "Could not fetch logs. Make sure you are running on the Pi."
 
         self.log_box.config(state="normal")
         self.log_box.delete("1.0", "end")
@@ -606,78 +840,33 @@ class HanryxMonitor(tk.Tk):
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
-    def _run_sudo(self, cmd, success_msg):
+    def _backup_db(self):
+        def do_backup():
+            sc, resp = _post("/admin/backup-db")
+            if sc == 200:
+                self.after(0, lambda: messagebox.showinfo(
+                    "Backup", resp.get("message", "Backup complete.")))
+            else:
+                self.after(0, lambda: messagebox.showwarning(
+                    "Backup", f"Server returned {sc}.\n"
+                              f"Check the admin panel for manual backup options."))
+        threading.Thread(target=do_backup, daemon=True).start()
+
+    def _restart_server_pi(self):
+        if not messagebox.askyesno("Restart Server",
+                                   "Restart the HanryxVault POS server?\n"
+                                   "(Requires sudo on this machine)"):
+            return
         try:
-            subprocess.run(f"sudo {cmd}", shell=True, check=True, timeout=10)
-            messagebox.showinfo("Done", success_msg)
+            subprocess.run(
+                "sudo systemctl restart hanryxvault",
+                shell=True, check=True, timeout=12)
+            messagebox.showinfo("Done", "Server restarted.")
         except subprocess.CalledProcessError as e:
             messagebox.showerror("Error", str(e))
 
-    def _restart_server(self):
-        if messagebox.askyesno("Restart Server",
-                               "Restart the HanryxVault POS server?"):
-            self._run_sudo("systemctl restart hanryxvault",
-                           "Server restarted successfully.")
 
-    def _sync_inventory(self):
-        def do_sync():
-            try:
-                req = urllib.request.Request(
-                    f"{SERVER_URL}/admin/sync-from-cloud?force=1",
-                    data=b"", method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    result = json.loads(r.read())
-                self.after(0, lambda: messagebox.showinfo(
-                    "Sync Complete",
-                    f"Upserted: {result.get('upserted', 0)} products\n"
-                    f"Skipped: {result.get('skipped', 0)}"
-                ))
-            except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Sync Failed", str(e)))
-        threading.Thread(target=do_sync, daemon=True).start()
-
-    def _open_admin(self):
-        import webbrowser
-        webbrowser.open(f"{SERVER_URL}/admin")
-
-    def _add_vpn_client(self):
-        win = tk.Toplevel(self, bg=BG)
-        win.title("Add VPN Client")
-        win.geometry("400x200")
-        tk.Label(win, text="Device name:", fg=WHITE, bg=BG,
-                 font=("Helvetica", 12)).pack(pady=(20, 4))
-        entry = tk.Entry(win, font=("Helvetica", 13), bg=BG3, fg=WHITE,
-                         relief="flat", insertbackground=WHITE)
-        entry.pack(padx=20, fill="x")
-        entry.focus()
-
-        def do_add():
-            name = entry.get().strip()
-            if not name:
-                return
-            win.destroy()
-            self._run_sudo(
-                f"bash /home/pi/pi-setup/scripts/add-vpn-client.sh '{name}'",
-                f"VPN client '{name}' added!\nScan the QR code from the terminal."
-            )
-
-        tk.Button(win, text="Add Client", command=do_add,
-                  bg=GOLD, fg="#000", font=("Helvetica", 12, "bold"),
-                  relief="flat", padx=16, pady=8).pack(pady=16)
-
-    def _backup_db(self):
-        ts  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        dst = os.path.expanduser(f"~/vault_pos_backup_{ts}.db")
-        try:
-            import shutil
-            shutil.copy2(DB_PATH, dst)
-            messagebox.showinfo("Backup Complete", f"Saved to:\n{dst}")
-        except Exception as e:
-            messagebox.showerror("Backup Failed", str(e))
-
-
-# ── Entry ─────────────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     app = HanryxMonitor()

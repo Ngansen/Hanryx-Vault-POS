@@ -1579,6 +1579,121 @@ def health():
     return jsonify(data)
 
 
+@app.route("/admin/monitor-stats", methods=["GET"])
+def admin_monitor_stats():
+    """JSON dashboard for the desktop monitor (Windows + Pi). No auth required on LAN."""
+    db = get_db()
+    midnight = int(datetime.datetime.combine(
+        datetime.date.today(), datetime.time.min
+    ).timestamp() * 1000)
+
+    today = db.execute("""
+        SELECT COUNT(*) as cnt,
+               COALESCE(SUM(total_amount),0) as rev,
+               COALESCE(SUM(tip_amount),0)   as tips
+        FROM sales WHERE timestamp_ms >= ?
+    """, (midnight,)).fetchone()
+
+    total_sales   = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+    inv_count     = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    low_stock     = db.execute(
+        "SELECT COUNT(*) FROM inventory WHERE stock <= 5 AND stock > 0"
+    ).fetchone()[0]
+    out_stock     = db.execute(
+        "SELECT COUNT(*) FROM inventory WHERE stock = 0"
+    ).fetchone()[0]
+    pending_scans = db.execute(
+        "SELECT COUNT(*) FROM scan_queue WHERE processed=0"
+    ).fetchone()[0]
+
+    open_trade_ins = 0
+    try:
+        open_trade_ins = db.execute(
+            "SELECT COUNT(*) FROM trade_ins WHERE status='open'"
+        ).fetchone()[0]
+    except Exception:
+        pass
+
+    open_laybys = 0
+    layby_outstanding = 0.0
+    try:
+        r = db.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(total_amount - paid_amount), 0)
+            FROM laybys WHERE status='active'
+        """).fetchone()
+        open_laybys       = r[0]
+        layby_outstanding = float(r[1])
+    except Exception:
+        pass
+
+    open_pos = 0
+    try:
+        open_pos = db.execute(
+            "SELECT COUNT(*) FROM purchase_orders WHERE status IN ('draft','ordered')"
+        ).fetchone()[0]
+    except Exception:
+        pass
+
+    eod_today = False
+    try:
+        eod_today = bool(db.execute(
+            "SELECT 1 FROM eod_reconciliations WHERE date_str=? LIMIT 1",
+            (datetime.date.today().isoformat(),)
+        ).fetchone())
+    except Exception:
+        pass
+
+    period_ms  = midnight - (30 * 86400 * 1000)
+    pl_revenue = 0.0
+    pl_cogs    = 0.0
+    try:
+        rows = db.execute("""
+            SELECT si.quantity, si.unit_price, i.purchase_price
+            FROM sale_items si
+            JOIN sales s ON s.id = si.sale_id
+            LEFT JOIN inventory i ON i.qr_code = si.qr_code
+            WHERE s.timestamp_ms >= ?
+        """, (period_ms,)).fetchall()
+        for r in rows:
+            pl_revenue += float(r[1] or 0) * int(r[0] or 0)
+            pl_cogs    += float(r[2] or 0) * int(r[0] or 0)
+    except Exception:
+        pass
+    pl_profit = pl_revenue - pl_cogs
+    pl_margin = round(pl_profit / pl_revenue * 100, 1) if pl_revenue > 0 else 0.0
+
+    db_size_mb = 0.0
+    try:
+        row = db.execute("SELECT pg_database_size(current_database())").fetchone()
+        if row:
+            db_size_mb = round(row[0] / (1024 * 1024), 2)
+    except Exception:
+        pass
+
+    return jsonify({
+        "today_sales":       today["cnt"],
+        "today_revenue":     round(float(today["rev"]), 2),
+        "today_tips":        round(float(today["tips"]), 2),
+        "total_sales":       total_sales,
+        "inv_count":         inv_count,
+        "low_stock":         low_stock,
+        "out_stock":         out_stock,
+        "pending_scans":     pending_scans,
+        "open_trade_ins":    open_trade_ins,
+        "open_laybys":       open_laybys,
+        "layby_outstanding": round(layby_outstanding, 2),
+        "open_pos":          open_pos,
+        "eod_today":         eod_today,
+        "pl_30d_revenue":    round(pl_revenue, 2),
+        "pl_30d_cogs":       round(pl_cogs, 2),
+        "pl_30d_profit":     round(pl_profit, 2),
+        "pl_30d_margin":     pl_margin,
+        "db_size_mb":        db_size_mb,
+        "uptime_s":          int(_time.time() - _server_start_time),
+    })
+
+
 @app.route("/cache/stats", methods=["GET"])
 def cache_stats():
     """Performance stats — consumed by desktop monitor."""
