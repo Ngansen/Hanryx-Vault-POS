@@ -100,14 +100,55 @@ from flask_compress import Compress
 from cachetools import TTLCache
 
 # ---------------------------------------------------------------------------
-# Logging — replaces bare print() throughout the module
+# Structured JSON logging — every line is machine-parseable
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+import uuid as _uuid_mod
+
+class _JsonFormatter(logging.Formatter):
+    """Emit log records as JSON lines for easy ingestion / grep."""
+    def format(self, record: logging.LogRecord) -> str:
+        doc = {
+            "ts":      self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level":   record.levelname,
+            "logger":  record.name,
+            "msg":     record.getMessage(),
+        }
+        # Inject Flask request context when available
+        try:
+            from flask import has_request_context, g, request as _req
+            if has_request_context():
+                doc["request_id"] = getattr(g, "request_id", "")
+                doc["method"]     = _req.method
+                doc["path"]       = _req.path
+                doc["ip"]         = _req.remote_addr
+        except Exception:
+            pass
+        if record.exc_info:
+            doc["exc"] = self.formatException(record.exc_info)
+        return json.dumps(doc, ensure_ascii=False)
+
+_json_handler = logging.StreamHandler()
+_json_handler.setFormatter(_JsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[_json_handler])
 log = logging.getLogger("hanryxvault")
+
+# ---------------------------------------------------------------------------
+# Sentry error tracking — enabled if SENTRY_DSN env var is set
+# ---------------------------------------------------------------------------
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.05,   # 5 % of requests traced
+            send_default_pii=False,
+        )
+        log.info("[sentry] Error tracking enabled")
+    except ImportError:
+        log.warning("[sentry] sentry-sdk not installed — error tracking disabled")
 
 # ---------------------------------------------------------------------------
 # Zettle OAuth + Payment configuration
@@ -214,11 +255,166 @@ Compress(app)  # gzip all responses automatically
 app.secret_key = os.environ.get("SESSION_SECRET") or os.environ.get(
     "SECRET_KEY", "dev-secret-change-me-in-production"
 )
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"]  = True
+app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
+app.config["SESSION_COOKIE_SECURE"]    = os.environ.get("HTTPS_ONLY", "0") == "1"
 
 # Admin panel password — set ADMIN_PASSWORD env var on the Pi
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "hanryxvault")
+
+# ---------------------------------------------------------------------------
+# Enterprise: JWT + TOTP imports (graceful degradation if not installed)
+# ---------------------------------------------------------------------------
+try:
+    import jwt as _jwt
+    _JWT_AVAILABLE = True
+except ImportError:
+    _JWT_AVAILABLE = False
+
+try:
+    import pyotp as _pyotp
+    _PYOTP_AVAILABLE = True
+except ImportError:
+    _PYOTP_AVAILABLE = False
+
+_JWT_SECRET = os.environ.get("JWT_SECRET", app.secret_key)
+_JWT_ALGO   = "HS256"
+_JWT_TTL_H  = int(os.environ.get("JWT_TTL_HOURS", "24"))
+
+# LAN CIDR allowlist for open (no-auth) APK endpoints.
+# Default: accept any RFC-1918 address. Override via LAN_CIDRS env var.
+# e.g. LAN_CIDRS=192.168.1.0/24,10.0.0.0/8
+import ipaddress as _ipaddress
+_LAN_CIDRS_RAW = os.environ.get("LAN_CIDRS", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8")
+_LAN_NETWORKS  = [_ipaddress.ip_network(c.strip()) for c in _LAN_CIDRS_RAW.split(",") if c.strip()]
+
+
+def _is_lan(ip: str) -> bool:
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return any(addr in net for net in _LAN_NETWORKS)
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: Request ID + security headers middleware
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def _inject_request_id():
+    g.request_id = request.headers.get("X-Request-ID") or _uuid_mod.uuid4().hex[:12]
+    g.admin_user  = session.get("admin_user", "anonymous")
+
+
+@app.after_request
+def _add_security_headers(resp):
+    resp.headers["X-Request-ID"]          = getattr(g, "request_id", "")
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"]        = "SAMEORIGIN"
+    resp.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
+    # CSP: restrictive for API, relaxed for admin HTML pages
+    if resp.content_type and "text/html" in resp.content_type:
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
+        )
+    if os.environ.get("HTTPS_ONLY") == "1":
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: JWT token auth decorator for APK / Expo endpoints
+# ---------------------------------------------------------------------------
+
+def _verify_jwt(token: str) -> dict | None:
+    """Return decoded payload or None on failure."""
+    if not _JWT_AVAILABLE:
+        return None
+    try:
+        return _jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+    except Exception:
+        return None
+
+
+def require_api_token(fn):
+    """
+    Allow request if ANY of:
+      1. Valid Bearer JWT in Authorization header
+      2. Valid ?token= query param
+      3. Source IP is on the configured LAN subnet (local hardware)
+    Returns 401 JSON otherwise.
+    """
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        # LAN bypass — local Pi hardware always trusted
+        if _is_lan(request.remote_addr):
+            return fn(*args, **kwargs)
+        # JWT check
+        auth = request.headers.get("Authorization", "")
+        token = ""
+        if auth.startswith("Bearer "):
+            token = auth[7:].strip()
+        if not token:
+            token = request.args.get("token", "") or (request.get_json(silent=True) or {}).get("token", "")
+        if token and _verify_jwt(token):
+            return fn(*args, **kwargs)
+        return jsonify({"error": "Unauthorized — provide a valid Bearer token or connect from LAN"}), 401
+    return _wrapped
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: Audit log writer + decorator
+# ---------------------------------------------------------------------------
+
+def _audit_write(action: str, resource: str = "", detail: str = ""):
+    """Write one row to audit_log. Captures request context immediately, writes in background."""
+    try:
+        actor  = session.get("admin_user", "anonymous")
+        ip     = request.remote_addr
+        req_id = getattr(g, "request_id", "")
+    except Exception:
+        actor = ip = req_id = ""
+
+    def _do_safe():
+        try:
+            db = _direct_db()
+            db.execute(
+                "INSERT INTO audit_log (action, actor, resource, detail, ip, request_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (action, actor, resource, detail[:2000], ip, req_id),
+            )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[audit] write failed: %s", _e)
+
+    threading.Thread(target=_do_safe, daemon=True).start()
+
+
+def audit_action(action: str, resource_fn=None):
+    """
+    Decorator.  Writes an audit_log row after a successful (non-4xx/5xx) call.
+
+    Usage:
+      @audit_action("inventory.delete", resource_fn=lambda: request.view_args.get("qr_code"))
+      def delete_item(qr_code): ...
+    """
+    def _decorator(fn):
+        @functools.wraps(fn)
+        def _wrapped(*args, **kwargs):
+            result = fn(*args, **kwargs)
+            try:
+                status = result[1] if isinstance(result, tuple) else 200
+                if status < 400:
+                    resource = resource_fn() if resource_fn else ""
+                    _audit_write(action, str(resource))
+            except Exception:
+                pass
+            return result
+        return _wrapped
+    return _decorator
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -954,6 +1150,96 @@ def init_db():
             transaction_count INTEGER NOT NULL DEFAULT 0,
             notes           TEXT NOT NULL DEFAULT '',
             created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Audit log ────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS audit_log (
+            id         BIGSERIAL PRIMARY KEY,
+            ts_ms      BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            actor      TEXT NOT NULL DEFAULT 'anonymous',
+            action     TEXT NOT NULL,
+            resource   TEXT NOT NULL DEFAULT '',
+            detail     TEXT NOT NULL DEFAULT '',
+            ip         TEXT NOT NULL DEFAULT '',
+            request_id TEXT NOT NULL DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_audit_ts     ON audit_log(ts_ms DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_actor  ON audit_log(actor)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)",
+
+        # ── Enterprise: API tokens (JWT issuance) ────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS api_tokens (
+            id          BIGSERIAL PRIMARY KEY,
+            label       TEXT NOT NULL,
+            token_hash  TEXT UNIQUE NOT NULL,
+            created_by  TEXT NOT NULL DEFAULT 'admin',
+            scopes      TEXT NOT NULL DEFAULT 'scan,sales',
+            expires_at  BIGINT,
+            revoked     INTEGER NOT NULL DEFAULT 0,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            last_used   BIGINT
+        )""",
+
+        # ── Enterprise: TOTP 2FA secrets ─────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS totp_secrets (
+            id         BIGSERIAL PRIMARY KEY,
+            username   TEXT UNIQUE NOT NULL DEFAULT 'admin',
+            secret     TEXT NOT NULL,
+            enabled    INTEGER NOT NULL DEFAULT 0,
+            created_at BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Idempotency keys for /sales ──────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS sales_idempotency (
+            idempotency_key TEXT PRIMARY KEY,
+            sale_id         BIGINT,
+            response_json   TEXT NOT NULL DEFAULT '{{}}',
+            created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Returns / refunds ─────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS returns (
+            id           BIGSERIAL PRIMARY KEY,
+            reference    TEXT UNIQUE NOT NULL,
+            original_sale_id BIGINT,
+            reason       TEXT NOT NULL DEFAULT '',
+            refund_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            refund_method TEXT NOT NULL DEFAULT 'original',
+            status       TEXT NOT NULL DEFAULT 'pending',
+            notes        TEXT NOT NULL DEFAULT '',
+            created_by   TEXT NOT NULL DEFAULT 'admin',
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            completed_at BIGINT
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS return_items (
+            id          BIGSERIAL PRIMARY KEY,
+            return_id   BIGINT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+            qr_code     TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            quantity    INTEGER NOT NULL DEFAULT 1,
+            unit_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            restock     INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_return_items ON return_items(return_id)",
+
+        # ── Enterprise: Suppliers ─────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS suppliers (
+            id          BIGSERIAL PRIMARY KEY,
+            name        TEXT UNIQUE NOT NULL,
+            contact     TEXT NOT NULL DEFAULT '',
+            email       TEXT NOT NULL DEFAULT '',
+            phone       TEXT NOT NULL DEFAULT '',
+            address     TEXT NOT NULL DEFAULT '',
+            notes       TEXT NOT NULL DEFAULT '',
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Low-stock alert configuration ─────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS low_stock_config (
+            qr_code   TEXT PRIMARY KEY,
+            threshold INTEGER NOT NULL DEFAULT 1,
+            alerted   INTEGER NOT NULL DEFAULT 0,
+            updated   BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
     ]
 
@@ -3004,12 +3290,30 @@ def record_sale_history():
     """
     APK lightweight sale recorder.
     Accepts: { items: [{name, price, quantity}], sold_at: <epoch_ms> }
-    Stores each line item in sale_history for local market price calculation.
+    Idempotency: send X-Idempotency-Key header (or idempotency_key in body) — duplicate
+    requests within 24 h return the original response without double-recording.
     No auth required — called by the APK on the local network.
     """
     data    = request.get_json(force=True, silent=True) or {}
     items   = data.get("items", [])
     sold_at = int(data.get("sold_at") or _now_ms())
+
+    # ── Idempotency check ────────────────────────────────────────────────────
+    idem_key = (
+        request.headers.get("X-Idempotency-Key")
+        or data.get("idempotency_key", "")
+    ).strip()
+    if idem_key:
+        db = get_db()
+        existing = db.execute(
+            "SELECT response_json FROM sales_idempotency WHERE idempotency_key = %s "
+            "AND created_at > %s",
+            (idem_key, _now_ms() - 86_400_000),   # 24 h window
+        ).fetchone()
+        if existing:
+            resp = jsonify(json.loads(existing["response_json"]))
+            resp.headers["X-Idempotency-Replayed"] = "true"
+            return resp
 
     if not items:
         return jsonify({"ok": True, "recorded": 0}), 200
@@ -3028,8 +3332,22 @@ def record_sale_history():
         )
         recorded += 1
     db.commit()
-    log.info("[/sales POST] recorded=%d", recorded)
-    return jsonify({"ok": True, "recorded": recorded}), 200
+    log.info("[/sales POST] recorded=%d idem_key=%s", recorded, idem_key or "none")
+
+    result = {"ok": True, "recorded": recorded}
+    if idem_key:
+        try:
+            db.execute(
+                "INSERT INTO sales_idempotency (idempotency_key, response_json) VALUES (%s, %s) "
+                "ON CONFLICT (idempotency_key) DO NOTHING",
+                (idem_key, json.dumps(result))
+            )
+            db.commit()
+        except Exception:
+            pass
+
+    _audit_write("sale.record", f"items={recorded}", f"sold_at={sold_at}")
+    return jsonify(result), 200
 
 
 @app.route("/sales", methods=["GET"])
@@ -7997,10 +8315,26 @@ def admin_login():
         next_url  = request.form.get("next", "/admin")
         if hashlib.sha256(password.encode()).hexdigest() == \
            hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest():
-            session["admin_authenticated"] = True
-            session.permanent = True
             _clear_login_attempts(ip)
             log.info("[admin] login successful from %s", ip)
+            # Check if TOTP 2FA is enabled
+            try:
+                db2 = _direct_db()
+                totp_row = db2.execute(
+                    "SELECT secret, enabled FROM totp_secrets WHERE username='admin' AND enabled=1"
+                ).fetchone()
+                db2.close()
+            except Exception:
+                totp_row = None
+            if totp_row:
+                # Partial auth — require TOTP next
+                session["admin_2fa_pending"] = True
+                session["admin_next_url"]    = next_url if next_url.startswith("/admin") else "/admin"
+                return redirect("/admin/2fa/verify")
+            session["admin_authenticated"] = True
+            session["admin_user"]          = "admin"
+            session.permanent = True
+            _audit_write("admin.login", "admin_dashboard", f"ip={ip}")
             return redirect(next_url if next_url.startswith("/admin") else "/admin")
         _record_failed_login(ip)
         log.warning("[admin] failed login attempt from %s (attempt %s)",
@@ -9712,9 +10046,753 @@ def market_price():
     })
 
 
+# ===========================================================================
+# ENTERPRISE ENDPOINTS
+# ===========================================================================
+
 # ---------------------------------------------------------------------------
-# Entry point
+# 1. JWT token issuance — POST /api/v1/auth/token
 # ---------------------------------------------------------------------------
+
+@app.route("/api/v1/auth/token", methods=["POST"])
+@require_admin
+def api_issue_token():
+    """
+    Issue a signed JWT for the APK / Expo app.  Admin-only.
+    Body: { "label": "my-tablet", "ttl_hours": 24, "scopes": "scan,sales" }
+    Response: { "token": "...", "expires_at": <epoch_s>, "label": "..." }
+    """
+    if not _JWT_AVAILABLE:
+        return jsonify({"error": "PyJWT not installed"}), 501
+    body   = request.get_json(silent=True) or {}
+    label  = (body.get("label") or "unnamed").strip()[:80]
+    ttl_h  = min(int(body.get("ttl_hours") or _JWT_TTL_H), 8760)   # cap 1 year
+    scopes = (body.get("scopes") or "scan,sales").strip()
+    exp    = int(_time.time()) + ttl_h * 3600
+    payload = {
+        "sub":    "api_client",
+        "label":  label,
+        "scopes": scopes,
+        "exp":    exp,
+        "iat":    int(_time.time()),
+    }
+    token = _jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALGO)
+    # Store hash so we can revoke
+    t_hash = hashlib.sha256(token.encode()).hexdigest()
+    db = get_db()
+    db.execute(
+        "INSERT INTO api_tokens (label, token_hash, created_by, scopes, expires_at) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (label, t_hash, session.get("admin_user", "admin"), scopes, exp * 1000)
+    )
+    db.commit()
+    _audit_write("api_token.issue", label, f"ttl_hours={ttl_h}")
+    return jsonify({"token": token, "expires_at": exp, "label": label, "scopes": scopes})
+
+
+@app.route("/api/v1/auth/tokens", methods=["GET"])
+@require_admin
+def api_list_tokens():
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, label, created_by, scopes, expires_at, revoked, created_at, last_used "
+        "FROM api_tokens ORDER BY created_at DESC LIMIT 100"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/auth/tokens/<int:token_id>", methods=["DELETE"])
+@require_admin
+def api_revoke_token(token_id):
+    db = get_db()
+    db.execute("UPDATE api_tokens SET revoked=1 WHERE id=%s", (token_id,))
+    db.commit()
+    _audit_write("api_token.revoke", str(token_id))
+    return jsonify({"ok": True, "revoked": token_id})
+
+
+# ---------------------------------------------------------------------------
+# 2. TOTP 2FA — setup, verify, disable
+# ---------------------------------------------------------------------------
+
+_2FA_VERIFY_HTML = """<!doctype html>
+<html><head><meta charset=utf-8><title>2FA — HanryxVault</title>
+<style>body{font-family:Arial,sans-serif;background:#111;color:#e0e0e0;display:flex;
+align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:32px;width:340px}
+h2{color:#d4a843;margin:0 0 24px}input{width:100%;padding:10px;background:#2a2a2a;
+border:1px solid #444;color:#fff;border-radius:6px;font-size:18px;text-align:center;
+letter-spacing:4px;box-sizing:border-box;margin-bottom:12px}
+button{width:100%;padding:12px;background:#d4a843;color:#111;font-size:16px;font-weight:bold;
+border:none;border-radius:6px;cursor:pointer}.err{color:#f87171;font-size:14px;margin-bottom:12px}
+</style></head><body><div class="card"><h2>🔐 Two-Factor Auth</h2>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<form method=POST><input name=code placeholder="000000" maxlength=6 autofocus autocomplete=off>
+<button type=submit>Verify</button></form></div></body></html>"""
+
+_2FA_SETUP_HTML = """<!doctype html>
+<html><head><meta charset=utf-8><title>2FA Setup — HanryxVault</title>
+<style>body{font-family:Arial,sans-serif;background:#111;color:#e0e0e0;display:flex;
+align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:32px;width:380px}
+h2{color:#d4a843;margin:0 0 16px}img{display:block;margin:0 auto 16px;border:4px solid #333;border-radius:8px}
+.secret{font-family:monospace;font-size:13px;background:#2a2a2a;padding:8px 12px;border-radius:6px;
+word-break:break-all;margin-bottom:16px}input{width:100%;padding:10px;background:#2a2a2a;
+border:1px solid #444;color:#fff;border-radius:6px;font-size:18px;text-align:center;
+letter-spacing:4px;box-sizing:border-box;margin-bottom:12px}
+button{width:100%;padding:12px;background:#d4a843;color:#111;font-size:16px;font-weight:bold;
+border:none;border-radius:6px;cursor:pointer}.err{color:#f87171}.ok{color:#34d399}
+p{font-size:13px;color:#aaa}</style></head>
+<body><div class="card"><h2>🔐 Set Up 2FA</h2>
+{% if qr_url %}<img src="{{ qr_url }}" width=200 height=200>
+<p>Scan with Google Authenticator / Authy, then enter the 6-digit code to enable.</p>
+<p class=secret>Manual key: {{ secret }}</p>
+{% endif %}
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% if success %}<p class="ok">{{ success }}</p>{% endif %}
+{% if not enabled %}
+<form method=POST><input name=code placeholder="000000" maxlength=6 autofocus autocomplete=off>
+<button type=submit>Enable 2FA</button></form>
+{% else %}
+<p class=ok>✓ 2FA is currently enabled.</p>
+<form method=POST action=/admin/2fa/disable>
+<button style=background:#ef4444>Disable 2FA</button></form>
+{% endif %}
+</div></body></html>"""
+
+
+@app.route("/admin/2fa/setup", methods=["GET", "POST"])
+@require_admin
+def admin_2fa_setup():
+    if not _PYOTP_AVAILABLE:
+        return jsonify({"error": "pyotp not installed"}), 501
+    db = get_db()
+    row = db.execute("SELECT secret, enabled FROM totp_secrets WHERE username='admin'").fetchone()
+    secret = row["secret"] if row else _pyotp.random_base32()
+    enabled = bool(row and row["enabled"])
+
+    if not row:
+        db.execute(
+            "INSERT INTO totp_secrets (username, secret, enabled) VALUES ('admin', %s, 0)",
+            (secret,)
+        )
+        db.commit()
+
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        totp = _pyotp.TOTP(secret)
+        if totp.verify(code, valid_window=1):
+            db.execute("UPDATE totp_secrets SET enabled=1 WHERE username='admin'")
+            db.commit()
+            _audit_write("admin.2fa.enable", "admin")
+            return render_template_string(_2FA_SETUP_HTML, qr_url=None, secret=secret,
+                                          enabled=True, error=None, success="2FA enabled successfully!")
+        return render_template_string(_2FA_SETUP_HTML, qr_url=_totp_qr_url(secret),
+                                      secret=secret, enabled=False, error="Invalid code — try again", success=None)
+
+    qr_url = _totp_qr_url(secret) if not enabled else None
+    return render_template_string(_2FA_SETUP_HTML, qr_url=qr_url, secret=secret,
+                                  enabled=enabled, error=None, success=None)
+
+
+def _totp_qr_url(secret: str) -> str:
+    """Return a data-URI PNG of the TOTP QR code."""
+    try:
+        import pyotp as _p
+        uri = _p.TOTP(secret).provisioning_uri("admin", issuer_name="HanryxVault")
+        import qrcode as _qrc
+        img = _qrc.make(uri)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
+
+
+@app.route("/admin/2fa/verify", methods=["GET", "POST"])
+def admin_2fa_verify():
+    if not session.get("admin_2fa_pending"):
+        return redirect("/admin/login")
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        try:
+            db = _direct_db()
+            row = db.execute(
+                "SELECT secret FROM totp_secrets WHERE username='admin' AND enabled=1"
+            ).fetchone()
+            db.close()
+        except Exception:
+            row = None
+        if row and _PYOTP_AVAILABLE:
+            import pyotp as _p
+            if _p.TOTP(row["secret"]).verify(code, valid_window=1):
+                session.pop("admin_2fa_pending", None)
+                session["admin_authenticated"] = True
+                session["admin_user"]          = "admin"
+                session.permanent = True
+                _audit_write("admin.login.2fa", "admin_dashboard")
+                next_url = session.pop("admin_next_url", "/admin")
+                return redirect(next_url)
+        return render_template_string(_2FA_VERIFY_HTML, error="Invalid code — try again")
+    return render_template_string(_2FA_VERIFY_HTML, error=None)
+
+
+@app.route("/admin/2fa/disable", methods=["POST"])
+@require_admin
+def admin_2fa_disable():
+    db = get_db()
+    db.execute("UPDATE totp_secrets SET enabled=0 WHERE username='admin'")
+    db.commit()
+    _audit_write("admin.2fa.disable", "admin")
+    return redirect("/admin/2fa/setup")
+
+
+# ---------------------------------------------------------------------------
+# 3. Audit log viewer — GET /api/v1/audit-log
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/audit-log", methods=["GET"])
+@require_admin
+def api_audit_log():
+    limit  = min(int(request.args.get("limit", 200)), 1000)
+    action = request.args.get("action", "").strip()
+    actor  = request.args.get("actor", "").strip()
+    db     = get_db()
+    where, args = [], []
+    if action:
+        where.append("action ILIKE %s"); args.append(f"%{action}%")
+    if actor:
+        where.append("actor ILIKE %s"); args.append(f"%{actor}%")
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    args.append(limit)
+    rows = db.execute(
+        f"SELECT id, ts_ms, actor, action, resource, detail, ip, request_id "
+        f"FROM audit_log {clause} ORDER BY ts_ms DESC LIMIT %s",
+        args
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ---------------------------------------------------------------------------
+# 4. Z-report (end-of-day) — GET /api/v1/reports/z-report[/pdf]
+# ---------------------------------------------------------------------------
+
+def _build_z_report(date_str: str, db) -> dict:
+    """Compute Z-report data for the given YYYY-MM-DD date string."""
+    # epoch bounds for the date (local midnight to midnight)
+    try:
+        day_start = int(datetime.datetime.strptime(date_str, "%Y-%m-%d").timestamp() * 1000)
+    except ValueError:
+        day_start = int(datetime.datetime.combine(datetime.date.today(),
+                                                   datetime.time.min).timestamp() * 1000)
+    day_end = day_start + 86_400_000
+
+    rows = db.execute(
+        "SELECT name, price, quantity, sold_at FROM sale_history "
+        "WHERE sold_at >= %s AND sold_at < %s ORDER BY sold_at",
+        (day_start, day_end)
+    ).fetchall()
+
+    total_revenue   = sum(r["price"] * r["quantity"] for r in rows)
+    total_items     = sum(r["quantity"] for r in rows)
+    transaction_cnt = len(rows)
+
+    # Top 10 by revenue
+    card_totals: dict = {}
+    for r in rows:
+        k = r["name"]
+        card_totals[k] = card_totals.get(k, 0) + r["price"] * r["quantity"]
+    top_cards = sorted(card_totals.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    # Payment method breakdown from sales table
+    method_rows = db.execute(
+        "SELECT payment_method, SUM(sale_price) as total, COUNT(*) as cnt "
+        "FROM sales WHERE sold_at >= %s AND sold_at < %s "
+        "GROUP BY payment_method",
+        (day_start, day_end)
+    ).fetchall()
+    by_method = {r["payment_method"] or "unknown": {"total": r["total"], "count": r["cnt"]}
+                 for r in method_rows}
+
+    # Existing EOD reconciliation if saved
+    rec = db.execute(
+        "SELECT * FROM eod_reconciliations WHERE date_str=%s", (date_str,)
+    ).fetchone()
+
+    return {
+        "date":              date_str,
+        "total_revenue":     round(total_revenue, 2),
+        "total_items_sold":  total_items,
+        "transaction_count": transaction_cnt,
+        "by_payment_method": by_method,
+        "top_cards":         [{"name": n, "revenue": round(v, 2)} for n, v in top_cards],
+        "reconciliation":    dict(rec) if rec else None,
+        "generated_at":      datetime.datetime.now().isoformat(),
+    }
+
+
+@app.route("/api/v1/reports/z-report", methods=["GET"])
+@require_admin
+def api_z_report():
+    date_str = request.args.get("date") or datetime.date.today().isoformat()
+    db       = get_db()
+    report   = _build_z_report(date_str, db)
+    return jsonify(report)
+
+
+@app.route("/api/v1/reports/z-report/pdf", methods=["GET"])
+@require_admin
+def api_z_report_pdf():
+    """Generate and stream a PDF Z-report for the given date."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as _rl_colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+    except ImportError:
+        return jsonify({"error": "reportlab not installed"}), 501
+
+    date_str = request.args.get("date") or datetime.date.today().isoformat()
+    db       = get_db()
+    rpt      = _build_z_report(date_str, db)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm,
+                             topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    gold   = _rl_colors.HexColor("#d4a843")
+    elems  = []
+
+    def _h(text, size=14, bold=True):
+        s = styles["Normal"].clone("h")
+        s.fontSize = size; s.textColor = gold; s.spaceAfter = 4
+        if bold: s.fontName = "Helvetica-Bold"
+        return Paragraph(text, s)
+
+    def _p(text, size=10):
+        s = styles["Normal"].clone("p"); s.fontSize = size; s.spaceAfter = 2
+        return Paragraph(text, s)
+
+    elems += [
+        _h("HanryxVault POS", 20),
+        _h(f"Z-Report — {date_str}", 14),
+        Spacer(1, 0.4*cm),
+        _p(f"Generated: {rpt['generated_at']}"),
+        Spacer(1, 0.5*cm),
+    ]
+
+    # Summary table
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Revenue",     f"${rpt['total_revenue']:.2f}"],
+        ["Items Sold",        str(rpt["total_items_sold"])],
+        ["Transactions",      str(rpt["transaction_count"])],
+    ]
+    for method, d in rpt["by_payment_method"].items():
+        summary_data.append([f"  {method.title()}", f"${d['total']:.2f} ({d['count']} txn)"])
+    ts = TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), gold),
+        ("TEXTCOLOR",  (0,0), (-1,0), _rl_colors.black),
+        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0), (-1,-1), 10),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [_rl_colors.white, _rl_colors.HexColor("#f5f5f5")]),
+        ("GRID",       (0,0), (-1,-1), 0.5, _rl_colors.grey),
+        ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+    ])
+    t = Table(summary_data, colWidths=[10*cm, 6*cm])
+    t.setStyle(ts)
+    elems += [t, Spacer(1, 0.6*cm)]
+
+    if rpt["top_cards"]:
+        elems.append(_h("Top Cards by Revenue", 12))
+        card_data = [["Card Name", "Revenue"]] + [
+            [c["name"][:50], f"${c['revenue']:.2f}"] for c in rpt["top_cards"]
+        ]
+        tc = Table(card_data, colWidths=[12*cm, 4*cm])
+        tc.setStyle(ts)
+        elems += [tc, Spacer(1, 0.4*cm)]
+
+    rec = rpt.get("reconciliation")
+    if rec:
+        elems.append(_h("Cash Reconciliation", 12))
+        rec_data = [
+            ["Opening Float",  f"${rec.get('opening_float', 0):.2f}"],
+            ["Expected Cash",  f"${rec.get('expected_cash', 0):.2f}"],
+            ["Actual Cash",    f"${rec.get('actual_cash', 0):.2f}"],
+            ["Discrepancy",    f"${rec.get('discrepancy', 0):.2f}"],
+        ]
+        tr = Table(rec_data, colWidths=[10*cm, 6*cm])
+        tr.setStyle(ts)
+        elems.append(tr)
+
+    doc.build(elems)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf",
+                     as_attachment=True, download_name=f"z-report-{date_str}.pdf")
+
+
+# ---------------------------------------------------------------------------
+# 5. Returns / Refunds — /api/v1/returns
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/returns", methods=["GET"])
+@require_admin
+def api_list_returns():
+    limit = min(int(request.args.get("limit", 50)), 500)
+    db    = get_db()
+    rows  = db.execute(
+        "SELECT r.*, array_agg(row_to_json(ri)) AS items "
+        "FROM returns r LEFT JOIN return_items ri ON ri.return_id=r.id "
+        "GROUP BY r.id ORDER BY r.created_at DESC LIMIT %s", (limit,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/returns", methods=["POST"])
+@require_admin
+def api_create_return():
+    """
+    Body: {
+      "original_sale_id": 42,        (optional)
+      "reason": "customer changed mind",
+      "refund_amount": 12.50,
+      "refund_method": "cash",
+      "items": [{"qr_code": "SV1-1", "name": "Charizard", "quantity": 1,
+                 "unit_price": 12.50, "restock": true}]
+    }
+    Restocked items are incremented back in inventory automatically.
+    """
+    body          = request.get_json(silent=True) or {}
+    items         = body.get("items", [])
+    reason        = (body.get("reason") or "").strip()[:500]
+    refund_amount = float(body.get("refund_amount") or 0)
+    refund_method = (body.get("refund_method") or "original").strip()
+    orig_sale_id  = body.get("original_sale_id")
+    reference     = f"RET-{_now_ms()}"
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO returns (reference, original_sale_id, reason, refund_amount, "
+        "refund_method, status, created_by) VALUES (%s, %s, %s, %s, %s, 'completed', %s)",
+        (reference, orig_sale_id, reason, refund_amount, refund_method,
+         session.get("admin_user", "admin"))
+    )
+    return_id = db.execute("SELECT lastval()").fetchone()[0]
+
+    restocked = []
+    for item in items:
+        qr    = (item.get("qr_code") or "").strip()
+        name  = (item.get("name") or "").strip()
+        qty   = int(item.get("quantity") or 1)
+        price = float(item.get("unit_price") or 0)
+        restock = bool(item.get("restock", True))
+        db.execute(
+            "INSERT INTO return_items (return_id, qr_code, name, quantity, unit_price, restock) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (return_id, qr, name, qty, price, int(restock))
+        )
+        if restock and qr:
+            db.execute(
+                "UPDATE inventory SET stock = stock + %s WHERE qr_code = %s", (qty, qr)
+            )
+            restocked.append(qr)
+            _invalidate_inventory(qr)
+
+    db.commit()
+    _audit_write("return.create", reference, f"items={len(items)} refund=${refund_amount:.2f}")
+    return jsonify({"ok": True, "reference": reference, "return_id": return_id,
+                    "restocked": restocked}), 201
+
+
+@app.route("/api/v1/returns/<int:return_id>", methods=["GET"])
+@require_admin
+def api_get_return(return_id):
+    db  = get_db()
+    row = db.execute("SELECT * FROM returns WHERE id=%s", (return_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    items = db.execute("SELECT * FROM return_items WHERE return_id=%s", (return_id,)).fetchall()
+    result = dict(row)
+    result["items"] = [dict(i) for i in items]
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# 6. Suppliers — /api/v1/suppliers
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/suppliers", methods=["GET"])
+@require_admin
+def api_list_suppliers():
+    db   = get_db()
+    rows = db.execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/suppliers", methods=["POST"])
+@require_admin
+def api_create_supplier():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO suppliers (name, contact, email, phone, address, notes) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (name, body.get("contact",""), body.get("email",""),
+             body.get("phone",""), body.get("address",""), body.get("notes",""))
+        )
+        db.commit()
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return jsonify({"error": "Supplier with that name already exists"}), 409
+        raise
+    sid = db.execute("SELECT lastval()").fetchone()[0]
+    _audit_write("supplier.create", name)
+    return jsonify({"ok": True, "id": sid}), 201
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["GET"])
+@require_admin
+def api_get_supplier(sid):
+    db  = get_db()
+    row = db.execute("SELECT * FROM suppliers WHERE id=%s", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    # attach purchase orders
+    pos = db.execute(
+        "SELECT id, reference, status, total_cost, created_at FROM purchase_orders "
+        "WHERE supplier=(SELECT name FROM suppliers WHERE id=%s) ORDER BY created_at DESC LIMIT 20",
+        (sid,)
+    ).fetchall()
+    result = dict(row)
+    result["purchase_orders"] = [dict(p) for p in pos]
+    return jsonify(result)
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["PUT"])
+@require_admin
+def api_update_supplier(sid):
+    body = request.get_json(silent=True) or {}
+    db   = get_db()
+    db.execute(
+        "UPDATE suppliers SET name=%s, contact=%s, email=%s, phone=%s, address=%s, notes=%s "
+        "WHERE id=%s",
+        (body.get("name",""), body.get("contact",""), body.get("email",""),
+         body.get("phone",""), body.get("address",""), body.get("notes",""), sid)
+    )
+    db.commit()
+    _audit_write("supplier.update", str(sid))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["DELETE"])
+@require_admin
+def api_delete_supplier(sid):
+    db = get_db()
+    db.execute("DELETE FROM suppliers WHERE id=%s", (sid,))
+    db.commit()
+    _audit_write("supplier.delete", str(sid))
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# 7. Low-stock alerts — /api/v1/stock-alerts
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/stock-alerts", methods=["GET"])
+@require_admin
+def api_list_stock_alerts():
+    db   = get_db()
+    rows = db.execute(
+        "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock "
+        "FROM low_stock_config lsc LEFT JOIN inventory i ON i.qr_code=lsc.qr_code "
+        "ORDER BY i.name"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/stock-alerts", methods=["POST"])
+@require_admin
+def api_set_stock_alert():
+    body      = request.get_json(silent=True) or {}
+    qr_code   = (body.get("qr_code") or "").strip()
+    threshold = max(1, int(body.get("threshold") or 1))
+    if not qr_code:
+        return jsonify({"error": "qr_code required"}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO low_stock_config (qr_code, threshold, alerted) VALUES (%s, %s, 0) "
+        "ON CONFLICT (qr_code) DO UPDATE SET threshold=EXCLUDED.threshold, alerted=0",
+        (qr_code, threshold)
+    )
+    db.commit()
+    _audit_write("stock_alert.set", qr_code, f"threshold={threshold}")
+    return jsonify({"ok": True, "qr_code": qr_code, "threshold": threshold}), 201
+
+
+@app.route("/api/v1/stock-alerts/<path:qr_code>", methods=["DELETE"])
+@require_admin
+def api_delete_stock_alert(qr_code):
+    db = get_db()
+    db.execute("DELETE FROM low_stock_config WHERE qr_code=%s", (qr_code,))
+    db.commit()
+    _audit_write("stock_alert.delete", qr_code)
+    return jsonify({"ok": True})
+
+
+def _run_low_stock_checker():
+    """Background thread: check every 15 min, email when stock drops below threshold."""
+    import time as _t
+    _t.sleep(60)   # give the server 60 s to finish startup
+    while True:
+        try:
+            db = _direct_db()
+            rows = db.execute(
+                "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock "
+                "FROM low_stock_config lsc "
+                "JOIN inventory i ON i.qr_code=lsc.qr_code "
+                "WHERE i.stock <= lsc.threshold AND lsc.alerted=0"
+            ).fetchall()
+            for r in rows:
+                cfg = _get_email_cfg()
+                if cfg["enabled"]:
+                    def _send_alert(name=r["name"], stock=r["stock"], threshold=r["threshold"],
+                                    qr=r["qr_code"]):
+                        try:
+                            import smtplib as _sm, email.mime.multipart as _mm, email.mime.text as _mt
+                            c = _get_email_cfg()
+                            msg = _mm.MIMEMultipart("alternative")
+                            msg["Subject"] = f"⚠️ Low Stock: {name} ({stock} left)"
+                            msg["From"]    = f"HanryxVault <{c['user']}>"
+                            msg["To"]      = c["notify"]
+                            html = (f"<h2>Low Stock Alert</h2>"
+                                    f"<p><strong>{name}</strong> ({qr}) is at <strong>{stock}</strong> "
+                                    f"unit(s) — threshold: {threshold}.</p>"
+                                    f"<p>Please reorder stock.</p>")
+                            msg.attach(_mt.MIMEText(html, "html"))
+                            with _sm.SMTP("smtp.gmail.com", 587, timeout=15) as sv:
+                                sv.ehlo(); sv.starttls()
+                                sv.login(c["user"], c["password"])
+                                sv.sendmail(c["user"], c["notify"], msg.as_string())
+                            log.info("[low-stock] Alert sent for %s (stock=%s)", name, stock)
+                        except Exception as _e:
+                            log.warning("[low-stock] Email failed: %s", _e)
+                    threading.Thread(target=_send_alert, daemon=True).start()
+                db.execute(
+                    "UPDATE low_stock_config SET alerted=1 WHERE qr_code=%s", (r["qr_code"],)
+                )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[low-stock] checker error: %s", _e)
+        import time as _t2; _t2.sleep(900)   # 15 min
+
+
+# ---------------------------------------------------------------------------
+# 8. PDF receipt for an individual sale — GET /api/v1/sales/<id>/receipt.pdf
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/sales/<int:sale_id>/receipt.pdf", methods=["GET"])
+@require_admin
+def api_sale_receipt_pdf(sale_id):
+    try:
+        from reportlab.lib.pagesizes import A6
+        from reportlab.lib import colors as _rlc
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+    except ImportError:
+        return jsonify({"error": "reportlab not installed"}), 501
+
+    db  = get_db()
+    row = db.execute("SELECT * FROM sales WHERE id=%s", (sale_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Sale not found"}), 404
+
+    buf  = io.BytesIO()
+    doc  = SimpleDocTemplate(buf, pagesize=A6, rightMargin=1*cm, leftMargin=1*cm,
+                              topMargin=1*cm, bottomMargin=1*cm)
+    ss   = getSampleStyleSheet()
+    gold = _rlc.HexColor("#d4a843")
+
+    def _lbl(text, size=9, bold=False):
+        s = ss["Normal"].clone("l"); s.fontSize = size; s.spaceAfter = 2
+        if bold: s.fontName = "Helvetica-Bold"
+        return Paragraph(text, s)
+
+    items_json = row.get("items") or "[]"
+    try:
+        items = json.loads(items_json) if isinstance(items_json, str) else items_json
+    except Exception:
+        items = []
+
+    elems = [
+        _lbl("HanryxVault", 14, bold=True),
+        _lbl(f"Receipt #{sale_id}", 10),
+        _lbl(datetime.datetime.fromtimestamp(row["sold_at"]/1000).strftime("%d %b %Y %H:%M"), 9),
+        Spacer(1, 0.3*cm),
+    ]
+
+    if items:
+        tdata = [["Item", "Qty", "Price"]] + [
+            [i.get("name","")[:30], str(i.get("quantity",1)), f"${float(i.get('price',0)):.2f}"]
+            for i in items
+        ]
+        t = Table(tdata, colWidths=[7*cm, 1.5*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), gold),
+            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0,0), (-1,-1), 8),
+            ("GRID",       (0,0), (-1,-1), 0.3, _rlc.grey),
+            ("LEFTPADDING",  (0,0), (-1,-1), 4),
+            ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ]))
+        elems.append(t)
+        elems.append(Spacer(1, 0.3*cm))
+
+    total = float(row.get("sale_price") or row.get("total_price") or 0)
+    method = row.get("payment_method") or "POS"
+    elems += [
+        _lbl(f"<b>Total: ${total:.2f}</b>", 11, bold=True),
+        _lbl(f"Payment: {method}", 9),
+        Spacer(1, 0.3*cm),
+        _lbl("Thank you for your purchase!", 8),
+    ]
+
+    doc.build(elems)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf",
+                     as_attachment=True, download_name=f"receipt-{sale_id}.pdf")
+
+
+# ---------------------------------------------------------------------------
+# 9. Connection pool health — GET /api/v1/health/pool
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/health/pool", methods=["GET"])
+@require_admin
+def api_health_pool():
+    pool = _get_pool()
+    try:
+        used = len(pool._used) if hasattr(pool, "_used") else "?"
+        free = len(pool._pool) if hasattr(pool, "_pool") else "?"
+        mx   = pool.maxconn   if hasattr(pool, "maxconn") else "?"
+    except Exception:
+        used = free = mx = "?"
+    return jsonify({
+        "pool_used":  used,
+        "pool_free":  free,
+        "pool_max":   mx,
+        "status":     "ok" if used != "?" and used < (mx or 999) else "unknown",
+    })
+
 
 def _warmup_smart_scanner():
     """Pre-load the smart scanner index in the background so the first scan is fast."""
@@ -9727,11 +10805,16 @@ def _warmup_smart_scanner():
         log.warning("[smart-scan] Warm-up failed (non-fatal): %s", e)
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
-    threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
-    threading.Thread(target=_warmup_smart_scanner, daemon=True).start()
+    threading.Thread(target=sync_inventory_from_cloud,  daemon=True).start()
+    threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
+    threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
     _cleanup_scan_queue()
-    log.info("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
+    log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
