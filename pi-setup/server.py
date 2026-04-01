@@ -615,6 +615,153 @@ def init_db():
 # Cloud inventory sync
 # ---------------------------------------------------------------------------
 
+def _sync_from_github(db, force: bool = False) -> dict:
+    """
+    Pull inventory from the Inventory-Scanner GitHub repo via its live API.
+
+    The Inventory-Scanner app exposes GET /api/inventory which returns all
+    scanned products in the format the POS expects:
+      { qrCode, name, price, category, description, sku }
+
+    The URL is read from INVENTORY_SCANNER_URL env var (set this to the
+    deployed Replit URL of your Inventory-Scanner app, e.g.
+    https://inventory-scanner.yourusername.repl.co/api/inventory).
+
+    Falls back to the GitHub raw API to fetch the latest data file directly
+    if INVENTORY_SCANNER_URL is not set.
+    """
+    scanner_url = os.environ.get("INVENTORY_SCANNER_URL", "").strip()
+    token       = _GITHUB_TOKEN
+
+    results = {}
+
+    # ── 1. Try the live API endpoint first ─────────────────────────────────
+    if scanner_url:
+        try:
+            resp = _requests.get(
+                scanner_url,
+                headers={"Accept": "application/json", "User-Agent": "HanryxVaultPi/2.0"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            items = resp.json()
+            if not isinstance(items, list):
+                items = items.get("items") or items.get("products") or items.get("inventory") or []
+
+            upserted = 0
+            for item in items:
+                qr   = (item.get("qrCode") or item.get("qr_code") or item.get("barcode") or "").strip()
+                name = (item.get("name") or item.get("title") or "").strip()
+                if not qr or not name:
+                    continue
+                db.execute("""
+                    INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(qr_code) DO UPDATE SET
+                        name=excluded.name, price=excluded.price,
+                        category=excluded.category, description=excluded.description,
+                        last_updated=excluded.last_updated
+                """, (
+                    qr, name,
+                    float(item.get("price") or 0),
+                    item.get("category") or "General",
+                    "", "",
+                    item.get("description") or "",
+                    int(item.get("stockQuantity") or item.get("stock") or 0),
+                    int(_time.time() * 1000),
+                ))
+                upserted += 1
+            db.commit()
+            log.info("[github-sync] Live API → %d products upserted", upserted)
+            results["live_api"] = {"ok": True, "url": scanner_url, "upserted": upserted}
+            return results
+        except Exception as e:
+            log.warning("[github-sync] Live API failed (%s): %s — trying GitHub fallback", scanner_url, e)
+            results["live_api"] = {"ok": False, "error": str(e)}
+
+    # ── 2. Fallback: pull via GitHub API (works even if the app is sleeping) ─
+    if not token:
+        log.warning("[github-sync] No GITHUB_TOKEN set — cannot fetch from GitHub")
+        results["github"] = {"ok": False, "error": "GITHUB_TOKEN not set"}
+        return results
+
+    try:
+        repo   = _GITHUB_INVENTORY_REPO
+        branch = _GITHUB_INVENTORY_BRANCH or "master"
+        # Fetch /api/inventory response cached in the repo, or fall back to
+        # reading the scans table export if it exists
+        gh_headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "HanryxVaultPi/2.0",
+        }
+        # Check if an inventory export file exists in the repo
+        candidate_files = (
+            [_GITHUB_INVENTORY_FILE] if _GITHUB_INVENTORY_FILE
+            else ["inventory.json", "inventory.csv", "data/inventory.json", "data/inventory.csv",
+                  "export/inventory.json", "export/inventory.csv"]
+        )
+        raw_url = None
+        for fname in candidate_files:
+            check = _requests.get(
+                f"https://api.github.com/repos/{repo}/contents/{fname}?ref={branch}",
+                headers=gh_headers, timeout=10,
+            )
+            if check.status_code == 200:
+                raw_url = check.json().get("download_url")
+                log.info("[github-sync] Found inventory file: %s", fname)
+                break
+
+        if not raw_url:
+            results["github"] = {"ok": False, "error": "No inventory file found in repo — set INVENTORY_SCANNER_URL"}
+            return results
+
+        file_resp = _requests.get(raw_url, timeout=15)
+        file_resp.raise_for_status()
+        ct = file_resp.headers.get("Content-Type", "")
+
+        if "json" in ct or raw_url.endswith(".json"):
+            items = file_resp.json()
+            if not isinstance(items, list):
+                items = items.get("items") or items.get("products") or items.get("inventory") or []
+        else:
+            # CSV
+            reader = csv.DictReader(io.StringIO(file_resp.text))
+            items  = list(reader)
+
+        upserted = 0
+        for item in items:
+            qr   = (item.get("qrCode") or item.get("qr_code") or item.get("barcode") or "").strip()
+            name = (item.get("name") or item.get("title") or "").strip()
+            if not qr or not name:
+                continue
+            db.execute("""
+                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT(qr_code) DO UPDATE SET
+                    name=excluded.name, price=excluded.price,
+                    category=excluded.category, description=excluded.description,
+                    last_updated=excluded.last_updated
+            """, (
+                qr, name,
+                float(item.get("price") or 0),
+                item.get("category") or "General",
+                "", "",
+                item.get("description") or "",
+                int(item.get("stockQuantity") or item.get("stock") or 0),
+                int(_time.time() * 1000),
+            ))
+            upserted += 1
+        db.commit()
+        log.info("[github-sync] GitHub file → %d products upserted", upserted)
+        results["github"] = {"ok": True, "upserted": upserted}
+    except Exception as e:
+        log.error("[github-sync] GitHub fetch failed: %s", e)
+        results["github"] = {"ok": False, "error": str(e)}
+
+    return results
+
+
 def sync_inventory_from_cloud(force: bool = False) -> dict:
     """Pull inventory from both Replit cloud sources and upsert into local DB."""
     db = _direct_db()
@@ -683,6 +830,13 @@ def sync_inventory_from_cloud(force: bool = False) -> dict:
             db.rollback() if hasattr(db, "rollback") else None
             results[url] = {"ok": False, "error": str(e)}
             log.error("[cloud-sync] Failed %s: %s", url, e)
+
+    # ── Also pull from Inventory-Scanner GitHub repo ─────────────────────
+    gh_results = _sync_from_github(db, force=force)
+    for k, v in gh_results.items():
+        results[f"github:{k}"] = v
+        if v.get("upserted"):
+            total_upserted += v["upserted"]
 
     db.close()
     return {"upserted": total_upserted, "skipped": total_skipped, "sources": results}
@@ -2391,6 +2545,37 @@ def admin_sync_cloud():
     result = sync_inventory_from_cloud(force=force)
     _invalidate_inventory()
     return jsonify(result)
+
+
+@app.route("/admin/sync-scanner", methods=["POST"])
+@require_admin
+def admin_sync_scanner():
+    """
+    POST /admin/sync-scanner          — import only new items from Inventory-Scanner
+    POST /admin/sync-scanner?force=1  — re-import / overwrite existing items too
+
+    Pulls from INVENTORY_SCANNER_URL (live API) if set, otherwise falls back
+    to fetching via the GitHub API using GITHUB_TOKEN.
+    """
+    force = request.args.get("force", "0") == "1"
+    db    = get_db()
+
+    if not force:
+        count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+        if count > 0:
+            return jsonify({"skipped": True, "existing": count})
+
+    result = _sync_from_github(db)
+    _invalidate_inventory()
+
+    total = sum(v.get("upserted", 0) for v in result.values() if isinstance(v, dict))
+    ok    = any(v.get("ok") for v in result.values() if isinstance(v, dict))
+
+    if not ok:
+        errors = [v.get("error", "unknown") for v in result.values() if isinstance(v, dict) and not v.get("ok")]
+        return jsonify({"error": "; ".join(errors), "sources": result}), 502
+
+    return jsonify({"upserted": total, "sources": result})
 
 
 # ---------------------------------------------------------------------------
@@ -5174,6 +5359,19 @@ def admin_dashboard():
   <div id="sync-result" style="margin-top:12px;font-size:13px;color:#aaa"></div>
 </div>
 
+<div class="form-panel" style="border-color:#2563eb;background:#00080f">
+  <h2 style="color:#7dd3fc">📦 SYNC FROM INVENTORY SCANNER</h2>
+  <p style="color:#aaa;font-size:13px;margin-bottom:12px">
+    Pulls all scanned products from your <b style="color:#fff">Inventory-Scanner</b> GitHub repo
+    (<code style="color:#7dd3fc">Ngansen/Inventory-Scanner</code>).
+    Adds any new cards not yet in the POS — existing cards are updated by name/price/category.
+    Set <code style="color:#7dd3fc">INVENTORY_SCANNER_URL</code> in your <code>.env</code> for fastest sync.
+  </p>
+  <button class="btn-gold" onclick="syncScanner(false)" style="margin-right:12px;background:#2563eb">☁ Sync Scanner</button>
+  <button class="btn-gold" onclick="syncScanner(true)" style="background:#1e40af">🔄 Force Re-Sync Scanner</button>
+  <div id="scanner-sync-result" style="margin-top:12px;font-size:13px;color:#aaa"></div>
+</div>
+
 <h2>Recent Sales</h2>
 <table>
 <thead><tr><th>Transaction</th><th>Total</th><th>Method</th><th>Employee</th><th>Time</th></tr></thead>
@@ -5670,6 +5868,30 @@ async function syncCloud(force) {{
   document.getElementById('sync-result').textContent =
     d.skipped ? `Skipped — already have ${{d.existing}} products (use Force Re-Sync)` :
     `Done — upserted: ${{d.upserted}}, skipped rows: ${{d.skipped}}`;
+}}
+
+async function syncScanner(force) {{
+  const el = document.getElementById('scanner-sync-result');
+  el.textContent = '⏳ Pulling from Inventory-Scanner…';
+  el.style.color = '#aaa';
+  try {{
+    const r = await fetch('/admin/sync-scanner?force=' + (force?'1':'0'), {{method:'POST'}});
+    const d = await r.json();
+    if (d.error) {{
+      el.textContent = '❌ ' + d.error;
+      el.style.color = '#f87171';
+    }} else if (d.skipped) {{
+      el.textContent = `⏭ Skipped — already have ${{d.existing}} products. Use Force Re-Sync to refresh.`;
+      el.style.color = '#facc15';
+    }} else {{
+      el.textContent = `✅ Done — ${{d.upserted}} product(s) imported/updated.`;
+      el.style.color = '#4ade80';
+      if (d.upserted > 0) setTimeout(() => location.reload(), 1500);
+    }}
+  }} catch(e) {{
+    el.textContent = '❌ Request failed: ' + e;
+    el.style.color = '#f87171';
+  }}
 }}
 
 // ── Prefill from market page (sessionStorage handoff) ─────────────────────
