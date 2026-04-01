@@ -620,6 +620,77 @@ def init_db():
             unit_price DOUBLE PRECISION NOT NULL DEFAULT 0
         )""",
         "CREATE INDEX IF NOT EXISTS idx_bundle_items ON bundle_items(bundle_id)",
+
+        # ── Purchase-order tables ────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS purchase_orders (
+            id           BIGSERIAL PRIMARY KEY,
+            reference    TEXT UNIQUE NOT NULL,
+            supplier     TEXT NOT NULL DEFAULT 'Unknown',
+            status       TEXT NOT NULL DEFAULT 'draft',
+            notes        TEXT NOT NULL DEFAULT '',
+            total_cost   DOUBLE PRECISION NOT NULL DEFAULT 0,
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            received_at  BIGINT
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS purchase_order_items (
+            id            BIGSERIAL PRIMARY KEY,
+            order_id      BIGINT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+            qr_code       TEXT NOT NULL,
+            name          TEXT NOT NULL,
+            qty_ordered   INTEGER NOT NULL DEFAULT 1,
+            qty_received  INTEGER NOT NULL DEFAULT 0,
+            unit_cost     DOUBLE PRECISION NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_po_items ON purchase_order_items(order_id)",
+
+        # ── Layby (hold) tables ──────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS laybys (
+            id           BIGSERIAL PRIMARY KEY,
+            reference    TEXT UNIQUE NOT NULL,
+            customer     TEXT NOT NULL DEFAULT 'Walk-in',
+            status       TEXT NOT NULL DEFAULT 'open',
+            total_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            deposit_paid DOUBLE PRECISION NOT NULL DEFAULT 0,
+            notes        TEXT NOT NULL DEFAULT '',
+            due_date     TEXT NOT NULL DEFAULT '',
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            completed_at BIGINT
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS layby_items (
+            id         BIGSERIAL PRIMARY KEY,
+            layby_id   BIGINT NOT NULL REFERENCES laybys(id) ON DELETE CASCADE,
+            qr_code    TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            quantity   INTEGER NOT NULL DEFAULT 1,
+            unit_price DOUBLE PRECISION NOT NULL DEFAULT 0
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS layby_payments (
+            id        BIGSERIAL PRIMARY KEY,
+            layby_id  BIGINT NOT NULL REFERENCES laybys(id) ON DELETE CASCADE,
+            amount    DOUBLE PRECISION NOT NULL DEFAULT 0,
+            method    TEXT NOT NULL DEFAULT 'cash',
+            notes     TEXT NOT NULL DEFAULT '',
+            paid_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_layby_items    ON layby_items(layby_id)",
+        "CREATE INDEX IF NOT EXISTS idx_layby_payments ON layby_payments(layby_id)",
+
+        # ── End-of-day reconciliation ────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS eod_reconciliations (
+            id              BIGSERIAL PRIMARY KEY,
+            date_str        TEXT UNIQUE NOT NULL,
+            opening_float   DOUBLE PRECISION NOT NULL DEFAULT 0,
+            closing_float   DOUBLE PRECISION NOT NULL DEFAULT 0,
+            expected_cash   DOUBLE PRECISION NOT NULL DEFAULT 0,
+            actual_cash     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            discrepancy     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            total_sales     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            cash_sales      DOUBLE PRECISION NOT NULL DEFAULT 0,
+            card_sales      DOUBLE PRECISION NOT NULL DEFAULT 0,
+            transaction_count INTEGER NOT NULL DEFAULT 0,
+            notes           TEXT NOT NULL DEFAULT '',
+            created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
     ]
 
     for stmt in _ddl_statements:
@@ -4311,12 +4382,17 @@ _ADMIN_BASE_CSS = """
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
-        ("dashboard", "/admin",            "🏠 Dashboard"),
-        ("market",    "/admin/market",     "📈 Market Prices"),
-        ("trade-in",  "/admin/trade-in",   "🔁 Trade-In"),
-        ("bundles",   "/admin/bundles",    "📦 Bundles"),
-        ("system",    "/admin/system",     "⚙️ System"),
-        ("logs",      "/admin/logs",       "📋 Logs"),
+        ("dashboard", "/admin",              "🏠 Dashboard"),
+        ("market",    "/admin/market",       "📈 Market"),
+        ("trade-in",  "/admin/trade-in",     "🔁 Trade-In"),
+        ("bundles",   "/admin/bundles",      "📦 Bundles"),
+        ("csv",       "/admin/csv",           "📥 Import/Export"),
+        ("purchases", "/admin/purchases",    "🛒 Purchases"),
+        ("layby",     "/admin/layby",        "🏷️ Layby"),
+        ("profit",    "/admin/profit-loss",  "💰 P&L"),
+        ("eod",       "/admin/eod",          "🏧 End of Day"),
+        ("system",    "/admin/system",       "⚙️ System"),
+        ("logs",      "/admin/logs",         "📋 Logs"),
     ]
     items = "".join(
         f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
@@ -4392,6 +4468,1214 @@ def system_logs():
     else:
         out = _sys_run(f"journalctl -u {svc} -n {n} --no-pager 2>/dev/null")
     return jsonify({"service": svc, "log": out or "(no log entries found)"})
+
+
+# ---------------------------------------------------------------------------
+# CSV Import / Export
+# ---------------------------------------------------------------------------
+
+CSV_COLS = [
+    "qr_code", "name", "price", "category", "rarity", "set_code",
+    "description", "stock", "language", "condition", "item_type",
+    "purchase_price", "sale_price", "tags",
+]
+
+@app.route("/admin/inventory/export", methods=["GET"])
+@require_auth
+def admin_inventory_export():
+    db   = get_db()
+    rows = db.execute(
+        "SELECT qr_code,name,price,category,rarity,set_code,description,stock,"
+        "language,condition,item_type,purchase_price,sale_price,tags "
+        "FROM inventory ORDER BY name"
+    ).fetchall()
+    import io, csv as _csv
+    buf = io.StringIO()
+    w   = _csv.writer(buf)
+    w.writerow(CSV_COLS)
+    for r in rows:
+        w.writerow([r[c] for c in CSV_COLS])
+    data = buf.getvalue().encode()
+    return app.response_class(
+        data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=inventory.csv"},
+    )
+
+
+@app.route("/admin/inventory/import", methods=["POST"])
+@require_auth
+def admin_inventory_import():
+    import io, csv as _csv
+    f = request.files.get("csv_file")
+    if not f:
+        return jsonify({"error": "csv_file required"}), 400
+    mode = request.form.get("mode", "upsert")   # upsert | replace_all
+    try:
+        text    = f.read().decode("utf-8-sig")
+        reader  = _csv.DictReader(io.StringIO(text))
+        rows    = list(reader)
+    except Exception as e:
+        return jsonify({"error": f"CSV parse error: {e}"}), 400
+
+    required = {"qr_code", "name"}
+    if not required.issubset(set(reader.fieldnames or [])):
+        return jsonify({"error": "CSV must have qr_code and name columns"}), 400
+
+    db = get_db()
+    upserted = skipped = 0
+    for row in rows:
+        qr = (row.get("qr_code") or "").strip()
+        nm = (row.get("name")    or "").strip()
+        if not qr or not nm:
+            skipped += 1
+            continue
+        def _f(k, default=0.0):
+            try: return float(row.get(k) or default)
+            except: return default
+        def _i(k, default=0):
+            try: return int(float(row.get(k) or default))
+            except: return default
+        db.execute("""
+            INSERT INTO inventory (qr_code,name,price,category,rarity,set_code,description,
+                stock,language,condition,item_type,purchase_price,sale_price,tags,last_updated)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(qr_code) DO UPDATE SET
+                name=EXCLUDED.name, price=EXCLUDED.price, category=EXCLUDED.category,
+                rarity=EXCLUDED.rarity, set_code=EXCLUDED.set_code,
+                description=EXCLUDED.description, stock=EXCLUDED.stock,
+                language=EXCLUDED.language, condition=EXCLUDED.condition,
+                item_type=EXCLUDED.item_type, purchase_price=EXCLUDED.purchase_price,
+                sale_price=EXCLUDED.sale_price, tags=EXCLUDED.tags,
+                last_updated=EXCLUDED.last_updated
+        """, (
+            qr, nm, _f("price"), row.get("category","General"), row.get("rarity",""),
+            row.get("set_code",""), row.get("description",""), _i("stock"),
+            row.get("language","English"), row.get("condition","NM"),
+            row.get("item_type","Single"), _f("purchase_price"), _f("sale_price"),
+            row.get("tags",""), _now_ms(),
+        ))
+        upserted += 1
+    db.commit()
+    _invalidate_inventory()
+    return jsonify({"ok": True, "upserted": upserted, "skipped": skipped})
+
+
+@app.route("/admin/csv", methods=["GET"])
+@require_auth
+def admin_csv_page():
+    nav = _admin_nav("csv")
+    return f"""<!DOCTYPE html><html><head><title>CSV Import / Export</title>
+{_ADMIN_CSS}</head><body>
+{nav}
+<div class="admin-content">
+<h2>📥 CSV Import / Export</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:900px">
+
+<div class="card">
+<h3 style="margin-top:0">⬇️ Export Inventory</h3>
+<p style="color:#aaa;font-size:14px">Download all {{}}<b id="inv-count">…</b>{{}}&nbsp;inventory cards as a CSV file you can open in Excel or Google Sheets.</p>
+<a href="/admin/inventory/export" class="btn" style="display:inline-block;margin-top:8px">⬇️ Download CSV</a>
+<script>fetch('/api/stock-check?codes=__count__').then(()=>{{}});
+fetch('/admin/inventory/export',{{method:'HEAD'}}).catch(()=>{{}});
+// Show count
+fetch('/card/lookup?q=a&limit=1').catch(()=>{{}});
+</script>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">⬆️ Import from CSV</h3>
+<p style="color:#aaa;font-size:14px">Upload a CSV to bulk-add or update cards. Required columns: <code>qr_code</code>, <code>name</code>.<br>
+Optional: price, category, rarity, set_code, description, stock, language, condition, item_type, purchase_price, sale_price, tags.</p>
+<form id="impForm" style="margin-top:12px">
+  <input type="file" id="csvFile" accept=".csv" required style="color:#fff;margin-bottom:10px;display:block">
+  <label style="color:#aaa;font-size:13px">Mode:&nbsp;
+    <select id="impMode" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:4px 8px;border-radius:6px">
+      <option value="upsert">Upsert (add new, update existing)</option>
+    </select>
+  </label>
+  <button type="submit" class="btn" style="margin-top:12px">⬆️ Import</button>
+</form>
+<div id="impResult" style="margin-top:10px;font-size:14px"></div>
+</div>
+
+</div>
+
+<div class="card" style="max-width:900px;margin-top:20px">
+<h3 style="margin-top:0">📋 CSV Template</h3>
+<p style="color:#aaa;font-size:13px">Download a blank template with all supported columns pre-filled:</p>
+<a href="/admin/inventory/template" class="btn btn-secondary">📋 Download Template</a>
+</div>
+
+</div>
+<script>
+document.getElementById('impForm').onsubmit=async function(e){{
+  e.preventDefault();
+  const f=document.getElementById('csvFile').files[0];
+  if(!f)return;
+  const fd=new FormData();
+  fd.append('csv_file',f);
+  fd.append('mode',document.getElementById('impMode').value);
+  document.getElementById('impResult').innerHTML='<span style="color:#aaa">Importing…</span>';
+  const r=await fetch('/admin/inventory/import',{{method:'POST',body:fd}});
+  const d=await r.json();
+  if(d.ok){{
+    document.getElementById('impResult').innerHTML=
+      '<span style="color:#4caf50">✅ Done — '+d.upserted+' cards imported'+
+      (d.skipped?' ('+d.skipped+' skipped)':'')+'. <a href="/admin">Back to dashboard</a></span>';
+  }}else{{
+    document.getElementById('impResult').innerHTML='<span style="color:#f44336">❌ '+d.error+'</span>';
+  }}
+}};
+</script>
+</body></html>"""
+
+
+@app.route("/admin/inventory/template", methods=["GET"])
+@require_auth
+def admin_inventory_template():
+    import io, csv as _csv
+    buf = io.StringIO()
+    w   = _csv.writer(buf)
+    w.writerow(CSV_COLS)
+    w.writerow(["SV1-001", "Bulbasaur", "2.50", "Pokemon", "Common",
+                "SV1", "Scarlet & Violet base", "5", "English", "NM", "Single",
+                "1.00", "2.50", "starter"])
+    data = buf.getvalue().encode()
+    return app.response_class(
+        data, mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=inventory_template.csv"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Purchase Orders
+# ---------------------------------------------------------------------------
+
+def _po_ref():
+    import random, string
+    return "PO-" + "".join(random.choices(string.digits, k=6))
+
+
+@app.route("/admin/purchases", methods=["GET"])
+@require_auth
+def admin_purchases():
+    db     = get_db()
+    open_  = db.execute(
+        "SELECT * FROM purchase_orders WHERE status IN ('draft','ordered') ORDER BY created_at DESC LIMIT 50"
+    ).fetchall()
+    closed = db.execute(
+        "SELECT * FROM purchase_orders WHERE status IN ('received','cancelled') ORDER BY created_at DESC LIMIT 30"
+    ).fetchall()
+    nav = _admin_nav("purchases")
+
+    def _row(p, show_actions=True):
+        status_color = {"draft": "#aaa", "ordered": "#2196f3", "received": "#4caf50", "cancelled": "#f44336"}.get(p["status"], "#aaa")
+        actions = ""
+        if show_actions:
+            if p["status"] == "draft":
+                actions = (f'<button onclick="markOrdered({p["id"]})" class="btn btn-small">📤 Mark Ordered</button> '
+                           f'<button onclick="openPO({p["id"]})" class="btn btn-small btn-secondary">+ Items</button> '
+                           f'<button onclick="cancelPO({p["id"]})" class="btn btn-small btn-danger">Cancel</button>')
+            elif p["status"] == "ordered":
+                actions = (f'<button onclick="receivePO({p["id"]})" class="btn btn-small" style="background:#4caf50">📥 Receive</button> '
+                           f'<button onclick="openPO({p["id"]})" class="btn btn-small btn-secondary">View Items</button> '
+                           f'<button onclick="cancelPO({p["id"]})" class="btn btn-small btn-danger">Cancel</button>')
+        ts = datetime.datetime.fromtimestamp(p["created_at"] / 1000).strftime("%d/%m/%y")
+        return (f'<tr><td><b>{p["reference"]}</b></td><td>{p["supplier"]}</td>'
+                f'<td><span style="color:{status_color}">{p["status"].upper()}</span></td>'
+                f'<td>£{p["total_cost"]:.2f}</td><td>{ts}</td><td>{actions}</td></tr>')
+
+    open_rows  = "".join(_row(p) for p in open_)  or "<tr><td colspan='6' style='color:#666'>No open orders</td></tr>"
+    closed_rows = "".join(_row(p, False) for p in closed) or "<tr><td colspan='6' style='color:#666'>No history</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><title>Purchase Orders</title>
+{_ADMIN_CSS}</head><body>
+{nav}
+<div class="admin-content">
+<h2>🛒 Purchase Orders</h2>
+
+<div class="card" style="max-width:500px;margin-bottom:20px">
+<h3 style="margin-top:0">New Purchase Order</h3>
+<div style="display:grid;gap:8px">
+  <input id="poSupplier" placeholder="Supplier name" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px">
+  <textarea id="poNotes" placeholder="Notes (optional)" rows="2" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px;resize:vertical"></textarea>
+  <button onclick="createPO()" class="btn">+ Create Purchase Order</button>
+</div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<h3 style="margin-top:0">Open Orders</h3>
+<table class="data-table"><thead><tr>
+  <th>Reference</th><th>Supplier</th><th>Status</th><th>Total Cost</th><th>Date</th><th>Actions</th>
+</tr></thead><tbody>{open_rows}</tbody></table>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">History (last 30)</h3>
+<table class="data-table"><thead><tr>
+  <th>Reference</th><th>Supplier</th><th>Status</th><th>Total Cost</th><th>Date</th><th></th>
+</tr></thead><tbody>{closed_rows}</tbody></table>
+</div>
+
+<!-- Item modal -->
+<div id="poModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center">
+<div style="background:#1a1a1a;border-radius:16px;padding:24px;width:560px;max-height:80vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h3 style="margin:0" id="poModalTitle">Order Items</h3>
+    <button onclick="closePOModal()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div id="poItemList" style="margin-bottom:16px"></div>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end" id="poAddRow">
+    <input id="piName" placeholder="Card name / QR code" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <input id="piQty" type="number" value="1" min="1" placeholder="Qty" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <input id="piCost" type="number" step="0.01" value="0" placeholder="Unit cost £" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <button onclick="addPOItem()" class="btn btn-small">Add</button>
+  </div>
+</div>
+</div>
+
+</div>
+<script>
+let _activePOId=null;
+async function createPO(){{
+  const supplier=document.getElementById('poSupplier').value.trim()||'Unknown';
+  const notes=document.getElementById('poNotes').value.trim();
+  const r=await fetch('/admin/purchases/create',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{supplier,notes}})}});
+  if(r.ok)location.reload();else alert('Error creating order');
+}}
+async function openPO(id){{
+  _activePOId=id;
+  await refreshPOItems();
+  document.getElementById('poModal').style.display='flex';
+}}
+function closePOModal(){{document.getElementById('poModal').style.display='none';}}
+async function refreshPOItems(){{
+  const r=await fetch('/admin/purchases/'+_activePOId);
+  const d=await r.json();
+  document.getElementById('poModalTitle').textContent='Order: '+d.reference+' ('+d.supplier+')';
+  document.getElementById('poItemList').innerHTML=d.items.length===0
+    ?'<p style="color:#666">No items yet.</p>'
+    :d.items.map(i=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#252525;border-radius:8px;margin-bottom:6px">'
+      +'<div><b>'+i.name+'</b><br><span style="color:#aaa;font-size:12px">'+i.qr_code+' &mdash; Qty: '+i.qty_ordered+' &times; £'+i.unit_cost.toFixed(2)+'</span></div>'
+      +'<button onclick="removePOItem('+i.id+')" style="background:none;border:none;color:#f44336;cursor:pointer;font-size:18px">✕</button>'
+      +'</div>').join('');
+}}
+async function addPOItem(){{
+  const name=document.getElementById('piName').value.trim();
+  const qty=parseInt(document.getElementById('piQty').value)||1;
+  const cost=parseFloat(document.getElementById('piCost').value)||0;
+  if(!name)return;
+  const r=await fetch('/admin/purchases/'+_activePOId+'/add-item',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{name,qty_ordered:qty,unit_cost:cost}})
+  }});
+  if(r.ok){{document.getElementById('piName').value='';await refreshPOItems();}}
+  else alert('Error adding item');
+}}
+async function removePOItem(itemId){{
+  await fetch('/admin/purchases/'+_activePOId+'/remove-item/'+itemId,{{method:'POST'}});
+  await refreshPOItems();
+}}
+async function markOrdered(id){{
+  if(!confirm('Mark this order as Ordered?'))return;
+  await fetch('/admin/purchases/'+id+'/mark-ordered',{{method:'POST'}});
+  location.reload();
+}}
+async function receivePO(id){{
+  if(!confirm('Receive this order? All items will be added to inventory stock and purchase price updated.'))return;
+  const r=await fetch('/admin/purchases/'+id+'/receive',{{method:'POST'}});
+  const d=await r.json();
+  if(d.ok){{alert('Received! '+d.items_received+' item types added to inventory.');location.reload();}}
+  else alert('Error: '+d.error);
+}}
+async function cancelPO(id){{
+  if(!confirm('Cancel this order?'))return;
+  await fetch('/admin/purchases/'+id+'/cancel',{{method:'POST'}});
+  location.reload();
+}}
+</script>
+</body></html>"""
+
+
+@app.route("/admin/purchases/create", methods=["POST"])
+@require_auth
+def admin_purchases_create():
+    data     = request.get_json(silent=True) or {}
+    supplier = (data.get("supplier") or "Unknown").strip()
+    notes    = (data.get("notes") or "").strip()
+    ref      = _po_ref()
+    db       = get_db()
+    row = db.execute(
+        "INSERT INTO purchase_orders (reference, supplier, notes) VALUES (%s,%s,%s) RETURNING id",
+        (ref, supplier, notes)
+    ).fetchone()
+    db.commit()
+    return jsonify({"ok": True, "id": row["id"], "reference": ref})
+
+
+@app.route("/admin/purchases/<int:po_id>", methods=["GET"])
+@require_auth
+def admin_purchases_get(po_id):
+    db    = get_db()
+    po    = db.execute("SELECT * FROM purchase_orders WHERE id=%s", (po_id,)).fetchone()
+    if not po:
+        return jsonify({"error": "not found"}), 404
+    items = db.execute("SELECT * FROM purchase_order_items WHERE order_id=%s ORDER BY id", (po_id,)).fetchall()
+    return jsonify({
+        "id": po["id"], "reference": po["reference"], "supplier": po["supplier"],
+        "status": po["status"], "total_cost": po["total_cost"], "notes": po["notes"],
+        "items": [dict(i) for i in items],
+    })
+
+
+@app.route("/admin/purchases/<int:po_id>/add-item", methods=["POST"])
+@require_auth
+def admin_purchases_add_item(po_id):
+    db   = get_db()
+    po   = db.execute("SELECT * FROM purchase_orders WHERE id=%s AND status='draft'", (po_id,)).fetchone()
+    if not po:
+        return jsonify({"error": "order not found or not in draft"}), 404
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    qr   = (data.get("qr_code") or name).strip()
+    qty  = max(1, int(data.get("qty_ordered") or 1))
+    cost = float(data.get("unit_cost") or 0)
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    db.execute(
+        "INSERT INTO purchase_order_items (order_id,qr_code,name,qty_ordered,unit_cost) VALUES (%s,%s,%s,%s,%s)",
+        (po_id, qr, name, qty, cost)
+    )
+    db.execute(
+        "UPDATE purchase_orders SET total_cost = (SELECT COALESCE(SUM(qty_ordered*unit_cost),0) FROM purchase_order_items WHERE order_id=%s) WHERE id=%s",
+        (po_id, po_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/purchases/<int:po_id>/remove-item/<int:item_id>", methods=["POST"])
+@require_auth
+def admin_purchases_remove_item(po_id, item_id):
+    db = get_db()
+    db.execute("DELETE FROM purchase_order_items WHERE id=%s AND order_id=%s", (item_id, po_id))
+    db.execute(
+        "UPDATE purchase_orders SET total_cost = (SELECT COALESCE(SUM(qty_ordered*unit_cost),0) FROM purchase_order_items WHERE order_id=%s) WHERE id=%s",
+        (po_id, po_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/purchases/<int:po_id>/mark-ordered", methods=["POST"])
+@require_auth
+def admin_purchases_mark_ordered(po_id):
+    db = get_db()
+    db.execute("UPDATE purchase_orders SET status='ordered' WHERE id=%s AND status='draft'", (po_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/purchases/<int:po_id>/receive", methods=["POST"])
+@require_auth
+def admin_purchases_receive(po_id):
+    db    = get_db()
+    po    = db.execute("SELECT * FROM purchase_orders WHERE id=%s AND status='ordered'", (po_id,)).fetchone()
+    if not po:
+        return jsonify({"error": "order not found or not in ordered status"}), 404
+    items = db.execute("SELECT * FROM purchase_order_items WHERE order_id=%s", (po_id,)).fetchall()
+    received = 0
+    for item in items:
+        qty  = item["qty_ordered"]
+        cost = item["unit_cost"]
+        qr   = item["qr_code"]
+        name = item["name"]
+        db.execute("""
+            INSERT INTO inventory (qr_code, name, price, stock, purchase_price, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT(qr_code) DO UPDATE SET
+                stock = inventory.stock + excluded.stock,
+                purchase_price = CASE WHEN excluded.purchase_price > 0 THEN excluded.purchase_price ELSE inventory.purchase_price END,
+                last_updated = excluded.last_updated
+        """, (qr, name, cost, qty, cost, _now_ms()))
+        db.execute("UPDATE purchase_order_items SET qty_received=%s WHERE id=%s", (qty, item["id"]))
+        received += 1
+    db.execute(
+        "UPDATE purchase_orders SET status='received', received_at=%s WHERE id=%s",
+        (_now_ms(), po_id)
+    )
+    db.commit()
+    _invalidate_inventory()
+    return jsonify({"ok": True, "items_received": received})
+
+
+@app.route("/admin/purchases/<int:po_id>/cancel", methods=["POST"])
+@require_auth
+def admin_purchases_cancel(po_id):
+    db = get_db()
+    db.execute("UPDATE purchase_orders SET status='cancelled' WHERE id=%s", (po_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Profit & Loss + Trade-in P&L
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/profit-loss", methods=["GET"])
+@require_auth
+def admin_profit_loss():
+    period = request.args.get("period", "30")  # days
+    try:
+        days = int(period)
+    except:
+        days = 30
+    since_ms = _now_ms() - days * 86_400_000
+    db = get_db()
+
+    # ── Revenue from sales ──────────────────────────────────────────────────
+    rev_row = db.execute(
+        "SELECT COALESCE(SUM(total_amount),0) as rev, COUNT(*) as cnt "
+        "FROM sales WHERE is_refunded=0 AND timestamp_ms>=%s", (since_ms,)
+    ).fetchone()
+    revenue = rev_row["rev"]
+    tx_count = rev_row["cnt"]
+
+    # ── COGS — qty sold × purchase_price per card ───────────────────────────
+    cogs_rows = db.execute("""
+        SELECT sd.qr_code, sd.name,
+               SUM(sd.quantity)   AS qty_sold,
+               SUM(sd.line_total) AS revenue_line,
+               COALESCE(i.purchase_price,0) AS purchase_price,
+               SUM(sd.quantity) * COALESCE(i.purchase_price,0) AS cogs_line
+        FROM stock_deductions sd
+        LEFT JOIN inventory i ON i.qr_code = sd.qr_code
+        WHERE sd.deducted_at >= %s
+        GROUP BY sd.qr_code, sd.name, i.purchase_price
+        ORDER BY revenue_line DESC
+        LIMIT 50
+    """, (since_ms,)).fetchall()
+
+    total_cogs = sum(r["cogs_line"] for r in cogs_rows)
+    gross_profit = revenue - total_cogs
+    margin_pct   = (gross_profit / revenue * 100) if revenue else 0
+
+    # ── Trade-in P&L ────────────────────────────────────────────────────────
+    ti_rows = db.execute("""
+        SELECT ti.reference, ti.customer, ti.completed_at,
+               SUM(tii.offered_price) AS paid_out,
+               SUM(tii.market_price)  AS market_val,
+               COUNT(tii.id)          AS card_count
+        FROM trade_ins ti
+        JOIN trade_in_items tii ON tii.trade_in_id = ti.id AND tii.accepted=1
+        WHERE ti.status='completed' AND ti.completed_at>=%s
+        GROUP BY ti.id, ti.reference, ti.customer, ti.completed_at
+        ORDER BY ti.completed_at DESC
+        LIMIT 30
+    """, (since_ms,)).fetchall()
+
+    total_ti_paid   = sum(r["paid_out"]   for r in ti_rows)
+    total_ti_market = sum(r["market_val"] for r in ti_rows)
+    ti_uplift       = total_ti_market - total_ti_paid
+
+    nav = _admin_nav("profit")
+
+    def _period_btn(d, label):
+        active = "background:#2196f3;" if str(d) == str(days) else ""
+        return f'<a href="/admin/profit-loss?period={d}" class="btn btn-secondary" style="padding:6px 14px;font-size:13px;{active}">{label}</a>'
+
+    period_btns = (
+        _period_btn(7, "7d") + " " +
+        _period_btn(30, "30d") + " " +
+        _period_btn(90, "90d") + " " +
+        _period_btn(365, "1yr")
+    )
+
+    card_rows = ""
+    for r in cogs_rows:
+        prof = r["revenue_line"] - r["cogs_line"]
+        mgn  = (prof / r["revenue_line"] * 100) if r["revenue_line"] else 0
+        col  = "#4caf50" if prof >= 0 else "#f44336"
+        card_rows += (
+            f'<tr><td>{r["name"]}</td><td>{r["qty_sold"]}</td>'
+            f'<td>£{r["revenue_line"]:.2f}</td>'
+            f'<td>£{r["cogs_line"]:.2f}</td>'
+            f'<td style="color:{col}">£{prof:.2f}</td>'
+            f'<td style="color:{col}">{mgn:.1f}%</td></tr>'
+        )
+    if not card_rows:
+        card_rows = "<tr><td colspan='6' style='color:#666'>No sales in this period</td></tr>"
+
+    ti_rows_html = ""
+    for r in ti_rows:
+        uplift = (r["market_val"] or 0) - (r["paid_out"] or 0)
+        col    = "#4caf50" if uplift >= 0 else "#f44336"
+        ts     = datetime.datetime.fromtimestamp((r["completed_at"] or 0) / 1000).strftime("%d/%m/%y") if r["completed_at"] else "—"
+        ti_rows_html += (
+            f'<tr><td>{r["reference"]}</td><td>{r["customer"]}</td>'
+            f'<td>{r["card_count"]}</td>'
+            f'<td>£{(r["paid_out"] or 0):.2f}</td>'
+            f'<td>£{(r["market_val"] or 0):.2f}</td>'
+            f'<td style="color:{col}">£{uplift:.2f}</td>'
+            f'<td>{ts}</td></tr>'
+        )
+    if not ti_rows_html:
+        ti_rows_html = "<tr><td colspan='7' style='color:#666'>No completed trade-ins in this period</td></tr>"
+
+    profit_color = "#4caf50" if gross_profit >= 0 else "#f44336"
+    ti_color     = "#4caf50" if ti_uplift   >= 0 else "#f44336"
+
+    return f"""<!DOCTYPE html><html><head><title>Profit & Loss</title>
+{_ADMIN_CSS}</head><body>
+{nav}
+<div class="admin-content">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+  <h2 style="margin:0">💰 Profit & Loss</h2>
+  <div style="display:flex;gap:6px">{period_btns}</div>
+</div>
+
+<!-- KPI row -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px;margin-bottom:4px">REVENUE</div>
+    <div style="font-size:26px;font-weight:700">£{revenue:.2f}</div>
+    <div style="color:#aaa;font-size:12px">{tx_count} transactions</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px;margin-bottom:4px">COGS</div>
+    <div style="font-size:26px;font-weight:700">£{total_cogs:.2f}</div>
+    <div style="color:#aaa;font-size:12px">cost of goods sold</div>
+  </div>
+  <div class="card" style="text-align:center;border-color:{profit_color}40">
+    <div style="color:#aaa;font-size:12px;margin-bottom:4px">GROSS PROFIT</div>
+    <div style="font-size:26px;font-weight:700;color:{profit_color}">£{gross_profit:.2f}</div>
+    <div style="color:{profit_color};font-size:12px">{margin_pct:.1f}% margin</div>
+  </div>
+  <div class="card" style="text-align:center;border-color:{ti_color}40">
+    <div style="color:#aaa;font-size:12px;margin-bottom:4px">TRADE-IN UPLIFT</div>
+    <div style="font-size:26px;font-weight:700;color:{ti_color}">£{ti_uplift:.2f}</div>
+    <div style="color:#aaa;font-size:12px">paid £{total_ti_paid:.2f} / market £{total_ti_market:.2f}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<h3 style="margin-top:0">📊 By Card — Top 50</h3>
+<table class="data-table"><thead><tr>
+  <th>Card</th><th>Qty Sold</th><th>Revenue</th><th>COGS</th><th>Profit</th><th>Margin</th>
+</tr></thead><tbody>{card_rows}</tbody></table>
+<p style="color:#555;font-size:12px;margin-top:8px">COGS uses current purchase_price from inventory. Set purchase prices on cards to get accurate margin figures.</p>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">🔁 Trade-in P&L</h3>
+<table class="data-table"><thead><tr>
+  <th>Reference</th><th>Customer</th><th>Cards</th><th>Paid Out</th><th>Market Value</th><th>Uplift</th><th>Date</th>
+</tr></thead><tbody>{ti_rows_html}</tbody></table>
+</div>
+
+</div></body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# Layby (hold) system
+# ---------------------------------------------------------------------------
+
+def _layby_ref():
+    import random, string
+    return "LB-" + "".join(random.choices(string.digits, k=6))
+
+
+@app.route("/admin/layby", methods=["GET"])
+@require_auth
+def admin_layby():
+    db     = get_db()
+    open_  = db.execute(
+        "SELECT * FROM laybys WHERE status='open' ORDER BY created_at DESC LIMIT 50"
+    ).fetchall()
+    closed = db.execute(
+        "SELECT * FROM laybys WHERE status!='open' ORDER BY created_at DESC LIMIT 30"
+    ).fetchall()
+    nav = _admin_nav("layby")
+
+    def _row(lb, show_actions=True):
+        balance = lb["total_price"] - lb["deposit_paid"]
+        status_color = {"open": "#2196f3", "completed": "#4caf50", "cancelled": "#f44336"}.get(lb["status"], "#aaa")
+        actions = ""
+        if show_actions and lb["status"] == "open":
+            actions = (f'<button onclick="openLB({lb["id"]})" class="btn btn-small">View/Pay</button> '
+                       f'<button onclick="completeLB({lb["id"]})" class="btn btn-small" style="background:#4caf50">✅ Complete</button> '
+                       f'<button onclick="cancelLB({lb["id"]})" class="btn btn-small btn-danger">Cancel</button>')
+        due = lb["due_date"] or "—"
+        ts  = datetime.datetime.fromtimestamp(lb["created_at"] / 1000).strftime("%d/%m/%y")
+        return (f'<tr><td><b>{lb["reference"]}</b></td><td>{lb["customer"]}</td>'
+                f'<td><span style="color:{status_color}">{lb["status"].upper()}</span></td>'
+                f'<td>£{lb["total_price"]:.2f}</td>'
+                f'<td>£{lb["deposit_paid"]:.2f}</td>'
+                f'<td>£{balance:.2f}</td>'
+                f'<td>{due}</td><td>{ts}</td><td>{actions}</td></tr>')
+
+    open_rows  = "".join(_row(lb) for lb in open_)  or "<tr><td colspan='9' style='color:#666'>No open laybys</td></tr>"
+    closed_rows = "".join(_row(lb, False) for lb in closed) or "<tr><td colspan='9' style='color:#666'>No history</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><title>Layby</title>
+{_ADMIN_CSS}</head><body>
+{nav}
+<div class="admin-content">
+<h2>🏷️ Layby / Hold System</h2>
+
+<div class="card" style="max-width:500px;margin-bottom:20px">
+<h3 style="margin-top:0">New Layby</h3>
+<div style="display:grid;gap:8px">
+  <input id="lbCustomer" placeholder="Customer name" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px">
+  <input id="lbDeposit" type="number" step="0.01" placeholder="Deposit amount £" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px">
+  <input id="lbDue" type="date" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px">
+  <textarea id="lbNotes" placeholder="Notes (optional)" rows="2" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:8px;resize:vertical"></textarea>
+  <button onclick="createLB()" class="btn">+ Create Layby</button>
+</div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<h3 style="margin-top:0">Open Laybys</h3>
+<table class="data-table"><thead><tr>
+  <th>Reference</th><th>Customer</th><th>Status</th><th>Total</th><th>Deposit</th><th>Balance</th><th>Due Date</th><th>Created</th><th>Actions</th>
+</tr></thead><tbody>{open_rows}</tbody></table>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">History</h3>
+<table class="data-table"><thead><tr>
+  <th>Reference</th><th>Customer</th><th>Status</th><th>Total</th><th>Deposit</th><th>Balance</th><th>Due Date</th><th>Created</th><th></th>
+</tr></thead><tbody>{closed_rows}</tbody></table>
+</div>
+
+<!-- Layby detail modal -->
+<div id="lbModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center">
+<div style="background:#1a1a1a;border-radius:16px;padding:24px;width:620px;max-height:85vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h3 style="margin:0" id="lbModalTitle">Layby Detail</h3>
+    <button onclick="closeLBModal()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div id="lbDetail"></div>
+
+  <h4>Add Item</h4>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end">
+    <input id="lbItemQR" placeholder="QR code / card name" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <input id="lbItemQty" type="number" value="1" min="1" placeholder="Qty" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <input id="lbItemPrice" type="number" step="0.01" value="0" placeholder="Unit price £" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <button onclick="addLBItem()" class="btn btn-small">Add</button>
+  </div>
+
+  <h4>Record Payment</h4>
+  <div style="display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:8px;align-items:end">
+    <input id="lbPayAmt" type="number" step="0.01" placeholder="Amount £" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <select id="lbPayMethod" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+      <option>cash</option><option>card</option><option>transfer</option><option>other</option>
+    </select>
+    <input id="lbPayNotes" placeholder="Notes" style="background:#252525;color:#fff;border:1px solid #333;padding:8px;border-radius:8px">
+    <button onclick="addLBPayment()" class="btn btn-small">Pay</button>
+  </div>
+</div>
+</div>
+
+</div>
+<script>
+let _activeLBId=null;
+async function createLB(){{
+  const customer=document.getElementById('lbCustomer').value.trim()||'Walk-in';
+  const deposit=parseFloat(document.getElementById('lbDeposit').value)||0;
+  const due=document.getElementById('lbDue').value||'';
+  const notes=document.getElementById('lbNotes').value.trim();
+  const r=await fetch('/admin/layby/create',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{customer,deposit,due_date:due,notes}})}});
+  if(r.ok)location.reload();else alert('Error creating layby');
+}}
+async function openLB(id){{
+  _activeLBId=id;
+  await refreshLBDetail();
+  document.getElementById('lbModal').style.display='flex';
+}}
+function closeLBModal(){{document.getElementById('lbModal').style.display='none';}}
+async function refreshLBDetail(){{
+  const r=await fetch('/admin/layby/'+_activeLBId);
+  const d=await r.json();
+  document.getElementById('lbModalTitle').textContent='Layby: '+d.reference+' — '+d.customer;
+  const balance=(d.total_price-d.deposit_paid).toFixed(2);
+  const itemsHtml=d.items.length===0?'<p style="color:#666">No items yet.</p>':d.items.map(i=>
+    '<div style="display:flex;justify-content:space-between;padding:8px;background:#252525;border-radius:8px;margin-bottom:4px">'
+    +'<span><b>'+i.name+'</b> &times;'+i.quantity+' @ £'+i.unit_price.toFixed(2)+'</span>'
+    +'<button onclick="removeLBItem('+i.id+')" style="background:none;border:none;color:#f44336;cursor:pointer">✕</button>'
+    +'</div>').join('');
+  const paymentsHtml=d.payments.length===0?'<p style="color:#666">No payments yet.</p>':d.payments.map(p=>
+    '<div style="display:flex;justify-content:space-between;padding:6px 8px;background:#252525;border-radius:8px;margin-bottom:4px">'
+    +'<span>£'+p.amount.toFixed(2)+' ('+p.method+')'+(p.notes?' — '+p.notes:'')+'</span>'
+    +'<span style="color:#aaa;font-size:12px">'+new Date(p.paid_at).toLocaleDateString()+'</span>'
+    +'</div>').join('');
+  document.getElementById('lbDetail').innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">'
+    +'<div class="card" style="text-align:center;padding:12px"><div style="color:#aaa;font-size:11px">TOTAL</div><b>£'+d.total_price.toFixed(2)+'</b></div>'
+    +'<div class="card" style="text-align:center;padding:12px"><div style="color:#aaa;font-size:11px">PAID</div><b style="color:#4caf50">£'+d.deposit_paid.toFixed(2)+'</b></div>'
+    +'<div class="card" style="text-align:center;padding:12px"><div style="color:#aaa;font-size:11px">BALANCE</div><b style="color:'+(parseFloat(balance)>0?'#f44336':'#4caf50')+'">£'+balance+'</b></div>'
+    +'</div>'
+    +'<h4>Items</h4>'+itemsHtml
+    +'<h4>Payments</h4>'+paymentsHtml;
+}}
+async function addLBItem(){{
+  const qr=document.getElementById('lbItemQR').value.trim();
+  const qty=parseInt(document.getElementById('lbItemQty').value)||1;
+  const price=parseFloat(document.getElementById('lbItemPrice').value)||0;
+  if(!qr)return;
+  const r=await fetch('/admin/layby/'+_activeLBId+'/add-item',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{qr_code:qr,name:qr,quantity:qty,unit_price:price}})
+  }});
+  if(r.ok){{document.getElementById('lbItemQR').value='';await refreshLBDetail();}}
+  else alert('Error adding item');
+}}
+async function removeLBItem(itemId){{
+  await fetch('/admin/layby/'+_activeLBId+'/remove-item/'+itemId,{{method:'POST'}});
+  await refreshLBDetail();
+}}
+async function addLBPayment(){{
+  const amount=parseFloat(document.getElementById('lbPayAmt').value)||0;
+  if(amount<=0){{alert('Enter a valid amount');return;}}
+  const method=document.getElementById('lbPayMethod').value;
+  const notes=document.getElementById('lbPayNotes').value.trim();
+  const r=await fetch('/admin/layby/'+_activeLBId+'/add-payment',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{amount,method,notes}})
+  }});
+  if(r.ok){{document.getElementById('lbPayAmt').value='';await refreshLBDetail();location.reload();}}
+  else alert('Error recording payment');
+}}
+async function completeLB(id){{
+  if(!confirm('Complete this layby? Stock will be deducted and a sale recorded.'))return;
+  const r=await fetch('/admin/layby/'+id+'/complete',{{method:'POST'}});
+  const d=await r.json();
+  if(d.ok){{alert('Layby completed!');location.reload();}}
+  else alert('Error: '+d.error);
+}}
+async function cancelLB(id){{
+  if(!confirm('Cancel this layby? No stock changes will be made.'))return;
+  await fetch('/admin/layby/'+id+'/cancel',{{method:'POST'}});
+  location.reload();
+}}
+</script>
+</body></html>"""
+
+
+@app.route("/admin/layby/create", methods=["POST"])
+@require_auth
+def admin_layby_create():
+    data     = request.get_json(silent=True) or {}
+    customer = (data.get("customer") or "Walk-in").strip()
+    deposit  = float(data.get("deposit") or 0)
+    due_date = (data.get("due_date") or "").strip()
+    notes    = (data.get("notes") or "").strip()
+    ref      = _layby_ref()
+    db       = get_db()
+    db.execute(
+        "INSERT INTO laybys (reference,customer,deposit_paid,due_date,notes) VALUES (%s,%s,%s,%s,%s)",
+        (ref, customer, deposit, due_date, notes)
+    )
+    db.commit()
+    return jsonify({"ok": True, "reference": ref})
+
+
+@app.route("/admin/layby/<int:lb_id>", methods=["GET"])
+@require_auth
+def admin_layby_get(lb_id):
+    db       = get_db()
+    lb       = db.execute("SELECT * FROM laybys WHERE id=%s", (lb_id,)).fetchone()
+    if not lb:
+        return jsonify({"error": "not found"}), 404
+    items    = db.execute("SELECT * FROM layby_items WHERE layby_id=%s ORDER BY id", (lb_id,)).fetchall()
+    payments = db.execute("SELECT * FROM layby_payments WHERE layby_id=%s ORDER BY paid_at", (lb_id,)).fetchall()
+    return jsonify({
+        "id": lb["id"], "reference": lb["reference"], "customer": lb["customer"],
+        "status": lb["status"], "total_price": lb["total_price"],
+        "deposit_paid": lb["deposit_paid"], "due_date": lb["due_date"], "notes": lb["notes"],
+        "items":    [dict(i) for i in items],
+        "payments": [dict(p) for p in payments],
+    })
+
+
+@app.route("/admin/layby/<int:lb_id>/add-item", methods=["POST"])
+@require_auth
+def admin_layby_add_item(lb_id):
+    db   = get_db()
+    lb   = db.execute("SELECT * FROM laybys WHERE id=%s AND status='open'", (lb_id,)).fetchone()
+    if not lb:
+        return jsonify({"error": "layby not found or not open"}), 404
+    data = request.get_json(silent=True) or {}
+    qr   = (data.get("qr_code") or "").strip()
+    name = (data.get("name")    or qr).strip()
+    qty  = max(1, int(data.get("quantity") or 1))
+    price = float(data.get("unit_price") or 0)
+    if not qr:
+        return jsonify({"error": "qr_code required"}), 400
+    # Try to auto-fill name and price from inventory
+    inv = db.execute("SELECT name,price FROM inventory WHERE qr_code=%s", (qr,)).fetchone()
+    if inv:
+        if not name or name == qr:
+            name  = inv["name"]
+        if price == 0:
+            price = inv["price"]
+    db.execute(
+        "INSERT INTO layby_items (layby_id,qr_code,name,quantity,unit_price) VALUES (%s,%s,%s,%s,%s)",
+        (lb_id, qr, name, qty, price)
+    )
+    db.execute(
+        "UPDATE laybys SET total_price=(SELECT COALESCE(SUM(quantity*unit_price),0) FROM layby_items WHERE layby_id=%s) WHERE id=%s",
+        (lb_id, lb_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/layby/<int:lb_id>/remove-item/<int:item_id>", methods=["POST"])
+@require_auth
+def admin_layby_remove_item(lb_id, item_id):
+    db = get_db()
+    db.execute("DELETE FROM layby_items WHERE id=%s AND layby_id=%s", (item_id, lb_id))
+    db.execute(
+        "UPDATE laybys SET total_price=(SELECT COALESCE(SUM(quantity*unit_price),0) FROM layby_items WHERE layby_id=%s) WHERE id=%s",
+        (lb_id, lb_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/layby/<int:lb_id>/add-payment", methods=["POST"])
+@require_auth
+def admin_layby_add_payment(lb_id):
+    db     = get_db()
+    lb     = db.execute("SELECT * FROM laybys WHERE id=%s AND status='open'", (lb_id,)).fetchone()
+    if not lb:
+        return jsonify({"error": "layby not found or not open"}), 404
+    data   = request.get_json(silent=True) or {}
+    amount = float(data.get("amount") or 0)
+    method = (data.get("method") or "cash").strip()
+    notes  = (data.get("notes")  or "").strip()
+    if amount <= 0:
+        return jsonify({"error": "amount must be positive"}), 400
+    db.execute(
+        "INSERT INTO layby_payments (layby_id,amount,method,notes) VALUES (%s,%s,%s,%s)",
+        (lb_id, amount, method, notes)
+    )
+    db.execute(
+        "UPDATE laybys SET deposit_paid=(SELECT COALESCE(SUM(amount),0) FROM layby_payments WHERE layby_id=%s) WHERE id=%s",
+        (lb_id, lb_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/layby/<int:lb_id>/complete", methods=["POST"])
+@require_auth
+def admin_layby_complete(lb_id):
+    db    = get_db()
+    lb    = db.execute("SELECT * FROM laybys WHERE id=%s AND status='open'", (lb_id,)).fetchone()
+    if not lb:
+        return jsonify({"error": "layby not found or not open"}), 404
+    items = db.execute("SELECT * FROM layby_items WHERE layby_id=%s", (lb_id,)).fetchall()
+    if not items:
+        return jsonify({"error": "no items on layby"}), 400
+    # Check stock
+    for item in items:
+        row = db.execute("SELECT stock FROM inventory WHERE qr_code=%s", (item["qr_code"],)).fetchone()
+        if row and row["stock"] < item["quantity"]:
+            return jsonify({"error": f"Insufficient stock for {item['name']}"}), 400
+    # Deduct stock and record sale
+    import uuid
+    tx_id   = str(uuid.uuid4())
+    total   = lb["total_price"]
+    deposit = lb["deposit_paid"]
+    for item in items:
+        db.execute(
+            "UPDATE inventory SET stock=stock-%s, last_updated=%s WHERE qr_code=%s",
+            (item["quantity"], _now_ms(), item["qr_code"])
+        )
+        db.execute(
+            "INSERT INTO stock_deductions (transaction_id,qr_code,name,quantity,unit_price,line_total,deducted_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (tx_id, item["qr_code"], item["name"], item["quantity"],
+             item["unit_price"], item["quantity"] * item["unit_price"], _now_ms())
+        )
+        _invalidate_inventory(item["qr_code"])
+    db.execute(
+        "INSERT INTO sales (transaction_id,timestamp_ms,total_amount,payment_method,employee_id,items_json,cash_received,source) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        (tx_id, _now_ms(), total, "layby", "admin",
+         json.dumps([{"name": i["name"], "price": i["unit_price"], "qty": i["quantity"]} for i in items]),
+         deposit, "layby")
+    )
+    db.execute(
+        "UPDATE laybys SET status='completed', completed_at=%s WHERE id=%s",
+        (_now_ms(), lb_id)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/layby/<int:lb_id>/cancel", methods=["POST"])
+@require_auth
+def admin_layby_cancel(lb_id):
+    db = get_db()
+    db.execute("UPDATE laybys SET status='cancelled' WHERE id=%s", (lb_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# End-of-Day Cash Reconciliation
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/eod", methods=["GET"])
+@require_auth
+def admin_eod():
+    from datetime import date
+    today_str = date.today().isoformat()
+    db = get_db()
+
+    today_start_ms = int(datetime.datetime.combine(date.today(), datetime.time.min).timestamp() * 1000)
+
+    # Today's sales summary
+    sales = db.execute(
+        "SELECT payment_method, SUM(total_amount) as total, COUNT(*) as cnt "
+        "FROM sales WHERE is_refunded=0 AND timestamp_ms>=%s "
+        "GROUP BY payment_method", (today_start_ms,)
+    ).fetchall()
+
+    total_today   = sum(r["total"] for r in sales)
+    cash_today    = sum(r["total"] for r in sales if r["payment_method"].lower() in ("cash","layby"))
+    card_today    = sum(r["total"] for r in sales if r["payment_method"].lower() in ("card","zettle","stripe"))
+    tx_today      = sum(r["cnt"]   for r in sales)
+
+    # Layby payments today (cash component)
+    lb_cash = db.execute(
+        "SELECT COALESCE(SUM(amount),0) as total FROM layby_payments WHERE method='cash' AND paid_at>=%s",
+        (today_start_ms,)
+    ).fetchone()["total"]
+
+    # Open laybys count
+    open_laybys = db.execute("SELECT COUNT(*) as n FROM laybys WHERE status='open'").fetchone()["n"]
+
+    # Recent reconciliation history
+    history = db.execute(
+        "SELECT * FROM eod_reconciliations ORDER BY date_str DESC LIMIT 14"
+    ).fetchall()
+
+    # Check if today already closed
+    today_rec = db.execute("SELECT * FROM eod_reconciliations WHERE date_str=%s", (today_str,)).fetchone()
+
+    nav = _admin_nav("eod")
+
+    def _hist_row(r):
+        disc_col = "#4caf50" if r["discrepancy"] >= -0.01 else "#f44336"
+        return (f'<tr><td>{r["date_str"]}</td>'
+                f'<td>£{r["total_sales"]:.2f}</td>'
+                f'<td>£{r["cash_sales"]:.2f}</td>'
+                f'<td>£{r["opening_float"]:.2f}</td>'
+                f'<td>£{r["closing_float"]:.2f}</td>'
+                f'<td>£{r["expected_cash"]:.2f}</td>'
+                f'<td>£{r["actual_cash"]:.2f}</td>'
+                f'<td style="color:{disc_col}">£{r["discrepancy"]:+.2f}</td>'
+                f'<td style="color:#aaa;font-size:12px">{r["notes"][:40] if r["notes"] else "—"}</td></tr>')
+
+    hist_rows = "".join(_hist_row(r) for r in history) or "<tr><td colspan='9' style='color:#666'>No history yet</td></tr>"
+
+    breakdown_rows = "".join(
+        f'<tr><td>{r["payment_method"].upper()}</td><td>{r["cnt"]}</td><td>£{r["total"]:.2f}</td></tr>'
+        for r in sales
+    ) or "<tr><td colspan='3' style='color:#666'>No sales today</td></tr>"
+
+    already_closed = today_rec is not None
+    close_disabled = "disabled" if already_closed else ""
+    close_note = f'<p style="color:#4caf50">✅ Already closed for {today_str} — discrepancy was £{today_rec["discrepancy"]:+.2f}</p>' if already_closed else ""
+
+    return f"""<!DOCTYPE html><html><head><title>End of Day</title>
+{_ADMIN_CSS}</head><body>
+{nav}
+<div class="admin-content">
+<h2>🏧 End of Day — {today_str}</h2>
+
+<!-- Today KPIs -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:20px">
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px">TOTAL SALES</div>
+    <div style="font-size:24px;font-weight:700">£{total_today:.2f}</div>
+    <div style="color:#aaa;font-size:12px">{tx_today} transactions</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px">CASH SALES</div>
+    <div style="font-size:24px;font-weight:700">£{cash_today:.2f}</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px">CARD / ZETTLE</div>
+    <div style="font-size:24px;font-weight:700">£{card_today:.2f}</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px">LAYBY CASH PAID</div>
+    <div style="font-size:24px;font-weight:700">£{lb_cash:.2f}</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="color:#aaa;font-size:12px">OPEN LAYBYS</div>
+    <div style="font-size:24px;font-weight:700">{open_laybys}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+
+<!-- Payment breakdown -->
+<div class="card">
+<h3 style="margin-top:0">Today's Sales Breakdown</h3>
+<table class="data-table"><thead><tr><th>Method</th><th>Transactions</th><th>Total</th></tr></thead>
+<tbody>{breakdown_rows}</tbody></table>
+</div>
+
+<!-- Cash reconciliation form -->
+<div class="card">
+<h3 style="margin-top:0">💵 Cash Count</h3>
+{close_note}
+<div style="display:grid;gap:10px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div>
+      <label style="color:#aaa;font-size:12px">Opening Float £</label>
+      <input id="eodOpen" type="number" step="0.01" placeholder="e.g. 50.00" {close_disabled}
+        style="width:100%;box-sizing:border-box;background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px;border-radius:8px;margin-top:4px">
+    </div>
+    <div>
+      <label style="color:#aaa;font-size:12px">Actual Cash Count £</label>
+      <input id="eodActual" type="number" step="0.01" placeholder="Count the till" {close_disabled}
+        style="width:100%;box-sizing:border-box;background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px;border-radius:8px;margin-top:4px"
+        oninput="recalc()">
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div style="background:#252525;border-radius:8px;padding:12px;text-align:center">
+      <div style="color:#aaa;font-size:11px">EXPECTED CASH</div>
+      <div style="font-size:20px;font-weight:700" id="eodExpected">£—</div>
+      <div style="color:#555;font-size:11px">float + cash sales + layby</div>
+    </div>
+    <div style="background:#252525;border-radius:8px;padding:12px;text-align:center">
+      <div style="color:#aaa;font-size:11px">DISCREPANCY</div>
+      <div style="font-size:20px;font-weight:700" id="eodDisc">£—</div>
+    </div>
+  </div>
+  <textarea id="eodNotes" placeholder="Notes (handover, issues, etc.)" rows="2" {close_disabled}
+    style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px;border-radius:8px;resize:vertical"></textarea>
+  <button onclick="closeEOD()" class="btn" {close_disabled}
+    style="{("opacity:.5;cursor:not-allowed;" if already_closed else "")}">
+    🏧 Close Day & Save Reconciliation
+  </button>
+</div>
+</div>
+
+</div>
+
+<!-- History -->
+<div class="card">
+<h3 style="margin-top:0">Reconciliation History</h3>
+<table class="data-table"><thead><tr>
+  <th>Date</th><th>Total Sales</th><th>Cash Sales</th><th>Opening Float</th><th>Closing Float</th>
+  <th>Expected</th><th>Actual</th><th>Discrepancy</th><th>Notes</th>
+</tr></thead><tbody>{hist_rows}</tbody></table>
+</div>
+
+</div>
+<script>
+const CASH_TODAY={cash_today:.2f};
+const LB_CASH={lb_cash:.2f};
+function recalc(){{
+  const open=parseFloat(document.getElementById('eodOpen').value)||0;
+  const actual=parseFloat(document.getElementById('eodActual').value);
+  const expected=open+CASH_TODAY+LB_CASH;
+  document.getElementById('eodExpected').textContent='£'+expected.toFixed(2);
+  if(!isNaN(actual)){{
+    const disc=actual-expected;
+    const el=document.getElementById('eodDisc');
+    el.textContent='£'+(disc>=0?'+':'')+disc.toFixed(2);
+    el.style.color=disc>=-0.01?'#4caf50':'#f44336';
+  }}
+}}
+document.getElementById('eodOpen').addEventListener('input',recalc);
+recalc();
+async function closeEOD(){{
+  const open=parseFloat(document.getElementById('eodOpen').value)||0;
+  const actual=parseFloat(document.getElementById('eodActual').value)||0;
+  const notes=document.getElementById('eodNotes').value.trim();
+  if(!confirm('Close the day and save reconciliation?'))return;
+  const r=await fetch('/admin/eod/close',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{opening_float:open,actual_cash:actual,notes}})
+  }});
+  const d=await r.json();
+  if(d.ok){{location.reload();}}else{{alert('Error: '+d.error);}}
+}}
+</script>
+</body></html>"""
+
+
+@app.route("/admin/eod/close", methods=["POST"])
+@require_auth
+def admin_eod_close():
+    from datetime import date
+    today_str = date.today().isoformat()
+    db = get_db()
+
+    today_start_ms = int(datetime.datetime.combine(date.today(), datetime.time.min).timestamp() * 1000)
+
+    data         = request.get_json(silent=True) or {}
+    opening_float = float(data.get("opening_float") or 0)
+    actual_cash  = float(data.get("actual_cash") or 0)
+    notes        = (data.get("notes") or "").strip()
+
+    # Compute today's totals
+    sales = db.execute(
+        "SELECT payment_method, SUM(total_amount) as total, COUNT(*) as cnt "
+        "FROM sales WHERE is_refunded=0 AND timestamp_ms>=%s "
+        "GROUP BY payment_method", (today_start_ms,)
+    ).fetchall()
+
+    total_sales = sum(r["total"] for r in sales)
+    cash_sales  = sum(r["total"] for r in sales if r["payment_method"].lower() in ("cash","layby"))
+    card_sales  = sum(r["total"] for r in sales if r["payment_method"].lower() in ("card","zettle","stripe"))
+    tx_count    = sum(r["cnt"]   for r in sales)
+
+    lb_cash = db.execute(
+        "SELECT COALESCE(SUM(amount),0) as total FROM layby_payments WHERE method='cash' AND paid_at>=%s",
+        (today_start_ms,)
+    ).fetchone()["total"]
+
+    expected_cash = opening_float + cash_sales + lb_cash
+    closing_float = actual_cash - cash_sales - lb_cash  # what's left in the till as float
+    discrepancy   = actual_cash - expected_cash
+
+    try:
+        db.execute("""
+            INSERT INTO eod_reconciliations
+                (date_str,opening_float,closing_float,expected_cash,actual_cash,
+                 discrepancy,total_sales,cash_sales,card_sales,transaction_count,notes)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(date_str) DO UPDATE SET
+                opening_float=EXCLUDED.opening_float, closing_float=EXCLUDED.closing_float,
+                expected_cash=EXCLUDED.expected_cash, actual_cash=EXCLUDED.actual_cash,
+                discrepancy=EXCLUDED.discrepancy, total_sales=EXCLUDED.total_sales,
+                cash_sales=EXCLUDED.cash_sales, card_sales=EXCLUDED.card_sales,
+                transaction_count=EXCLUDED.transaction_count, notes=EXCLUDED.notes
+        """, (today_str, opening_float, closing_float, expected_cash, actual_cash,
+              discrepancy, total_sales, cash_sales, card_sales, tx_count, notes))
+        db.commit()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "ok": True, "date": today_str,
+        "total_sales": total_sales, "cash_sales": cash_sales,
+        "expected_cash": expected_cash, "actual_cash": actual_cash,
+        "discrepancy": discrepancy,
+    })
 
 
 # ---------------------------------------------------------------------------
