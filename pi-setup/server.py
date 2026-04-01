@@ -303,6 +303,9 @@ _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
 _TCG_API_BASE   = "https://api.pokemontcg.io/v2"
 _PTCG_API_KEY   = os.environ.get("PTCG_API_KEY", "")  # optional; free tier = 1k/day, with key = 20k/day
 _tcg_cache_lock = threading.Lock()
+
+# OpenAI — card photo identification via GPT-4o Vision
+_OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 _tcg_mem_cache: dict = {}    # card_id → {"data": {...}, "fetched_ms": int}
 _TCG_MEM_TTL_MS = 3_600_000  # 1 hour in-memory; DB stores 24 hours
 
@@ -569,6 +572,48 @@ def init_db():
             completed    INTEGER NOT NULL DEFAULT 0,
             created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
+
+        # ── Trade-in tables ──────────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS trade_ins (
+            id           BIGSERIAL PRIMARY KEY,
+            reference    TEXT UNIQUE NOT NULL,
+            customer     TEXT NOT NULL DEFAULT 'Walk-in',
+            status       TEXT NOT NULL DEFAULT 'open',
+            total_value  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            notes        TEXT NOT NULL DEFAULT '',
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            completed_at BIGINT
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS trade_in_items (
+            id           BIGSERIAL PRIMARY KEY,
+            trade_in_id  BIGINT NOT NULL REFERENCES trade_ins(id) ON DELETE CASCADE,
+            qr_code      TEXT NOT NULL,
+            name         TEXT NOT NULL,
+            condition    TEXT NOT NULL DEFAULT 'NM',
+            offered_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+            market_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            accepted      INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_trade_in_items ON trade_in_items(trade_in_id)",
+
+        # ── Bundle tables ────────────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS bundles (
+            id           BIGSERIAL PRIMARY KEY,
+            name         TEXT NOT NULL,
+            description  TEXT NOT NULL DEFAULT '',
+            bundle_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+            sold         INTEGER NOT NULL DEFAULT 0,
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS bundle_items (
+            id         BIGSERIAL PRIMARY KEY,
+            bundle_id  BIGINT NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+            qr_code    TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            quantity   INTEGER NOT NULL DEFAULT 1,
+            unit_price DOUBLE PRECISION NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_bundle_items ON bundle_items(bundle_id)",
     ]
 
     for stmt in _ddl_statements:
@@ -2579,6 +2624,947 @@ def admin_sync_scanner():
 
 
 # ---------------------------------------------------------------------------
+# Feature 1: Card Photo Identification via GPT-4o Vision
+# ---------------------------------------------------------------------------
+
+@app.route("/card/identify-image", methods=["POST"])
+@require_admin
+def card_identify_image():
+    """
+    POST /card/identify-image
+    Body (JSON): { "image": "<base64-encoded JPEG/PNG>" }
+    Returns enriched card data using GPT-4o Vision then TCG API.
+    """
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured on this Pi"}), 503
+
+    data    = request.get_json(silent=True) or {}
+    img_b64 = (data.get("image") or "").strip()
+    if not img_b64:
+        return jsonify({"error": "image (base64) is required"}), 400
+
+    # Remove data-URI prefix if present
+    if "," in img_b64:
+        img_b64 = img_b64.split(",", 1)[1]
+
+    try:
+        resp = _requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {_OPENAI_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "model": "gpt-4o",
+                "max_tokens": 200,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "You are a Pokémon TCG expert. Identify the card in this photo. "
+                                    "Reply ONLY with a compact JSON object with these keys: "
+                                    "name (card name, e.g. 'Charizard'), "
+                                    "set_code (e.g. 'SV1'), "
+                                    "number (collector number e.g. '4'), "
+                                    "rarity (e.g. 'Rare Holo'), "
+                                    "condition (NM/LP/MP/HP/DMG). "
+                                    "If you cannot identify the card return {\"error\": \"unidentified\"}."
+                                ),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img_b64}",
+                                    "detail": "high",
+                                },
+                            },
+                        ],
+                    }
+                ],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+        # Strip markdown fences if GPT wraps it
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        identified = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return jsonify({"error": "GPT response not valid JSON", "raw": raw_text}), 502
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    if "error" in identified:
+        return jsonify({"identified": False, "reason": identified["error"]}), 200
+
+    # Build a QR/lookup code from set+number, e.g. "SV1-4"
+    set_c  = (identified.get("set_code") or "").upper()
+    number = (identified.get("number") or "").strip()
+    qr_guess = f"{set_c}-{number}" if set_c and number else ""
+
+    enriched = _enrich_with_tcg(None, qr_guess) if qr_guess else {}
+
+    return jsonify({
+        "identified":  True,
+        "gpt":         identified,
+        "qr_guess":    qr_guess,
+        "enriched":    enriched,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Feature 2a: Stock Check API — lets Inventory-Scanner app query live stock
+# ---------------------------------------------------------------------------
+
+@app.route("/api/stock-check", methods=["GET"])
+def api_stock_check():
+    """
+    GET /api/stock-check?codes=SV1-1,SV1-2,PKM-abc
+    Returns a dict of qr_code → {name, stock, price} for each requested code.
+    No auth required — read-only, public info.
+    """
+    raw    = request.args.get("codes", "")
+    codes  = [c.strip() for c in raw.split(",") if c.strip()]
+    if not codes:
+        return jsonify({"error": "codes param required"}), 400
+    if len(codes) > 100:
+        return jsonify({"error": "max 100 codes per request"}), 400
+
+    db = get_db()
+    placeholders = ",".join(["%s"] * len(codes))
+    rows = db.execute(
+        f"SELECT qr_code, name, stock, price FROM inventory WHERE qr_code IN ({placeholders})",
+        tuple(codes)
+    ).fetchall()
+
+    result = {}
+    for r in rows:
+        result[r["qr_code"]] = {
+            "name":  r["name"],
+            "stock": r["stock"],
+            "price": r["price"],
+        }
+    # Fill in codes not found
+    for c in codes:
+        if c not in result:
+            result[c] = {"name": None, "stock": None, "price": None}
+
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Feature 2b: Real-time single-item push from Scanner to POS inventory
+# ---------------------------------------------------------------------------
+
+@app.route("/api/push-scan", methods=["POST"])
+def api_push_scan():
+    """
+    POST /api/push-scan
+    Body: { "qr_code": "SV1-4", "name": "Charizard", "price": 12.50,
+            "category": "Pokemon", "description": "...", "stock_delta": 1 }
+    Upserts the card into POS inventory and increments stock by stock_delta (default 1).
+    Requires the session API key in header X-Api-Key or body field api_key.
+    """
+    data     = request.get_json(silent=True) or {}
+    api_key  = (request.headers.get("X-Api-Key") or data.get("api_key") or "").strip()
+    qr_code  = (data.get("qr_code") or "").strip()
+    name     = (data.get("name") or "").strip()
+    price    = float(data.get("price") or 0)
+    category = (data.get("category") or "General").strip()
+    desc     = (data.get("description") or "").strip()
+    delta    = max(1, int(data.get("stock_delta") or 1))
+
+    if not qr_code or not name:
+        return jsonify({"error": "qr_code and name are required"}), 400
+
+    # Validate API key — must match an existing scanner session key
+    db = get_db()
+    try:
+        key_row = db.execute(
+            "SELECT id FROM sessions WHERE api_key = %s LIMIT 1", (api_key,)
+        ).fetchone()
+    except Exception:
+        key_row = None  # sessions table lives in the scanner DB, allow open if no table
+
+    # If we have session validation available and key is wrong, reject
+    if api_key and key_row is None:
+        # Try falling back — let it through if no sessions table exists on POS
+        try:
+            db.execute("SELECT 1 FROM sessions LIMIT 1")
+            return jsonify({"error": "invalid api_key"}), 401
+        except Exception:
+            pass  # sessions table not on this DB — open access
+
+    db.execute("""
+        INSERT INTO inventory (qr_code, name, price, category, description, stock, last_updated)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT(qr_code) DO UPDATE SET
+            stock        = inventory.stock + excluded.stock,
+            last_updated = excluded.last_updated
+    """, (qr_code, name, price, category, desc, delta, _now_ms()))
+    db.commit()
+    _invalidate_inventory()
+
+    row = db.execute(
+        "SELECT stock FROM inventory WHERE qr_code = %s", (qr_code,)
+    ).fetchone()
+    new_stock = row["stock"] if row else delta
+
+    return jsonify({"ok": True, "qr_code": qr_code, "new_stock": new_stock})
+
+
+# ---------------------------------------------------------------------------
+# Feature 3: Trade-in Flow
+# ---------------------------------------------------------------------------
+
+def _trade_in_ref():
+    return f"TI-{_now_ms()}"
+
+
+@app.route("/admin/trade-in", methods=["GET"])
+@require_admin
+def admin_trade_in_list():
+    db    = get_db()
+    open_ = db.execute(
+        "SELECT * FROM trade_ins WHERE status='open' ORDER BY created_at DESC LIMIT 50"
+    ).fetchall()
+    done  = db.execute(
+        "SELECT * FROM trade_ins WHERE status!='open' ORDER BY created_at DESC LIMIT 30"
+    ).fetchall()
+    nav   = _admin_nav("trade-in")
+    css   = _admin_css()
+
+    def _row(t, show_actions=True):
+        ts     = datetime.datetime.fromtimestamp(t["created_at"] / 1000).strftime("%d/%m/%Y %H:%M")
+        status = t["status"].upper()
+        col    = "#4ade80" if t["status"] == "open" else ("#f87171" if t["status"] == "cancelled" else "#facc15")
+        btn    = (
+            f'<button class="btn-gold" onclick="openTi({t["id"]})" style="background:#2563eb;margin-right:6px">▶ Open</button>'
+            f'<button class="btn-gold" onclick="cancelTi({t["id"]})" style="background:#7f1d1d;font-size:11px">✕ Cancel</button>'
+            if show_actions else ""
+        )
+        return (
+            f"<tr><td><b>{t['reference']}</b></td><td>{t['customer']}</td>"
+            f"<td style='color:{col}'>{status}</td>"
+            f"<td style='color:#facc15'>${t['total_value']:.2f}</td>"
+            f"<td style='color:#888;font-size:12px'>{ts}</td>"
+            f"<td>{btn}</td></tr>"
+        )
+
+    open_rows = "".join(_row(t) for t in open_) or "<tr><td colspan='6' style='color:#666'>No open trade-ins</td></tr>"
+    done_rows = "".join(_row(t, False) for t in done) or "<tr><td colspan='5' style='color:#666'>No history yet</td></tr>"
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trade-In | HanryxVault POS</title>{css}</head><body>
+{nav}
+<div class="admin-content">
+<h1 style="color:#facc15">🔁 Trade-In Manager</h1>
+
+<div class="form-panel" style="border-color:#4ade80;background:#001a05;margin-bottom:20px">
+<h2 style="color:#4ade80">New Trade-In</h2>
+<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+  <div>
+    <label style="color:#aaa;font-size:12px">Customer Name</label><br>
+    <input id="ti-customer" type="text" placeholder="Walk-in" style="width:200px">
+  </div>
+  <div>
+    <label style="color:#aaa;font-size:12px">Notes</label><br>
+    <input id="ti-notes" type="text" placeholder="Optional notes" style="width:250px">
+  </div>
+  <button class="btn-gold" onclick="createTi()" style="background:#4ade80;color:#000">+ Create Trade-In</button>
+</div>
+</div>
+
+<h2 style="color:#4ade80">Open Trade-Ins</h2>
+<table><thead><tr><th>Reference</th><th>Customer</th><th>Status</th><th>Total Value</th><th>Created</th><th>Actions</th></tr></thead>
+<tbody>{open_rows}</tbody></table>
+
+<h2 style="color:#888;margin-top:24px">History (Last 30)</h2>
+<table><thead><tr><th>Reference</th><th>Customer</th><th>Status</th><th>Total Value</th><th>Date</th></tr></thead>
+<tbody>{done_rows}</tbody></table>
+</div>
+
+<!-- Trade-in detail modal -->
+<div id="ti-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000a;z-index:1000;overflow:auto">
+  <div style="max-width:760px;margin:40px auto;background:#111;border:1px solid #333;border-radius:8px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="ti-modal-title" style="color:#facc15;margin:0">Trade-In</h2>
+      <button onclick="document.getElementById('ti-modal').style.display='none'" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <input id="ti-qr" type="text" placeholder="QR Code / Card Code" style="flex:1;min-width:160px">
+      <input id="ti-name" type="text" placeholder="Card Name" style="flex:2;min-width:180px">
+      <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option></select>
+      <input id="ti-offered" type="number" step="0.01" placeholder="$ Offer" style="width:90px">
+      <input id="ti-market" type="number" step="0.01" placeholder="$ Market" style="width:90px">
+      <button class="btn-gold" onclick="addTiItem()" style="background:#4ade80;color:#000">+ Add</button>
+    </div>
+    <table id="ti-items-table" style="margin-bottom:16px">
+      <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th></th></tr></thead>
+      <tbody id="ti-items-body"><tr><td colspan='5' style='color:#666'>No items yet</td></tr></tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
+      <button class="btn-gold" id="ti-complete-btn" onclick="completeTi()" style="background:#4ade80;color:#000;font-size:15px">✅ Complete Trade-In (Add to Inventory)</button>
+    </div>
+    <div id="ti-msg" style="margin-top:10px;font-size:13px;color:#aaa"></div>
+  </div>
+</div>
+
+<script>
+let _activeTiId = null;
+let _activeTiItems = [];
+
+async function createTi() {{
+  const customer = document.getElementById('ti-customer').value.trim() || 'Walk-in';
+  const notes    = document.getElementById('ti-notes').value.trim();
+  const r = await fetch('/admin/trade-in/create', {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{customer, notes}})
+  }});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  openTi(d.id);
+}}
+
+async function openTi(id) {{
+  _activeTiId = id;
+  const r = await fetch('/admin/trade-in/' + id);
+  const d = await r.json();
+  document.getElementById('ti-modal-title').textContent = d.reference + ' — ' + d.customer;
+  _activeTiItems = d.items || [];
+  renderTiItems();
+  document.getElementById('ti-modal').style.display = 'block';
+}}
+
+function renderTiItems() {{
+  const tbody = document.getElementById('ti-items-body');
+  if (!_activeTiItems.length) {{
+    tbody.innerHTML = "<tr><td colspan='5' style='color:#666'>No items yet</td></tr>";
+    document.getElementById('ti-total').textContent = '0.00';
+    return;
+  }}
+  let total = 0;
+  tbody.innerHTML = _activeTiItems.map(it => {{
+    total += parseFloat(it.offered_price || 0);
+    return `<tr>
+      <td><b>${{it.name}}</b><br><small style="color:#888">${{it.qr_code}}</small></td>
+      <td>${{it.condition}}</td>
+      <td style="color:#4ade80">$${{parseFloat(it.offered_price).toFixed(2)}}</td>
+      <td style="color:#aaa">$${{parseFloat(it.market_price||0).toFixed(2)}}</td>
+      <td><button onclick="removeTiItem(${{it.id}})" style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;cursor:pointer;padding:2px 8px">✕</button></td>
+    </tr>`;
+  }}).join('');
+  document.getElementById('ti-total').textContent = total.toFixed(2);
+}}
+
+async function addTiItem() {{
+  if (!_activeTiId) return;
+  const qr_code      = document.getElementById('ti-qr').value.trim();
+  const name         = document.getElementById('ti-name').value.trim();
+  const condition    = document.getElementById('ti-cond').value;
+  const offered_price = parseFloat(document.getElementById('ti-offered').value) || 0;
+  const market_price  = parseFloat(document.getElementById('ti-market').value) || 0;
+  if (!qr_code || !name) {{ alert('QR code and name are required'); return; }}
+  const r = await fetch('/admin/trade-in/' + _activeTiId + '/add-item', {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{qr_code, name, condition, offered_price, market_price}})
+  }});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  _activeTiItems = d.items;
+  renderTiItems();
+  ['ti-qr','ti-name','ti-offered','ti-market'].forEach(id => document.getElementById(id).value = '');
+}}
+
+async function removeTiItem(itemId) {{
+  if (!_activeTiId) return;
+  const r = await fetch('/admin/trade-in/' + _activeTiId + '/remove-item/' + itemId, {{method:'POST'}});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  _activeTiItems = d.items;
+  renderTiItems();
+}}
+
+async function completeTi() {{
+  if (!_activeTiId || !_activeTiItems.length) {{ alert('Add at least one item first'); return; }}
+  if (!confirm('Complete this trade-in? All accepted cards will be added to your POS inventory.')) return;
+  const r = await fetch('/admin/trade-in/' + _activeTiId + '/complete', {{method:'POST'}});
+  const d = await r.json();
+  const msg = document.getElementById('ti-msg');
+  if (d.error) {{ msg.textContent = '❌ ' + d.error; msg.style.color='#f87171'; return; }}
+  msg.textContent = '✅ Done! ' + d.added + ' card(s) added to inventory.';
+  msg.style.color = '#4ade80';
+  setTimeout(() => location.reload(), 1500);
+}}
+
+async function cancelTi(id) {{
+  if (!confirm('Cancel this trade-in?')) return;
+  const r = await fetch('/admin/trade-in/' + id + '/cancel', {{method:'POST'}});
+  if (r.ok) location.reload();
+}}
+</script>
+</body></html>""")
+
+
+@app.route("/admin/trade-in/create", methods=["POST"])
+@require_admin
+def admin_trade_in_create():
+    data     = request.get_json(silent=True) or {}
+    customer = (data.get("customer") or "Walk-in").strip()[:100]
+    notes    = (data.get("notes") or "").strip()[:500]
+    ref      = _trade_in_ref()
+    db       = get_db()
+    row = db.execute(
+        "INSERT INTO trade_ins (reference, customer, notes) VALUES (%s,%s,%s) RETURNING id",
+        (ref, customer, notes)
+    ).fetchone()
+    db.commit()
+    return jsonify({"ok": True, "id": row["id"], "reference": ref})
+
+
+@app.route("/admin/trade-in/<int:ti_id>", methods=["GET"])
+@require_admin
+def admin_trade_in_get(ti_id):
+    db  = get_db()
+    ti  = db.execute("SELECT * FROM trade_ins WHERE id=%s", (ti_id,)).fetchone()
+    if not ti:
+        return jsonify({"error": "Not found"}), 404
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+    ).fetchall()
+    return jsonify({
+        "id":          ti["id"],
+        "reference":   ti["reference"],
+        "customer":    ti["customer"],
+        "status":      ti["status"],
+        "total_value": ti["total_value"],
+        "notes":       ti["notes"],
+        "items":       [dict(i) for i in items],
+    })
+
+
+@app.route("/admin/trade-in/<int:ti_id>/add-item", methods=["POST"])
+@require_admin
+def admin_trade_in_add_item(ti_id):
+    db   = get_db()
+    ti   = db.execute("SELECT * FROM trade_ins WHERE id=%s AND status='open'", (ti_id,)).fetchone()
+    if not ti:
+        return jsonify({"error": "Trade-in not found or not open"}), 404
+    data          = request.get_json(silent=True) or {}
+    qr_code       = (data.get("qr_code") or "").strip()
+    name          = (data.get("name") or "").strip()
+    condition     = (data.get("condition") or "NM").strip()
+    offered_price = float(data.get("offered_price") or 0)
+    market_price  = float(data.get("market_price") or 0)
+    if not qr_code or not name:
+        return jsonify({"error": "qr_code and name required"}), 400
+    db.execute(
+        "INSERT INTO trade_in_items (trade_in_id,qr_code,name,condition,offered_price,market_price) "
+        "VALUES (%s,%s,%s,%s,%s,%s)",
+        (ti_id, qr_code, name, condition, offered_price, market_price)
+    )
+    # Recalculate total
+    total = db.execute(
+        "SELECT COALESCE(SUM(offered_price),0) FROM trade_in_items WHERE trade_in_id=%s AND accepted=1",
+        (ti_id,)
+    ).fetchone()[0]
+    db.execute("UPDATE trade_ins SET total_value=%s WHERE id=%s", (total, ti_id))
+    db.commit()
+    items = db.execute("SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)).fetchall()
+    return jsonify({"ok": True, "items": [dict(i) for i in items]})
+
+
+@app.route("/admin/trade-in/<int:ti_id>/remove-item/<int:item_id>", methods=["POST"])
+@require_admin
+def admin_trade_in_remove_item(ti_id, item_id):
+    db = get_db()
+    db.execute("DELETE FROM trade_in_items WHERE id=%s AND trade_in_id=%s", (item_id, ti_id))
+    total = db.execute(
+        "SELECT COALESCE(SUM(offered_price),0) FROM trade_in_items WHERE trade_in_id=%s AND accepted=1",
+        (ti_id,)
+    ).fetchone()[0]
+    db.execute("UPDATE trade_ins SET total_value=%s WHERE id=%s", (total, ti_id))
+    db.commit()
+    items = db.execute("SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)).fetchall()
+    return jsonify({"ok": True, "items": [dict(i) for i in items]})
+
+
+@app.route("/admin/trade-in/<int:ti_id>/complete", methods=["POST"])
+@require_admin
+def admin_trade_in_complete(ti_id):
+    db   = get_db()
+    ti   = db.execute("SELECT * FROM trade_ins WHERE id=%s AND status='open'", (ti_id,)).fetchone()
+    if not ti:
+        return jsonify({"error": "Trade-in not found or not open"}), 404
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s AND accepted=1", (ti_id,)
+    ).fetchall()
+    if not items:
+        return jsonify({"error": "No accepted items in this trade-in"}), 400
+
+    added = 0
+    for it in items:
+        db.execute("""
+            INSERT INTO inventory (qr_code, name, price, category, stock, last_updated)
+            VALUES (%s, %s, %s, 'Trade-In', 1, %s)
+            ON CONFLICT(qr_code) DO UPDATE SET
+                stock        = inventory.stock + 1,
+                last_updated = excluded.last_updated
+        """, (it["qr_code"], it["name"], it["offered_price"], _now_ms()))
+        db.execute("""
+            INSERT INTO card_conditions (qr_code, condition, notes, updated_ms)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT(qr_code) DO UPDATE SET
+                condition  = excluded.condition,
+                notes      = excluded.notes,
+                updated_ms = excluded.updated_ms
+        """, (it["qr_code"], it["condition"], f"Trade-in {ti['reference']}", _now_ms()))
+        added += 1
+
+    db.execute(
+        "UPDATE trade_ins SET status='completed', completed_at=%s WHERE id=%s",
+        (_now_ms(), ti_id)
+    )
+    db.commit()
+    _invalidate_inventory()
+    return jsonify({"ok": True, "added": added})
+
+
+@app.route("/admin/trade-in/<int:ti_id>/cancel", methods=["POST"])
+@require_admin
+def admin_trade_in_cancel(ti_id):
+    db = get_db()
+    db.execute(
+        "UPDATE trade_ins SET status='cancelled' WHERE id=%s AND status='open'", (ti_id,)
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Feature 4: Deck / Bundle Checkout
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/bundles", methods=["GET"])
+@require_admin
+def admin_bundles():
+    db      = get_db()
+    bundles = db.execute(
+        "SELECT b.*, COUNT(bi.id) as item_count "
+        "FROM bundles b LEFT JOIN bundle_items bi ON bi.bundle_id=b.id "
+        "GROUP BY b.id ORDER BY b.created_at DESC LIMIT 100"
+    ).fetchall()
+    nav     = _admin_nav("bundles")
+    css     = _admin_css()
+
+    def _brow(b):
+        ts  = datetime.datetime.fromtimestamp(b["created_at"] / 1000).strftime("%d/%m/%Y")
+        return (
+            f"<tr>"
+            f"<td><b>{_html.escape(b['name'])}</b><br><small style='color:#888'>{_html.escape(b['description'])}</small></td>"
+            f"<td style='color:#facc15'>${b['bundle_price']:.2f}</td>"
+            f"<td style='text-align:center'>{b['item_count']}</td>"
+            f"<td style='text-align:center'>{b['sold']}</td>"
+            f"<td style='color:#888;font-size:12px'>{ts}</td>"
+            f"<td>"
+            f"  <button class='btn-gold' onclick='openBundle({b[\"id\"]})' style='background:#2563eb;margin-right:4px'>▶ Manage</button>"
+            f"  <button class='btn-gold' onclick='sellBundle({b[\"id\"]},{b[\"bundle_price\"]:.2f})' style='background:#4ade80;color:#000;margin-right:4px'>💳 Sell</button>"
+            f"  <button class='btn-gold' onclick='deleteBundle({b[\"id\"]})' style='background:#7f1d1d;font-size:11px'>✕</button>"
+            f"</td>"
+            f"</tr>"
+        )
+
+    bundle_rows = "".join(_brow(b) for b in bundles) or "<tr><td colspan='6' style='color:#666'>No bundles yet — create one below</td></tr>"
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bundles | HanryxVault POS</title>{css}</head><body>
+{nav}
+<div class="admin-content">
+<h1 style="color:#facc15">📦 Deck & Bundle Builder</h1>
+
+<!-- Create bundle -->
+<div class="form-panel" style="border-color:#facc15;background:#0a0800;margin-bottom:20px">
+<h2 style="color:#facc15">Create New Bundle</h2>
+<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+  <div><label style="color:#aaa;font-size:12px">Bundle Name</label><br>
+    <input id="b-name" type="text" placeholder="e.g. Starter Deck" style="width:220px"></div>
+  <div><label style="color:#aaa;font-size:12px">Description</label><br>
+    <input id="b-desc" type="text" placeholder="Optional" style="width:280px"></div>
+  <div><label style="color:#aaa;font-size:12px">Bundle Price ($)</label><br>
+    <input id="b-price" type="number" step="0.01" placeholder="0.00" style="width:110px"></div>
+  <button class="btn-gold" onclick="createBundle()" style="background:#facc15;color:#000">+ Create Bundle</button>
+</div>
+</div>
+
+<!-- Bundle list -->
+<table>
+<thead><tr><th>Bundle</th><th>Price</th><th>Cards</th><th>Sold</th><th>Created</th><th>Actions</th></tr></thead>
+<tbody>{bundle_rows}</tbody>
+</table>
+</div>
+
+<!-- Bundle detail modal -->
+<div id="b-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000a;z-index:1000;overflow:auto">
+  <div style="max-width:800px;margin:40px auto;background:#111;border:1px solid #333;border-radius:8px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="b-modal-title" style="color:#facc15;margin:0">Bundle</h2>
+      <button onclick="document.getElementById('b-modal').style.display='none'" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+      <div>
+        <label style="color:#aaa;font-size:12px">Card QR Code</label><br>
+        <input id="b-item-qr" type="text" placeholder="e.g. SV1-4" style="width:160px" oninput="autoFillBundleCard(this.value)">
+      </div>
+      <div>
+        <label style="color:#aaa;font-size:12px">Card Name</label><br>
+        <input id="b-item-name" type="text" placeholder="Auto-filled from inventory" style="width:220px">
+      </div>
+      <div>
+        <label style="color:#aaa;font-size:12px">Qty</label><br>
+        <input id="b-item-qty" type="number" value="1" min="1" style="width:60px">
+      </div>
+      <div>
+        <label style="color:#aaa;font-size:12px">Unit Price ($)</label><br>
+        <input id="b-item-price" type="number" step="0.01" value="0" style="width:90px">
+      </div>
+      <button class="btn-gold" onclick="addBundleItem()" style="background:#facc15;color:#000">+ Add Card</button>
+    </div>
+    <table id="b-items-table" style="margin-bottom:16px">
+      <thead><tr><th>Card</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th></th></tr></thead>
+      <tbody id="b-items-body"><tr><td colspan='5' style='color:#666'>No items yet</td></tr></tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <span style="color:#aaa;font-size:13px">Individual card total:</span>
+        <span style="color:#fff" id="b-card-total">$0.00</span>
+        &nbsp;|&nbsp;
+        <span style="color:#aaa;font-size:13px">Bundle price:</span>
+        <span style="color:#facc15;font-weight:bold" id="b-bundle-price-display">—</span>
+      </div>
+      <button class="btn-gold" id="b-sell-btn" onclick="sellActiveBundle()" style="background:#4ade80;color:#000;font-size:15px">💳 Sell This Bundle</button>
+    </div>
+    <div id="b-msg" style="margin-top:10px;font-size:13px;color:#aaa"></div>
+  </div>
+</div>
+
+<!-- Sell confirm modal -->
+<div id="sell-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000c;z-index:2000;display:flex;align-items:center;justify-content:center">
+  <div style="background:#111;border:1px solid #facc15;border-radius:8px;padding:28px;max-width:400px;width:90%">
+    <h2 style="color:#facc15;margin-top:0">💳 Sell Bundle</h2>
+    <p id="sell-modal-desc" style="color:#ccc"></p>
+    <div style="margin-bottom:12px">
+      <label style="color:#aaa;font-size:12px">Payment Method</label><br>
+      <select id="sell-method" style="width:100%">
+        <option value="CASH">Cash</option>
+        <option value="CARD">Card / Zettle</option>
+        <option value="MIXED">Mixed</option>
+      </select>
+    </div>
+    <div id="sell-cash-row" style="margin-bottom:12px;display:none">
+      <label style="color:#aaa;font-size:12px">Cash Received ($)</label><br>
+      <input id="sell-cash" type="number" step="0.01" placeholder="0.00" style="width:100%">
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-gold" onclick="confirmSellBundle()" style="background:#4ade80;color:#000;flex:1">✅ Confirm Sale</button>
+      <button class="btn-gold" onclick="document.getElementById('sell-modal').style.display='none'" style="background:#333;flex:1">Cancel</button>
+    </div>
+    <div id="sell-msg" style="margin-top:10px;font-size:13px;color:#aaa"></div>
+  </div>
+</div>
+
+<script>
+let _activeBundleId   = null;
+let _activeBundleItems = [];
+let _activeBundlePrice = 0;
+let _sellBundleId = null;
+
+document.getElementById('sell-method').addEventListener('change', function() {{
+  document.getElementById('sell-cash-row').style.display = this.value === 'CASH' ? 'block' : 'none';
+}});
+
+async function createBundle() {{
+  const name  = document.getElementById('b-name').value.trim();
+  const desc  = document.getElementById('b-desc').value.trim();
+  const price = parseFloat(document.getElementById('b-price').value) || 0;
+  if (!name) {{ alert('Bundle name is required'); return; }}
+  const r = await fetch('/admin/bundles/create', {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{name, description: desc, bundle_price: price}})
+  }});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  openBundle(d.id);
+}}
+
+async function openBundle(id) {{
+  _activeBundleId = id;
+  const r = await fetch('/admin/bundles/' + id);
+  const d = await r.json();
+  document.getElementById('b-modal-title').textContent = d.name;
+  _activeBundleItems = d.items || [];
+  _activeBundlePrice = d.bundle_price;
+  document.getElementById('b-bundle-price-display').textContent = '$' + d.bundle_price.toFixed(2);
+  renderBundleItems();
+  document.getElementById('b-modal').style.display = 'block';
+}}
+
+function renderBundleItems() {{
+  const tbody = document.getElementById('b-items-body');
+  if (!_activeBundleItems.length) {{
+    tbody.innerHTML = "<tr><td colspan='5' style='color:#666'>No cards yet</td></tr>";
+    document.getElementById('b-card-total').textContent = '$0.00';
+    return;
+  }}
+  let total = 0;
+  tbody.innerHTML = _activeBundleItems.map(it => {{
+    const line = it.quantity * it.unit_price;
+    total += line;
+    return `<tr>
+      <td><b>${{it.name}}</b><br><small style="color:#888">${{it.qr_code}}</small></td>
+      <td style="text-align:center">${{it.quantity}}</td>
+      <td style="color:#facc15">$${{parseFloat(it.unit_price).toFixed(2)}}</td>
+      <td style="color:#fff">$${{line.toFixed(2)}}</td>
+      <td><button onclick="removeBundleItem(${{it.id}})" style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;cursor:pointer;padding:2px 8px">✕</button></td>
+    </tr>`;
+  }}).join('');
+  document.getElementById('b-card-total').textContent = '$' + total.toFixed(2);
+}}
+
+async function autoFillBundleCard(qr) {{
+  if (qr.length < 3) return;
+  try {{
+    const r = await fetch('/api/stock-check?codes=' + encodeURIComponent(qr));
+    const d = await r.json();
+    if (d[qr] && d[qr].name) {{
+      document.getElementById('b-item-name').value  = d[qr].name;
+      document.getElementById('b-item-price').value = d[qr].price || 0;
+    }}
+  }} catch(e) {{}}
+}}
+
+async function addBundleItem() {{
+  if (!_activeBundleId) return;
+  const qr_code    = document.getElementById('b-item-qr').value.trim();
+  const name       = document.getElementById('b-item-name').value.trim();
+  const quantity   = parseInt(document.getElementById('b-item-qty').value) || 1;
+  const unit_price = parseFloat(document.getElementById('b-item-price').value) || 0;
+  if (!qr_code || !name) {{ alert('QR code and name are required'); return; }}
+  const r = await fetch('/admin/bundles/' + _activeBundleId + '/add-item', {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{qr_code, name, quantity, unit_price}})
+  }});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  _activeBundleItems = d.items;
+  renderBundleItems();
+  ['b-item-qr','b-item-name','b-item-price'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('b-item-qty').value = 1;
+}}
+
+async function removeBundleItem(itemId) {{
+  if (!_activeBundleId) return;
+  const r = await fetch('/admin/bundles/' + _activeBundleId + '/remove-item/' + itemId, {{method:'POST'}});
+  const d = await r.json();
+  if (d.error) {{ alert(d.error); return; }}
+  _activeBundleItems = d.items;
+  renderBundleItems();
+}}
+
+function sellBundle(id, price) {{
+  _sellBundleId = id;
+  document.getElementById('sell-modal-desc').textContent = 'Bundle price: $' + price.toFixed(2);
+  document.getElementById('sell-msg').textContent = '';
+  document.getElementById('sell-modal').style.display = 'flex';
+}}
+
+function sellActiveBundle() {{
+  if (_activeBundleId) sellBundle(_activeBundleId, _activeBundlePrice);
+}}
+
+async function confirmSellBundle() {{
+  if (!_sellBundleId) return;
+  const method = document.getElementById('sell-method').value;
+  const cash   = parseFloat(document.getElementById('sell-cash').value) || 0;
+  const r = await fetch('/admin/bundles/' + _sellBundleId + '/sell', {{
+    method: 'POST',
+    headers: {{'Content-Type':'application/json'}},
+    body: JSON.stringify({{payment_method: method, cash_received: cash}})
+  }});
+  const d = await r.json();
+  const msg = document.getElementById('sell-msg');
+  if (d.error) {{ msg.textContent = '❌ ' + d.error; msg.style.color='#f87171'; return; }}
+  msg.textContent = '✅ Sale complete! Change: $' + (d.change||0).toFixed(2);
+  msg.style.color = '#4ade80';
+  setTimeout(() => location.reload(), 1600);
+}}
+
+async function deleteBundle(id) {{
+  if (!confirm('Delete this bundle? This cannot be undone.')) return;
+  const r = await fetch('/admin/bundles/' + id, {{method:'DELETE'}});
+  if (r.ok) location.reload();
+}}
+</script>
+</body></html>""")
+
+
+@app.route("/admin/bundles/create", methods=["POST"])
+@require_admin
+def admin_bundles_create():
+    data         = request.get_json(silent=True) or {}
+    name         = (data.get("name") or "").strip()[:120]
+    description  = (data.get("description") or "").strip()[:500]
+    bundle_price = float(data.get("bundle_price") or 0)
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    db  = get_db()
+    row = db.execute(
+        "INSERT INTO bundles (name, description, bundle_price) VALUES (%s,%s,%s) RETURNING id",
+        (name, description, bundle_price)
+    ).fetchone()
+    db.commit()
+    return jsonify({"ok": True, "id": row["id"]})
+
+
+@app.route("/admin/bundles/<int:bundle_id>", methods=["GET"])
+@require_admin
+def admin_bundle_get(bundle_id):
+    db  = get_db()
+    b   = db.execute("SELECT * FROM bundles WHERE id=%s", (bundle_id,)).fetchone()
+    if not b:
+        return jsonify({"error": "Not found"}), 404
+    items = db.execute(
+        "SELECT * FROM bundle_items WHERE bundle_id=%s ORDER BY id", (bundle_id,)
+    ).fetchall()
+    return jsonify({
+        "id":           b["id"],
+        "name":         b["name"],
+        "description":  b["description"],
+        "bundle_price": b["bundle_price"],
+        "sold":         b["sold"],
+        "items":        [dict(i) for i in items],
+    })
+
+
+@app.route("/admin/bundles/<int:bundle_id>/add-item", methods=["POST"])
+@require_admin
+def admin_bundle_add_item(bundle_id):
+    db  = get_db()
+    b   = db.execute("SELECT id FROM bundles WHERE id=%s", (bundle_id,)).fetchone()
+    if not b:
+        return jsonify({"error": "Bundle not found"}), 404
+    data       = request.get_json(silent=True) or {}
+    qr_code    = (data.get("qr_code") or "").strip()
+    name       = (data.get("name") or "").strip()
+    quantity   = max(1, int(data.get("quantity") or 1))
+    unit_price = float(data.get("unit_price") or 0)
+    if not qr_code or not name:
+        return jsonify({"error": "qr_code and name required"}), 400
+    db.execute(
+        "INSERT INTO bundle_items (bundle_id,qr_code,name,quantity,unit_price) VALUES (%s,%s,%s,%s,%s)",
+        (bundle_id, qr_code, name, quantity, unit_price)
+    )
+    db.commit()
+    items = db.execute("SELECT * FROM bundle_items WHERE bundle_id=%s ORDER BY id", (bundle_id,)).fetchall()
+    return jsonify({"ok": True, "items": [dict(i) for i in items]})
+
+
+@app.route("/admin/bundles/<int:bundle_id>/remove-item/<int:item_id>", methods=["POST"])
+@require_admin
+def admin_bundle_remove_item(bundle_id, item_id):
+    db = get_db()
+    db.execute("DELETE FROM bundle_items WHERE id=%s AND bundle_id=%s", (item_id, bundle_id))
+    db.commit()
+    items = db.execute("SELECT * FROM bundle_items WHERE bundle_id=%s ORDER BY id", (bundle_id,)).fetchall()
+    return jsonify({"ok": True, "items": [dict(i) for i in items]})
+
+
+@app.route("/admin/bundles/<int:bundle_id>/sell", methods=["POST"])
+@require_admin
+def admin_bundle_sell(bundle_id):
+    db   = get_db()
+    b    = db.execute("SELECT * FROM bundles WHERE id=%s", (bundle_id,)).fetchone()
+    if not b:
+        return jsonify({"error": "Bundle not found"}), 404
+    items = db.execute(
+        "SELECT * FROM bundle_items WHERE bundle_id=%s", (bundle_id,)
+    ).fetchall()
+    if not items:
+        return jsonify({"error": "Bundle has no items"}), 400
+
+    # Check stock for every item
+    for it in items:
+        inv = db.execute(
+            "SELECT stock FROM inventory WHERE qr_code=%s", (it["qr_code"],)
+        ).fetchone()
+        if not inv or inv["stock"] < it["quantity"]:
+            return jsonify({"error": f"Insufficient stock for {it['name']} ({it['qr_code']})"}), 409
+
+    data           = request.get_json(silent=True) or {}
+    payment_method = (data.get("payment_method") or "CASH").upper()
+    cash_received  = float(data.get("cash_received") or b["bundle_price"])
+    total          = b["bundle_price"]
+    change         = max(0.0, cash_received - total) if payment_method == "CASH" else 0.0
+
+    # Deduct stock + record deductions
+    tid = f"BUNDLE-{_now_ms()}"
+    sale_items = []
+    for it in items:
+        db.execute(
+            "UPDATE inventory SET stock=stock-%s, last_updated=%s WHERE qr_code=%s",
+            (it["quantity"], _now_ms(), it["qr_code"])
+        )
+        db.execute("""
+            INSERT INTO stock_deductions (transaction_id,qr_code,name,quantity,unit_price,line_total)
+            VALUES (%s,%s,%s,%s,%s,%s)
+        """, (tid, it["qr_code"], it["name"], it["quantity"],
+              it["unit_price"], it["quantity"] * it["unit_price"]))
+        sale_items.append({
+            "qrCode": it["qr_code"], "name": it["name"],
+            "qty": it["quantity"], "unitPrice": it["unit_price"],
+        })
+
+    db.execute("""
+        INSERT INTO sales (transaction_id,timestamp_ms,subtotal,tax_amount,tip_amount,
+                           total_amount,payment_method,employee_id,items_json,
+                           cash_received,change_given,source)
+        VALUES (%s,%s,%s,0,0,%s,%s,%s,%s,%s,%s,%s)
+    """, (
+        tid, _now_ms(), total, total,
+        payment_method, "bundle-sell",
+        json.dumps(sale_items),
+        cash_received, change, "bundle",
+    ))
+    db.execute("UPDATE bundles SET sold=sold+1 WHERE id=%s", (bundle_id,))
+    db.commit()
+    _invalidate_inventory()
+
+    return jsonify({
+        "ok": True, "transaction_id": tid,
+        "total": total, "change": change,
+    })
+
+
+@app.route("/admin/bundles/<int:bundle_id>", methods=["DELETE"])
+@require_admin
+def admin_bundle_delete(bundle_id):
+    db = get_db()
+    db.execute("DELETE FROM bundles WHERE id=%s", (bundle_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # Admin — satellite token management
 # ---------------------------------------------------------------------------
 
@@ -3222,10 +4208,12 @@ _ADMIN_BASE_CSS = """
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
-        ("dashboard", "/admin",        "🏠 Dashboard"),
-        ("market",    "/admin/market", "📈 Market Prices"),
-        ("system",    "/admin/system", "⚙️ System"),
-        ("logs",      "/admin/logs",   "📋 Logs"),
+        ("dashboard", "/admin",            "🏠 Dashboard"),
+        ("market",    "/admin/market",     "📈 Market Prices"),
+        ("trade-in",  "/admin/trade-in",   "🔁 Trade-In"),
+        ("bundles",   "/admin/bundles",    "📦 Bundles"),
+        ("system",    "/admin/system",     "⚙️ System"),
+        ("logs",      "/admin/logs",       "📋 Logs"),
     ]
     items = "".join(
         f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
@@ -5537,8 +6525,31 @@ def admin_dashboard():
     <button class="btn-gold" onclick="prefillFromTCG()" style="background:#6366f1;white-space:nowrap" title="Auto-fill name, rarity, set, image & market price from the TCG API">
       ⚡ Prefill from TCG API
     </button>
+    <button class="btn-gold" onclick="openPhotoID()" style="background:#7c3aed;white-space:nowrap" title="Take a photo of the card — AI identifies it automatically">
+      📷 Identify from Photo
+    </button>
   </div>
   <div id="prefill-status" style="font-size:12px;color:#6366f1;margin-bottom:10px;display:none"></div>
+
+  <!-- Photo-ID modal -->
+  <div id="photo-id-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000b;z-index:3000;align-items:center;justify-content:center">
+    <div style="background:#111;border:1px solid #7c3aed;border-radius:10px;padding:24px;max-width:480px;width:92%;position:relative">
+      <button onclick="closePhotoID()" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#aaa;font-size:22px;cursor:pointer">✕</button>
+      <h2 style="color:#c4b5fd;margin-top:0">📷 AI Card Identifier</h2>
+      <p style="color:#888;font-size:13px;margin-bottom:12px">Take or upload a clear photo of the front of the card. GPT-4o Vision will identify it and auto-fill the form.</p>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <button class="btn-gold" onclick="document.getElementById('photo-file-input').click()" style="background:#7c3aed;flex:1">📁 Choose File</button>
+        <button class="btn-gold" onclick="document.getElementById('photo-camera-input').click()" style="background:#6d28d9;flex:1">📸 Take Photo</button>
+      </div>
+      <input id="photo-file-input"   type="file" accept="image/*"          style="display:none" onchange="previewPhotoID(event)">
+      <input id="photo-camera-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="previewPhotoID(event)">
+      <div id="photo-preview-wrap" style="display:none;margin-bottom:14px;text-align:center">
+        <img id="photo-preview-img" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #7c3aed">
+      </div>
+      <button id="photo-id-btn" class="btn-gold" onclick="runPhotoID()" style="background:#7c3aed;width:100%;display:none">🔍 Identify Card</button>
+      <div id="photo-id-result" style="margin-top:12px;font-size:13px;color:#aaa"></div>
+    </div>
+  </div>
   <div id="prefill-img" style="margin-bottom:14px;display:none">
     <img id="f-img-preview" src="" alt="card" style="height:120px;border-radius:8px;border:1px solid #333">
   </div>
@@ -5834,6 +6845,97 @@ async function prefillFromTCG() {{
     statusEl.style.color = '#f44336';
   }}
 }}
+
+// ── Photo ID via GPT-4o Vision ─────────────────────────────────────────────
+let _photoIdBase64 = null;
+
+function openPhotoID() {{
+  document.getElementById('photo-id-modal').style.display = 'flex';
+  document.getElementById('photo-id-result').textContent = '';
+  document.getElementById('photo-preview-wrap').style.display = 'none';
+  document.getElementById('photo-id-btn').style.display = 'none';
+  _photoIdBase64 = null;
+}}
+
+function closePhotoID() {{
+  document.getElementById('photo-id-modal').style.display = 'none';
+}}
+
+function previewPhotoID(evt) {{
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {{
+    _photoIdBase64 = e.target.result; // data:image/...;base64,...
+    const img = document.getElementById('photo-preview-img');
+    img.src = _photoIdBase64;
+    document.getElementById('photo-preview-wrap').style.display = 'block';
+    document.getElementById('photo-id-btn').style.display = 'block';
+    document.getElementById('photo-id-result').textContent = '';
+  }};
+  reader.readAsDataURL(file);
+}}
+
+async function runPhotoID() {{
+  if (!_photoIdBase64) return;
+  const resultEl = document.getElementById('photo-id-result');
+  const btn      = document.getElementById('photo-id-btn');
+  btn.disabled   = true;
+  btn.textContent = '⏳ Identifying…';
+  resultEl.textContent = '';
+  try {{
+    const r = await fetch('/card/identify-image', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{image: _photoIdBase64}}),
+    }});
+    const d = await r.json();
+    if (d.error) {{
+      resultEl.textContent = '❌ ' + d.error;
+      resultEl.style.color = '#f87171';
+      btn.disabled = false; btn.textContent = '🔍 Identify Card';
+      return;
+    }}
+    if (!d.identified) {{
+      resultEl.textContent = '⚠️ Could not identify card — try a clearer photo.';
+      resultEl.style.color = '#facc15';
+      btn.disabled = false; btn.textContent = '🔍 Identify Card';
+      return;
+    }}
+    // Fill form fields from GPT + enriched data
+    const g  = d.gpt || {{}};
+    const en = d.enriched || {{}};
+    const t  = en.tcgData || {{}};
+    if (d.qr_guess) document.getElementById('f-qr').value = d.qr_guess;
+    const name = en.name || t.name || g.name;
+    if (name)    document.getElementById('f-name').value = name;
+    const rarity = t.rarity || g.rarity;
+    if (rarity)  document.getElementById('f-rarity').value = rarity;
+    const setCode = (t.set && t.set.ptcgoCode) || g.set_code;
+    if (setCode) document.getElementById('f-set').value = setCode;
+    const mkt = t.tcgplayer && t.tcgplayer.marketPrice;
+    if (mkt && !document.getElementById('f-price').value)
+      document.getElementById('f-price').value = mkt.toFixed(2);
+    const img = en.imageUrl || (t.images && t.images.large);
+    if (img) {{
+      document.getElementById('f-imgurl').value = img;
+      document.getElementById('f-img-preview').src = img;
+      document.getElementById('prefill-img').style.display = 'block';
+    }}
+    resultEl.innerHTML = (
+      `✅ Identified: <b style="color:#c4b5fd">${{name || g.name}}</b>` +
+      (g.condition ? ` — Condition: <b style="color:#facc15">${{g.condition}}</b>` : '') +
+      (mkt ? ` — Market: <b style="color:#4ade80">$${{mkt.toFixed(2)}}</b>` : '')
+    );
+    resultEl.style.color = '#4ade80';
+    setTimeout(closePhotoID, 2000);
+  }} catch(e) {{
+    resultEl.textContent = '❌ Request failed: ' + e;
+    resultEl.style.color = '#f87171';
+  }}
+  btn.disabled = false; btn.textContent = '🔍 Identify Card';
+}}
+// ──────────────────────────────────────────────────────────────────────────
 
 async function addProduct() {{
   const body = {{

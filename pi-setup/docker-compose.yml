@@ -50,6 +50,10 @@ services:
       # Pokémon TCG API key (free = 1k/day; with key = 20k/day)
       # PTCG_API_KEY: your-api-key
 
+      # OpenAI — card photo identification via GPT-4o Vision
+      # Get a key at https://platform.openai.com/api-keys
+      # OPENAI_API_KEY: sk-...
+
       # Gmail SMTP for sale alerts
       # SMTP_USER:         you@gmail.com
       # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
