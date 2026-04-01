@@ -375,6 +375,23 @@ CLOUD_INVENTORY_SOURCES = (
     ]
 )
 
+# ---------------------------------------------------------------------------
+# GitHub inventory sync config
+# ---------------------------------------------------------------------------
+# Set GITHUB_TOKEN (classic PAT with repo:read scope) and GITHUB_INVENTORY_REPO
+# in your .env to enable pulling inventory directly from a private GitHub repo.
+# The importer auto-detects JSON / CSV / TSV by file extension.
+#
+#   GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+#   GITHUB_INVENTORY_REPO=Ngansen/Inventory-Scanner
+#   GITHUB_INVENTORY_FILE=inventory.json   # path inside the repo (default: inventory.json)
+#   GITHUB_INVENTORY_BRANCH=main           # branch (default: main)
+#
+_GITHUB_TOKEN          = os.environ.get("GITHUB_TOKEN", "").strip()
+_GITHUB_INVENTORY_REPO = os.environ.get("GITHUB_INVENTORY_REPO", "Ngansen/Inventory-Scanner").strip()
+_GITHUB_INVENTORY_FILE = os.environ.get("GITHUB_INVENTORY_FILE", "").strip()
+_GITHUB_INVENTORY_BRANCH = os.environ.get("GITHUB_INVENTORY_BRANCH", "main").strip()
+
 # Two-way sync: URL of the HanRyx-Vault storefront running on this Pi.
 # When a sale is recorded here, the POS pushes stock decrements back to the
 # storefront so the public website never shows "in stock" for a sold-out card.
