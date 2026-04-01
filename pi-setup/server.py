@@ -551,6 +551,8 @@ def init_db():
         ("purchase_price",  "ALTER TABLE inventory ADD COLUMN purchase_price   DOUBLE PRECISION NOT NULL DEFAULT 0"),
         ("sale_price",      "ALTER TABLE inventory ADD COLUMN sale_price       DOUBLE PRECISION NOT NULL DEFAULT 0"),
         ("tags",            "ALTER TABLE inventory ADD COLUMN tags             TEXT NOT NULL DEFAULT ''"),
+        ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
+        ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
@@ -604,7 +606,7 @@ def sync_inventory_from_cloud(force: bool = False) -> dict:
                 try:
                     db.execute("""
                         INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT(qr_code) DO UPDATE SET
                             name=excluded.name, price=excluded.price, category=excluded.category,
                             rarity=excluded.rarity, set_code=excluded.set_code,
@@ -1337,7 +1339,7 @@ def scan_post():
     store_code = normalised  # what goes into the DB
 
     db = get_db()
-    db.execute("INSERT INTO scan_queue (qr_code) VALUES (?)", (store_code,))
+    db.execute("INSERT INTO scan_queue (qr_code) VALUES (%s)", (store_code,))
     db.commit()
     # Bust the 1 s scan cache so the tablet picks this up on its very next poll
     with _cache_lock:
@@ -1350,7 +1352,7 @@ def scan_post():
         _sl_matches = _card_lookup(db, qr=store_code, limit=1)
         _sl_local   = _sl_matches[0] if _sl_matches else None
         db.execute(
-            "INSERT INTO scan_log (qr_code, card_name, matched, price, scanned_at) VALUES (?,?,?,?,?)",
+            "INSERT INTO scan_log (qr_code, card_name, matched, price, scanned_at) VALUES (%s,%s,%s,%s,%s)",
             (
                 store_code,
                 _sl_local.get("name", "")  if _sl_local else "",
@@ -1401,7 +1403,7 @@ def scan_pending():
 @app.route("/scan/ack/<int:scan_id>", methods=["POST"])
 def scan_ack(scan_id):
     db = get_db()
-    db.execute("UPDATE scan_queue SET processed = 1 WHERE id = ?", (scan_id,))
+    db.execute("UPDATE scan_queue SET processed = 1 WHERE id = %s", (scan_id,))
     db.commit()
     # Clear scan cache so next poll immediately returns the next pending item
     with _cache_lock:
@@ -1596,7 +1598,7 @@ def card_enrich():
         try:
             db.execute(
                 "INSERT INTO price_history (card_id, card_name, market_price, fetched_ms) "
-                "VALUES (?,?,?,?)",
+                "VALUES (%s,%s,%s,%s)",
                 (norm_qr, result.get("name") or norm_qr, float(_ph_price), _now_ms())
             )
             db.commit()
@@ -1640,7 +1642,7 @@ def card_condition_set(qr_code):
     db = get_db()
     db.execute("""
         INSERT INTO card_conditions (qr_code, condition, notes, updated_ms)
-        VALUES (?,?,?,?)
+        VALUES (%s,%s,%s,%s)
         ON CONFLICT(qr_code) DO UPDATE SET
             condition=excluded.condition, notes=excluded.notes, updated_ms=excluded.updated_ms
     """, (qr_code, condition, notes, _now_ms()))
@@ -1863,6 +1865,23 @@ def sync_sales():
             ))
             if cur.rowcount > 0:
                 inserted += 1
+                # Record each line item in sale_history + send email alert
+                items = sale.get("items", [])
+                method = sale.get("paymentMethod", "")
+                for item in items:
+                    iname  = item.get("name", "")
+                    iprice = float(item.get("unitPrice") or item.get("price") or 0)
+                    iqty   = int(item.get("quantity") or 1)
+                    if iname and iprice > 0:
+                        try:
+                            db.execute(
+                                "INSERT INTO sale_history (name, price, quantity, sold_at) "
+                                "VALUES (%s, %s, %s, %s)",
+                                (iname, iprice, iqty, sale.get("timestamp", _now_ms()))
+                            )
+                        except Exception as _sh_err:
+                            log.debug("[sale_history] write failed: %s", _sh_err)
+                        _send_sale_email(iname, iprice, method, iqty)
             else:
                 skipped += 1
         except Exception as e:
@@ -1904,18 +1923,18 @@ def inventory_deduct():
 
         db.execute("""
             INSERT INTO stock_deductions (qr_code, name, quantity, unit_price, line_total)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """, (qr_code, name, quantity, unit_price, line_total))
 
         # Check stock BEFORE deducting so we can flag an oversell
         before = db.execute(
-            "SELECT stock FROM inventory WHERE qr_code = ?", (qr_code,)
+            "SELECT stock FROM inventory WHERE qr_code = %s", (qr_code,)
         ).fetchone()
 
         result = db.execute("""
             UPDATE inventory
-            SET stock = MAX(0, stock - ?), last_updated = ?
-            WHERE qr_code = ?
+            SET stock = MAX(0, stock - %s), last_updated = %s
+            WHERE qr_code = %s
         """, (quantity, _now_ms(), qr_code))
 
         if result.rowcount > 0:
@@ -2035,7 +2054,7 @@ def push_inventory():
         try:
             db.execute("""
                 INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(qr_code) DO UPDATE SET
                     name=excluded.name, price=excluded.price, category=excluded.category,
                     rarity=excluded.rarity, set_code=excluded.set_code,
@@ -2084,7 +2103,7 @@ def push_inventory_csv():
             stock = int(row.get("stock") or row.get("stockQuantity") or row.get("quantity") or 0)
             db.execute("""
                 INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(qr_code) DO UPDATE SET
                     name=excluded.name, price=excluded.price, category=excluded.category,
                     rarity=excluded.rarity, set_code=excluded.set_code,
@@ -2206,6 +2225,8 @@ def admin_add_product():
     cert_number    = (data.get("certNumber")    or data.get("cert_number")    or "").strip()
     tags           = ",".join(data.get("tags") or []) if isinstance(data.get("tags"), list) \
                      else (data.get("tags") or "").strip()
+    featured       = 1 if data.get("featured") in (True, 1, "1", "true") else 0
+    listed_for_sale = 0 if data.get("listedForSale") in (False, 0, "0", "false") else 1
 
     base_price     = float(data.get("price", 0))
     purchase_price = float(data.get("purchasePrice") or data.get("purchase_price") or 0)
@@ -2222,8 +2243,8 @@ def admin_add_product():
             (qr_code, name, price, category, rarity, set_code, description, stock,
              image_url, tcg_id, last_updated,
              language, condition, item_type, grading_company, grade, cert_number,
-             back_image_url, purchase_price, sale_price, tags)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             back_image_url, purchase_price, sale_price, tags, featured, listed_for_sale)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT(qr_code) DO UPDATE SET
             name=excluded.name, price=excluded.price, category=excluded.category,
             rarity=excluded.rarity, set_code=excluded.set_code,
@@ -2235,7 +2256,8 @@ def admin_add_product():
             grade=excluded.grade, cert_number=excluded.cert_number,
             back_image_url=CASE WHEN excluded.back_image_url!='' THEN excluded.back_image_url ELSE inventory.back_image_url END,
             purchase_price=excluded.purchase_price, sale_price=excluded.sale_price,
-            tags=excluded.tags, last_updated=excluded.last_updated
+            tags=excluded.tags, featured=excluded.featured,
+            listed_for_sale=excluded.listed_for_sale, last_updated=excluded.last_updated
     """, (
         qr_code, name,
         base_price, data.get("category", "General"),
@@ -2243,7 +2265,7 @@ def admin_add_product():
         data.get("description", ""), int(data.get("stock", 0)),
         image_url, tcg_id, _now_ms(),
         language, condition, item_type, grading_co, grade, cert_number,
-        back_image_url, purchase_price, sale_price, tags,
+        back_image_url, purchase_price, sale_price, tags, featured, listed_for_sale,
     ))
     db.commit()
     _invalidate_inventory()
@@ -2272,11 +2294,42 @@ def admin_add_product():
     return jsonify({"ok": True, "qrCode": qr_code})
 
 
+@app.route("/admin/inventory/<qr_code>", methods=["PATCH"])
+@require_admin
+def admin_patch_product(qr_code):
+    """Partial update — toggle featured / listed_for_sale, or update stock / price."""
+    data = request.get_json(force=True, silent=True) or {}
+    db   = get_db()
+    sets, vals = [], []
+    if "featured" in data:
+        sets.append("featured = %s")
+        vals.append(1 if data["featured"] in (True, 1, "1", "true") else 0)
+    if "listedForSale" in data or "listed_for_sale" in data:
+        v = data.get("listedForSale", data.get("listed_for_sale"))
+        sets.append("listed_for_sale = %s")
+        vals.append(0 if v in (False, 0, "0", "false") else 1)
+    if "stock" in data:
+        sets.append("stock = %s")
+        vals.append(int(data["stock"]))
+    if "price" in data:
+        sets.append("price = %s")
+        vals.append(float(data["price"]))
+    if not sets:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    sets.append("last_updated = %s")
+    vals.append(_now_ms())
+    vals.append(qr_code)
+    db.execute(f"UPDATE inventory SET {', '.join(sets)} WHERE qr_code = %s", vals)
+    db.commit()
+    _invalidate_inventory()
+    return jsonify({"ok": True, "qrCode": qr_code})
+
+
 @app.route("/admin/inventory/<qr_code>", methods=["DELETE"])
 @require_admin
 def admin_delete_product(qr_code):
     db = get_db()
-    db.execute("DELETE FROM inventory WHERE qr_code = ?", (qr_code,))
+    db.execute("DELETE FROM inventory WHERE qr_code = %s", (qr_code,))
     db.commit()
     _invalidate_inventory()
     return jsonify({"ok": True, "deleted": qr_code})
@@ -4007,7 +4060,7 @@ def admin_sell_one(qr_code):
     if row["stock"] <= 0:
         return jsonify({"error": "Out of stock"}), 409
     db.execute(
-        "UPDATE inventory SET stock = stock - 1, last_updated = ? WHERE qr_code = ?",
+        "UPDATE inventory SET stock = stock - 1, last_updated = %s WHERE qr_code = %s",
         (_now_ms(), qr_code)
     )
     tid = f"QUICK-{_now_ms()}"
@@ -4015,7 +4068,7 @@ def admin_sell_one(qr_code):
         INSERT INTO sales (transaction_id, timestamp_ms, subtotal, tax_amount,
                            tip_amount, total_amount, payment_method, employee_id,
                            items_json, source)
-        VALUES (?,?,?,0,0,?,?,?,?,?)
+        VALUES (%s,%s,%s,0,0,%s,%s,%s,%s,%s)
     """, (
         tid, _now_ms(), row["price"], row["price"],
         "CASH", "dashboard",
@@ -4045,7 +4098,7 @@ def system_wg_peer_name():
         return jsonify({"error": "pubkey required"}), 400
     db = get_db()
     db.execute(
-        "INSERT INTO wg_peer_names (pubkey, friendly_name) VALUES (?,?) "
+        "INSERT INTO wg_peer_names (pubkey, friendly_name) VALUES (%s,%s) "
         "ON CONFLICT(pubkey) DO UPDATE SET friendly_name=excluded.friendly_name",
         (pubkey, friendly)
     )
@@ -4527,18 +4580,34 @@ def admin_valuation_report():
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "unknown").split(",")[0].strip()
     if request.method == "POST":
+        # Brute-force gate
+        allowed, mins_left = _check_login_rate(ip)
+        if not allowed:
+            return render_template_string(
+                _ADMIN_LOGIN_HTML,
+                error=f"Too many failed attempts. Try again in {mins_left} minute{'s' if mins_left != 1 else ''}.",
+                next=request.form.get("next", "/admin"),
+            )
         password = request.form.get("password", "")
         next_url  = request.form.get("next", "/admin")
         if hashlib.sha256(password.encode()).hexdigest() == \
            hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest():
             session["admin_authenticated"] = True
             session.permanent = True
-            log.info("[admin] login successful from %s", request.remote_addr)
+            _clear_login_attempts(ip)
+            log.info("[admin] login successful from %s", ip)
             return redirect(next_url if next_url.startswith("/admin") else "/admin")
-        log.warning("[admin] failed login attempt from %s", request.remote_addr)
+        _record_failed_login(ip)
+        log.warning("[admin] failed login attempt from %s (attempt %s)",
+                    ip, _login_attempts.get(ip, {}).get("count", "?"))
+        remaining = _BF_MAX_ATTEMPTS - _login_attempts.get(ip, {}).get("count", 0)
+        err_msg = "Incorrect password."
+        if remaining <= 2 and remaining > 0:
+            err_msg += f" ({remaining} attempt{'s' if remaining != 1 else ''} before lockout)"
         return render_template_string(
-            _ADMIN_LOGIN_HTML, error="Incorrect password", next=next_url
+            _ADMIN_LOGIN_HTML, error=err_msg, next=next_url
         )
     next_url = request.args.get("next", "/admin")
     return render_template_string(_ADMIN_LOGIN_HTML, error=None, next=next_url)
@@ -4897,6 +4966,68 @@ def admin_dashboard():
   <h2 style="color:#f59e0b">📉 PRICE CHANGE ALERTS <span style="font-weight:400;font-size:11px;color:#555">(>15% movement)</span></h2>
   <div id="price-alert-body" style="color:#888;font-size:13px">Loading…</div>
   <button onclick="loadPriceAlerts()" style="background:#1a1000;color:#f59e0b;border:1px solid #3a2500;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-top:10px">Refresh Alerts</button>
+</div>
+
+<!-- ── TCG Database Update ──────────────────────────────────────── -->
+<div class="form-panel" style="border-color:#10b981;background:#001a0e;margin-top:24px">
+  <h2 style="color:#10b981">🗃 TCG DATABASE UPDATE</h2>
+  <p style="color:#888;font-size:13px;margin-bottom:14px">
+    Update market prices or download new card sets from the Pokémon TCG API into the local database.
+    Requires <code>import_tcg_db.py</code> to be present in the same directory as <code>server.py</code>.
+  </p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="btn-update-prices" onclick="triggerTcgJob('update-prices')"
+            style="background:#052e1a;color:#10b981;border:1px solid #10b981;border-radius:6px;
+                   padding:8px 18px;font-size:13px;cursor:pointer">
+      💰 Update Prices Only <span style="font-size:11px;color:#888">(fast)</span>
+    </button>
+    <button id="btn-update-db" onclick="triggerTcgJob('update-db')"
+            style="background:#052e1a;color:#10b981;border:1px solid #10b981;border-radius:6px;
+                   padding:8px 18px;font-size:13px;cursor:pointer">
+      📥 Full DB Update <span style="font-size:11px;color:#888">(10+ min)</span>
+    </button>
+    <button onclick="pollTcgStatus()"
+            style="background:#0a1a10;color:#888;border:1px solid #333;border-radius:6px;
+                   padding:8px 14px;font-size:13px;cursor:pointer">
+      🔄 Check Status
+    </button>
+    <button onclick="triggerCloudSync()"
+            style="background:#052e1a;color:#60a5fa;border:1px solid #3b82f6;border-radius:6px;
+                   padding:8px 18px;font-size:13px;cursor:pointer">
+      ☁️ Sync from Cloud
+    </button>
+    <button onclick="triggerCloudSync(true)"
+            style="background:#050a1a;color:#60a5fa;border:1px solid #1e3a8a;border-radius:6px;
+                   padding:8px 14px;font-size:13px;cursor:pointer">
+      🔄 Force Re-Sync
+    </button>
+  </div>
+  <div id="tcg-status" style="font-size:12px;color:#888;background:#0a1a0f;border-radius:6px;
+       padding:10px;min-height:32px;font-family:monospace;white-space:pre-wrap">
+    Click a button above to start a job.
+  </div>
+</div>
+
+<!-- ── Email Notifications ──────────────────────────────────────── -->
+<div class="form-panel" style="border-color:#8b5cf6;background:#070012;margin-top:24px">
+  <h2 style="color:#a78bfa">📧 EMAIL NOTIFICATIONS</h2>
+  <div id="email-status" style="color:#888;font-size:13px;margin-bottom:10px">Loading…</div>
+  <p style="color:#666;font-size:12px;margin-bottom:12px">
+    Set <code>SMTP_USER</code> and <code>SMTP_APP_PASSWORD</code> environment variables to enable Gmail sale alerts.
+    Use a <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:#a78bfa">Gmail App Password</a>, not your main password.
+    Optionally set <code>NOTIFY_EMAIL</code> to send alerts to a different address.
+  </p>
+  <button onclick="sendTestEmail()"
+          style="background:#0d0020;color:#a78bfa;border:1px solid #7c3aed;border-radius:6px;
+                 padding:8px 18px;font-size:13px;cursor:pointer">
+    🧪 Send Test Email
+  </button>
+  <button onclick="loadEmailStatus()"
+          style="background:#0d0020;color:#888;border:1px solid #333;border-radius:6px;
+                 padding:8px 14px;font-size:13px;cursor:pointer;margin-left:8px">
+    🔄 Refresh
+  </button>
+  <div id="email-msg" style="margin-top:8px;font-size:12px;color:#a78bfa"></div>
 </div>
 
 <div class="form-panel" id="add-product">
@@ -5294,11 +5425,408 @@ async function loadPriceAlerts() {{
   }} catch(e) {{ el.textContent = 'Error loading alerts'; }}
 }}
 loadPriceAlerts();
+
+// ── TCG Database update helpers ─────────────────────────────────────────
+async function triggerTcgJob(job) {{
+  const el = document.getElementById('tcg-status');
+  el.textContent = `Starting ${{job}}…`;
+  try {{
+    const r = await fetch(`/admin/${{job}}`, {{ method: 'POST' }});
+    const d = await r.json();
+    if (r.status === 409) {{
+      el.textContent = '⚠ ' + d.message;
+    }} else {{
+      el.textContent = '✓ ' + d.message + '\nPolling for status…';
+      setTimeout(pollTcgStatus, 3000);
+    }}
+  }} catch(e) {{ el.textContent = 'Error: ' + e.message; }}
+}}
+
+let _tcgPollTimer = null;
+async function pollTcgStatus() {{
+  const el = document.getElementById('tcg-status');
+  try {{
+    const r = await fetch('/admin/update-status');
+    const d = await r.json();
+    if (d.running) {{
+      el.textContent = '⏳ Job running… (refresh to check progress)';
+      clearTimeout(_tcgPollTimer);
+      _tcgPollTimer = setTimeout(pollTcgStatus, 5000);
+    }} else if (d.last_result) {{
+      const res = d.last_result;
+      const ok  = res.returncode === 0;
+      el.textContent = (ok ? '✓ Completed' : '✗ Failed') +
+        ` (exit ${{res.returncode}}) at ${{res.finished_at || ''}}\n` +
+        (res.stdout ? 'STDOUT:\n' + res.stdout : '') +
+        (res.stderr ? '\nSTDERR:\n' + res.stderr : '');
+      el.style.color = ok ? '#10b981' : '#f87171';
+    }} else {{
+      el.textContent = 'No job running. No previous result.';
+    }}
+  }} catch(e) {{ el.textContent = 'Status check failed: ' + e.message; }}
+}}
+
+async function triggerCloudSync(force=false) {{
+  const el = document.getElementById('tcg-status');
+  el.textContent = force ? 'Force-syncing from cloud…' : 'Syncing from cloud…';
+  try {{
+    const r = await fetch('/admin/sync-from-cloud' + (force ? '?force=1' : ''), {{ method: 'POST' }});
+    const d = await r.json();
+    if (d.skipped) {{
+      el.textContent = `⚠ Already have ${{d.existing}} products. Use Force Re-Sync to refresh.`;
+      el.style.color = '#f59e0b';
+    }} else {{
+      el.textContent = `✓ Synced ${{d.upserted}} products from cloud (${{d.skipped_items || 0}} skipped).`;
+      el.style.color = '#10b981';
+      setTimeout(() => location.reload(), 2000);
+    }}
+  }} catch(e) {{ el.textContent = 'Sync failed: ' + e.message; el.style.color = '#f87171'; }}
+}}
+
+// ── Email status + test ─────────────────────────────────────────────────
+async function loadEmailStatus() {{
+  const el = document.getElementById('email-status');
+  try {{
+    const r = await fetch('/admin/email-config');
+    const d = await r.json();
+    if (d.enabled) {{
+      el.innerHTML = `<span style="color:#10b981">✓ Enabled</span> — Alerts sent from <strong>${{d.smtp_user}}</strong> to <strong>${{d.notify_email}}</strong>`;
+    }} else {{
+      el.innerHTML = `<span style="color:#f87171">✗ Disabled</span> — Set <code>SMTP_USER</code> + <code>SMTP_APP_PASSWORD</code> env vars to activate.`;
+    }}
+  }} catch(e) {{ el.textContent = 'Could not load email config.'; }}
+}}
+
+async function sendTestEmail() {{
+  const msg = document.getElementById('email-msg');
+  msg.textContent = 'Sending…';
+  try {{
+    const r = await fetch('/admin/email-config/test', {{ method: 'POST' }});
+    const d = await r.json();
+    msg.textContent = d.ok ? '✓ ' + d.msg : '✗ ' + d.msg;
+    msg.style.color = d.ok ? '#10b981' : '#f87171';
+  }} catch(e) {{ msg.textContent = 'Error: ' + e.message; msg.style.color = '#f87171'; }}
+}}
+
+loadEmailStatus();
 </script>
 </div><!-- /wrap -->
 </body>
 </html>"""
     return html
+
+
+# ---------------------------------------------------------------------------
+# Email notifications (SMTP/Gmail)
+# ---------------------------------------------------------------------------
+
+import smtplib as _smtplib
+import email.mime.multipart as _mime_multi
+import email.mime.text as _mime_text
+
+def _get_email_cfg() -> dict:
+    """Load SMTP config from env vars (SMTP_USER, SMTP_APP_PASSWORD, NOTIFY_EMAIL)."""
+    return {
+        "user":     os.environ.get("SMTP_USER", ""),
+        "password": os.environ.get("SMTP_APP_PASSWORD", ""),
+        "notify":   os.environ.get("NOTIFY_EMAIL", os.environ.get("SMTP_USER", "")),
+        "enabled":  bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_APP_PASSWORD")),
+    }
+
+
+def _send_sale_email(sale_name: str, price: float, method: str = "", qty: int = 1):
+    """Fire-and-forget sale alert email. Runs in a daemon thread."""
+    def _do_send():
+        cfg = _get_email_cfg()
+        if not cfg["enabled"] or not cfg["notify"]:
+            return
+        try:
+            msg = _mime_multi.MIMEMultipart("alternative")
+            msg["Subject"] = f"Sale: {sale_name} — ${price:.2f}"
+            msg["From"]    = f"HanryxVault <{cfg['user']}>"
+            msg["To"]      = cfg["notify"]
+            html = f"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;background:#1a1a1a;
+                        color:#e0e0e0;border-radius:10px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#b8860b,#d4a843);padding:18px;text-align:center;">
+                <h1 style="margin:0;color:#1a1a1a;font-size:20px;">HanryxVault — Sale Alert</h1>
+              </div>
+              <div style="padding:20px;">
+                <table style="width:100%;border-collapse:collapse;background:#2a2a2a;border-radius:6px;">
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#d4a843;">Card</td>
+                      <td style="padding:8px 12px;">{sale_name}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#d4a843;">Price</td>
+                      <td style="padding:8px 12px;">${price:.2f}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#d4a843;">Qty</td>
+                      <td style="padding:8px 12px;">{qty}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#d4a843;">Method</td>
+                      <td style="padding:8px 12px;">{method or 'POS'}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#d4a843;">Time</td>
+                      <td style="padding:8px 12px;">{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+                </table>
+              </div>
+            </div>"""
+            msg.attach(_mime_text.MIMEText(html, "html"))
+            with _smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(cfg["user"], cfg["password"])
+                server.sendmail(cfg["user"], cfg["notify"], msg.as_string())
+            log.info("[email] Sale alert sent for: %s", sale_name)
+        except Exception as _e:
+            log.warning("[email] Failed to send sale alert: %s", _e)
+    threading.Thread(target=_do_send, daemon=True).start()
+
+
+@app.route("/admin/email-config", methods=["GET"])
+@require_admin
+def admin_email_config_get():
+    """Return current email config status (without exposing the password)."""
+    cfg = _get_email_cfg()
+    return jsonify({
+        "enabled":  cfg["enabled"],
+        "smtp_user": cfg["user"],
+        "notify_email": cfg["notify"],
+        "instructions": "Set SMTP_USER and SMTP_APP_PASSWORD env vars to enable. "
+                        "Use a Gmail App Password (not your main password).",
+    })
+
+
+@app.route("/admin/email-config/test", methods=["POST"])
+@require_admin
+def admin_email_test():
+    """Send a test email to verify SMTP config."""
+    _send_sale_email("Test Card (Charizard ex)", 49.99, "Test")
+    cfg = _get_email_cfg()
+    if not cfg["enabled"]:
+        return jsonify({"ok": False, "msg": "SMTP_USER / SMTP_APP_PASSWORD not set"}), 400
+    return jsonify({"ok": True, "msg": f"Test email queued → {cfg['notify']}"})
+
+
+# ---------------------------------------------------------------------------
+# Brute-force login protection
+# ---------------------------------------------------------------------------
+
+_login_attempts: dict = {}   # ip -> {"count": int, "locked_until": float}
+_BF_MAX_ATTEMPTS  = 5
+_BF_LOCKOUT_SECS  = 900   # 15 minutes
+
+
+def _check_login_rate(ip: str) -> tuple[bool, int]:
+    """Return (allowed, minutes_left)."""
+    now  = _time.time()
+    info = _login_attempts.get(ip)
+    if info and info["locked_until"] > now:
+        return False, int((info["locked_until"] - now) / 60) + 1
+    if info and info["locked_until"] <= now:
+        del _login_attempts[ip]
+    return True, 0
+
+
+def _record_failed_login(ip: str):
+    now  = _time.time()
+    info = _login_attempts.setdefault(ip, {"count": 0, "locked_until": 0.0})
+    info["count"] += 1
+    if info["count"] >= _BF_MAX_ATTEMPTS:
+        info["locked_until"] = now + _BF_LOCKOUT_SECS
+        log.warning("[admin] IP %s locked out after %d failed login attempts", ip, info["count"])
+
+
+def _clear_login_attempts(ip: str):
+    _login_attempts.pop(ip, None)
+
+
+# ---------------------------------------------------------------------------
+# Background TCG DB update helpers
+# ---------------------------------------------------------------------------
+
+_update_lock   = threading.Lock()
+_update_status: dict = {"running": False, "last_result": None}
+
+
+def _run_import_script(args: list):
+    """Run import_tcg_db.py in a background thread and store the result."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "import_tcg_db.py")
+    cmd    = ["python3", script] + args
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        _update_status["last_result"] = {
+            "returncode": result.returncode,
+            "stdout":     result.stdout[-3000:],
+            "stderr":     result.stderr[-1000:],
+            "finished_at": datetime.datetime.now().isoformat(),
+        }
+    except subprocess.TimeoutExpired:
+        _update_status["last_result"] = {
+            "returncode": -1, "stdout": "", "stderr": "Timed out after 600 s",
+            "finished_at": datetime.datetime.now().isoformat(),
+        }
+    except Exception as exc:
+        _update_status["last_result"] = {
+            "returncode": -1, "stdout": "", "stderr": str(exc),
+            "finished_at": datetime.datetime.now().isoformat(),
+        }
+    finally:
+        _update_status["running"] = False
+    log.info("[tcg-update] Job finished: returncode=%s",
+             _update_status["last_result"]["returncode"])
+
+
+@app.route("/admin/update-prices", methods=["POST"])
+@require_admin
+def admin_update_prices():
+    """Trigger import_tcg_db.py --update-prices in the background.
+    Refreshes market prices from TCG API without downloading new card sets.
+    Poll /admin/update-status for progress."""
+    with _update_lock:
+        if _update_status["running"]:
+            return jsonify({"status": "already_running",
+                            "message": "An update is already in progress"}), 409
+        _update_status["running"]     = True
+        _update_status["last_result"] = None
+    threading.Thread(
+        target=_run_import_script, args=(["--update-prices"],), daemon=True
+    ).start()
+    return jsonify({"status": "started",
+                    "message": "Price update running in background. Poll /admin/update-status."}), 202
+
+
+@app.route("/admin/update-db", methods=["POST"])
+@require_admin
+def admin_update_db():
+    """Trigger import_tcg_db.py --update to pull new sets + refresh all prices.
+    WARNING: slow (10+ minutes). Poll /admin/update-status for progress."""
+    with _update_lock:
+        if _update_status["running"]:
+            return jsonify({"status": "already_running",
+                            "message": "An update is already in progress"}), 409
+        _update_status["running"]     = True
+        _update_status["last_result"] = None
+    threading.Thread(
+        target=_run_import_script, args=(["--update"],), daemon=True
+    ).start()
+    return jsonify({"status": "started",
+                    "message": "Full DB update running in background. Poll /admin/update-status."}), 202
+
+
+@app.route("/admin/update-status", methods=["GET"])
+@require_admin
+def admin_update_status():
+    """Check whether a TCG DB update job is running and see the last result."""
+    return jsonify({
+        "running":     _update_status["running"],
+        "last_result": _update_status["last_result"],
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# /market/price — local TCG market price lookup
+# ---------------------------------------------------------------------------
+
+@app.route("/market/price", methods=["POST"])
+def market_price():
+    """
+    Local market price lookup.  Priority:
+      1) Your store's 30-day sale_history (highest trust)
+      2) Local inventory DB (imported via import_tcg_db.py)
+      3) store_price fallback (passed in by the caller)
+
+    Body: { name, language, store_price, set_code, card_number }
+    Returns weighted market average + confidence level.
+    """
+    import statistics as _stat
+    data        = request.get_json(force=True, silent=True) or {}
+    name_raw    = (data.get("name") or "").strip()
+    name        = name_raw.lower()
+    lang        = (data.get("language") or "EN").upper()
+    store_price = float(data.get("store_price") or 0)
+    set_code    = (data.get("set_code") or "").strip().upper()
+    card_number = (data.get("card_number") or "").strip()
+
+    local_avg       = 0.0
+    local_sales_30d = 0
+    tcgdb_price     = 0.0
+    tcgdb_name      = ""
+    tcgdb_set       = ""
+    tcgdb_rarity    = ""
+
+    db = get_db()
+
+    # ── 1. Your store's 30-day sales history ─────────────────────────────
+    if name:
+        ago = int((_time.time() - 30 * 86400) * 1000)
+        row = db.execute("""
+            SELECT AVG(price) as avg_price, COUNT(*) as cnt
+            FROM sale_history
+            WHERE LOWER(name) LIKE %s AND sold_at >= %s
+        """, (f"%{name[:30]}%", ago)).fetchone()
+        if row and row["avg_price"]:
+            local_avg       = round(float(row["avg_price"]), 2)
+            local_sales_30d = int(row["cnt"])
+
+    # ── 2. Local inventory / TCG card database ────────────────────────────
+    try:
+        if set_code and card_number:
+            qr_key = f"{set_code}-{card_number}".upper()
+            row = db.execute(
+                "SELECT name, price, rarity, set_code FROM inventory "
+                "WHERE qr_code=%s AND price > 0",
+                (qr_key,)
+            ).fetchone()
+            if row:
+                tcgdb_price  = round(float(row["price"]), 2)
+                tcgdb_name   = row["name"]
+                tcgdb_set    = row["set_code"]
+                tcgdb_rarity = row["rarity"]
+
+        if tcgdb_price == 0.0 and name:
+            rows = db.execute("""
+                SELECT name, price, rarity, set_code FROM inventory
+                WHERE LOWER(name) LIKE %s AND price > 0
+                ORDER BY price DESC LIMIT 10
+            """, (f"%{name[:25]}%",)).fetchall()
+            if rows:
+                prices       = [float(r["price"]) for r in rows]
+                tcgdb_price  = round(_stat.median(prices), 2)
+                tcgdb_name   = rows[0]["name"]
+                tcgdb_set    = rows[0]["set_code"]
+                tcgdb_rarity = rows[0]["rarity"]
+    except Exception as _mp_err:
+        log.debug("[market/price] DB lookup error: %s", _mp_err)
+
+    # ── 3. Weighted average ────────────────────────────────────────────────
+    # sale_history (trust=3), inventory DB (trust=2), store_price (trust=1)
+    weighted_sum = 0.0
+    weight_total = 0
+    if local_avg > 0:
+        weighted_sum += local_avg * 3
+        weight_total += 3
+    if tcgdb_price > 0:
+        weighted_sum += tcgdb_price * 2
+        weight_total += 2
+    if store_price > 0:
+        weighted_sum += store_price * 1
+        weight_total += 1
+
+    if weight_total == 0:
+        market = 0.0
+        confidence = "none"
+    else:
+        market = round(weighted_sum / weight_total, 2)
+        confidence = "high" if local_sales_30d >= 3 else ("medium" if weight_total >= 4 else "low")
+
+    return jsonify({
+        "marketPrice":    market,
+        "confidence":     confidence,
+        "localSalesAvg":  local_avg,
+        "localSales30d":  local_sales_30d,
+        "tcgdbPrice":     tcgdb_price,
+        "tcgdbName":      tcgdb_name,
+        "tcgdbSet":       tcgdb_set,
+        "tcgdbRarity":    tcgdb_rarity,
+        "storePrice":     store_price,
+        "language":       lang,
+    })
 
 
 # ---------------------------------------------------------------------------

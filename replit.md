@@ -8,6 +8,13 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
 
+- **Brute-force login protection** — `_check_login_rate()` / `_record_failed_login()` / `_clear_login_attempts()`. 5 failed attempts → 15-minute IP lockout at `/admin/login`. Shows remaining attempts in error message.
+- **Email notifications (SMTP/Gmail)** — `_send_sale_email()` fires on every new sale in `sync_sales`. Config via `SMTP_USER` + `SMTP_APP_PASSWORD` env vars (Gmail App Password). `NOTIFY_EMAIL` overrides recipient. Status at `GET /admin/email-config`, test at `POST /admin/email-config/test`.
+- **TCG DB background update routes** — `_update_lock` + `_update_status` + `_run_import_script()`. `POST /admin/update-prices` (fast, prices only), `POST /admin/update-db` (full, 10+ min), `GET /admin/update-status` (running bool + last result). All trigger `import_tcg_db.py` subprocess.
+- **`/market/price`** — `POST /market/price { name, language, store_price, set_code, card_number }`. Weighted lookup: 30-day `sale_history` (trust 3) → inventory DB (trust 2) → store_price fallback (trust 1). Returns `marketPrice`, `confidence`, `localSales30d`, `tcgdbPrice`.
+- **`featured` + `listed_for_sale` columns** — added to `inventory` via safe ALTER TABLE migration. `PATCH /admin/inventory/<qr_code>` accepts `featured` / `listedForSale` / `stock` / `price` for partial updates.
+- **Admin dashboard panels** — TCG Database Update (update-prices / update-db buttons, live job status), Email Notifications (status + test button), Cloud Sync (☁️ Sync + Force Re-Sync).
+- **`sale_history` recording** — `sync_sales()` writes each sold item to `sale_history` table automatically; used by `/market/price` for store-specific pricing intelligence.
 - **Pricing engine** — `_calculate_final_price(base, language, item_type, grade)` applies language discounts (JP 0.55x, KR 0.40x), grade premiums (PSA 10 = 2.5x), item-type undercuts (Single 0.95x, Graded 1.10x), and step rounding. Accessible via `GET /admin/price-calc`.
 - **Collection Goals** — `goals` table with CRUD (`GET/POST /admin/goals`, `PATCH/DELETE /admin/goals/<id>`). Shows progress bars on admin dashboard for card_count, value_target, set_completion types.
 - **Collection Sharing** — `POST /admin/share-token` generates a public read-only link (`/share/<token>`). No auth required on public page. Revocable via `DELETE /admin/share-token`.
