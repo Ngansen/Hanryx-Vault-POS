@@ -354,6 +354,15 @@ CLOUD_INVENTORY_SOURCES = (
     ]
 )
 
+# Two-way sync: URL of the HanRyx-Vault storefront running on this Pi.
+# When a sale is recorded here, the POS pushes stock decrements back to the
+# storefront so the public website never shows "in stock" for a sold-out card.
+# On the Pi this is the internal Docker address; externally it's the public URL.
+STOREFRONT_URL = os.environ.get(
+    "STOREFRONT_URL",
+    "http://storefront:3000",   # default: Docker-internal address on the Pi
+).rstrip("/")
+
 # ---------------------------------------------------------------------------
 # Database — thread-local connections (gunicorn multi-worker safe)
 # ---------------------------------------------------------------------------
@@ -831,7 +840,7 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     # 1 — exact qr match
     if qr:
         row = db.execute(
-            "SELECT * FROM inventory WHERE qr_code = ? LIMIT 1", (qr,)
+            "SELECT * FROM inventory WHERE qr_code = %s LIMIT 1", (qr,)
         ).fetchone()
         if row:
             return [_row_to_dict(row)]
@@ -840,7 +849,7 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         norm = _normalize_qr(qr)
         if norm != qr:
             row = db.execute(
-                "SELECT * FROM inventory WHERE qr_code = ? LIMIT 1", (norm,)
+                "SELECT * FROM inventory WHERE qr_code = %s LIMIT 1", (norm,)
             ).fetchone()
             if row:
                 return [_row_to_dict(row)]
@@ -853,9 +862,9 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     if set_code and card_num:
         rows = db.execute("""
             SELECT * FROM inventory
-            WHERE UPPER(set_code) = UPPER(?)
-              AND (name LIKE ? OR qr_code LIKE ?)
-            ORDER BY name ASC LIMIT ?
+            WHERE UPPER(set_code) = UPPER(%s)
+              AND (name LIKE %s OR qr_code LIKE %s)
+            ORDER BY name ASC LIMIT %s
         """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
         if rows:
             return [_row_to_dict(r) for r in rows]
@@ -868,8 +877,8 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
             s, n = m.group(1).upper(), m.group(2)
             rows = db.execute("""
                 SELECT * FROM inventory
-                WHERE UPPER(set_code) = ? AND (name LIKE ? OR qr_code LIKE ?)
-                ORDER BY name ASC LIMIT ?
+                WHERE UPPER(set_code) = %s AND (name LIKE %s OR qr_code LIKE %s)
+                ORDER BY name ASC LIMIT %s
             """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
             if rows:
                 return [_row_to_dict(r) for r in rows]
@@ -885,7 +894,7 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         return []
 
     # Pull candidates that contain at least one token (LIKE OR chain)
-    like_clauses = " OR ".join(["LOWER(name) LIKE ?" for _ in tokens])
+    like_clauses = " OR ".join(["LOWER(name) LIKE %s" for _ in tokens])
     like_args    = [f"%{t}%" for t in tokens]
     rows = db.execute(f"""
         SELECT * FROM inventory
@@ -1676,7 +1685,7 @@ def admin_export_cards():
     db = get_db()
     if cat:
         rows = db.execute(
-            "SELECT * FROM inventory WHERE LOWER(category) LIKE ? ORDER BY name ASC",
+            "SELECT * FROM inventory WHERE LOWER(category) LIKE %s ORDER BY name ASC",
             (f"%{cat.lower()}%",)
         ).fetchall()
     else:
@@ -1831,9 +1840,10 @@ def sync_sales():
     # source: "satellite" when pushed from trade-show Pi, "local" otherwise
     source = request.headers.get("X-Source", "local")
 
-    db       = get_db()
-    inserted = 0
-    skipped  = 0
+    db            = get_db()
+    inserted      = 0
+    skipped       = 0
+    items_for_sf  = []   # collect sold items for two-way storefront sync
 
     for sale in data:
         transaction_id = sale.get("transactionId") or sale.get("transaction_id")
@@ -1865,13 +1875,14 @@ def sync_sales():
             ))
             if cur.rowcount > 0:
                 inserted += 1
-                # Record each line item in sale_history + send email alert
-                items = sale.get("items", [])
+                # Record each line item in sale_history + email alert + storefront sync
+                items  = sale.get("items", [])
                 method = sale.get("paymentMethod", "")
                 for item in items:
                     iname  = item.get("name", "")
                     iprice = float(item.get("unitPrice") or item.get("price") or 0)
                     iqty   = int(item.get("quantity") or 1)
+                    iqr    = item.get("qrCode") or item.get("qr_code") or ""
                     if iname and iprice > 0:
                         try:
                             db.execute(
@@ -1882,6 +1893,8 @@ def sync_sales():
                         except Exception as _sh_err:
                             log.debug("[sale_history] write failed: %s", _sh_err)
                         _send_sale_email(iname, iprice, method, iqty)
+                        if iqr:
+                            items_for_sf.append({"qrCode": iqr, "name": iname, "quantity": iqty})
             else:
                 skipped += 1
         except Exception as e:
@@ -1889,7 +1902,13 @@ def sync_sales():
             skipped += 1
 
     db.commit()
-    log.info("[sync/sales] source=%s inserted=%d skipped=%d", source, inserted, skipped)
+
+    # Two-way sync: push stock decrements to the storefront (background, non-blocking)
+    if items_for_sf:
+        _push_stock_to_storefront(items_for_sf)
+
+    log.info("[sync/sales] source=%s inserted=%d skipped=%d storefront_items=%d",
+             source, inserted, skipped, len(items_for_sf))
     return jsonify({"inserted": inserted, "skipped": skipped, "source": source}), 200
 
 
@@ -1913,6 +1932,7 @@ def inventory_deduct():
     unknown      = 0
     oversold     = 0
     stock_levels = {}    # qr_code → new stock level (returned to satellite)
+    items_for_sf = []    # for two-way storefront sync
 
     for item in data:
         qr_code    = item.get("qrCode", "")
@@ -1940,19 +1960,26 @@ def inventory_deduct():
         if result.rowcount > 0:
             deducted += 1
             after_stock = db.execute(
-                "SELECT stock FROM inventory WHERE qr_code = ?", (qr_code,)
+                "SELECT stock FROM inventory WHERE qr_code = %s", (qr_code,)
             ).fetchone()
             new_stock = after_stock[0] if after_stock else 0
             stock_levels[qr_code] = new_stock
+            if qr_code:
+                items_for_sf.append({"qrCode": qr_code, "name": name, "quantity": quantity})
             if before and before[0] < quantity:
                 oversold += 1
-                log.warning("[inventory/deduct] OVERSELL %s: " %
-                      f"had {before[0]}, sold {quantity} → clamped to 0")
+                log.warning("[inventory/deduct] OVERSELL %s: had %s, sold %d → clamped to 0",
+                            qr_code, before[0], quantity)
         else:
             unknown += 1
 
     db.commit()
     _invalidate_inventory()
+
+    # Two-way sync: push stock decrements to the storefront (background, non-blocking)
+    if items_for_sf:
+        _push_stock_to_storefront(items_for_sf)
+
     log.info("[inventory/deduct] deducted=%d oversold=%d unknown_sku=%d", deducted, oversold, unknown)
     return jsonify({
         "deducted":     deducted,
@@ -1995,7 +2022,7 @@ def get_inventory():
         rows = db.execute(f"""
             SELECT qr_code, name, price, category, rarity, set_code, description, stock, last_updated
             FROM inventory
-            WHERE (LOWER(name) LIKE ? OR LOWER(qr_code) LIKE ? OR LOWER(category) LIKE ?)
+            WHERE (LOWER(name) LIKE %s OR LOWER(qr_code) LIKE %s OR LOWER(category) LIKE %s)
             {since_clause}
             ORDER BY name ASC
         """, [f"%{search}%", f"%{search}%", f"%{search}%"] + since_args).fetchall()
@@ -4053,7 +4080,7 @@ def admin_sell_one(qr_code):
     """
     db  = get_db()
     row = db.execute(
-        "SELECT name, price, stock FROM inventory WHERE qr_code = ?", (qr_code,)
+        "SELECT name, price, stock FROM inventory WHERE qr_code = %s", (qr_code,)
     ).fetchone()
     if not row:
         return jsonify({"error": "Product not found"}), 404
@@ -4921,6 +4948,46 @@ def admin_dashboard():
 <tbody id="tbody-sales">{rows_recent or '<tr><td colspan="5" style="color:#555;text-align:center;padding:20px">No sales yet today</td></tr>'}</tbody>
 </table>
 
+<!-- ── Sale History (30-day per-item) ─────────────────────────────── -->
+<div class="form-panel" style="border-color:#c084fc;background:#0d0417;margin-top:24px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <h2 style="color:#c084fc;margin:0">📋 SALE HISTORY (30 DAYS)</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="sh-search" placeholder="Filter by name…"
+             style="background:#1a1a1a;border:1px solid #4a2060;border-radius:6px;color:#e0e0e0;
+                    padding:6px 10px;font-size:12px;width:160px"
+             oninput="loadSaleHistory()" />
+      <button onclick="loadSaleHistory()"
+              style="background:#4a2060;color:#c084fc;border:1px solid #6b31a0;
+                     border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">
+        ↻ Refresh
+      </button>
+      <a href="/offline-search" target="_blank"
+         style="background:#1a1a1a;color:#888;border:1px solid #333;border-radius:6px;
+                padding:6px 12px;font-size:12px;text-decoration:none;white-space:nowrap">
+        🔍 Offline Search
+      </a>
+    </div>
+  </div>
+  <div id="sh-summary" style="color:#888;font-size:12px;margin:10px 0"></div>
+  <div style="overflow-x:auto">
+    <table id="sh-table" style="min-width:500px">
+    <thead>
+      <tr>
+        <th style="text-align:left">Card Name</th>
+        <th>Qty</th>
+        <th>Unit Price</th>
+        <th>Line Total</th>
+        <th>Sold At</th>
+      </tr>
+    </thead>
+    <tbody id="sh-tbody">
+      <tr><td colspan="5" style="color:#555;text-align:center;padding:20px">Loading…</td></tr>
+    </tbody>
+    </table>
+  </div>
+</div>
+
 <h2>Low Stock (≤5)</h2>
 <table>
 <thead><tr><th>Product</th><th>QR Code</th><th>Stock</th><th>Price</th><th>Category</th></tr></thead>
@@ -5203,14 +5270,15 @@ async function refreshStats() {{
 }}
 setInterval(refreshStats, 30000);
 
-/* ── SSE scan stream → price flash ─────────────────────────────────── */
+/* ── SSE scan stream → price flash (exponential back-off reconnect) ─── */
+let _sseDelay = 1000;
 function connectScanStream() {{
   const es = new EventSource('/scan/stream');
   es.onmessage = async (evt) => {{
+    _sseDelay = 1000;   // successful message — reset back-off
     try {{
       const {{qrCode}} = JSON.parse(evt.data);
       if (!qrCode) return;
-      // Fetch enriched data from the Pi
       const resp = await fetch('/card/enrich?' + new URLSearchParams({{qr: qrCode}}));
       if (resp.ok) {{
         const data = await resp.json();
@@ -5222,10 +5290,49 @@ function connectScanStream() {{
   }};
   es.onerror = () => {{
     es.close();
-    setTimeout(connectScanStream, 5000);  // reconnect after 5 s
+    setTimeout(connectScanStream, _sseDelay);
+    _sseDelay = Math.min(_sseDelay * 2, 30000);  // back off up to 30 s
   }};
 }}
 connectScanStream();
+
+/* ── Sale History panel ─────────────────────────────────────────────── */
+async function loadSaleHistory() {{
+  const name = (document.getElementById('sh-search') || {{}}).value || '';
+  const tbody = document.getElementById('sh-tbody');
+  const summary = document.getElementById('sh-summary');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:16px">Loading…</td></tr>';
+  try {{
+    const r = await fetch('/admin/sale-history?' + new URLSearchParams({{limit:100, days:30, name}}));
+    if (!r.ok) {{ tbody.innerHTML='<tr><td colspan="5" style="color:#f44336;text-align:center">Error</td></tr>'; return; }}
+    const d = await r.json();
+    if (summary) {{
+      summary.textContent = d.count + ' line item' + (d.count!==1?'s':'') +
+        ' in the last ' + d.days + ' days — $' + d.total_revenue.toFixed(2) + ' total revenue';
+    }}
+    if (!d.items.length) {{
+      tbody.innerHTML='<tr><td colspan="5" style="color:#555;text-align:center;padding:20px">No sales recorded yet</td></tr>';
+      return;
+    }}
+    tbody.innerHTML = d.items.map(it => {{
+      const dt = it.sold_at > 1e12
+        ? new Date(it.sold_at).toLocaleString()
+        : new Date(it.sold_at * 1000).toLocaleString();
+      const total = (it.price * it.quantity).toFixed(2);
+      return '<tr>' +
+        '<td style="text-align:left;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + it.name + '</td>' +
+        '<td>' + it.quantity + '</td>' +
+        '<td>$' + it.price.toFixed(2) + '</td>' +
+        '<td style="color:#4caf50;font-weight:600">$' + total + '</td>' +
+        '<td style="font-size:11px;color:#888">' + dt + '</td>' +
+        '</tr>';
+    }}).join('');
+  }} catch(e) {{
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#f44336;text-align:center">'+e.message+'</td></tr>';
+  }}
+}}
+loadSaleHistory();
 
 function toast(msg, err=false) {{
   const t = document.getElementById('toast');
@@ -5578,6 +5685,57 @@ def _send_sale_email(sale_name: str, price: float, method: str = "", qty: int = 
     threading.Thread(target=_do_send, daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# Two-way stock sync — push sold quantities back to the storefront
+# ---------------------------------------------------------------------------
+
+def _push_stock_to_storefront(items: list):
+    """
+    After a sale, decrement stock on the HanRyx-Vault storefront so the public
+    website never shows 'in stock' for a card that was just sold.
+
+    items format: [{"qrCode": str, "name": str, "quantity": int}, ...]
+
+    The storefront endpoint POST /api/inventory/sync accepts:
+        { "items": [{"qrCode": str, "delta": int}] }
+    where delta is negative for a sale (e.g. -1 for one copy sold).
+
+    Runs in a daemon thread — fire-and-forget, never blocks the sale response.
+    If STOREFRONT_URL is empty or the request fails, the error is logged and
+    silently ignored (POS sale is already committed).
+    """
+    if not STOREFRONT_URL or not items:
+        return
+
+    def _do_push():
+        try:
+            payload = {
+                "items": [
+                    {"qrCode": it["qrCode"], "delta": -int(it.get("quantity", 1))}
+                    for it in items
+                    if it.get("qrCode")
+                ]
+            }
+            if not payload["items"]:
+                return
+            resp = _requests.post(
+                f"{STOREFRONT_URL}/api/inventory/sync",
+                json=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "HanryxVaultPOS/2.0"},
+                timeout=8,
+            )
+            if resp.ok:
+                log.info("[storefront-sync] pushed %d stock delta(s) → %s",
+                         len(payload["items"]), resp.status_code)
+            else:
+                log.warning("[storefront-sync] push returned %s: %s",
+                            resp.status_code, resp.text[:200])
+        except Exception as _e:
+            log.warning("[storefront-sync] push failed (non-fatal): %s", _e)
+
+    threading.Thread(target=_do_push, daemon=True).start()
+
+
 @app.route("/admin/email-config", methods=["GET"])
 @require_admin
 def admin_email_config_get():
@@ -5717,6 +5875,188 @@ def admin_update_status():
         "running":     _update_status["running"],
         "last_result": _update_status["last_result"],
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# Admin — sale history
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/sale-history", methods=["GET"])
+@require_admin
+def admin_sale_history():
+    """
+    Return per-item sale history from the sale_history table.
+
+    Query params:
+      limit  — max rows (default 100, max 500)
+      days   — look-back window in days (default 30)
+      name   — optional substring filter on card name
+    """
+    try:
+        limit = min(int(request.args.get("limit", 100)), 500)
+        days  = max(int(request.args.get("days",   30)),  1)
+        name  = request.args.get("name", "").strip()
+    except ValueError:
+        return jsonify({"error": "Invalid query param"}), 400
+
+    db   = get_db()
+    cutoff = _now_ms() - days * 86_400_000
+
+    if name:
+        rows = db.execute(
+            "SELECT name, price, quantity, sold_at FROM sale_history "
+            "WHERE sold_at >= %s AND name ILIKE %s "
+            "ORDER BY sold_at DESC LIMIT %s",
+            (cutoff, f"%{name}%", limit)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT name, price, quantity, sold_at FROM sale_history "
+            "WHERE sold_at >= %s ORDER BY sold_at DESC LIMIT %s",
+            (cutoff, limit)
+        ).fetchall()
+
+    items = [
+        {
+            "name":     r[0],
+            "price":    float(r[1]),
+            "quantity": int(r[2]),
+            "sold_at":  r[3],
+        }
+        for r in rows
+    ]
+
+    total_revenue = sum(i["price"] * i["quantity"] for i in items)
+    return jsonify({
+        "items":         items,
+        "count":         len(items),
+        "days":          days,
+        "total_revenue": round(total_revenue, 2),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Offline card search (no internet required)
+# ---------------------------------------------------------------------------
+
+@app.route("/offline-search", methods=["GET"])
+def offline_search():
+    """
+    Standalone HTML page for searching the local card database and inventory
+    without any internet connection.  Useful at trade shows when the TCG API
+    is unavailable.  Calls /card/lookup (local DB only).
+    """
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Offline Card Search</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#0d0d0d;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}}
+  h1{{color:#FFD700;font-size:22px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}}
+  .sub{{color:#555;font-size:12px;letter-spacing:1px;margin-bottom:20px}}
+  .search-bar{{display:flex;gap:10px;margin-bottom:20px}}
+  input{{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;
+         padding:10px 14px;font-size:14px;outline:none}}
+  input:focus{{border-color:#FFD700}}
+  button{{background:#FFD700;color:#000;border:none;border-radius:8px;padding:10px 20px;
+          font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px;white-space:nowrap}}
+  button:hover{{background:#e5c100}}
+  .results{{display:grid;gap:12px}}
+  .card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px;
+         display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start}}
+  .card-name{{font-weight:600;font-size:15px;color:#fff;margin-bottom:4px}}
+  .card-meta{{color:#888;font-size:12px;line-height:1.6}}
+  .card-price{{text-align:right}}
+  .price-val{{color:#4caf50;font-size:18px;font-weight:700}}
+  .price-lbl{{color:#555;font-size:11px;letter-spacing:1px;text-transform:uppercase}}
+  .badge{{display:inline-block;background:#2a2a2a;border:1px solid #333;border-radius:4px;
+          padding:2px 7px;font-size:11px;color:#888;margin-right:4px;margin-top:2px}}
+  .stock-ok{{color:#4caf50;font-weight:700}}
+  .stock-low{{color:#ff9800;font-weight:700}}
+  .stock-out{{color:#f44336;font-weight:700}}
+  .empty{{text-align:center;color:#555;padding:40px;font-size:14px}}
+  .status{{color:#888;font-size:12px;margin-bottom:12px;min-height:18px}}
+  #back{{display:inline-block;color:#555;font-size:12px;text-decoration:none;
+         border:1px solid #333;border-radius:6px;padding:5px 12px;margin-bottom:16px}}
+  #back:hover{{color:#FFD700;border-color:#FFD700}}
+</style>
+</head>
+<body>
+<a href="/admin" id="back">← Admin Dashboard</a>
+<h1>Offline Card Search</h1>
+<p class="sub">Searches your local inventory + TCG database — no internet required</p>
+
+<div class="search-bar">
+  <input id="q" type="text" placeholder="Card name, set code, QR code…"
+         autofocus autocomplete="off"
+         onkeydown="if(event.key==='Enter')search()">
+  <button onclick="search()">Search</button>
+</div>
+<div class="status" id="status"></div>
+<div class="results" id="results"></div>
+
+<script>
+let _timer;
+document.getElementById('q').addEventListener('input', () => {{
+  clearTimeout(_timer);
+  _timer = setTimeout(search, 350);
+}});
+
+async function search() {{
+  const q = document.getElementById('q').value.trim();
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+  if (!q) {{ results.innerHTML=''; status.textContent=''; return; }}
+
+  status.textContent = 'Searching…';
+  try {{
+    const r = await fetch('/card/lookup?' + new URLSearchParams({{q, limit: 40}}));
+    const d = await r.json();
+    const items = d.results || d.items || (Array.isArray(d) ? d : []);
+    if (!items.length) {{
+      results.innerHTML = '<div class="empty">No cards found for &ldquo;' + q + '&rdquo;</div>';
+      status.textContent = '0 results';
+      return;
+    }}
+    status.textContent = items.length + ' result' + (items.length!==1?'s':'') + ' (local DB)';
+    results.innerHTML = items.map(c => {{
+      const stock = c.stock ?? c.qty ?? null;
+      const stockHtml = stock === null ? '' :
+        stock === 0 ? '<span class="stock-out">OUT OF STOCK</span>' :
+        stock <= 3  ? '<span class="stock-low">Low stock (' + stock + ')</span>' :
+                      '<span class="stock-ok">In stock (' + stock + ')</span>';
+      const price = c.price || c.store_price || c.market_price || 0;
+      const set   = c.set_code || c.set || '';
+      const num   = c.card_number || c.number || '';
+      const cat   = c.category || c.rarity || '';
+      const lang  = c.language || '';
+      return '<div class="card">' +
+        '<div>' +
+          '<div class="card-name">' + (c.name||'Unknown') + '</div>' +
+          '<div class="card-meta">' +
+            (set  ? '<span class="badge">' + set + (num ? ' #' + num : '') + '</span>' : '') +
+            (cat  ? '<span class="badge">' + cat  + '</span>' : '') +
+            (lang ? '<span class="badge">' + lang + '</span>' : '') +
+          '</div>' +
+          '<div style="margin-top:6px">' + stockHtml + '</div>' +
+        '</div>' +
+        '<div class="card-price">' +
+          (price > 0 ? '<div class="price-val">$' + price.toFixed(2) + '</div><div class="price-lbl">store price</div>' : '') +
+        '</div>' +
+        '</div>';
+    }}).join('');
+  }} catch(e) {{
+    results.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+    status.textContent = '';
+  }}
+}}
+</script>
+</body>
+</html>"""
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 # ---------------------------------------------------------------------------
