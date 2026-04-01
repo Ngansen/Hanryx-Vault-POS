@@ -297,6 +297,17 @@ _tcg_mem_cache: dict = {}    # card_id → {"data": {...}, "fetched_ms": int}
 _TCG_MEM_TTL_MS = 3_600_000  # 1 hour in-memory; DB stores 24 hours
 
 # ---------------------------------------------------------------------------
+# Local card image cache — images are downloaded on first scan and served
+# directly from the Pi, so they work offline and load faster on the LAN.
+# ---------------------------------------------------------------------------
+_CARD_IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "card-images")
+os.makedirs(_CARD_IMAGES_DIR, exist_ok=True)
+
+# Local SQLite TCG card database built by import_tcg_db.py.
+# Queried before the live API so enrichment works fully offline.
+_LOCAL_TCG_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pokedex_local.db")
+
+# ---------------------------------------------------------------------------
 # Server start time — used by /health uptime field
 # ---------------------------------------------------------------------------
 _server_start_time = _time.time()
