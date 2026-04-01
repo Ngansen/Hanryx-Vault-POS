@@ -377,6 +377,43 @@ def close_db(exc):
 _NOW_MS_PG = "(EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT"
 
 
+# ---------------------------------------------------------------------------
+# Pricing engine  (ported from Card-Scanner-AI shared/schema.ts)
+# ---------------------------------------------------------------------------
+
+_LANGUAGE_PRICE_RULES: dict = {
+    "English": 1.0,  "EN": 1.0,
+    "Japanese": 0.55, "JP": 0.55,
+    "Korean": 0.40,   "KR": 0.40,
+}
+_ITEM_TYPE_UNDERCUT: dict = {
+    "Single": 0.95,
+    "Sealed": 0.97,
+    "Graded": 1.10,
+}
+_GRADE_MULTIPLIER: dict = {
+    "10": 2.5, "9.5": 1.9, "9": 1.5, "8.5": 1.25, "8": 1.0,
+}
+_ROUNDING_RULES: list = [(5, 0.25), (20, 0.50), (100, 1.00), (9999, 5.00)]
+
+
+def _round_price(price: float) -> float:
+    for limit, step in _ROUNDING_RULES:
+        if price <= limit:
+            return round(round(price / step) * step, 2)
+    return round(price, 2)
+
+
+def _calculate_final_price(base: float, language: str = "English",
+                            item_type: str = "Single", grade: str = "") -> float:
+    """Apply language discount, grade premium, item-type undercut, then round."""
+    p = base * _LANGUAGE_PRICE_RULES.get(language, 1.0)
+    if grade:
+        p *= _GRADE_MULTIPLIER.get(grade, 1.0)
+    p *= _ITEM_TYPE_UNDERCUT.get(item_type, 1.0)
+    return _round_price(p)
+
+
 def init_db():
     db = _direct_db()
 
@@ -476,6 +513,15 @@ def init_db():
             pubkey        TEXT PRIMARY KEY,
             friendly_name TEXT NOT NULL DEFAULT ''
         )""",
+        f"""CREATE TABLE IF NOT EXISTS goals (
+            id           BIGSERIAL PRIMARY KEY,
+            title        TEXT NOT NULL,
+            type         TEXT NOT NULL DEFAULT 'card_count',
+            target_value INTEGER NOT NULL DEFAULT 1,
+            target_set   TEXT NOT NULL DEFAULT '',
+            completed    INTEGER NOT NULL DEFAULT 0,
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
     ]
 
     for stmt in _ddl_statements:
@@ -492,9 +538,19 @@ def init_db():
         return r is not None
 
     for col, ddl in [
-        ("source",    "ALTER TABLE sales     ADD COLUMN source    TEXT NOT NULL DEFAULT 'local'"),
-        ("image_url", "ALTER TABLE inventory ADD COLUMN image_url TEXT NOT NULL DEFAULT ''"),
-        ("tcg_id",    "ALTER TABLE inventory ADD COLUMN tcg_id    TEXT NOT NULL DEFAULT ''"),
+        ("source",          "ALTER TABLE sales     ADD COLUMN source          TEXT NOT NULL DEFAULT 'local'"),
+        ("image_url",       "ALTER TABLE inventory ADD COLUMN image_url       TEXT NOT NULL DEFAULT ''"),
+        ("tcg_id",          "ALTER TABLE inventory ADD COLUMN tcg_id          TEXT NOT NULL DEFAULT ''"),
+        ("language",        "ALTER TABLE inventory ADD COLUMN language         TEXT NOT NULL DEFAULT 'English'"),
+        ("condition",       "ALTER TABLE inventory ADD COLUMN condition        TEXT NOT NULL DEFAULT 'NM'"),
+        ("item_type",       "ALTER TABLE inventory ADD COLUMN item_type        TEXT NOT NULL DEFAULT 'Single'"),
+        ("grading_company", "ALTER TABLE inventory ADD COLUMN grading_company  TEXT NOT NULL DEFAULT ''"),
+        ("grade",           "ALTER TABLE inventory ADD COLUMN grade            TEXT NOT NULL DEFAULT ''"),
+        ("cert_number",     "ALTER TABLE inventory ADD COLUMN cert_number      TEXT NOT NULL DEFAULT ''"),
+        ("back_image_url",  "ALTER TABLE inventory ADD COLUMN back_image_url   TEXT NOT NULL DEFAULT ''"),
+        ("purchase_price",  "ALTER TABLE inventory ADD COLUMN purchase_price   DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("sale_price",      "ALTER TABLE inventory ADD COLUMN sale_price       DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("tags",            "ALTER TABLE inventory ADD COLUMN tags             TEXT NOT NULL DEFAULT ''"),
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
@@ -2139,28 +2195,55 @@ def admin_add_product():
     if not qr_code or not name:
         return jsonify({"error": "qrCode and name are required"}), 400
 
-    image_url = (data.get("imageUrl") or data.get("image_url") or "").strip()
-    tcg_id    = (data.get("tcgId")    or data.get("tcg_id")    or "").strip()
+    image_url      = (data.get("imageUrl")     or data.get("image_url")      or "").strip()
+    tcg_id         = (data.get("tcgId")        or data.get("tcg_id")         or "").strip()
+    back_image_url = (data.get("backImageUrl") or data.get("back_image_url") or "").strip()
+    language       = (data.get("language")      or "English").strip()
+    condition      = (data.get("condition")     or "NM").strip()
+    item_type      = (data.get("itemType")      or data.get("item_type")  or "Single").strip()
+    grading_co     = (data.get("gradingCompany") or data.get("grading_company") or "").strip()
+    grade          = (data.get("grade")         or "").strip()
+    cert_number    = (data.get("certNumber")    or data.get("cert_number")    or "").strip()
+    tags           = ",".join(data.get("tags") or []) if isinstance(data.get("tags"), list) \
+                     else (data.get("tags") or "").strip()
+
+    base_price     = float(data.get("price", 0))
+    purchase_price = float(data.get("purchasePrice") or data.get("purchase_price") or 0)
+    sale_price     = float(data.get("salePrice")     or data.get("sale_price")     or 0)
+
+    # Auto-apply pricing engine if caller sends base_market_price
+    base_market = float(data.get("baseMarketPrice") or data.get("base_market_price") or 0)
+    if base_market and not base_price:
+        base_price = _calculate_final_price(base_market, language, item_type, grade)
 
     db = get_db()
     db.execute("""
         INSERT INTO inventory
             (qr_code, name, price, category, rarity, set_code, description, stock,
-             image_url, tcg_id, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             image_url, tcg_id, last_updated,
+             language, condition, item_type, grading_company, grade, cert_number,
+             back_image_url, purchase_price, sale_price, tags)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT(qr_code) DO UPDATE SET
             name=excluded.name, price=excluded.price, category=excluded.category,
             rarity=excluded.rarity, set_code=excluded.set_code,
             description=excluded.description, stock=excluded.stock,
-            image_url=CASE WHEN excluded.image_url!='' THEN excluded.image_url ELSE image_url END,
-            tcg_id=CASE WHEN excluded.tcg_id!=''    THEN excluded.tcg_id    ELSE tcg_id    END,
-            last_updated=excluded.last_updated
+            image_url=CASE WHEN excluded.image_url!='' THEN excluded.image_url ELSE inventory.image_url END,
+            tcg_id=CASE WHEN excluded.tcg_id!=''    THEN excluded.tcg_id    ELSE inventory.tcg_id    END,
+            language=excluded.language, condition=excluded.condition,
+            item_type=excluded.item_type, grading_company=excluded.grading_company,
+            grade=excluded.grade, cert_number=excluded.cert_number,
+            back_image_url=CASE WHEN excluded.back_image_url!='' THEN excluded.back_image_url ELSE inventory.back_image_url END,
+            purchase_price=excluded.purchase_price, sale_price=excluded.sale_price,
+            tags=excluded.tags, last_updated=excluded.last_updated
     """, (
         qr_code, name,
-        float(data.get("price", 0)), data.get("category", "General"),
+        base_price, data.get("category", "General"),
         data.get("rarity", ""), data.get("setCode") or data.get("set_code", ""),
         data.get("description", ""), int(data.get("stock", 0)),
         image_url, tcg_id, _now_ms(),
+        language, condition, item_type, grading_co, grade, cert_number,
+        back_image_url, purchase_price, sale_price, tags,
     ))
     db.commit()
     _invalidate_inventory()
@@ -2170,13 +2253,18 @@ def admin_add_product():
         "event":       "card_saved",
         "qrCode":      qr_code,
         "name":        name,
-        "price":       float(data.get("price", 0)),
+        "price":       base_price,
         "category":    data.get("category", "General"),
         "rarity":      data.get("rarity", ""),
         "setCode":     data.get("setCode") or data.get("set_code", ""),
         "stock":       int(data.get("stock", 0)),
         "imageUrl":    image_url,
         "tcgId":       tcg_id,
+        "language":    language,
+        "condition":   condition,
+        "itemType":    item_type,
+        "grade":       grade,
+        "tags":        tags,
         "savedAt":     _now_ms(),
     }
     threading.Thread(target=_fire_webhook, args=(webhook_payload,), daemon=True).start()
@@ -3830,7 +3918,7 @@ def admin_stats_partial():
                COALESCE(SUM(total_amount), 0) as revenue,
                COALESCE(SUM(tax_amount),   0) as tax,
                COALESCE(SUM(tip_amount),   0) as tips
-        FROM sales WHERE timestamp_ms >= ?
+        FROM sales WHERE timestamp_ms >= %s
     """, (midnight_ms,)).fetchone()
     inv_count  = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     low_count  = db.execute("SELECT COUNT(*) FROM inventory WHERE stock <= 5").fetchone()[0]
@@ -3842,7 +3930,7 @@ def admin_stats_partial():
         next_ms = day_ms + 86_400_000
         rev = db.execute(
             "SELECT COALESCE(SUM(total_amount),0) FROM sales "
-            "WHERE timestamp_ms >= ? AND timestamp_ms < ?",
+            "WHERE timestamp_ms >= %s AND timestamp_ms < %s",
             (day_ms, next_ms)
         ).fetchone()[0]
         seven_days.append({"label": d.strftime("%a"), "revenue": round(rev, 2)})
@@ -4065,6 +4153,378 @@ def require_admin(fn):
     return _wrapped
 
 
+# ---------------------------------------------------------------------------
+# Pricing engine API
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/price-calc", methods=["GET"])
+@require_admin
+def admin_price_calc():
+    """Return suggested sell price given base market price + card attributes."""
+    try:
+        base      = float(request.args.get("base", 0))
+        language  = request.args.get("lang", "English")
+        item_type = request.args.get("type", "Single")
+        grade     = request.args.get("grade", "")
+        return jsonify({
+            "suggested_price": _calculate_final_price(base, language, item_type, grade),
+            "language":        language,
+            "item_type":       item_type,
+            "grade":           grade,
+            "multipliers": {
+                "language":   _LANGUAGE_PRICE_RULES.get(language, 1.0),
+                "grade":      _GRADE_MULTIPLIER.get(grade, 1.0) if grade else None,
+                "item_type":  _ITEM_TYPE_UNDERCUT.get(item_type, 1.0),
+            },
+        })
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# Goals  (collection targets with progress tracking)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/goals", methods=["GET"])
+@require_admin
+def admin_goals_get():
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, title, type, target_value, target_set, completed, created_at "
+        "FROM goals ORDER BY created_at DESC"
+    ).fetchall()
+    # Compute progress for each goal
+    total_cards  = db.execute("SELECT COUNT(*) FROM inventory WHERE stock>0").fetchone()[0]
+    total_value  = db.execute("SELECT COALESCE(SUM(price*stock),0) FROM inventory WHERE stock>0").fetchone()[0]
+    goals = []
+    for r in rows:
+        g = {
+            "id": r[0], "title": r[1], "type": r[2],
+            "targetValue": r[3], "targetSet": r[4],
+            "completed": bool(r[5]), "createdAt": r[6],
+        }
+        if g["type"] == "card_count":
+            g["current"] = total_cards
+        elif g["type"] == "value_target":
+            g["current"] = float(total_value)
+        elif g["type"] == "set_completion" and g["targetSet"]:
+            g["current"] = db.execute(
+                "SELECT COUNT(*) FROM inventory WHERE set_code=%s AND stock>0",
+                (g["targetSet"],)
+            ).fetchone()[0]
+        else:
+            g["current"] = 0
+        goals.append(g)
+    return jsonify(goals)
+
+
+@app.route("/admin/goals", methods=["POST"])
+@require_admin
+def admin_goals_post():
+    data = request.get_json(force=True, silent=True) or {}
+    title  = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO goals (title, type, target_value, target_set) VALUES (%s, %s, %s, %s)",
+        (title, data.get("type", "card_count"),
+         int(data.get("targetValue") or data.get("target_value") or 1),
+         data.get("targetSet") or data.get("target_set") or ""),
+    )
+    db.commit()
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/admin/goals/<int:goal_id>", methods=["PATCH"])
+@require_admin
+def admin_goals_patch(goal_id):
+    data = request.get_json(force=True, silent=True) or {}
+    db   = get_db()
+    row  = db.execute("SELECT id FROM goals WHERE id=%s", (goal_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    if "completed" in data:
+        db.execute("UPDATE goals SET completed=%s WHERE id=%s",
+                   (1 if data["completed"] else 0, goal_id))
+    if "title" in data:
+        db.execute("UPDATE goals SET title=%s WHERE id=%s",
+                   (data["title"].strip(), goal_id))
+    if "targetValue" in data or "target_value" in data:
+        db.execute("UPDATE goals SET target_value=%s WHERE id=%s",
+                   (int(data.get("targetValue") or data.get("target_value")), goal_id))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/goals/<int:goal_id>", methods=["DELETE"])
+@require_admin
+def admin_goals_delete(goal_id):
+    db = get_db()
+    db.execute("DELETE FROM goals WHERE id=%s", (goal_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Collection sharing  (public read-only share link)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/share-token", methods=["GET"])
+@require_admin
+def admin_get_share_token():
+    db  = get_db()
+    row = db.execute("SELECT value FROM server_state WHERE key='share_token'").fetchone()
+    return jsonify({"token": row[0] if row else None})
+
+
+@app.route("/admin/share-token", methods=["POST"])
+@require_admin
+def admin_create_share_token():
+    import secrets as _secrets
+    token = _secrets.token_hex(20)
+    db    = get_db()
+    db.execute(
+        "INSERT INTO server_state (key, value) VALUES ('share_token', %s) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (token,)
+    )
+    db.commit()
+    return jsonify({"token": token})
+
+
+@app.route("/admin/share-token", methods=["DELETE"])
+@require_admin
+def admin_delete_share_token():
+    db = get_db()
+    db.execute("DELETE FROM server_state WHERE key='share_token'")
+    db.commit()
+    return jsonify({"token": None})
+
+
+@app.route("/share/<token>", methods=["GET"])
+def public_share(token):
+    """Public read-only card collection page — no auth required."""
+    db  = get_db()
+    row = db.execute("SELECT value FROM server_state WHERE key='share_token'").fetchone()
+    if not row or row[0] != token:
+        return "<h2>This collection link is invalid or has been revoked.</h2>", 404
+
+    cards = db.execute(
+        "SELECT qr_code, name, price, rarity, set_code, stock, image_url, "
+        "language, condition, item_type, grade, tags "
+        "FROM inventory WHERE stock>0 ORDER BY name"
+    ).fetchall()
+
+    rows_html = ""
+    for c in cards:
+        img = f'<img src="{c[6]}" style="height:40px;border-radius:4px">' if c[6] else "—"
+        tags_html = "".join(f'<span style="background:#1e3a5f;border-radius:4px;padding:1px 6px;font-size:11px;margin:1px">{t}</span>'
+                            for t in (c[11] or "").split(",") if t.strip())
+        rows_html += (
+            f"<tr><td>{img}</td><td>{c[1]}</td>"
+            f"<td>{c[3] or '—'}</td><td>{c[4] or '—'}</td>"
+            f"<td>{c[7]}</td><td>{c[8]}</td><td>{c[9]}</td>"
+            f"<td>{'⭐ ' + c[10] if c[10] else '—'}</td>"
+            f"<td>${float(c[2]):.2f}</td><td>{c[5]}</td>"
+            f"<td>{tags_html}</td></tr>\n"
+        )
+    total_val = sum(float(c[2]) * int(c[5]) for c in cards)
+
+    html = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Card Collection</title>
+<style>
+  body{{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e2e8f0;margin:0;padding:16px}}
+  h1{{color:#facc15;font-size:1.5rem;margin-bottom:4px}}
+  .subtitle{{color:#94a3b8;font-size:.85rem;margin-bottom:16px}}
+  table{{width:100%;border-collapse:collapse;font-size:.85rem}}
+  th{{background:#1e293b;color:#94a3b8;padding:8px 10px;text-align:left;position:sticky;top:0}}
+  td{{padding:6px 10px;border-bottom:1px solid #1e293b}}
+  tr:hover td{{background:#0f172a}}
+  .search{{background:#1e293b;border:1px solid #334155;color:#e2e8f0;
+           padding:8px 14px;border-radius:8px;width:100%;max-width:340px;
+           margin-bottom:14px;font-size:.9rem}}
+  .stats{{display:flex;gap:24px;margin-bottom:16px;flex-wrap:wrap}}
+  .stat{{background:#1e293b;border-radius:8px;padding:10px 18px}}
+  .stat-val{{font-size:1.3rem;font-weight:700;color:#38bdf8}}
+  .stat-lbl{{font-size:.75rem;color:#64748b}}
+</style></head><body>
+<h1>HanryxVault — Card Collection</h1>
+<p class="subtitle">Public view · {len(cards)} cards listed</p>
+<div class="stats">
+  <div class="stat"><div class="stat-val">{len(cards)}</div><div class="stat-lbl">Cards</div></div>
+  <div class="stat"><div class="stat-val">${total_val:,.2f}</div><div class="stat-lbl">Total Value</div></div>
+</div>
+<input class="search" id="srch" placeholder="Search by name, set, rarity…" oninput="filter()">
+<table id="tbl">
+<thead><tr><th>Image</th><th>Name</th><th>Rarity</th><th>Set</th>
+<th>Lang</th><th>Cond</th><th>Type</th><th>Grade</th>
+<th>Price</th><th>Stock</th><th>Tags</th></tr></thead>
+<tbody id="tbody">{rows_html}</tbody>
+</table>
+<script>
+function filter(){{
+  const q=document.getElementById('srch').value.toLowerCase();
+  document.querySelectorAll('#tbody tr').forEach(r=>{{
+    r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';
+  }});
+}}
+</script></body></html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
+# Price change alerts  (cards with >15% market price movement)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/price-alerts", methods=["GET"])
+@require_admin
+def admin_price_alerts():
+    """Return cards whose market price moved >15% between first and latest reading."""
+    threshold = float(request.args.get("threshold", 15))
+    db = get_db()
+    # Get min/max price per card_id from price_history
+    rows = db.execute("""
+        SELECT
+            ph.card_id,
+            ph.card_name,
+            MIN(ph.market_price) AS price_low,
+            MAX(ph.market_price) AS price_high,
+            (SELECT market_price FROM price_history p2
+             WHERE p2.card_id=ph.card_id ORDER BY p2.fetched_ms ASC LIMIT 1) AS first_price,
+            (SELECT market_price FROM price_history p3
+             WHERE p3.card_id=ph.card_id ORDER BY p3.fetched_ms DESC LIMIT 1) AS last_price,
+            COUNT(*) AS readings
+        FROM price_history ph
+        GROUP BY ph.card_id, ph.card_name
+        HAVING COUNT(*) >= 2
+    """).fetchall()
+
+    alerts = []
+    for r in rows:
+        first, last = float(r[4] or 0), float(r[5] or 0)
+        if first <= 0:
+            continue
+        pct_change = ((last - first) / first) * 100
+        if abs(pct_change) >= threshold:
+            alerts.append({
+                "cardId":     r[0],
+                "cardName":   r[1],
+                "firstPrice": round(first, 2),
+                "lastPrice":  round(last, 2),
+                "pctChange":  round(pct_change, 1),
+                "direction":  "up" if pct_change > 0 else "down",
+                "readings":   r[6],
+            })
+    alerts.sort(key=lambda a: abs(a["pctChange"]), reverse=True)
+    return jsonify(alerts)
+
+
+# ---------------------------------------------------------------------------
+# Valuation report  (printable profit/loss table)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/valuation-report", methods=["GET"])
+@require_admin
+def admin_valuation_report():
+    """Printable HTML valuation report with profit/loss per card."""
+    db = get_db()
+    cards = db.execute("""
+        SELECT name, set_code, condition, language, stock, price,
+               purchase_price, sale_price, rarity, item_type, grade
+        FROM inventory
+        WHERE stock > 0
+        ORDER BY name
+    """).fetchall()
+
+    total_market = total_cost = total_revenue = total_profit = 0.0
+    rows_html = ""
+    for c in cards:
+        name, set_code, cond, lang, qty, price = c[0], c[1], c[2], c[3], int(c[4]), float(c[5])
+        purchase, sale = float(c[6]), float(c[7])
+        rarity, item_type, grade = c[8], c[9], c[10]
+        market_line = price * qty
+        cost_line   = purchase * qty
+        rev_line    = sale * qty if sale else 0
+        profit_line = (sale - purchase) * qty if sale and purchase else 0
+        total_market  += market_line
+        total_cost    += cost_line
+        total_revenue += rev_line
+        total_profit  += profit_line
+        profit_color = "#4ade80" if profit_line >= 0 else "#f87171"
+        grade_str = f" ({grade})" if grade else ""
+        rows_html += (
+            f"<tr>"
+            f"<td>{name}</td><td>{set_code or '—'}</td>"
+            f"<td>{cond}</td><td>{lang}</td><td>{item_type}{grade_str}</td>"
+            f"<td>{qty}</td>"
+            f"<td>${price:.2f}</td><td>${market_line:.2f}</td>"
+            f"<td>${purchase:.2f}</td><td>${cost_line:.2f}</td>"
+            f"<td>{'$'+f'{sale:.2f}' if sale else '—'}</td>"
+            f"<td style='color:{profit_color}'>"
+            f"{'$'+f'{profit_line:+.2f}' if purchase else '—'}</td>"
+            f"</tr>\n"
+        )
+    overall_profit_color = "#4ade80" if total_profit >= 0 else "#f87171"
+
+    html = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>HanryxVault — Valuation Report</title>
+<style>
+  @media print{{
+    .no-print{{display:none!important}}
+    body{{background:#fff!important;color:#000!important}}
+    th{{background:#f1f5f9!important;color:#0f172a!important}}
+    td{{border-color:#e2e8f0!important}}
+    .totals td{{background:#f8fafc!important}}
+  }}
+  body{{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e2e8f0;
+        padding:24px;margin:0;font-size:.82rem}}
+  h1{{color:#facc15;margin-bottom:2px}}
+  .meta{{color:#64748b;font-size:.78rem;margin-bottom:16px}}
+  .no-print{{margin-bottom:14px}}
+  button{{background:#1e3a5f;color:#e2e8f0;border:none;padding:7px 16px;
+          border-radius:6px;cursor:pointer;font-size:.85rem}}
+  table{{width:100%;border-collapse:collapse}}
+  th{{background:#1e293b;color:#94a3b8;padding:7px 9px;text-align:left;
+      position:sticky;top:0;white-space:nowrap}}
+  td{{padding:5px 9px;border-bottom:1px solid #1e293b}}
+  .totals td{{background:#1e293b;font-weight:700;color:#facc15}}
+  .summary{{display:flex;gap:20px;margin-bottom:18px;flex-wrap:wrap}}
+  .scard{{background:#1e293b;border-radius:8px;padding:10px 16px;min-width:140px}}
+  .sval{{font-size:1.2rem;font-weight:700}}
+  .slbl{{font-size:.72rem;color:#64748b;margin-top:2px}}
+</style></head><body>
+<h1>HanryxVault — Valuation Report</h1>
+<p class="meta">Generated {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC
+· {len(cards)} SKUs in stock</p>
+<div class="no-print"><button onclick="window.print()">🖨 Print / Save PDF</button></div>
+<div class="summary">
+  <div class="scard"><div class="sval">{len(cards)}</div><div class="slbl">SKUs</div></div>
+  <div class="scard"><div class="sval">${total_market:,.2f}</div><div class="slbl">Market Value</div></div>
+  <div class="scard"><div class="sval">${total_cost:,.2f}</div><div class="slbl">Cost Basis</div></div>
+  <div class="scard"><div class="sval">${total_revenue:,.2f}</div><div class="slbl">Revenue (sold)</div></div>
+  <div class="scard"><div class="sval" style="color:{overall_profit_color}">${total_profit:+,.2f}</div><div class="slbl">Profit/Loss</div></div>
+</div>
+<table>
+<thead><tr>
+  <th>Name</th><th>Set</th><th>Cond</th><th>Lang</th><th>Type</th><th>Qty</th>
+  <th>Price ea.</th><th>Market Total</th>
+  <th>Purchase ea.</th><th>Cost Total</th>
+  <th>Sale Price</th><th>P/L</th>
+</tr></thead>
+<tbody>{rows_html}</tbody>
+<tfoot class="totals"><tr>
+  <td colspan="7">TOTALS</td>
+  <td>${total_market:,.2f}</td>
+  <td></td>
+  <td>${total_cost:,.2f}</td>
+  <td>${total_revenue:,.2f}</td>
+  <td style="color:{overall_profit_color}">${total_profit:+,.2f}</td>
+</tr></tfoot>
+</table></body></html>"""
+    return html
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
@@ -4108,7 +4568,7 @@ def admin_dashboard():
                COALESCE(SUM(total_amount), 0) as revenue,
                COALESCE(SUM(tax_amount),   0) as tax,
                COALESCE(SUM(tip_amount),   0) as tips
-        FROM sales WHERE timestamp_ms >= ?
+        FROM sales WHERE timestamp_ms >= %s
     """, (midnight_ms,)).fetchone()
 
     recent_sales = db.execute("""
@@ -4173,7 +4633,7 @@ def admin_dashboard():
         _day_ms = int(datetime.datetime.combine(_d, datetime.time.min).timestamp() * 1000)
         _rev    = db.execute(
             "SELECT COALESCE(SUM(total_amount),0) FROM sales "
-            "WHERE timestamp_ms >= ? AND timestamp_ms < ?",
+            "WHERE timestamp_ms >= %s AND timestamp_ms < %s",
             (_day_ms, _day_ms + 86_400_000)
         ).fetchone()[0]
         _spark_vals.append(float(_rev))
@@ -4185,6 +4645,69 @@ def admin_dashboard():
     )
     inv_count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     low_stock_count = len(low_stock)
+
+    # Goals with live progress
+    total_inv_value = db.execute(
+        "SELECT COALESCE(SUM(price*stock),0) FROM inventory WHERE stock>0"
+    ).fetchone()[0]
+    goal_rows = db.execute(
+        "SELECT id, title, type, target_value, target_set, completed FROM goals ORDER BY created_at DESC"
+    ).fetchall()
+    goals_html = ""
+    for gr in goal_rows:
+        gid, gtitle, gtype, gtarget, gset, gcompleted = gr[0], gr[1], gr[2], gr[3], gr[4], gr[5]
+        if gtype == "card_count":
+            gcurrent = inv_count
+        elif gtype == "value_target":
+            gcurrent = float(total_inv_value)
+        elif gtype == "set_completion" and gset:
+            gcurrent = db.execute(
+                "SELECT COUNT(*) FROM inventory WHERE set_code=%s AND stock>0", (gset,)
+            ).fetchone()[0]
+        else:
+            gcurrent = 0
+        pct = min(100, int((gcurrent / gtarget * 100) if gtarget else 0))
+        pct_color = "#4caf50" if pct >= 100 else "#FFD700"
+        strike = "text-decoration:line-through;opacity:.5;" if gcompleted else ""
+        lbl = f"{gcurrent:.0f} / {gtarget}"
+        goals_html += (
+            f'<div style="margin-bottom:10px">'
+            f'<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">'
+            f'<span style="{strike}">{_html.escape(gtitle)}'
+            f'<span style="color:#555;font-size:11px;margin-left:8px">[{gtype}]</span></span>'
+            f'<span style="color:{pct_color}">{pct}% &nbsp; {lbl}</span></div>'
+            f'<div style="background:#1a1a1a;border-radius:4px;height:6px;overflow:hidden">'
+            f'<div style="background:{pct_color};width:{pct}%;height:100%;transition:width .4s"></div></div>'
+            f'<div style="text-align:right;margin-top:3px">'
+            f'<button onclick="toggleGoal({gid},{1 if not gcompleted else 0})" '
+            f'style="background:{"#2d4a2d" if not gcompleted else "#333"};color:#aaa;border:none;'
+            f'padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer">'
+            f'{"✓ Mark Done" if not gcompleted else "↩ Reopen"}</button> '
+            f'<button onclick="deleteGoal({gid})" '
+            f'style="background:#2a1a1a;color:#f44;border:none;padding:2px 8px;border-radius:4px;'
+            f'font-size:11px;cursor:pointer">DEL</button></div></div>'
+        )
+    if not goals_html:
+        goals_html = '<p style="color:#555;font-size:13px">No goals set. Add your first collection goal below.</p>'
+
+    # Share token status
+    share_row = db.execute("SELECT value FROM server_state WHERE key='share_token'").fetchone()
+    share_token = share_row[0] if share_row else None
+    if share_token:
+        share_ui = (
+            f'<p style="color:#4caf50;font-size:13px">✓ Public link active</p>'
+            f'<code style="background:#111;border:1px solid #2a2a2a;border-radius:4px;padding:4px 8px;'
+            f'font-size:11px;word-break:break-all">/share/{share_token}</code>'
+            f'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+            f'<button class="btn-gold" onclick="copyShareLink(\'/share/{share_token}\')" style="font-size:12px">Copy Link</button>'
+            f'<button onclick="revokeShare()" style="background:#2a1a1a;color:#f44;border:1px solid #3a2020;'
+            f'border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer">Revoke</button></div>'
+        )
+    else:
+        share_ui = (
+            '<p style="color:#888;font-size:13px">No public link active.</p>'
+            '<button class="btn-gold" onclick="generateShare()">Generate Share Link</button>'
+        )
 
     nav = _admin_nav("dashboard")
     html = f"""<!DOCTYPE html>
@@ -4285,6 +4808,7 @@ def admin_dashboard():
 <div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp; <span id="clock"></span>
   &nbsp;·&nbsp; <a href="/admin/market">📈 Market Prices</a>
   &nbsp;·&nbsp; <a href="/admin/system">⚙️ System</a>
+  &nbsp;·&nbsp; <a href="/admin/valuation-report" target="_blank" style="color:#facc15">📊 Valuation</a>
   &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;">⬇ APK</a>
 </div>
 
@@ -4333,6 +4857,47 @@ def admin_dashboard():
 <thead><tr><th>Product</th><th>QR Code</th><th>Stock</th><th>Price</th><th>Category</th></tr></thead>
 <tbody>{rows_low}</tbody>
 </table>
+
+<!-- ── Collection Goals ─────────────────────────────────────────── -->
+<div class="form-panel" style="border-color:#4caf50;background:#001208;margin-top:24px">
+  <h2 style="color:#4caf50">🎯 COLLECTION GOALS</h2>
+  <div id="goals-list">{goals_html}</div>
+  <details style="margin-top:14px">
+    <summary style="cursor:pointer;color:#888;font-size:12px;letter-spacing:1px">+ Add New Goal</summary>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <label style="display:block;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Title</label>
+        <input id="goal-title" placeholder="e.g. Collect 500 cards" style="background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:7px 10px;font-size:13px;width:200px">
+      </div>
+      <div>
+        <label style="display:block;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Type</label>
+        <select id="goal-type" style="background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:7px 10px;font-size:13px">
+          <option value="card_count">Card Count</option>
+          <option value="value_target">Collection Value ($)</option>
+          <option value="set_completion">Set Completion</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;color:#555;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Target</label>
+        <input id="goal-target" type="number" placeholder="100" style="background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:7px 10px;font-size:13px;width:100px">
+      </div>
+      <button class="btn-gold" onclick="addGoal()" style="background:#2d4a2d">Add Goal</button>
+    </div>
+  </details>
+</div>
+
+<!-- ── Share Collection ─────────────────────────────────────────── -->
+<div class="form-panel" style="border-color:#6366f1;background:#06041a;margin-top:24px">
+  <h2 style="color:#818cf8">🔗 SHARE COLLECTION</h2>
+  <div id="share-ui">{share_ui}</div>
+</div>
+
+<!-- ── Price Change Alerts ──────────────────────────────────────── -->
+<div class="form-panel" style="border-color:#f59e0b;background:#0f0900;margin-top:24px">
+  <h2 style="color:#f59e0b">📉 PRICE CHANGE ALERTS <span style="font-weight:400;font-size:11px;color:#555">(>15% movement)</span></h2>
+  <div id="price-alert-body" style="color:#888;font-size:13px">Loading…</div>
+  <button onclick="loadPriceAlerts()" style="background:#1a1000;color:#f59e0b;border:1px solid #3a2500;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-top:10px">Refresh Alerts</button>
+</div>
 
 <div class="form-panel" id="add-product">
   <h2>Add / Update Product</h2>
@@ -4648,6 +5213,87 @@ async function syncCloud(force) {{
     toast('✓ Prefilled from Market Prices — review and save');
   }} catch(e) {{}}
 }})();
+
+// ── Goals ────────────────────────────────────────────────────────
+async function addGoal() {{
+  const title  = document.getElementById('goal-title').value.trim();
+  const type   = document.getElementById('goal-type').value;
+  const target = parseInt(document.getElementById('goal-target').value) || 1;
+  if (!title) {{ toast('Title is required'); return; }}
+  const r = await fetch('/admin/goals', {{
+    method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{title, type, targetValue: target}})
+  }});
+  if (r.ok) {{ toast('✓ Goal added'); setTimeout(()=>location.reload(), 800); }}
+  else {{ toast('Error adding goal'); }}
+}}
+
+async function toggleGoal(id, completed) {{
+  await fetch(`/admin/goals/${{id}}`, {{
+    method:'PATCH', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{completed}})
+  }});
+  setTimeout(()=>location.reload(), 300);
+}}
+
+async function deleteGoal(id) {{
+  if (!confirm('Delete this goal?')) return;
+  await fetch(`/admin/goals/${{id}}`, {{method:'DELETE'}});
+  setTimeout(()=>location.reload(), 300);
+}}
+
+// ── Share Collection ─────────────────────────────────────────────
+async function generateShare() {{
+  const r = await fetch('/admin/share-token', {{method:'POST'}});
+  const d = await r.json();
+  toast('✓ Share link generated');
+  setTimeout(()=>location.reload(), 800);
+}}
+
+async function revokeShare() {{
+  if (!confirm('Revoke public share link?')) return;
+  await fetch('/admin/share-token', {{method:'DELETE'}});
+  toast('Link revoked');
+  setTimeout(()=>location.reload(), 800);
+}}
+
+function copyShareLink(path) {{
+  const url = `${{window.location.origin}}${{path}}`;
+  navigator.clipboard.writeText(url).then(()=>toast('✓ Link copied!')).catch(()=>toast(url));
+}}
+
+// ── Price Alerts ─────────────────────────────────────────────────
+async function loadPriceAlerts() {{
+  const el = document.getElementById('price-alert-body');
+  el.textContent = 'Loading…';
+  try {{
+    const r = await fetch('/admin/price-alerts');
+    const alerts = await r.json();
+    if (!alerts.length) {{
+      el.innerHTML = '<span style="color:#4caf50">✓ No significant price movements detected.</span>';
+      return;
+    }}
+    const rows = alerts.slice(0, 20).map(a => {{
+      const dir   = a.direction === 'up' ? '▲' : '▼';
+      const color = a.direction === 'up' ? '#4ade80' : '#f87171';
+      return `<tr>
+        <td>${{a.cardName}}</td>
+        <td>$${{a.firstPrice.toFixed(2)}}</td>
+        <td style="color:${{color}}">${{dir}} $${{a.lastPrice.toFixed(2)}}</td>
+        <td style="color:${{color}};font-weight:700">${{a.pctChange > 0 ? '+' : ''}}${{a.pctChange}}%</td>
+        <td style="color:#555">${{a.readings}} readings</td>
+      </tr>`;
+    }}).join('');
+    el.innerHTML = `<table style="width:100%;font-size:12px">
+      <thead><tr><th style="text-align:left;color:#555;padding:4px 8px">Card</th>
+      <th style="text-align:left;color:#555;padding:4px 8px">Was</th>
+      <th style="text-align:left;color:#555;padding:4px 8px">Now</th>
+      <th style="text-align:left;color:#555;padding:4px 8px">Change</th>
+      <th style="text-align:left;color:#555;padding:4px 8px">Data Pts</th></tr></thead>
+      <tbody>${{rows}}</tbody></table>`;
+  }} catch(e) {{ el.textContent = 'Error loading alerts'; }}
+}}
+loadPriceAlerts();
 </script>
 </div><!-- /wrap -->
 </body>

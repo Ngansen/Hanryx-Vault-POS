@@ -8,7 +8,14 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
 
-- **TCG API enrichment** — `_tcg_fetch()` / `_tcg_search()` hit `api.pokemontcg.io/v2` with 2-layer cache (in-memory 1h + SQLite 24h). Optional `PTCG_API_KEY` env var for 20k/day rate limit.
+- **Pricing engine** — `_calculate_final_price(base, language, item_type, grade)` applies language discounts (JP 0.55x, KR 0.40x), grade premiums (PSA 10 = 2.5x), item-type undercuts (Single 0.95x, Graded 1.10x), and step rounding. Accessible via `GET /admin/price-calc`.
+- **Collection Goals** — `goals` table with CRUD (`GET/POST /admin/goals`, `PATCH/DELETE /admin/goals/<id>`). Shows progress bars on admin dashboard for card_count, value_target, set_completion types.
+- **Collection Sharing** — `POST /admin/share-token` generates a public read-only link (`/share/<token>`). No auth required on public page. Revocable via `DELETE /admin/share-token`.
+- **Price Change Alerts** — `GET /admin/price-alerts` returns cards with >15% market price movement (using price_history table). Shown live on admin dashboard with refresh button.
+- **Valuation Report** — `GET /admin/valuation-report` generates a print-ready HTML table with name, set, condition, language, qty, market price, cost basis, sale price, and P/L per card. Window.print() compatible.
+- **Enhanced inventory schema** — 10 new columns via safe ALTER TABLE migrations: `language`, `condition`, `item_type`, `grading_company`, `grade`, `cert_number`, `back_image_url`, `purchase_price`, `sale_price`, `tags`.
+- **TCG import scripts** — `pi-setup/import_tcg_db.py` (bulk JSON import), `sync_tcg_db.py` (live API sync), `tcg_lookup.py` (CLI lookup) ported from Card-Scanner-AI project.
+- **TCG API enrichment** — `_tcg_fetch()` / `_tcg_search()` hit `api.pokemontcg.io/v2` with 2-layer cache (in-memory 1h + PostgreSQL 24h). Optional `PTCG_API_KEY` env var for 20k/day rate limit.
 - **`/card/enrich`** — combined local inventory + full TCG data (name, HP, types, image, market prices) in one call; used by scan/pending and admin dashboard.
 - **`/card/condition/<qr>`** — GET/POST NM/LP/MP/HP/DMG condition per card stored in `card_conditions` table.
 - **`/admin/export-cards`** — bulk JSON/CSV export for website upload; `?enrich=1` flag adds TCG images + market prices.
