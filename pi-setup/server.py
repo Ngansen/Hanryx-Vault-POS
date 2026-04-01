@@ -4703,6 +4703,7 @@ def _admin_nav(active: str = "dashboard") -> str:
 # ---------------------------------------------------------------------------
 
 @app.route("/system/stats", methods=["GET"])
+@require_admin
 def system_stats():
     svcs = {svc: _sys_service_up(svc) for _, svc in _SYS_SERVICES}
     sites = {}
@@ -4729,6 +4730,7 @@ def system_stats():
 
 
 @app.route("/system/logs", methods=["GET"])
+@require_admin
 def system_logs():
     svc  = request.args.get("service", "hanryxvault")
     n    = min(int(request.args.get("lines", 120)), 500)
@@ -7168,12 +7170,14 @@ def admin_sell_one(qr_code):
 
 
 @app.route("/system/wg-peers", methods=["GET"])
+@require_admin
 def system_wg_peers_api():
     """Return parsed WireGuard peer list as JSON."""
     return jsonify({"peers": _sys_wg_peer_list()})
 
 
 @app.route("/system/wg-peer-name", methods=["POST"])
+@require_admin
 def system_wg_peer_name():
     """Set a friendly name for a WireGuard peer public key."""
     data    = request.get_json(silent=True) or {}
@@ -7196,6 +7200,7 @@ def system_wg_peer_name():
 # ---------------------------------------------------------------------------
 
 @app.route("/system/service-action", methods=["POST"])
+@require_admin
 def system_service_action():
     data    = request.get_json(silent=True) or {}
     action  = data.get("action", "")
@@ -7221,6 +7226,7 @@ def system_service_action():
 # ---------------------------------------------------------------------------
 
 @app.route("/system/backup-db", methods=["POST"])
+@require_admin
 def system_backup_db():
     import subprocess
     ts      = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
