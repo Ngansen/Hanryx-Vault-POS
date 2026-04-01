@@ -1,0 +1,241 @@
+some suggestions I got
+Add request-level caching + ETag support
+Add rate limiting
+real task queue (Celery/RQ)
+Add API authentication (lightweight)
+Increase connection pool size dynamically
+Make max configurable via env:
+Add indexing for search fields
+Add health check for DB connection
+Add retry wrapper for _requests
+Add timeout + fallback for TCG API
+Add a normalize lookup column in DB
+ALTER TABLE inventory ADD COLUMN search_key TEXT;
+CREATE INDEX idx_inventory_search_key ON inventory(search_key);
+
+rapidfuzz
+_scan_learning_cache[raw_scan] = correct_card
+Parallel Enrichment
+Auto-Detect Card Variants
+
+Use:
+
+rarity
+holo
+reverse holo
+first edition
+
+take a look at this code 
+
+# ---------------------------------------------------------------------------
+# SMART POKEMON SCAN ENGINE
+# ---------------------------------------------------------------------------
+
+from rapidfuzz import fuzz, process
+import re
+import threading
+
+# In-memory learning cache (scan → resolved card)
+_scan_learning_cache = {}
+
+# Preloaded inventory cache (call at startup or refresh)
+_inventory_lookup = []   # list of dicts
+_inventory_name_index = []  # list of names for fuzzy match
+
+
+# ---------------------------------------------------------------------------
+# NORMALIZATION
+# ---------------------------------------------------------------------------
+
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
+# ---------------------------------------------------------------------------
+# PARSE SET + NUMBER (SV1-001 etc.)
+# ---------------------------------------------------------------------------
+
+def parse_card_code(qr: str):
+    match = re.search(r'([A-Z0-9]+)[- ]?(\d{1,3})', qr.upper())
+    if match:
+        return match.group(1), match.group(2).zfill(3)
+    return None, None
+
+
+# ---------------------------------------------------------------------------
+# LOAD INVENTORY INTO MEMORY (FAST LOOKUPS)
+# ---------------------------------------------------------------------------
+
+def load_inventory_cache(db):
+    global _inventory_lookup, _inventory_name_index
+
+    rows = db.execute("SELECT * FROM inventory").fetchall()
+
+    _inventory_lookup = []
+    _inventory_name_index = []
+
+    for r in rows:
+        item = dict(r)
+        item["norm_name"] = normalize(item["name"])
+        _inventory_lookup.append(item)
+        _inventory_name_index.append(item["name"])
+
+    print(f"[SCAN] Loaded {len(_inventory_lookup)} cards into memory")
+
+
+# ---------------------------------------------------------------------------
+# EXACT QR MATCH
+# ---------------------------------------------------------------------------
+
+def exact_match(qr: str):
+    for item in _inventory_lookup:
+        if item["qr_code"] == qr:
+            return item, 1.0, "exact_qr"
+    return None, 0, None
+
+
+# ---------------------------------------------------------------------------
+# SET + NUMBER MATCH
+# ---------------------------------------------------------------------------
+
+def set_number_match(qr: str):
+    set_code, number = parse_card_code(qr)
+    if not set_code:
+        return None, 0, None
+
+    for item in _inventory_lookup:
+        if (
+            item.get("set_code", "").upper() == set_code and
+            str(item.get("qr_code", "")).endswith(number)
+        ):
+            return item, 0.95, "set_number"
+
+    return None, 0, None
+
+
+# ---------------------------------------------------------------------------
+# FUZZY NAME MATCH (FAST)
+# ---------------------------------------------------------------------------
+
+def fuzzy_match(query: str):
+    if not query:
+        return None, 0, None
+
+    result = process.extractOne(
+        query,
+        _inventory_name_index,
+        scorer=fuzz.WRatio
+    )
+
+    if not result:
+        return None, 0, None
+
+    name, score, idx = result
+
+    if score < 70:
+        return None, score / 100, "low_confidence"
+
+    return _inventory_lookup[idx], score / 100, "fuzzy"
+
+
+# ---------------------------------------------------------------------------
+# SCAN MEMORY (LEARNS OVER TIME)
+# ---------------------------------------------------------------------------
+
+def memory_match(qr: str):
+    if qr in _scan_learning_cache:
+        return _scan_learning_cache[qr], 0.99, "memory"
+    return None, 0, None
+
+
+def learn_scan(qr: str, card: dict):
+    _scan_learning_cache[qr] = card
+
+
+# ---------------------------------------------------------------------------
+# MAIN SMART SCAN PIPELINE
+# ---------------------------------------------------------------------------
+
+def smart_scan(qr: str):
+    qr = qr.strip()
+
+    # 1. Memory (fastest after learning)
+    card, conf, method = memory_match(qr)
+    if card:
+        return build_response(card, conf, method)
+
+    # 2. Exact QR
+    card, conf, method = exact_match(qr)
+    if card:
+        return build_response(card, conf, method)
+
+    # 3. Set + Number
+    card, conf, method = set_number_match(qr)
+    if card:
+        return build_response(card, conf, method)
+
+    # 4. Fuzzy match
+    card, conf, method = fuzzy_match(qr)
+    if card:
+        return build_response(card, conf, method)
+
+    # 5. FAIL → return suggestions
+    suggestions = get_suggestions(qr)
+
+    return {
+        "success": False,
+        "suggestions": suggestions,
+        "confidence": 0,
+        "method": "none"
+    }
+
+
+# ---------------------------------------------------------------------------
+# SUGGESTIONS (TOP 3)
+# ---------------------------------------------------------------------------
+
+def get_suggestions(query: str):
+    results = process.extract(
+        query,
+        _inventory_name_index,
+        scorer=fuzz.WRatio,
+        limit=3
+    )
+
+    suggestions = []
+    for name, score, idx in results:
+        suggestions.append({
+            "name": name,
+            "score": score,
+            "card": _inventory_lookup[idx]
+        })
+
+    return suggestions
+
+
+# ---------------------------------------------------------------------------
+# RESPONSE BUILDER
+# ---------------------------------------------------------------------------
+
+def build_response(card, confidence, method):
+    return {
+        "success": True,
+        "card": card,
+        "confidence": round(confidence, 3),
+        "method": method
+    }
+
+
+# ---------------------------------------------------------------------------
+# BACKGROUND ENRICHMENT (NON-BLOCKING)
+# ---------------------------------------------------------------------------
+
+def enrich_card_async(card):
+    def task():
+        try:
+            # Example: call your existing enrichment endpoint or TCG API
+            print(f"[ENRICH] Enriching {card['name']}")
+        except Exception as e:
+            print("[ENRICH ERROR]", e)
+
+    threading.Thread(target=task, daemon=True).start()

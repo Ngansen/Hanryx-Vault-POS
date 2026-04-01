@@ -9,6 +9,9 @@ qrcode[pil]>=7.4.2
 Pillow>=10.0.0
 openai>=1.30.0
 
+# Smart Pokémon scan engine — fuzzy card name matching and scan learning
+rapidfuzz>=3.6.0
+
 # QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
 evdev>=1.6.1
 

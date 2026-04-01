@@ -299,6 +299,268 @@ _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
 # ---------------------------------------------------------------------------
+# Smart Scan Engine — in-memory rapidfuzz index + learning cache
+# ---------------------------------------------------------------------------
+try:
+    from rapidfuzz import fuzz as _fuzz, process as _rfprocess
+    _RAPIDFUZZ_AVAILABLE = True
+except ImportError:
+    _RAPIDFUZZ_AVAILABLE = False
+    log.warning("[smart-scan] rapidfuzz not installed — fuzzy matching disabled (pip install rapidfuzz)")
+
+
+def _smart_normalize(text: str) -> str:
+    """Strip everything except lowercase letters and digits for index comparison."""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
+def _detect_variant(name: str, rarity: str, description: str) -> str:
+    """
+    Infer card variant from metadata fields.
+    Priority: 1st Ed > Reverse Holo > Holo > Promo > Full Art > Secret Rare > Rainbow > ""
+    """
+    combined = f"{name} {rarity} {description}".lower()
+    if "1st edition" in combined or "first edition" in combined:
+        return "1st Edition"
+    if "reverse holo" in combined or "reverse" in rarity.lower():
+        return "Reverse Holo"
+    if "holo" in combined:
+        return "Holo"
+    if "promo" in combined:
+        return "Promo"
+    if "full art" in combined:
+        return "Full Art"
+    if "rainbow" in combined:
+        return "Rainbow Rare"
+    if "secret" in rarity.lower():
+        return "Secret Rare"
+    return ""
+
+
+class _SmartScanner:
+    """
+    In-memory scan resolution pipeline.  Runs on each worker process independently.
+
+    Pipeline priority (returns on first confident match):
+      1. Learning cache — previous confirmed mappings, instant
+      2. Exact in-memory qr_code match
+      3. Set-code + card-number parse and match
+      4. rapidfuzz WRatio name match (threshold 70 / 100)
+      5. FAIL — returns top-3 suggestions
+
+    Invalidated whenever inventory changes (_invalidate_inventory).
+    Loaded lazily on first smart_scan() call after invalidation.
+    """
+
+    FUZZY_THRESHOLD  = 70    # minimum rapidfuzz WRatio score (0–100)
+    MAX_INDEX_SIZE   = 10_000  # safety cap for very large catalogues
+
+    def __init__(self):
+        self._lock         = threading.Lock()
+        self._loaded       = False
+        self._index: list  = []        # list of item dicts (all inventory rows)
+        self._names: list  = []        # parallel list of card names for rapidfuzz
+        self._qr_map: dict = {}        # qr_code → item dict (fast exact lookup)
+        self._learn: dict  = {}        # raw_qr → qr_code (scan learning cache)
+
+    # ── Public interface ──────────────────────────────────────────────────────
+
+    def invalidate(self):
+        with self._lock:
+            self._loaded = False
+            self._index.clear()
+            self._names.clear()
+            self._qr_map.clear()
+            # Intentionally preserve _learn — learned mappings survive invalidations
+
+    def learn(self, raw_qr: str, qr_code: str):
+        """Record that raw_qr resolved to qr_code so future scans are instant."""
+        if raw_qr and qr_code and raw_qr != qr_code:
+            with self._lock:
+                self._learn[raw_qr] = qr_code
+
+    def smart_scan(self, qr: str, db) -> dict:
+        """
+        Run the full resolution pipeline.  Returns:
+          {
+            "found":      bool,
+            "confidence": float (0.0–1.0),
+            "method":     str,
+            "variant":    str,
+            "item":       dict | None,    # inventory row as dict (if found)
+            "suggestions": list           # top-3 name matches (if not found)
+          }
+        """
+        if not _RAPIDFUZZ_AVAILABLE:
+            return self._not_found(qr, [])
+
+        self._ensure_loaded(db)
+        qr = qr.strip()
+
+        # 1 — Learning cache (fastest — previous confirmed mapping)
+        result = self._check_learning(qr)
+        if result:
+            return result
+
+        # 2 — Exact in-memory qr_code match
+        result = self._exact_match(qr)
+        if result:
+            return result
+
+        # 3 — Set + number parse
+        result = self._set_number_match(qr)
+        if result:
+            return result
+
+        # 4 — Fuzzy name match (rapidfuzz WRatio)
+        result = self._fuzzy_match(qr)
+        if result:
+            return result
+
+        # 5 — Failed — return top-3 suggestions
+        return self._not_found(qr, self._get_suggestions(qr))
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _ensure_loaded(self, db):
+        with self._lock:
+            if self._loaded:
+                return
+        try:
+            rows = db.execute(
+                "SELECT qr_code, name, price, category, rarity, set_code, "
+                "description, stock, image_url, tcg_id, condition, item_type "
+                "FROM inventory ORDER BY name ASC LIMIT %s",
+                (self.MAX_INDEX_SIZE,)
+            ).fetchall()
+        except Exception as e:
+            log.warning("[smart-scan] Could not load index: %s", e)
+            return
+
+        items = []
+        names = []
+        qr_map = {}
+        for r in rows:
+            item = dict(r)
+            item["_norm_name"] = _smart_normalize(item.get("name") or "")
+            item["_variant"]   = _detect_variant(
+                item.get("name") or "",
+                item.get("rarity") or "",
+                item.get("description") or "",
+            )
+            items.append(item)
+            names.append(item.get("name") or "")
+            qr_map[item["qr_code"]] = item
+
+        with self._lock:
+            self._index  = items
+            self._names  = names
+            self._qr_map = qr_map
+            self._loaded = True
+        log.info("[smart-scan] Index loaded: %d cards", len(items))
+
+    def _build_result(self, item: dict, confidence: float, method: str) -> dict:
+        return {
+            "found":       True,
+            "confidence":  round(confidence, 3),
+            "method":      method,
+            "variant":     item.get("_variant", ""),
+            "item":        {k: v for k, v in item.items() if not k.startswith("_")},
+            "suggestions": [],
+        }
+
+    def _not_found(self, qr: str, suggestions: list) -> dict:
+        return {
+            "found":       False,
+            "confidence":  0.0,
+            "method":      "none",
+            "variant":     "",
+            "item":        None,
+            "suggestions": suggestions,
+        }
+
+    def _check_learning(self, qr: str) -> dict | None:
+        with self._lock:
+            qr_code = self._learn.get(qr)
+            if not qr_code:
+                return None
+            item = self._qr_map.get(qr_code)
+        if item:
+            return self._build_result(item, 0.99, "learned")
+        return None
+
+    def _exact_match(self, qr: str) -> dict | None:
+        with self._lock:
+            item = self._qr_map.get(qr)
+        if item:
+            return self._build_result(item, 1.0, "exact")
+        return None
+
+    def _set_number_match(self, qr: str) -> dict | None:
+        """Parse SET-NUM patterns like SV1-001 and match by set_code + number."""
+        m = re.search(r'\b([A-Za-z]{2,8})[- ]?0*(\d{1,4}[a-zA-Z]?)\b', qr)
+        if not m:
+            return None
+        set_code = m.group(1).upper()
+        number   = m.group(2).lstrip("0") or "0"
+        with self._lock:
+            for item in self._index:
+                if (item.get("set_code") or "").upper() == set_code:
+                    qr_tail = (item.get("qr_code") or "").upper()
+                    if qr_tail.endswith(f"-{number}") or qr_tail.endswith(number.zfill(3)):
+                        return self._build_result(item, 0.95, "set_number")
+        return None
+
+    def _fuzzy_match(self, qr: str) -> dict | None:
+        """Fuzzy name match using rapidfuzz WRatio (handles typos, partial names)."""
+        with self._lock:
+            names = list(self._names)
+            index = list(self._index)
+        if not names:
+            return None
+
+        result = _rfprocess.extractOne(
+            qr,
+            names,
+            scorer=_fuzz.WRatio,
+            score_cutoff=self.FUZZY_THRESHOLD,
+        )
+        if not result:
+            return None
+
+        matched_name, score, idx = result
+        item = index[idx]
+        confidence = score / 100.0
+        method = "fuzzy_name" if confidence >= 0.85 else "fuzzy_low"
+        return self._build_result(item, confidence, method)
+
+    def _get_suggestions(self, qr: str) -> list:
+        """Return top-3 fuzzy name suggestions when no match is confident enough."""
+        with self._lock:
+            names = list(self._names)
+            index = list(self._index)
+        if not names:
+            return []
+        results = _rfprocess.extract(qr, names, scorer=_fuzz.WRatio, limit=3)
+        suggestions = []
+        for name, score, idx in results:
+            item = index[idx]
+            suggestions.append({
+                "name":       name,
+                "qrCode":     item.get("qr_code"),
+                "score":      round(score / 100.0, 3),
+                "price":      item.get("price"),
+                "rarity":     item.get("rarity") or "",
+                "variant":    item.get("_variant", ""),
+                "imageUrl":   item.get("image_url") or "",
+            })
+        return suggestions
+
+
+_smart_scanner = _SmartScanner()
+
+
+# ---------------------------------------------------------------------------
 # Pokémon TCG API — config + in-memory cache
 # ---------------------------------------------------------------------------
 _TCG_API_BASE   = "https://api.pokemontcg.io/v2"
@@ -373,6 +635,8 @@ def _invalidate_inventory(qr_code: str | None = None):
             _qr_scan_cache.pop(qr_code, None)
         else:
             _qr_scan_cache.clear()
+    # Also invalidate the smart scanner in-memory index
+    _smart_scanner.invalidate()
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -722,6 +986,7 @@ def init_db():
         ("tags",            "ALTER TABLE inventory ADD COLUMN tags             TEXT NOT NULL DEFAULT ''"),
         ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
         ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
+        ("search_key",      "ALTER TABLE inventory ADD COLUMN search_key       TEXT NOT NULL DEFAULT ''"),
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
@@ -2095,37 +2360,84 @@ def card_scan_fast():
                 (norm,)
             ).fetchone()
 
+    # ── Smart scan fallback — rapidfuzz fuzzy match when exact DB lookup fails ──
+    smart_result = None
     if not row:
-        result = {
-            "found": False, "code": qr,
-            "name": None, "sku": None, "description": None,
-            "price": None, "stock": None, "rawResponse": None,
-        }
-    else:
-        result = {
-            "found": True,
-            "code": row["qr_code"],
-            "name": row["name"],
-            "sku": row["set_code"] or row["qr_code"],
-            "description": row["description"] or "",
-            "price": str(row["price"]) if row["price"] is not None else None,
-            "stock": str(row["stock"])  if row["stock"]  is not None else None,
+        smart_result = _smart_scanner.smart_scan(qr, db)
+        if smart_result and smart_result["found"]:
+            item = smart_result["item"]
+            # Teach the scanner so future identical scans skip fuzzy entirely
+            _smart_scanner.learn(qr, item["qr_code"])
+            # Trigger background enrichment if this card has no TCG data yet
+            if not item.get("tcg_id"):
+                def _bg_enrich(qr_code=item["qr_code"]):
+                    try:
+                        _enrich_with_tcg(None, qr_code)
+                    except Exception as _ee:
+                        log.debug("[smart-scan] bg enrich failed for %s: %s", qr_code, _ee)
+                threading.Thread(target=_bg_enrich, daemon=True).start()
+
+    def _row_to_scan_result(r, confidence=1.0, method="exact", variant=""):
+        return {
+            "found":      True,
+            "code":       r["qr_code"],
+            "name":       r["name"],
+            "sku":        r.get("set_code") or r["qr_code"],
+            "description": r.get("description") or "",
+            "price":      str(r["price"])  if r["price"]  is not None else None,
+            "stock":      str(r["stock"])  if r["stock"]  is not None else None,
+            "confidence": confidence,
+            "method":     method,
+            "variant":    variant or _detect_variant(
+                r.get("name") or "", r.get("rarity") or "", r.get("description") or ""
+            ),
             "rawResponse": {
-                "qrCode":        row["qr_code"],
-                "name":          row["name"],
-                "price":         row["price"],
-                "category":      row["category"] or "General",
-                "rarity":        row["rarity"]   or "",
-                "setCode":       row["set_code"] or "",
-                "description":   row["description"] or "",
-                "stockQuantity": row["stock"],
-                "imageUrl":      row["image_url"] or "",
-                "tcgId":         row["tcg_id"]   or "",
+                "qrCode":        r["qr_code"],
+                "name":          r["name"],
+                "price":         r["price"],
+                "category":      r.get("category") or "General",
+                "rarity":        r.get("rarity")   or "",
+                "setCode":       r.get("set_code") or "",
+                "description":   r.get("description") or "",
+                "stockQuantity": r["stock"],
+                "imageUrl":      r.get("image_url") or "",
+                "tcgId":         r.get("tcg_id")   or "",
             },
         }
 
-    with _cache_lock:
-        _qr_scan_cache[qr] = result
+    if row:
+        result = _row_to_scan_result(row, confidence=1.0, method="exact")
+    elif smart_result and smart_result["found"]:
+        item = smart_result["item"]
+        result = _row_to_scan_result(
+            item,
+            confidence=smart_result["confidence"],
+            method=smart_result["method"],
+            variant=smart_result["variant"],
+        )
+    else:
+        # Nothing found — include fuzzy suggestions so the app can show "Did you mean?"
+        suggestions = (smart_result or {}).get("suggestions", []) if smart_result else []
+        result = {
+            "found":       False,
+            "code":        qr,
+            "name":        None,
+            "sku":         None,
+            "description": None,
+            "price":       None,
+            "stock":       None,
+            "confidence":  0.0,
+            "method":      "none",
+            "variant":     "",
+            "rawResponse": None,
+            "suggestions": suggestions,
+        }
+
+    # Only cache confident matches — low-confidence fuzzy results should re-evaluate
+    # as new inventory is added.
+    if result.get("found") and result.get("confidence", 1.0) >= 0.85:
+        with _cache_lock:
+            _qr_scan_cache[qr] = result
 
     resp = jsonify(result)
     resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -9404,10 +9716,22 @@ def market_price():
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _warmup_smart_scanner():
+    """Pre-load the smart scanner index in the background so the first scan is fast."""
+    try:
+        db = _direct_db()
+        _smart_scanner.smart_scan("__warmup__", db)
+        db.close()
+        log.info("[smart-scan] Index warmed up at startup")
+    except Exception as e:
+        log.warning("[smart-scan] Warm-up failed (non-fatal): %s", e)
+
+
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
     threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
+    threading.Thread(target=_warmup_smart_scanner, daemon=True).start()
     _cleanup_scan_queue()
     log.info("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
