@@ -10609,10 +10609,29 @@ def api_delete_supplier(sid):
 @app.route("/api/v1/stock-alerts", methods=["GET"])
 @require_admin
 def api_list_stock_alerts():
-    db   = get_db()
+    """
+    List low-stock alert configs.  Only sealed products appear here — singles are excluded.
+    Query params: ?eligible=1 lists all sealed products in inventory (for adding alerts).
+    """
+    db = get_db()
+
+    # ?eligible=1 → return all sealed products that could have an alert configured
+    if request.args.get("eligible"):
+        rows = db.execute(
+            "SELECT i.qr_code, i.name, i.stock, i.item_type, "
+            "   lsc.threshold, lsc.alerted "
+            "FROM inventory i "
+            "LEFT JOIN low_stock_config lsc ON lsc.qr_code=i.qr_code "
+            "WHERE LOWER(i.item_type) NOT IN ('single', 'card', '') "
+            "ORDER BY i.item_type, i.name"
+        ).fetchall()
+        return jsonify([dict(r) for r in rows])
+
     rows = db.execute(
-        "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock "
-        "FROM low_stock_config lsc LEFT JOIN inventory i ON i.qr_code=lsc.qr_code "
+        "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock, i.item_type "
+        "FROM low_stock_config lsc "
+        "LEFT JOIN inventory i ON i.qr_code=lsc.qr_code "
+        "WHERE LOWER(COALESCE(i.item_type,'')) NOT IN ('single', 'card') "
         "ORDER BY i.name"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
@@ -10621,12 +10640,29 @@ def api_list_stock_alerts():
 @app.route("/api/v1/stock-alerts", methods=["POST"])
 @require_admin
 def api_set_stock_alert():
+    """
+    Set a low-stock alert threshold for a product.
+    Only valid for sealed products (booster packs, ETBs, boxes, etc.).
+    Individual card singles are excluded — use reorder logic for those.
+    """
     body      = request.get_json(silent=True) or {}
     qr_code   = (body.get("qr_code") or "").strip()
     threshold = max(1, int(body.get("threshold") or 1))
     if not qr_code:
         return jsonify({"error": "qr_code required"}), 400
+
     db = get_db()
+    # Validate item_type — reject individual card singles
+    item_row = db.execute(
+        "SELECT name, item_type FROM inventory WHERE qr_code=%s", (qr_code,)
+    ).fetchone()
+    if item_row and item_row["item_type"] and \
+            item_row["item_type"].lower() in ("single", "card"):
+        return jsonify({
+            "error": "Low-stock alerts are for sealed products only (booster packs, boxes, ETBs). "
+                     f"'{item_row['name']}' is a {item_row['item_type']}."
+        }), 422
+
     db.execute(
         "INSERT INTO low_stock_config (qr_code, threshold, alerted) VALUES (%s, %s, 0) "
         "ON CONFLICT (qr_code) DO UPDATE SET threshold=EXCLUDED.threshold, alerted=0",
@@ -10634,7 +10670,8 @@ def api_set_stock_alert():
     )
     db.commit()
     _audit_write("stock_alert.set", qr_code, f"threshold={threshold}")
-    return jsonify({"ok": True, "qr_code": qr_code, "threshold": threshold}), 201
+    item_name = item_row["name"] if item_row else qr_code
+    return jsonify({"ok": True, "qr_code": qr_code, "name": item_name, "threshold": threshold}), 201
 
 
 @app.route("/api/v1/stock-alerts/<path:qr_code>", methods=["DELETE"])
@@ -10654,11 +10691,13 @@ def _run_low_stock_checker():
     while True:
         try:
             db = _direct_db()
+            # Only alert for sealed/product items — never individual card singles
             rows = db.execute(
-                "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock "
+                "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock, i.item_type "
                 "FROM low_stock_config lsc "
                 "JOIN inventory i ON i.qr_code=lsc.qr_code "
-                "WHERE i.stock <= lsc.threshold AND lsc.alerted=0"
+                "WHERE i.stock <= lsc.threshold AND lsc.alerted=0 "
+                "AND LOWER(i.item_type) NOT IN ('single', 'card')"
             ).fetchall()
             for r in rows:
                 cfg = _get_email_cfg()
