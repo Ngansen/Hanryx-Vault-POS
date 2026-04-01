@@ -1,0 +1,10 @@
+# HanryxVault Desktop Monitor — dependencies
+# Install with: pip install -r monitor_requirements.txt
+
+# Cross-platform CPU / RAM / disk / temperature stats
+psutil>=5.9.0
+
+# Only needed if you want to build a Windows .exe:
+# pip install pyinstaller
+# Then run: build_exe.bat  (Windows)  or  build_exe.sh  (Linux/Pi)
+pyinstaller>=6.0.0
