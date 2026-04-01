@@ -71,22 +71,33 @@ import psycopg2.extras
 import psycopg2.pool
 import json
 import datetime
+import functools
 import hashlib
 import html as _html
+import logging
 import os
 import re
 import subprocess
 import threading
 import time as _time
 import urllib.parse
-import urllib.request
-import urllib.error
 import base64
 import csv
 import io
-from flask import Flask, request, jsonify, redirect, g
+import requests as _requests
+from flask import Flask, request, jsonify, redirect, g, session, render_template_string
 from flask_compress import Compress
 from cachetools import TTLCache
+
+# ---------------------------------------------------------------------------
+# Logging — replaces bare print() throughout the module
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("hanryxvault")
 
 # ---------------------------------------------------------------------------
 # Zettle OAuth + Payment configuration
@@ -108,18 +119,17 @@ def _basic_auth():
 
 
 def _token_post(form_data):
-    data = urllib.parse.urlencode(form_data).encode()
-    req  = urllib.request.Request(
+    resp = _requests.post(
         f"{ZETTLE_OAUTH_BASE}/token",
-        data=data,
+        data=form_data,
         headers={
             "Authorization": f"Basic {_basic_auth()}",
             "Content-Type":  "application/x-www-form-urlencoded",
         },
-        method="POST",
+        timeout=15,
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read())
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _persist_tokens():
@@ -136,7 +146,7 @@ def _persist_tokens():
         db.commit()
         db.close()
     except Exception as e:
-        print(f"[zettle] Token persist failed: {e}")
+        log.error("[zettle] Token persist failed: %s", e)
 
 
 def _load_tokens_from_db():
@@ -152,9 +162,9 @@ def _load_tokens_from_db():
             with _token_lock:
                 _zettle_state.update(saved)
             if _zettle_state.get("access_token"):
-                print("[zettle] Restored tokens from DB — no re-auth needed")
+                log.info("[zettle] Restored tokens from DB — no re-auth needed")
     except Exception as e:
-        print(f"[zettle] Token restore failed (first run?): {e}")
+        log.warning("[zettle] Token restore failed (first run?): %s", e)
 
 
 def _store_tokens(result):
@@ -179,7 +189,7 @@ def _refresh_token_if_needed():
         _store_tokens(result)
         return result.get("access_token")
     except Exception as e:
-        print(f"[zettle] Token refresh failed: {e}")
+        log.error("[zettle] Token refresh failed: %s", e)
         return None
 
 
@@ -189,6 +199,16 @@ def _refresh_token_if_needed():
 
 app = Flask(__name__)
 Compress(app)  # gzip all responses automatically
+
+# Session secret — required for admin login cookies and Zettle CSRF state
+app.secret_key = os.environ.get("SESSION_SECRET") or os.environ.get(
+    "SECRET_KEY", "dev-secret-change-me-in-production"
+)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# Admin panel password — set ADMIN_PASSWORD env var on the Pi
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "hanryxvault")
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -324,10 +344,15 @@ def _invalidate_inventory():
     with _cache_lock:
         _inventory_cache.clear()
 
-CLOUD_INVENTORY_SOURCES = [
-    "https://inventory-scanner-ngansen84.replit.app/api/inventory",
-    "https://hanryxvault.app/api/products",
-]
+_cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
+CLOUD_INVENTORY_SOURCES = (
+    [s.strip() for s in _cloud_sources_env.split(",") if s.strip()]
+    if _cloud_sources_env
+    else [
+        "https://inventory-scanner-ngansen84.replit.app/api/inventory",
+        "https://hanryxvault.app/api/products",
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # Database — thread-local connections (gunicorn multi-worker safe)
@@ -475,10 +500,10 @@ def init_db():
         if not _col_exists(table, col):
             db.execute(ddl)
             db.commit()
-            print(f"[DB] Migration: added {table}.{col} column")
+            log.info("[DB] Migration: added %s.%s column", table, col)
 
     db.close()
-    print("[DB] Initialized PostgreSQL database")
+    log.info("[DB] Initialized PostgreSQL database")
 
 
 # ---------------------------------------------------------------------------
@@ -493,7 +518,7 @@ def sync_inventory_from_cloud(force: bool = False) -> dict:
         count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
         if count > 0:
             db.close()
-            print(f"[cloud-sync] Inventory has {count} products — skipping auto-sync")
+            log.info("[cloud-sync] Inventory has %d products — skipping auto-sync", count)
             return {"skipped": True, "existing": count}
 
     total_upserted = 0
@@ -502,11 +527,13 @@ def sync_inventory_from_cloud(force: bool = False) -> dict:
 
     for url in CLOUD_INVENTORY_SOURCES:
         try:
-            req = urllib.request.Request(
-                url, headers={"Accept": "application/json", "User-Agent": "HanryxVaultPi/2.0"}
+            resp = _requests.get(
+                url,
+                headers={"Accept": "application/json", "User-Agent": "HanryxVaultPi/2.0"},
+                timeout=15,
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                items = json.loads(resp.read().decode())
+            resp.raise_for_status()
+            items = resp.json()
 
             if not isinstance(items, list):
                 items = items.get("items") or items.get("products") or items.get("inventory") or []
@@ -539,17 +566,18 @@ def sync_inventory_from_cloud(force: bool = False) -> dict:
                     ))
                     upserted += 1
                 except Exception as row_err:
-                    print(f"[cloud-sync] Row error ({url}): {row_err}")
+                    log.warning("[cloud-sync] Row error (%s): %s", url, row_err)
                     total_skipped += 1
 
             db.commit()
             total_upserted += upserted
             results[url] = {"ok": True, "upserted": upserted}
-            print(f"[cloud-sync] {url} → {upserted} upserted")
+            log.info("[cloud-sync] %s → %d upserted", url, upserted)
 
         except Exception as e:
+            db.rollback() if hasattr(db, "rollback") else None
             results[url] = {"ok": False, "error": str(e)}
-            print(f"[cloud-sync] Failed {url}: {e}")
+            log.error("[cloud-sync] Failed %s: %s", url, e)
 
     db.close()
     return {"upserted": total_upserted, "skipped": total_skipped, "sources": results}
@@ -565,9 +593,9 @@ def _cleanup_scan_queue():
         )
         deleted = cur.rowcount
         db.close()
-        print(f"[cleanup] Removed {deleted} stale scan_queue rows")
+        log.info("[cleanup] Removed %d stale scan_queue rows", deleted)
     except Exception as e:
-        print(f"[cleanup] scan_queue cleanup failed: {e}")
+        log.error("[cleanup] scan_queue cleanup failed: %s", e)
     threading.Timer(3600, _cleanup_scan_queue).start()
 
 
@@ -886,17 +914,16 @@ def _tcg_fetch(card_id: str) -> dict | None:
     # 3 — live API
     try:
         url = f"{_TCG_API_BASE}/cards/{urllib.parse.quote(cid, safe='')}"
-        req = urllib.request.Request(url, headers=_tcg_headers())
-        with urllib.request.urlopen(req, timeout=7) as resp:
-            body = json.loads(resp.read())
-            data = body.get("data")
-            if data:
-                _tcg_db_set(cid, data)
-                with _tcg_cache_lock:
-                    _tcg_mem_cache[cid] = {"data": data, "fetched_ms": _now_ms()}
-                return data
+        resp = _requests.get(url, headers=_tcg_headers(), timeout=7)
+        resp.raise_for_status()
+        data = resp.json().get("data")
+        if data:
+            _tcg_db_set(cid, data)
+            with _tcg_cache_lock:
+                _tcg_mem_cache[cid] = {"data": data, "fetched_ms": _now_ms()}
+            return data
     except Exception as e:
-        print(f"[tcg] fetch '{cid}' failed: {e}")
+        log.error("[tcg] fetch '%s' failed: %s", cid, e)
     return None
 
 
@@ -922,18 +949,18 @@ def _tcg_search(name: str = "", set_id: str = "", number: str = "",
                                      "pageSize": limit,
                                      "orderBy": "-set.releaseDate"}))
     try:
-        req = urllib.request.Request(url, headers=_tcg_headers())
-        with urllib.request.urlopen(req, timeout=9) as resp:
-            results = json.loads(resp.read()).get("data", [])
-            for card in results:
-                cid = card.get("id", "").lower()
-                if cid:
-                    _tcg_db_set(cid, card)
-                    with _tcg_cache_lock:
-                        _tcg_mem_cache[cid] = {"data": card, "fetched_ms": _now_ms()}
-            return results
+        resp = _requests.get(url, headers=_tcg_headers(), timeout=9)
+        resp.raise_for_status()
+        results = resp.json().get("data", [])
+        for card in results:
+            cid = card.get("id", "").lower()
+            if cid:
+                _tcg_db_set(cid, card)
+                with _tcg_cache_lock:
+                    _tcg_mem_cache[cid] = {"data": card, "fetched_ms": _now_ms()}
+        return results
     except Exception as e:
-        print(f"[tcg] search failed ('{' '.join(parts)}'): {e}")
+        log.error("[tcg] search failed ('%s'): %s", " ".join(parts), e)
     return []
 
 
@@ -1077,16 +1104,16 @@ def _fire_webhook(payload: dict):
         url = row[0].strip() if row and row[0] else ""
         if not url:
             return
-        data  = json.dumps(payload, ensure_ascii=False).encode()
-        req   = urllib.request.Request(
-            url, data=data,
-            headers={"Content-Type": "application/json", "X-Source": "HanryxVault-Pi"},
-            method="POST",
+        resp = _requests.post(
+            url,
+            json=payload,
+            headers={"X-Source": "HanryxVault-Pi"},
+            timeout=8,
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            print(f"[webhook] pushed card '{payload.get('name', '?')}' → {resp.status}")
+        resp.raise_for_status()
+        log.info("[webhook] pushed card '%s' → %s", payload.get('name', '?'), resp.status_code)
     except Exception as e:
-        print(f"[webhook] push failed: {e}")
+        log.error("[webhook] push failed: %s", e)
 
 
 def _cors(response):
@@ -1188,7 +1215,8 @@ def cache_stats():
 @app.route("/zettle/auth", methods=["GET"])
 def zettle_auth():
     import secrets
-    state = secrets.token_urlsafe(16)
+    state = secrets.token_urlsafe(32)
+    session["zettle_oauth_state"] = state
     params = urllib.parse.urlencode({
         "response_type": "code",
         "client_id":     ZETTLE_CLIENT_ID,
@@ -1201,10 +1229,16 @@ def zettle_auth():
 
 @app.route("/zettle/callback", methods=["GET"])
 def zettle_callback():
-    code  = request.args.get("code", "")
-    error = request.args.get("error", "")
+    code          = request.args.get("code", "")
+    error         = request.args.get("error", "")
+    returned_state = request.args.get("state", "")
+    expected_state = session.pop("zettle_oauth_state", None)
+
+    if not expected_state or returned_state != expected_state:
+        log.warning("[zettle] CSRF state mismatch in OAuth callback")
+        return jsonify({"error": "invalid_state", "code": "csrf_check_failed"}), 400
     if error or not code:
-        return jsonify({"error": error or "missing code"}), 400
+        return jsonify({"error": error or "missing code", "code": "oauth_error"}), 400
     try:
         result = _token_post({
             "grant_type":   "authorization_code",
@@ -1214,7 +1248,8 @@ def zettle_callback():
         _store_tokens(result)
         return redirect(ZETTLE_APP_SCHEME + "?success=1")
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("[zettle] callback token exchange failed: %s", e)
+        return jsonify({"error": str(e), "code": "token_exchange_failed"}), 500
 
 
 @app.route("/zettle/status", methods=["GET"])
@@ -1270,12 +1305,12 @@ def scan_post():
         )
         db.commit()
     except Exception as _sl_err:
-        print(f"[scan_log] write failed: {_sl_err}")
+        log.error("[scan_log] write failed: %s", _sl_err)
 
     if normalised != qr_code:
-        print(f"[scan] Queued (normalised): {qr_code!r} → {store_code!r}")
+        log.info("[scan] Queued (normalised): %r → %r", qr_code, store_code)
     else:
-        print(f"[scan] Queued: {store_code}")
+        log.info("[scan] Queued: %s", store_code)
 
     return jsonify({"ok": True, "queued": store_code, "original": qr_code}), 201
 
@@ -1562,6 +1597,7 @@ def card_condition_set(qr_code):
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/export-cards", methods=["GET"])
+@require_admin
 def admin_export_cards():
     """
     Export Pokémon card inventory in a format ready for bulk import on the
@@ -1646,6 +1682,7 @@ def admin_export_cards():
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/webhook-config", methods=["GET"])
+@require_admin
 def webhook_config_get():
     """Return whether a webhook URL is configured (never reveals the URL itself)."""
     db  = get_db()
@@ -1655,6 +1692,7 @@ def webhook_config_get():
 
 
 @app.route("/admin/webhook-config", methods=["POST"])
+@require_admin
 def webhook_config_set():
     """
     Configure the webhook URL that receives new card data automatically.
@@ -1772,11 +1810,11 @@ def sync_sales():
             else:
                 skipped += 1
         except Exception as e:
-            print(f"[sync/sales] Error on {transaction_id}: {e}")
+            log.error("[sync/sales] Error on %s: %s", transaction_id, e)
             skipped += 1
 
     db.commit()
-    print(f"[sync/sales] source={source} inserted={inserted} skipped={skipped}")
+    log.info("[sync/sales] source=%s inserted=%d skipped=%d", source, inserted, skipped)
     return jsonify({"inserted": inserted, "skipped": skipped, "source": source}), 200
 
 
@@ -1833,14 +1871,14 @@ def inventory_deduct():
             stock_levels[qr_code] = new_stock
             if before and before[0] < quantity:
                 oversold += 1
-                print(f"[inventory/deduct] OVERSELL {qr_code}: "
+                log.warning("[inventory/deduct] OVERSELL %s: " %
                       f"had {before[0]}, sold {quantity} → clamped to 0")
         else:
             unknown += 1
 
     db.commit()
     _invalidate_inventory()
-    print(f"[inventory/deduct] deducted={deducted} oversold={oversold} unknown_sku={unknown}")
+    log.info("[inventory/deduct] deducted=%d oversold=%d unknown_sku=%d", deducted, oversold, unknown)
     return jsonify({
         "deducted":     deducted,
         "unknown_skus": unknown,
@@ -1959,7 +1997,7 @@ def push_inventory():
             ))
             upserted += 1
         except Exception as e:
-            print(f"[push/inventory] Error on {qr_code}: {e}")
+            log.error("[push/inventory] Error on %s: %s", qr_code, e)
             errors += 1
 
     db.commit()
@@ -2004,7 +2042,7 @@ def push_inventory_csv():
             ))
             upserted += 1
         except Exception as e:
-            print(f"[csv] Row error: {e} — {row}")
+            log.warning("[csv] Row error: %s — %s", e, row)
             skipped += 1
 
     db.commit()
@@ -2017,6 +2055,7 @@ def push_inventory_csv():
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/sync-from-cloud", methods=["POST"])
+@require_admin
 def admin_sync_cloud():
     force  = request.args.get("force", "0") == "1"
     result = sync_inventory_from_cloud(force=force)
@@ -2029,6 +2068,7 @@ def admin_sync_cloud():
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/set-satellite-token", methods=["POST"])
+@require_admin
 def admin_set_satellite_token():
     """
     Register the shared secret for satellite-Pi authentication.
@@ -2059,6 +2099,7 @@ def admin_set_satellite_token():
 
 
 @app.route("/admin/satellite-token-status", methods=["GET"])
+@require_admin
 def admin_satellite_token_status():
     """Check whether a satellite token is currently registered (never reveals the token value)."""
     db  = get_db()
@@ -2074,6 +2115,7 @@ def admin_satellite_token_status():
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/sales", methods=["GET"])
+@require_admin
 def admin_sales():
     db   = get_db()
     rows = db.execute("SELECT * FROM sales ORDER BY timestamp_ms DESC").fetchall()
@@ -2081,6 +2123,7 @@ def admin_sales():
 
 
 @app.route("/admin/inventory", methods=["GET"])
+@require_admin
 def admin_inventory_json():
     db   = get_db()
     rows = db.execute("SELECT * FROM inventory ORDER BY name ASC").fetchall()
@@ -2088,6 +2131,7 @@ def admin_inventory_json():
 
 
 @app.route("/admin/inventory", methods=["POST"])
+@require_admin
 def admin_add_product():
     data    = request.get_json(force=True, silent=True) or {}
     qr_code = (data.get("qrCode") or data.get("qr_code") or "").strip()
@@ -2141,6 +2185,7 @@ def admin_add_product():
 
 
 @app.route("/admin/inventory/<qr_code>", methods=["DELETE"])
+@require_admin
 def admin_delete_product(qr_code):
     db = get_db()
     db.execute("DELETE FROM inventory WHERE qr_code = ?", (qr_code,))
@@ -2304,7 +2349,7 @@ def _do_print(sale: dict):
             fh.write(receipt_bytes)
             fh.flush()
             fh.close()
-            print(f"[print] Receipt sent to {path}", flush=True)
+            log.info("[print] Receipt sent to %s", path)
 
         elif path == "cups":
             # Write temp file and submit via lp
@@ -2318,15 +2363,15 @@ def _do_print(sale: dict):
             )
             os.unlink(tmp_path)
             if result.returncode == 0:
-                print(f"[print] Receipt submitted via CUPS lp", flush=True)
+                log.info("[print] Receipt submitted via CUPS lp")
             else:
-                print(f"[print] CUPS lp failed: {result.stderr.decode()}", flush=True)
+                log.error("[print] CUPS lp failed: %s", result.stderr.decode())
 
         else:
-            print("[print] No printer found — receipt not printed", flush=True)
+            log.warning("[print] No printer found — receipt not printed")
 
     except Exception as e:
-        print(f"[print] Print error: {e}", flush=True)
+        log.error("[print] Print error: %s", e)
         if fh:
             try:
                 fh.close()
@@ -2501,7 +2546,7 @@ def _sys_wg_peer_list() -> list:
             })
         return peers
     except Exception as _e:
-        print(f"[wg] peer_list error: {_e}")
+        log.error("[wg] peer_list error: %s", _e)
         return []
 
 
@@ -2538,11 +2583,10 @@ def _sparkline_svg(values: list, width: int = 336, height: int = 52,
 
 def _sys_ping(url: str) -> tuple:
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "HanryxVault-Monitor/1.0"})
-        t0  = _time.time()
-        with urllib.request.urlopen(req, timeout=4) as r:
-            ms = int((_time.time() - t0) * 1000)
-            return r.status, ms
+        t0   = _time.time()
+        resp = _requests.get(url, headers={"User-Agent": "HanryxVault-Monitor/1.0"}, timeout=4)
+        ms   = int((_time.time() - t0) * 1000)
+        return resp.status_code, ms
     except Exception:
         return 0, 0
 
@@ -2715,6 +2759,7 @@ def market_search_api():
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/market", methods=["GET"])
+@require_admin
 def admin_market():
     nav = _admin_nav("market")
     html = f"""<!DOCTYPE html>
@@ -3230,6 +3275,7 @@ function toast(msg, err=false) {{
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/system", methods=["GET"])
+@require_admin
 def admin_system():
     nav = _admin_nav("system")
     svc_rows = "".join(
@@ -3554,6 +3600,7 @@ setInterval(refreshWgPeers, 10000);
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/logs", methods=["GET"])
+@require_admin
 def admin_logs():
     nav = _admin_nav("logs")
     html = f"""<!DOCTYPE html>
@@ -3771,6 +3818,7 @@ toggleAuto();
 # ---------------------------------------------------------------------------
 
 @app.route("/admin/stats-partial", methods=["GET"])
+@require_admin
 def admin_stats_partial():
     """Lightweight JSON snapshot for auto-refreshing the dashboard cards."""
     db = get_db()
@@ -3810,6 +3858,7 @@ def admin_stats_partial():
 
 
 @app.route("/admin/export-inventory", methods=["GET"])
+@require_admin
 def admin_export_inventory():
     """Download the full inventory as a CSV file."""
     from flask import Response as _Resp
@@ -3831,6 +3880,7 @@ def admin_export_inventory():
 
 
 @app.route("/admin/scan-log", methods=["GET"])
+@require_admin
 def admin_scan_log():
     """Return recent scan history for the Logs page Scan History tab."""
     try:
@@ -3854,6 +3904,7 @@ def admin_scan_log():
 
 
 @app.route("/admin/sell-one/<path:qr_code>", methods=["POST"])
+@require_admin
 def admin_sell_one(qr_code):
     """
     Quick-sell: decrement stock by 1 and record a minimal sale entry.
@@ -3964,10 +4015,87 @@ def system_backup_db():
 
 
 # ---------------------------------------------------------------------------
+# Admin authentication — login / logout / guard decorator
+# ---------------------------------------------------------------------------
+
+_ADMIN_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HanryxVault — Admin Login</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f0f0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;
+         display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;
+          padding:40px 36px;width:340px;text-align:center}
+    h1{font-size:1.3rem;margin-bottom:6px;color:#fff}
+    p{font-size:.85rem;color:#888;margin-bottom:28px}
+    input{width:100%;padding:10px 14px;border-radius:8px;border:1px solid #333;
+          background:#111;color:#e0e0e0;font-size:.95rem;margin-bottom:16px}
+    button{width:100%;padding:11px;border-radius:8px;border:none;
+           background:#6366f1;color:#fff;font-size:.95rem;font-weight:600;cursor:pointer}
+    button:hover{background:#4f46e5}
+    .err{color:#f87171;font-size:.85rem;margin-bottom:14px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔐 HanryxVault Admin</h1>
+    <p>Enter your admin password to continue</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="POST" action="/admin/login">
+      <input type="password" name="password" placeholder="Admin password" autofocus>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+</body>
+</html>"""
+
+
+def require_admin(fn):
+    """Decorator that redirects unauthenticated requests to /admin/login."""
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return redirect(f"/admin/login?next={request.path}")
+        return fn(*args, **kwargs)
+    return _wrapped
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        next_url  = request.form.get("next", "/admin")
+        if hashlib.sha256(password.encode()).hexdigest() == \
+           hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest():
+            session["admin_authenticated"] = True
+            session.permanent = True
+            log.info("[admin] login successful from %s", request.remote_addr)
+            return redirect(next_url if next_url.startswith("/admin") else "/admin")
+        log.warning("[admin] failed login attempt from %s", request.remote_addr)
+        return render_template_string(
+            _ADMIN_LOGIN_HTML, error="Incorrect password", next=next_url
+        )
+    next_url = request.args.get("next", "/admin")
+    return render_template_string(_ADMIN_LOGIN_HTML, error=None, next=next_url)
+
+
+@app.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    session.pop("admin_authenticated", None)
+    return redirect("/admin/login")
+
+
+# ---------------------------------------------------------------------------
 # Admin dashboard (HTML)
 # ---------------------------------------------------------------------------
 
 @app.route("/admin", methods=["GET"])
+@require_admin
 def admin_dashboard():
     db = get_db()
 
@@ -4536,5 +4664,5 @@ if __name__ == "__main__":
     _load_tokens_from_db()
     threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
     _cleanup_scan_queue()
-    print("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
+    log.info("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

@@ -1,0 +1,35 @@
+1. Database and Architecture Improvements
+
+    Move to an ORM: You are currently using a custom _PgConn wrapper to mimic SQLite's API for PostgreSQL. While this works for the migration, switching to an ORM like SQLAlchemy would provide better type safety, handle connection pooling more robustly, and eliminate the need for manual string replacements like .replace("?", "%s").
+
+    Decouple HTML from Logic: Large blocks of HTML are currently embedded directly in the Python strings (e.g., _ADMIN_BASE_CSS and various html variables). Moving these to a template engine like Jinja2 (which comes with Flask) would make the code much more readable and easier to maintain.
+
+    Environment-Based Configuration: While you use os.environ.get for some variables, many configurations (like CLOUD_INVENTORY_SOURCES) are hardcoded. Use a .env file or a dedicated config.py to manage these across different environments (dev vs. prod).
+
+2. Performance and Scalability
+
+    Asynchronous API Calls: Your _tcg_fetch and _tcg_search functions use urllib.request, which is blocking. In a multi-worker environment, this can tie up worker threads while waiting for the Pokémon TCG API. Switching to an async library like httpx or aiohttp (though requiring an async framework swap) or at least using a library with better connection pooling like requests would be beneficial.
+
+    Distributed Caching: You are using TTLCache and in-memory dictionaries for caching inventory and TCG data. Because you run multiple Gunicorn workers, each worker maintains its own separate cache. Moving this to Redis would allow all workers to share a single, unified cache.
+
+3. Security Enhancements
+
+    Input Sanitization: While psycopg2 handles basic parameterization, your manual string manipulation in _PgConn and the use of _html.escape in the admin UI are manual points of failure. Using a templating engine (Jinja2) automatically handles XSS protection.
+
+    Authentication for Admin Endpoints: The /admin routes appear to be accessible without a login session. Adding a basic authentication layer or an API key requirement for the /admin/* and /push/* endpoints is critical if this server is exposed to the internet.
+
+    Zettle State Validation: In the Zettle OAuth flow, you should implement a state parameter to prevent Cross-Site Request Forgery (CSRF) during the callback.
+
+4. Code Quality and Maintenance
+
+    Centralize Logging: You are currently using many print() statements for logging errors and status. Switching to Python’s standard logging module would allow you to set different log levels (INFO, DEBUG, ERROR) and easily direct output to files or external monitoring tools.
+
+    Separate Scan Logic: The _normalize_qr function is quite large and handles many different URL patterns. Moving this logic into its own utility module would simplify server.py and make the normalization logic easier to unit test.
+
+    Transaction Management: In sync_inventory_from_cloud, you commit after every single item upsert within a loop. This is very slow. Instead, you should wrap the entire loop in a single transaction and commit once at the end.
+
+5. API Design
+
+    Versioning: Your endpoints are currently at the root (e.g., /inventory). It is best practice to version your API (e.g., /api/v1/inventory) so you can make breaking changes in the future without breaking existing tablet/app installations.
+
+    Standardize Responses: Ensure all error responses return a consistent JSON structure with an error code and message, rather than just returning None or mixed types in some helper functions.

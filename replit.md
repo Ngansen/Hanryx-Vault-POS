@@ -6,7 +6,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
-Flask + SQLite POS backend that runs on a Raspberry Pi 5. Key features:
+Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
 
 - **TCG API enrichment** — `_tcg_fetch()` / `_tcg_search()` hit `api.pokemontcg.io/v2` with 2-layer cache (in-memory 1h + SQLite 24h). Optional `PTCG_API_KEY` env var for 20k/day rate limit.
 - **`/card/enrich`** — combined local inventory + full TCG data (name, HP, types, image, market prices) in one call; used by scan/pending and admin dashboard.

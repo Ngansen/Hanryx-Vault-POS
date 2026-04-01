@@ -23,6 +23,16 @@ services:
       DATABASE_URL: postgresql://vaultpos:vaultpos@db:5432/vaultpos
       FLASK_ENV: production
       PYTHONUNBUFFERED: "1"
+      # Security — override these on the Pi before deploying
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-hanryxvault}
+      # Optional — comma-separated cloud inventory URLs
+      # CLOUD_INVENTORY_SOURCES: https://example.com/api/inventory,https://other.com/api/products
+      # Zettle OAuth
+      # ZETTLE_CLIENT_ID: your-client-id
+      # ZETTLE_CLIENT_SECRET: your-client-secret
+      # Pokémon TCG API key (free tier = 1k/day; with key = 20k/day)
+      # PTCG_API_KEY: your-api-key
     depends_on:
       db:
         condition: service_healthy
