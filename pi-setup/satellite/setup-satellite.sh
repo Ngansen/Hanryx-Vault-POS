@@ -356,3 +356,26 @@ info "  Pair BT QR scanner     : sudo bluetoothctl → pair <MAC> → trust → 
 info "  Scan hub logs          : sudo journalctl -u hanryxvault-scan-hub -f"
 info "  Scan hub health        : curl http://localhost:8765/health"
 info "  Add app to scan hub    : edit /opt/hanryxvault/scan_endpoints.conf"
+
+# ── Optional: kiosk display setup ─────────────────────────────────────────────
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  Optional: Kiosk display (monitor plugged into this Pi)${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo "  If you have a monitor connected to this satellite Pi and want"
+echo "  the admin dashboard to auto-launch fullscreen on boot:"
+echo ""
+read -rp "  Install kiosk display? [y/N]: " INSTALL_KIOSK
+if [[ "${INSTALL_KIOSK,,}" == "y" ]]; then
+    KIOSK_SCRIPT="$SCRIPT_DIR/../kiosk/install-kiosk.sh"
+    if [[ -f "$KIOSK_SCRIPT" ]]; then
+        bash "$KIOSK_SCRIPT"
+    else
+        warn "Kiosk installer not found at $KIOSK_SCRIPT"
+        warn "Run manually: sudo bash pi-setup/kiosk/install-kiosk.sh"
+    fi
+else
+    info "Skipping kiosk. Run later if needed:"
+    info "  sudo bash pi-setup/kiosk/install-kiosk.sh"
+fi
