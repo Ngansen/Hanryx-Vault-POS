@@ -30,6 +30,16 @@ boto3>=1.34.0
 # Performance: 3-5x faster JSON serialisation (automatic stdlib fallback)
 orjson>=3.9.0
 
+# Redis — cross-worker pub/sub for SSE and shared L2 cache
+redis>=5.0.0
+
+# Intelligent pricing engine — eBay sold-listing scraper
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Intelligent pricing engine — multi-language card input translation
+deep-translator>=1.11.0
+
 # QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
 evdev>=1.6.1
 

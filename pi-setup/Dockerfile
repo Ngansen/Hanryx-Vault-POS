@@ -33,4 +33,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 EXPOSE 8080
 
-CMD ["gunicorn", "-w", "4", "-k", "gevent", "--bind", "0.0.0.0:8080", "--timeout", "120", "server:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "server:app"]

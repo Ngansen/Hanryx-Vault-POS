@@ -106,6 +106,17 @@ import base64
 import csv
 import io
 import requests as _requests
+import redis as _redis_mod
+try:
+    from bs4 import BeautifulSoup as _BS4
+    _BS4_OK = True
+except ImportError:
+    _BS4_OK = False
+try:
+    from deep_translator import GoogleTranslator as _GoogleTranslator
+    _TRANSLATE_OK = True
+except ImportError:
+    _TRANSLATE_OK = False
 import qrcode as _qrcode
 import qrcode.constants as _qrcode_const
 from flask import Flask, request, jsonify, redirect, g, session, render_template_string, Response, send_file
@@ -508,6 +519,72 @@ _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
 # ---------------------------------------------------------------------------
+# Redis — lazy singleton, cross-worker pub/sub + L2 cache
+# ---------------------------------------------------------------------------
+_redis_client_obj  = None
+_redis_client_lock = threading.Lock()
+_REDIS_SCAN_CHAN   = "hanryx:scans"
+_REDIS_INV_KEY     = "hv:inv:all"
+_REDIS_QR_PREFIX   = "hv:qr:"
+
+
+def _redis():
+    """Return a live redis.Redis client, or None if Redis is not reachable."""
+    global _redis_client_obj
+    if _redis_client_obj is not None:
+        return _redis_client_obj
+    with _redis_client_lock:
+        if _redis_client_obj is not None:
+            return _redis_client_obj
+        url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+        try:
+            c = _redis_mod.Redis.from_url(
+                url,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=False,
+            )
+            c.ping()
+            _redis_client_obj = c
+            log.info("[redis] Connected to %s", url)
+        except Exception as _e:
+            log.warning("[redis] Not available (%s) — SSE/cache will use in-process fallback", _e)
+        return _redis_client_obj
+
+
+def _rcache_get(key: str):
+    """Get a JSON-encoded value from Redis. Returns None on miss or error."""
+    try:
+        r = _redis()
+        if not r:
+            return None
+        raw = r.get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _rcache_set(key: str, value, ttl: int = 30):
+    """Store a JSON-encoded value in Redis with a TTL (seconds)."""
+    try:
+        r = _redis()
+        if r:
+            r.set(key, json.dumps(value), ex=ttl)
+    except Exception:
+        pass
+
+
+def _rcache_del(*keys: str):
+    """Delete one or more keys from Redis."""
+    try:
+        r = _redis()
+        if r and keys:
+            r.delete(*keys)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Worker thread pool — replaces ad-hoc daemon threads for fire-and-forget work
 # ---------------------------------------------------------------------------
 _worker_pool = _TPE(max_workers=8, thread_name_prefix="hvault-worker")
@@ -885,7 +962,19 @@ _sse_scan_subscribers: list = []   # one Queue per connected SSE client
 
 
 def _sse_broadcast_scan(qr_code: str):
-    """Push a new scan to every connected SSE client instantly."""
+    """
+    Push a new scan to every connected SSE client.
+    Primary path: Redis pub/sub (cross-worker, all gunicorn processes receive it).
+    Fallback: in-process queue list (single worker, no Redis).
+    """
+    # Redis broadcast — reaches SSE clients on *all* workers
+    try:
+        r = _redis()
+        if r:
+            r.publish(_REDIS_SCAN_CHAN, json.dumps({"qrCode": qr_code}))
+    except Exception as _e:
+        log.debug("[sse] Redis publish failed: %s", _e)
+    # In-process fallback — covers clients on this worker when Redis is down
     with _sse_lock:
         dead = []
         for q in _sse_scan_subscribers:
@@ -922,6 +1011,11 @@ def _invalidate_inventory(qr_code: str | None = None):
             _qr_scan_cache.clear()
     # Also invalidate the smart scanner in-memory index
     _smart_scanner.invalidate()
+    # Bust Redis L2 cache
+    if qr_code:
+        _rcache_del(_REDIS_INV_KEY, f"{_REDIS_QR_PREFIX}{qr_code}")
+    else:
+        _rcache_del(_REDIS_INV_KEY)
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -1342,6 +1436,22 @@ def init_db():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_unsynced_qr ON unsynced_changes(qr_code)",
         "CREATE INDEX IF NOT EXISTS idx_unsynced_pending ON unsynced_changes(synced) WHERE synced = 0",
+
+        # ── Intelligent pricing engine: translation cache ──────────────────────
+        f"""CREATE TABLE IF NOT EXISTS translation_cache (
+            original    TEXT NOT NULL,
+            lang        TEXT NOT NULL,
+            translated  TEXT NOT NULL,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            PRIMARY KEY (original, lang)
+        )""",
+
+        # ── Intelligent pricing engine: pricing cache ──────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS pricing_cache (
+            query       TEXT PRIMARY KEY,
+            pricing     JSONB NOT NULL,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
     ]
 
     for stmt in _ddl_statements:
@@ -2584,29 +2694,49 @@ def scan_stream():
     changes are required to benefit from this endpoint.
     """
     def _generate():
-        q = _queue_mod.Queue()
-        with _sse_lock:
-            _sse_scan_subscribers.append(q)
-        try:
-            while True:
+        r = _redis()
+        if r:
+            # ── Redis pub/sub path (cross-worker) ────────────────────────────
+            pubsub = r.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe(_REDIS_SCAN_CHAN)
+            try:
+                while True:
+                    msg = pubsub.get_message(timeout=15)
+                    if msg and msg.get("type") == "message":
+                        yield f"data: {msg['data'].decode('utf-8', errors='replace')}\n\n"
+                    else:
+                        yield ": heartbeat\n\n"
+            finally:
                 try:
-                    qr_code = q.get(timeout=15)
-                    yield f"data: {json.dumps({'qrCode': qr_code})}\n\n"
-                except _queue_mod.Empty:
-                    yield ": heartbeat\n\n"  # keeps nginx from closing the connection
-        finally:
-            with _sse_lock:
-                try:
-                    _sse_scan_subscribers.remove(q)
-                except ValueError:
+                    pubsub.unsubscribe(_REDIS_SCAN_CHAN)
+                    pubsub.close()
+                except Exception:
                     pass
+        else:
+            # ── In-process queue fallback (single worker / no Redis) ──────────
+            q = _queue_mod.Queue()
+            with _sse_lock:
+                _sse_scan_subscribers.append(q)
+            try:
+                while True:
+                    try:
+                        qr_code = q.get(timeout=15)
+                        yield f"data: {json.dumps({'qrCode': qr_code})}\n\n"
+                    except _queue_mod.Empty:
+                        yield ": heartbeat\n\n"
+            finally:
+                with _sse_lock:
+                    try:
+                        _sse_scan_subscribers.remove(q)
+                    except ValueError:
+                        pass
 
     return Response(
         _generate(),
         content_type="text/event-stream",
         headers={
             "Cache-Control":     "no-cache",
-            "X-Accel-Buffering": "no",   # tell nginx: do not buffer this response
+            "X-Accel-Buffering": "no",
             "Connection":        "keep-alive",
         },
     )
@@ -10942,6 +11072,300 @@ def api_health_pool():
         "pool_max":   mx,
         "status":     "ok" if used != "?" and used < (mx or 999) else "unknown",
     })
+
+
+# ---------------------------------------------------------------------------
+# Intelligent pricing engine
+# ---------------------------------------------------------------------------
+# Ported from the Node.js implementation:
+#   - Multi-language card input normalisation via Google Translate
+#   - eBay sold-listing scraper (3 pages in parallel)
+#   - Score-based listing filter (name, number, set matching)
+#   - Outlier-robust price model (median / mean / confidence)
+#   - PostgreSQL-backed translation + pricing cache
+#   - Redis-backed short-TTL pricing cache (10 min)
+# ---------------------------------------------------------------------------
+
+import statistics as _stats_mod
+
+
+def _translate_with_cache(text: str, target_lang: str) -> str:
+    """Translate text to target_lang, using the DB cache to avoid repeat API calls."""
+    if not text or not _TRANSLATE_OK:
+        return text
+    if target_lang == "en" and all(ord(c) < 128 for c in text):
+        return text  # already ASCII English — skip API
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT translated FROM translation_cache WHERE original=%s AND lang=%s",
+            (text, target_lang),
+        ).fetchone()
+        if row:
+            db.close()
+            return row["translated"]
+        translated = _GoogleTranslator(source="auto", target=target_lang).translate(text)
+        db.execute(
+            "INSERT INTO translation_cache (original, lang, translated) VALUES (%s,%s,%s) "
+            "ON CONFLICT (original, lang) DO UPDATE SET translated=EXCLUDED.translated",
+            (text, target_lang, translated),
+        )
+        db.commit()
+        db.close()
+        return translated
+    except Exception as _e:
+        log.debug("[translate] failed for %r → %s: %s", text[:30], target_lang, _e)
+        return text
+
+
+def _translate_card_input(card: dict, lang: str = "en") -> dict:
+    """Normalise a card dict to English so eBay queries work correctly."""
+    if lang == "en":
+        return card
+    return {
+        "name":         _translate_with_cache(card.get("name", ""), "en"),
+        "set":          _translate_with_cache(card.get("set", ""), "en") if card.get("set") else None,
+        "number":       card.get("number"),
+        "original_lang": lang,
+    }
+
+
+def _score_listing(title: str, card: dict) -> int:
+    """
+    Score an eBay listing against a card spec.
+    Returns an integer; listings scoring < 6 are discarded.
+    """
+    title = title.lower()
+    score = 0
+    name = (card.get("name") or "").lower()
+    if name and name in title:
+        score += 5
+    number = card.get("number") or ""
+    if number and number in title:
+        score += 5
+    set_name = (card.get("set") or "").lower()
+    if set_name and set_name in title:
+        score += 3
+    if "pokemon" in title or "pokémon" in title:
+        score += 1
+    if card.get("grade", "raw") == "raw" and "psa" in title:
+        score -= 5
+    return score
+
+
+def _filter_and_score(items: list, card: dict) -> list:
+    """Filter listings to score >= 6, attach score, sort descending."""
+    scored = [
+        {**item, "score": _score_listing(item.get("title", ""), card)}
+        for item in items
+    ]
+    return sorted(
+        (i for i in scored if i["score"] >= 6),
+        key=lambda x: x["score"],
+        reverse=True,
+    )
+
+
+def _remove_outliers(prices: list[float]) -> list[float]:
+    """Remove prices further than 2 standard deviations from the mean."""
+    if len(prices) < 3:
+        return prices
+    mean = sum(prices) / len(prices)
+    variance = sum((p - mean) ** 2 for p in prices) / len(prices)
+    std = variance ** 0.5
+    return [p for p in prices if abs(p - mean) <= 2 * std] or prices
+
+
+def _build_price_model(items: list) -> dict:
+    """Build a price model from scored listings: median, avg, low, high, confidence."""
+    prices = sorted(_remove_outliers([i["price"] for i in items if i.get("price")]))
+    if not prices:
+        return {"market": None, "average": None, "low": None, "high": None, "confidence": 0}
+    n      = len(prices)
+    median = prices[n // 2]
+    avg    = sum(prices) / n
+    return {
+        "market":     round(median, 2),
+        "average":    round(avg, 2),
+        "low":        round(prices[0], 2),
+        "high":       round(prices[-1], 2),
+        "confidence": min(round(n / 20, 2), 1.0),
+        "sample_size": n,
+    }
+
+
+def _fetch_ebay_page(query: str, page: int) -> str:
+    """Fetch one page of eBay sold listings. Returns raw HTML or ''."""
+    if not _BS4_OK:
+        return ""
+    url = (
+        f"https://www.ebay.com/sch/i.html"
+        f"?_nkw={urllib.parse.quote(query)}&_pgn={page}&LH_Sold=1&LH_Complete=1"
+    )
+    try:
+        r = _requests.get(
+            url,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+        )
+        r.raise_for_status()
+        return r.text
+    except Exception as _e:
+        log.debug("[ebay] page %d fetch failed: %s", page, _e)
+        return ""
+
+
+def _fetch_ebay_sales(card: dict) -> list[dict]:
+    """Fetch eBay sold listings for a card across 3 pages in parallel."""
+    if not _BS4_OK:
+        return []
+    name   = (card.get("name") or "").strip()
+    number = (card.get("number") or "").strip()
+    set_n  = (card.get("set") or "").strip()
+    query  = " ".join(filter(None, [name, number, set_n, "pokemon"])).strip()
+
+    with _TPE(max_workers=3) as pool:
+        pages = list(pool.map(lambda p: _fetch_ebay_page(query, p), [1, 2, 3]))
+
+    items = []
+    for html in pages:
+        if not html:
+            continue
+        soup = _BS4(html, "lxml")
+        for el in soup.select(".s-item"):
+            title_el = el.select_one(".s-item__title")
+            price_el = el.select_one(".s-item__price")
+            if not title_el or not price_el:
+                continue
+            title_text = title_el.get_text(strip=True)
+            if title_text.lower() in ("shop on ebay", ""):
+                continue
+            price_str = re.sub(r"[^0-9.]", "", price_el.get_text().split("to")[0])
+            try:
+                price = float(price_str)
+                if price > 0:
+                    items.append({"title": title_text, "price": price})
+            except (ValueError, TypeError):
+                pass
+    return items
+
+
+def _get_pricing_cache(query: str):
+    """Check Redis first, then PostgreSQL for a cached price model."""
+    # L1: Redis (10 min TTL)
+    rkey = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    cached = _rcache_get(rkey)
+    if cached:
+        return cached, True
+    # L2: PostgreSQL (no TTL — manual invalidation via API)
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT pricing FROM pricing_cache WHERE query=%s", (query,)
+        ).fetchone()
+        db.close()
+        if row:
+            val = row["pricing"] if isinstance(row["pricing"], dict) else json.loads(row["pricing"])
+            _rcache_set(rkey, val, ttl=600)
+            return val, True
+    except Exception:
+        pass
+    return None, False
+
+
+def _set_pricing_cache(query: str, pricing: dict):
+    """Write a price model to Redis + PostgreSQL."""
+    rkey = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    _rcache_set(rkey, pricing, ttl=600)
+    try:
+        db = _direct_db()
+        db.execute(
+            "INSERT INTO pricing_cache (query, pricing) VALUES (%s, %s::jsonb) "
+            "ON CONFLICT (query) DO UPDATE SET pricing=EXCLUDED.pricing, created_at=%s",
+            (query, json.dumps(pricing), _now_ms()),
+        )
+        db.commit()
+        db.close()
+    except Exception as _e:
+        log.debug("[pricing-cache] write failed: %s", _e)
+
+
+# ── GET /api/v1/pricing/intelligent ─────────────────────────────────────────
+
+@app.route("/api/v1/pricing/intelligent", methods=["GET"])
+@require_api_token
+def api_pricing_intelligent():
+    """
+    Intelligent market-price lookup combining:
+      1. Optional multi-language input normalisation (Google Translate)
+      2. eBay sold-listing scraper (3 pages, parallel, cached)
+      3. Score-based listing filter (name/set/number matching)
+      4. Outlier-robust price model (median, avg, confidence)
+
+    Query params:
+      name     — card name  (required)
+      set      — set name   (optional)
+      number   — card number (optional)
+      lang     — input language ISO code, e.g. "ja", "de" (default "en")
+      refresh  — set "1" to bypass cache and force a fresh eBay fetch
+
+    Returns:
+      { card, query, pricing, top_matches }
+    """
+    name   = (request.args.get("name") or "").strip()
+    set_n  = (request.args.get("set") or "").strip()
+    number = (request.args.get("number") or "").strip()
+    lang   = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # Normalise input to English
+    card = _translate_card_input(
+        {"name": name, "set": set_n or None, "number": number or None},
+        lang,
+    )
+    query = " ".join(filter(None, [
+        card.get("name"), card.get("number"), card.get("set")
+    ])).strip()
+
+    # Check cache
+    pricing  = None
+    matched  = []
+    from_cache = False
+    if not refresh:
+        pricing, from_cache = _get_pricing_cache(query)
+
+    if not pricing:
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        pricing = _build_price_model(matched)
+        _bg(_set_pricing_cache, query, pricing)
+
+    return jsonify({
+        "card":        card,
+        "query":       query,
+        "pricing":     pricing,
+        "from_cache":  from_cache,
+        "top_matches": matched[:5] if matched else [],
+    })
+
+
+@app.route("/api/v1/pricing/cache/<path:query_path>", methods=["DELETE"])
+@require_admin
+def api_pricing_cache_delete(query_path):
+    """Delete a cached price model so the next request fetches fresh data."""
+    query = urllib.parse.unquote(query_path)
+    rkey  = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    _rcache_del(rkey)
+    try:
+        db = get_db()
+        db.execute("DELETE FROM pricing_cache WHERE query=%s", (query,))
+        db.commit()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "invalidated": query})
 
 
 # ---------------------------------------------------------------------------

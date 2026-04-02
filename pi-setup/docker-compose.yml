@@ -20,6 +20,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Redis — cross-worker pub/sub (SSE) + shared L2 cache ─────────────────────
+  # Scan events published here so all gunicorn workers see them instantly.
+  # Also used as a shared TTL cache in front of PostgreSQL.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # ── PgBouncer — connection pooler ────────────────────────────────────────────
   # Sits between Flask and PostgreSQL in transaction-pooling mode.
   # Keeps PostgreSQL connection count low (Pi 5 RAM-friendly) while Flask can
@@ -57,6 +70,7 @@ services:
       - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
     environment:
       DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@pgbouncer:5432/vaultpos
+      REDIS_URL:        redis://redis:6379/0
       FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
 
@@ -91,6 +105,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
   # Public-facing React + Express customer website with PayPal checkout.
