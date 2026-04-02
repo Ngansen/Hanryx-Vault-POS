@@ -1033,7 +1033,8 @@ class _SmartScanner:
         # ── Source 2: canonical Pokédex (only when inventory results are weak) ─
         best_inv_score = max((s["score"] for s in suggestions), default=0.0)
         if best_inv_score < 0.65 and _RAPIDFUZZ_AVAILABLE:
-            canon = _normalize_to_canonical(qr, threshold=60)
+            _ensure_pokeapi_names()   # no-op if already loaded
+            canon = _normalize_to_canonical(qr, threshold=65)
             if canon:
                 # Only add if the canonical name isn't already in suggestions
                 already = any(
@@ -1277,6 +1278,45 @@ def _normalize_to_canonical(query: str, threshold: int = 70) -> dict | None:
 
 # Warm up the name index on startup in the background
 _bg(_ensure_pokeapi_names)
+
+
+def _pokeapi_weekly_refresh_loop():
+    """
+    Background daemon thread: wakes every 24 h and re-fetches PokeAPI names
+    when the cache is older than _POKEAPI_CACHE_TTL_DAYS (7 days).
+    Means the cache stays current even on long-running Pi installs that
+    never restart.
+    """
+    import time as _time
+    while True:
+        _time.sleep(86_400)   # check once a day
+        try:
+            db  = _direct_db()
+            row = db.execute(
+                "SELECT MAX(fetched_at) as last_fetch, COUNT(*) as cnt "
+                "FROM pokeapi_name_cache"
+            ).fetchone()
+            db.close()
+            age_days = (_now_ms() - (row["last_fetch"] or 0)) / 86_400_000
+            if age_days >= _POKEAPI_CACHE_TTL_DAYS:
+                log.info("[pokeapi] weekly refresh triggered (%.1f days old)", age_days)
+                count = _pokeapi_fetch_and_store()
+                if count:
+                    entries = _load_pokeapi_names_from_db()
+                    global _pokeapi_names_list, _pokeapi_names_strs, _pokeapi_names_ready
+                    with _pokeapi_names_lock:
+                        _pokeapi_names_list  = entries
+                        _pokeapi_names_strs  = [e["name"] for e in entries]
+                        _pokeapi_names_ready = True
+                    log.info("[pokeapi] weekly refresh complete: %d names", count)
+        except Exception as _e:
+            log.debug("[pokeapi] weekly refresh error: %s", _e)
+
+
+_pokeapi_refresh_thread = threading.Thread(
+    target=_pokeapi_weekly_refresh_loop, daemon=True, name="pokeapi-refresh"
+)
+_pokeapi_refresh_thread.start()
 
 
 # ---------------------------------------------------------------------------
@@ -12062,13 +12102,24 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
     """
     Fetch eBay sold listings for a card across 6 pages in parallel (≤90 days).
     Returns [{title, price, sold_date}].
+
+    Includes variant in the query when it adds information not already present
+    in the card name — e.g. "Charizard" + "Rainbow Rare" → distinct results
+    from just "Charizard", while "Charizard VMAX" + "VMAX" skips the duplicate.
     """
     if not _BS4_OK:
         return []
-    name   = (card.get("name") or "").strip()
-    number = (card.get("number") or "").strip()
-    set_n  = (card.get("set") or "").strip()
-    query  = " ".join(filter(None, [name, number, set_n, "pokemon"])).strip()
+    name    = (card.get("name") or "").strip()
+    number  = (card.get("number") or "").strip()
+    set_n   = (card.get("set") or "").strip()
+    variant = (card.get("variant") or "").strip()
+
+    # Only append variant if it's not already present in the card name
+    variant_part = ""
+    if variant and variant.lower() not in name.lower():
+        variant_part = variant
+
+    query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
 
     with _TPE(max_workers=6) as pool:
         htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 7)))
@@ -12260,16 +12311,20 @@ def api_pricing_intelligent():
       name     — card name  (required)
       set      — set name   (optional)
       number   — card number (optional)
+      variant  — card variant, e.g. "Rainbow Rare", "GX", "Holo" (optional)
+      grade    — "raw" | "psa10" | "psa9" etc. (default "raw")
       lang     — input language ISO code, e.g. "ja", "de" (default "en")
       refresh  — set "1" to bypass cache and force a fresh eBay fetch
 
     Returns:
-      { card, query, pricing, periods, trend, top_matches }
+      { card, query, pricing, periods, trend, top_matches, canonical, input_name }
     """
-    name   = (request.args.get("name") or "").strip()
-    set_n  = (request.args.get("set") or "").strip()
-    number = (request.args.get("number") or "").strip()
-    lang   = (request.args.get("lang") or "en").strip().lower()
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    grade   = (request.args.get("grade") or "raw").strip().lower()
+    lang    = (request.args.get("lang") or "en").strip().lower()
     refresh = request.args.get("refresh", "0") == "1"
 
     if not name:
@@ -12277,7 +12332,13 @@ def api_pricing_intelligent():
 
     # ── Step 1: translate non-English input to English ────────────────────────
     card = _translate_card_input(
-        {"name": name, "set": set_n or None, "number": number or None},
+        {
+            "name":    name,
+            "set":     set_n    or None,
+            "number":  number   or None,
+            "variant": variant  or None,
+            "grade":   grade,
+        },
         lang,
     )
 
@@ -12342,6 +12403,104 @@ def api_pricing_cache_delete(query_path):
     except Exception:
         pass
     return jsonify({"ok": True, "invalidated": query})
+
+
+# ── GET /api/v1/pricing/history ───────────────────────────────────────────────
+
+@app.route("/api/v1/pricing/history", methods=["GET"])
+@require_api_token
+def api_pricing_history():
+    """
+    Full 90-day eBay price history for a card with period breakdowns and trend.
+
+    Loads from the ebay_sold_history table first (zero eBay calls if data exists).
+    Falls back to a live scrape when no stored history is found.
+
+    Query params:
+      name     — card name (required)
+      set      — set name (optional)
+      number   — card number (optional)
+      variant  — e.g. "Rainbow Rare", "GX" (optional)
+      lang     — input language ISO code (default "en")
+      refresh  — "1" to force a live re-scrape even if stored data exists
+
+    Returns:
+      {
+        card, query, periods: {7d, 30d, 90d, all}, trend,
+        sold_listings: [{title, price, sold_date, score}],
+        data_source: "stored" | "live",
+        total_listings: int
+      }
+    """
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    lang    = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # Translate + canonicalise
+    card = _translate_card_input(
+        {"name": name, "set": set_n or None, "number": number or None,
+         "variant": variant or None},
+        lang,
+    )
+    _ensure_pokeapi_names()
+    canon = _normalize_to_canonical((card.get("name") or ""), threshold=72)
+    if canon and not canon["exact"]:
+        card = {**card, "name": canon["canonical"]}
+
+    query = " ".join(filter(None, [
+        card.get("name"), card.get("variant"), card.get("number"), card.get("set")
+    ])).strip()
+
+    # Try stored history first (unless refresh forced)
+    matched     = []
+    data_source = "stored"
+    if not refresh:
+        matched = _load_ebay_history(query, days=90)
+
+    # Fall back to live scrape when nothing stored
+    if not matched:
+        data_source = "live"
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        if matched:
+            _bg(_store_ebay_sales_bg, query, matched)
+
+    # Build period models
+    periods = {
+        "7d":  _build_period_model(matched, 7),
+        "30d": _build_period_model(matched, 30),
+        "90d": _build_period_model(matched, 90),
+        "all": _build_price_model(matched),
+    }
+    trend = _calc_price_trend(matched)
+
+    # Serialise sold_date for JSON
+    listings = [
+        {
+            "title":     m["title"],
+            "price":     m["price"],
+            "sold_date": str(m["sold_date"]) if m.get("sold_date") else None,
+            "score":     m.get("score", 0),
+        }
+        for m in sorted(matched, key=lambda x: x.get("sold_date") or datetime.date.min, reverse=True)
+    ]
+
+    return jsonify({
+        "card":           card,
+        "query":          query,
+        "periods":        periods,
+        "trend":          trend,
+        "sold_listings":  listings,
+        "total_listings": len(listings),
+        "data_source":    data_source,
+        "canonical":      canon,
+    })
 
 
 # ── GET /api/v1/pokeapi/normalize ─────────────────────────────────────────────
