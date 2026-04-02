@@ -3998,13 +3998,13 @@ def admin_qr_sheet():
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   }}
   .toolbar h1 {{ font-size: 16px; font-weight: bold; flex: 1; }}
-  .toolbar a  {{ color: #FFD700; font-size: 13px; }}
+  .toolbar a  {{ color: #f59e0b; font-size: 13px; }}
   .toolbar .info {{ font-size: 13px; color: #aaa; }}
   .toolbar form {{ display:flex; gap:8px; align-items:center; }}
   .toolbar input {{ padding:4px 8px; border-radius:4px; border:none; font-size:13px; }}
   .toolbar select {{ padding:4px; border-radius:4px; border:none; font-size:13px; }}
   .toolbar button {{ padding:5px 14px; border:none; border-radius:4px; cursor:pointer;
-                     background:#FFD700; font-weight:bold; font-size:13px; }}
+                     background:#f59e0b; font-weight:bold; font-size:13px; }}
 
   /* ── Label grid ─────────────────────────────── */
   .grid {{
@@ -6151,7 +6151,7 @@ def _sys_wg_peers() -> int:
 
 
 def _sparkline_svg(values: list, width: int = 336, height: int = 52,
-                   color: str = "#FFD700") -> str:
+                   color: str = "#f59e0b") -> str:
     """Render a list of floats as a minimal SVG bar-chart sparkline."""
     if not values or max(values) == 0:
         return (f'<svg width="{width}" height="{height}">'
@@ -6211,71 +6211,98 @@ _SYS_LOG_SOURCES = {
 
 _ADMIN_BASE_CSS = """
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;padding:0}
-  .admin-nav{display:flex;align-items:center;background:#111;border-bottom:1px solid #222;padding:0 20px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
-  .nav-logo{color:#FFD700;font-weight:900;font-size:16px;letter-spacing:1px;padding:14px 18px 14px 0;border-right:1px solid #222;margin-right:8px;white-space:nowrap}
-  .nav-item{color:#777;text-decoration:none;padding:15px 14px;font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
-  .nav-item:hover{color:#FFD700;text-decoration:none}
-  .nav-active{color:#FFD700 !important;border-bottom-color:#FFD700}
-  .nav-clock{margin-left:auto;color:#444;font-size:12px;padding:15px 0;white-space:nowrap}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e0e0e0;padding:0}
+
+  /* ── Nav bar — Square-style pill navigation ───────────────────────── */
+  .admin-nav{display:flex;align-items:center;background:#111;border-bottom:1px solid #1e1e1e;
+    padding:8px 16px;position:sticky;top:0;z-index:50;gap:6px;overflow-x:auto;
+    scrollbar-width:none}
+  .admin-nav::-webkit-scrollbar{display:none}
+  .nav-brand{display:flex;align-items:center;gap:6px;padding-right:14px;
+    border-right:1px solid #222;margin-right:4px;flex-shrink:0}
+  .nav-logo{color:#f59e0b;font-weight:900;font-size:15px;letter-spacing:.5px;white-space:nowrap}
+  .nav-pill{display:flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid #2a2a2a;
+    border-radius:999px;padding:7px 14px;color:#666;text-decoration:none;font-size:12px;
+    font-weight:600;white-space:nowrap;transition:.15s;flex-shrink:0}
+  .nav-pill:hover{border-color:#f59e0b;color:#f59e0b;background:#1a1100;text-decoration:none}
+  .nav-pill.nav-active{background:#f59e0b;border-color:#f59e0b;color:#000;font-weight:800}
+  .nav-clock{margin-left:auto;color:#333;font-size:11px;white-space:nowrap;flex-shrink:0;
+    padding-left:12px}
+
+  /* ── Quick-action card grid (dashboard) ───────────────────────────── */
+  .qa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));
+    gap:10px;margin-bottom:28px}
+  .qa-card{background:#141414;border:1px solid #222;border-radius:14px;padding:18px 10px;
+    text-align:center;text-decoration:none;transition:.15s;display:block;cursor:pointer}
+  .qa-card:hover{border-color:#f59e0b;background:#1a1100;text-decoration:none;
+    transform:translateY(-1px)}
+  .qa-icon{font-size:26px;line-height:1;margin-bottom:7px}
+  .qa-label{color:#e0e0e0;font-size:12px;font-weight:700;margin-bottom:2px}
+  .qa-sub{color:#444;font-size:10px;line-height:1.3}
+
   .wrap{padding:24px;max-width:1200px;margin:0 auto}
-  h1{color:#FFD700;font-size:22px;margin-bottom:4px}
-  .subtitle{color:#666;font-size:13px;margin-bottom:24px}
-  h2{color:#aaa;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;margin-top:28px}
+  h1{color:#f59e0b;font-size:22px;margin-bottom:4px}
+  .subtitle{color:#555;font-size:13px;margin-bottom:20px}
+  h2{color:#555;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+    margin-bottom:10px;margin-top:28px}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:#555;padding:8px 10px;border-bottom:1px solid #222}
-  td{padding:8px 10px;border-bottom:1px solid #1a1a1a}
-  tr:hover td{background:#1a1a1a}
-  a{color:#FFD700;text-decoration:none}
+  th{text-align:left;color:#444;padding:8px 10px;border-bottom:1px solid #1e1e1e}
+  td{padding:8px 10px;border-bottom:1px solid #141414}
+  tr:hover td{background:#141414}
+  a{color:#f59e0b;text-decoration:none}
   a:hover{text-decoration:underline}
-  #toast{position:fixed;bottom:24px;right:24px;background:#4caf50;color:#fff;padding:12px 20px;border-radius:8px;font-weight:bold;display:none;z-index:99}
-  #toast.err{background:#c62828}
-  .btn-gold{background:#FFD700;color:#000;border:none;border-radius:6px;padding:10px 22px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:.5px}
-  .btn-gold:hover{background:#ffe033}
+  #toast{position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:12px 20px;
+    border-radius:10px;font-weight:bold;display:none;z-index:99;box-shadow:0 4px 20px #0008}
+  #toast.err{background:#dc2626}
+  .btn-gold{background:#f59e0b;color:#000;border:none;border-radius:8px;padding:10px 22px;
+    font-weight:900;font-size:13px;cursor:pointer;letter-spacing:.3px}
+  .btn-gold:hover{background:#fbbf24}
 """
 
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
-        ("dashboard", "/admin",              "🏠 Dashboard"),
-        ("market",    "/admin/market",       "📈 Market"),
-        ("trade-in",  "/admin/trade-in",     "🔁 Trade-In"),
-        ("bundles",   "/admin/bundles",      "📦 Bundles"),
-        ("csv",       "/admin/csv",           "📥 Import/Export"),
-        ("purchases", "/admin/purchases",    "🛒 Purchases"),
-        ("layby",     "/admin/layby",        "🏷️ Layby"),
-        ("profit",    "/admin/profit-loss",  "💰 P&L"),
-        ("eod",       "/admin/eod",          "🏧 End of Day"),
-        ("system",    "/admin/system",       "⚙️ System"),
-        ("logs",      "/admin/logs",         "📋 Logs"),
+        ("dashboard", "/admin",             "🏠", "Dashboard"),
+        ("market",    "/admin/market",      "📈", "Market"),
+        ("trade-in",  "/admin/trade-in",    "🔁", "Trade-In"),
+        ("bundles",   "/admin/bundles",     "📦", "Bundles"),
+        ("csv",       "/admin/csv",         "📥", "Import"),
+        ("purchases", "/admin/purchases",   "🛒", "Purchases"),
+        ("layby",     "/admin/layby",       "🏷️", "Layby"),
+        ("profit",    "/admin/profit-loss", "💰", "P&L"),
+        ("eod",       "/admin/eod",         "🏧", "End of Day"),
+        ("system",    "/admin/system",      "⚙️", "System"),
+        ("logs",      "/admin/logs",        "📋", "Logs"),
     ]
     items = "".join(
-        f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
-        for k, href, lbl in pages
+        f'<a href="{href}" class="nav-pill{" nav-active" if k == active else ""}">'
+        f'{icon} {lbl}</a>'
+        for k, href, icon, lbl in pages
     )
-    # Hub-dot: tiny coloured circle next to logo that goes green when POS is reachable
-    # (same-origin /health check — reliable proxy for scan-hub daemon health)
     hub_dot = (
-        '<span id="hub-dot" title="Scan Hub status" '
+        '<span id="hub-dot" title="POS hub status" '
         'style="display:inline-block;width:7px;height:7px;border-radius:50%;'
-        'background:#333;margin-left:6px;vertical-align:middle;'
-        'transition:background .4s"></span>'
+        'background:#333;margin-left:6px;vertical-align:middle;transition:background .4s"></span>'
     )
     hub_js = (
         "<script>"
         "(function(){"
+        "var c=document.getElementById('clock');"
+        "if(c){function tk(){c.textContent=new Date().toLocaleTimeString();}tk();setInterval(tk,1000);}"
         "function hb(){fetch('/health',{signal:AbortSignal.timeout(1800)})"
         ".then(r=>{var d=document.getElementById('hub-dot');"
-        "if(d)d.style.background=r.ok?'#4caf50':'#f44336';})"
+        "if(d)d.style.background=r.ok?'#22c55e':'#ef4444';})"
         ".catch(()=>{var d=document.getElementById('hub-dot');"
-        "if(d)d.style.background='#f44336';});};"
+        "if(d)d.style.background='#ef4444';});}"
         "hb();setInterval(hb,20000);"
         "})();"
         "</script>"
     )
     return (
         f'<nav class="admin-nav">'
+        f'<div class="nav-brand">'
         f'<span class="nav-logo">🔐 HANRYX{hub_dot}</span>'
+        f'</div>'
         f'{items}'
         f'<span class="nav-clock" id="clock"></span>'
         f'</nav>'
@@ -7586,7 +7613,7 @@ def admin_market():
 {_ADMIN_BASE_CSS}
   .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
   .search-row input{{flex:1;min-width:200px;background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;color:#e0e0e0;font-size:15px;outline:none;transition:.2s}}
-  .search-row input:focus{{border-color:#FFD700}}
+  .search-row input:focus{{border-color:#f59e0b}}
   .search-row select{{background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px;color:#e0e0e0;font-size:13px;outline:none;cursor:pointer}}
   .hint{{font-size:11px;color:#444;margin-bottom:22px}}
   /* variant strip */
@@ -7598,9 +7625,9 @@ def admin_market():
   .vstrip::-webkit-scrollbar{{height:4px}}.vstrip::-webkit-scrollbar-thumb{{background:#333;border-radius:2px}}
   .vcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:10px;cursor:pointer;min-width:120px;max-width:140px;flex-shrink:0;transition:.15s;text-align:center}}
   .vcard:hover{{border-color:#444;background:#1a1a1a}}
-  .vcard.sel{{border-color:#FFD700;background:#1a1400}}
+  .vcard.sel{{border-color:#f59e0b;background:#1a1400}}
   .vcard img{{width:100%;border-radius:6px;min-height:55px;object-fit:contain;display:block;margin-bottom:6px}}
-  .vcard .vp{{font-size:13px;font-weight:800;color:#FFD700}}
+  .vcard .vp{{font-size:13px;font-weight:800;color:#f59e0b}}
   .vcard .vs{{font-size:10px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}}
   .vcard .vn{{font-size:10px;color:#555}}
   /* result area */
@@ -7623,16 +7650,16 @@ def admin_market():
   .tier-row:last-child{{border-bottom:none}}
   .tier-row.best{{background:#1a1400}}
   .tier-label{{font-size:12px;color:#888}}
-  .tier-price{{font-size:15px;font-weight:800;color:#FFD700}}
+  .tier-price{{font-size:15px;font-weight:800;color:#f59e0b}}
   .tier-na{{color:#444}}
   /* condition */
   .cond-row{{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
   .cond-row label{{font-size:12px;color:#666}}
   .cond-row select{{background:#141414;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
-  .cond-row select:focus{{border-color:#FFD700}}
+  .cond-row select:focus{{border-color:#f59e0b}}
   /* market avg */
-  .mkt-box{{background:#1a1400;border:1px solid #FFD70033;border-radius:10px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}}
-  .mkt-avg{{font-size:32px;font-weight:900;color:#FFD700}}
+  .mkt-box{{background:#1a1400;border:1px solid #f59e0b33;border-radius:10px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}}
+  .mkt-avg{{font-size:32px;font-weight:900;color:#f59e0b}}
   .trade-val{{font-size:22px;font-weight:800;color:#60a5fa}}
   /* language grid */
   .lang-wrap{{background:#111827;border:1px solid #1e3a5f;border-radius:10px;padding:14px 16px;margin-bottom:16px}}
@@ -7659,7 +7686,7 @@ def admin_market():
   .lang-title-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}}
   .lang-age{{font-size:9px;color:#475569;margin-right:6px}}
   .lang-refresh-btn{{background:none;border:1px solid #334155;border-radius:5px;color:#94a3b8;font-size:11px;padding:2px 8px;cursor:pointer}}
-  .lang-refresh-btn:hover{{border-color:#FFD700;color:#FFD700}}
+  .lang-refresh-btn:hover{{border-color:#f59e0b;color:#f59e0b}}
   /* eBay vs TCGPlayer delta bar */
   .lang-delta{{border-radius:7px;padding:8px 12px;margin-bottom:10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
   .lang-delta.up{{background:#052e16;border:1px solid #166534}}
@@ -7683,7 +7710,7 @@ def admin_market():
   .empty-sub{{font-size:13px;color:#555;max-width:400px;margin:0 auto 20px;line-height:1.6}}
   .chips{{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}}
   .chip{{background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:6px 14px;font-size:12px;color:#aaa;cursor:pointer;transition:.15s}}
-  .chip:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  .chip:hover{{border-color:#f59e0b;color:#f59e0b;background:#1a1400}}
   /* loading */
   .skeleton{{background:linear-gradient(90deg,#1a1a1a 25%,#222 50%,#1a1a1a 75%);background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:8px;height:20px;margin-bottom:8px}}
   @keyframes shimmer{{0%{{background-position:200% 0}}100%{{background-position:-200% 0}}}}
@@ -7701,16 +7728,16 @@ def admin_market():
   .ebay-title{{font-size:14px;font-weight:800;color:#e0e0e0;letter-spacing:.5px}}
   .ebay-src{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.8px}}
   .ebay-src.stored{{background:#0f2a0f;color:#4ade80;border:1px solid #15803d44}}
-  .ebay-src.live{{background:#1a1400;color:#FFD700;border:1px solid #FFD70033}}
+  .ebay-src.live{{background:#1a1400;color:#f59e0b;border:1px solid #f59e0b33}}
   .ebay-refresh{{margin-left:auto;background:#141414;border:1px solid #333;color:#aaa;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;transition:.15s}}
-  .ebay-refresh:hover{{border-color:#FFD700;color:#FFD700}}
+  .ebay-refresh:hover{{border-color:#f59e0b;color:#f59e0b}}
   .ebay-loading{{color:#555;font-size:13px;padding:16px 0;text-align:center}}
   /* period cards */
   .period-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}}
   @media(max-width:540px){{.period-row{{grid-template-columns:1fr}}}}
   .pcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px}}
   .pcard-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
-  .pcard-price{{font-size:24px;font-weight:900;color:#FFD700;margin-bottom:4px}}
+  .pcard-price{{font-size:24px;font-weight:900;color:#f59e0b;margin-bottom:4px}}
   .pcard-meta{{font-size:11px;color:#666}}
   .trend-badge{{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px}}
   .trend-up{{background:#0f2a0f;color:#4ade80}}
@@ -7724,7 +7751,7 @@ def admin_market():
   .listing-row{{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;font-size:12px;transition:.1s}}
   .listing-row:hover{{background:#141414}}
   .listing-title{{color:#bbb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:12px}}
-  .listing-price{{font-size:13px;font-weight:800;color:#FFD700;white-space:nowrap}}
+  .listing-price{{font-size:13px;font-weight:800;color:#f59e0b;white-space:nowrap}}
   .listing-date{{color:#555;font-size:11px;margin-left:10px;white-space:nowrap}}
   .iqr-note{{font-size:10px;color:#444;margin-top:10px;text-align:right}}
 </style>
@@ -8232,10 +8259,10 @@ function applyCond() {{
 
     const tradein   = price * 0.80;
     const tradeStr  = mktM > 0 ? `<div class="lang-tradein">Trade-in: $${{tradein.toFixed(2)}}</div>` : '';
-    const highlighted = l.code === selLang ? 'border:1px solid #FFD700' : '';
+    const highlighted = l.code === selLang ? 'border:1px solid #f59e0b' : '';
     const pctBadge = pct !== null
       ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{pct}}% off</span>`
-      : `<span class="lang-pct" style="background:#1a1400;color:#FFD700">Base</span>`;
+      : `<span class="lang-pct" style="background:#1a1400;color:#f59e0b">Base</span>`;
 
     return `<div class="lang-cell" style="${{highlighted}}">
       <div class="lang-flag">${{l.flag}}</div>
@@ -8419,11 +8446,11 @@ function renderEbaySection(d) {{
         datasets: [{{
           label: 'Weekly Median (£)',
           data:  weeks.map(w => w.median != null ? +w.median.toFixed(2) : null),
-          borderColor:     '#FFD700',
+          borderColor:     '#f59e0b',
           backgroundColor: 'rgba(255,215,0,0.08)',
           borderWidth: 2,
           pointRadius: 4,
-          pointBackgroundColor: '#FFD700',
+          pointBackgroundColor: '#f59e0b',
           pointHoverRadius: 6,
           tension: 0.3,
           fill: true,
@@ -8437,10 +8464,10 @@ function renderEbaySection(d) {{
           legend: {{ display: false }},
           tooltip: {{
             backgroundColor: '#141414',
-            borderColor: '#FFD70066',
+            borderColor: '#f59e0b66',
             borderWidth: 1,
             titleColor: '#aaa',
-            bodyColor: '#FFD700',
+            bodyColor: '#f59e0b',
             bodyFont: {{ size: 14, weight: 'bold' }},
             callbacks: {{
               label: ctx => ' £' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '—'),
@@ -8516,7 +8543,7 @@ def admin_system():
         for name, svc in _SYS_SERVICES
     )
     site_rows = "".join(
-        f'<tr><td><a href="{url}" target="_blank" style="color:#FFD700">{name}</a></td>'
+        f'<tr><td><a href="{url}" target="_blank" style="color:#f59e0b">{name}</a></td>'
         f'<td><span class="dot" id="site-{_html.escape(name)}">●</span></td>'
         f'<td id="site-lbl-{_html.escape(name)}" style="color:#555">checking…</td></tr>'
         for name, url in _SYS_WEBSITES
@@ -8532,10 +8559,10 @@ def admin_system():
   .stat-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px}}
   .stat-card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px}}
   .stat-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
-  .stat-value{{font-size:30px;font-weight:900;color:#FFD700;line-height:1}}
+  .stat-value{{font-size:30px;font-weight:900;color:#f59e0b;line-height:1}}
   .stat-sub{{font-size:11px;color:#555;margin-top:4px}}
   .bar-wrap{{background:#222;border-radius:4px;height:6px;margin-top:8px;overflow:hidden}}
-  .bar-fill{{height:6px;border-radius:4px;background:linear-gradient(90deg,#FFD700,#f59e0b);transition:width .6s ease}}
+  .bar-fill{{height:6px;border-radius:4px;background:linear-gradient(90deg,#f59e0b,#f59e0b);transition:width .6s ease}}
   .bar-fill.warn{{background:linear-gradient(90deg,#ff9800,#f59e0b)}}
   .bar-fill.crit{{background:linear-gradient(90deg,#f44336,#c62828)}}
   .dot{{font-size:14px;color:#555;transition:.3s}}
@@ -8549,7 +8576,7 @@ def admin_system():
   .act-btn.stop:hover{{background:#2a1a1a}}
   .quick-actions{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}}
   .qa-btn{{background:#141414;border:1px solid #333;color:#e0e0e0;border-radius:8px;padding:12px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px}}
-  .qa-btn:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  .qa-btn:hover{{border-color:#f59e0b;color:#f59e0b;background:#1a1400}}
   #refreshStatus{{font-size:12px;color:#555;margin-left:auto;align-self:center}}
 </style>
 </head>
@@ -8773,7 +8800,7 @@ async function refreshWgPeers() {{
     status.textContent = peers.length + ' peer' + (peers.length!==1?'s':'') + ' · refreshed ' + new Date().toLocaleTimeString();
     tbody.innerHTML = peers.map(p => {{
       const nameCell = p.friendly
-        ? `<span style="color:#FFD700;font-weight:700">${{p.friendly}}</span><br><span style="font-size:10px;color:#444">${{p.short_key}}</span>`
+        ? `<span style="color:#f59e0b;font-weight:700">${{p.friendly}}</span><br><span style="font-size:10px;color:#444">${{p.short_key}}</span>`
         : `<span style="color:#555;font-size:11px">${{p.short_key}}</span>`;
       const hsColor = p.handshake_ok ? '#4caf50' : (p.handshake==='Never'?'#555':'#f59e0b');
       return `<tr>
@@ -8843,16 +8870,16 @@ def admin_logs():
   .tab-bar{{display:flex;gap:0;border-bottom:1px solid #222;margin-bottom:20px}}
   .tab{{padding:11px 20px;font-size:13px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:.15s}}
   .tab:hover{{color:#aaa}}
-  .tab.active{{color:#FFD700;border-bottom-color:#FFD700}}
+  .tab.active{{color:#f59e0b;border-bottom-color:#f59e0b}}
   .tab-panel{{display:none}}
   .tab-panel.active{{display:block}}
   .log-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
   .log-controls label{{font-size:12px;color:#666}}
   .log-controls select{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
-  .log-controls select:focus{{border-color:#FFD700}}
-  .log-controls input[type=range]{{accent-color:#FFD700;width:100px}}
+  .log-controls select:focus{{border-color:#f59e0b}}
+  .log-controls input[type=range]{{accent-color:#f59e0b;width:100px}}
   .toggle{{display:flex;align-items:center;gap:6px;font-size:12px;color:#888;cursor:pointer;padding:7px 14px;background:#1a1a1a;border:1px solid #333;border-radius:6px}}
-  .toggle input{{accent-color:#FFD700}}
+  .toggle input{{accent-color:#f59e0b}}
   #logBox{{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#a0a0a0;height:65vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.55}}
   .log-status{{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}}
   .log-status-txt{{font-size:11px;color:#444}}
@@ -8860,8 +8887,8 @@ def admin_logs():
   .log-line-warn{{color:#fbbf24}}
   .log-line-ok{{color:#4ade80}}
   #searchInp{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none;width:200px}}
-  #searchInp:focus{{border-color:#FFD700}}
-  .highlight{{background:#FFD70044;border-radius:2px}}
+  #searchInp:focus{{border-color:#f59e0b}}
+  .highlight{{background:#f59e0b44;border-radius:2px}}
   /* Scan History */
   .sh-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
   .sh-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
@@ -9026,7 +9053,7 @@ async function loadScanLog() {{
       const price = s.price > 0 ? '$' + s.price.toFixed(2) : '—';
       const name  = s.cardName || '<span style="color:#444">—</span>';
       const qr    = `<code style="color:#aaa;font-size:11px">${{s.qrCode}}</code>`;
-      return `<tr><td style="color:#555">${{i+1}}</td><td style="color:#666;font-size:11px">${{t}}</td><td>${{qr}}</td><td>${{name}}</td><td>${{badge}}</td><td style="color:#FFD700">${{price}}</td></tr>`;
+      return `<tr><td style="color:#555">${{i+1}}</td><td style="color:#666;font-size:11px">${{t}}</td><td>${{qr}}</td><td>${{name}}</td><td>${{badge}}</td><td style="color:#f59e0b">${{price}}</td></tr>`;
     }}).join('');
   }} catch(e) {{
     document.getElementById('shStatus').textContent = 'Error: ' + e.message;
@@ -9848,7 +9875,7 @@ def admin_dashboard():
         else:
             gcurrent = 0
         pct = min(100, int((gcurrent / gtarget * 100) if gtarget else 0))
-        pct_color = "#4caf50" if pct >= 100 else "#FFD700"
+        pct_color = "#4caf50" if pct >= 100 else "#f59e0b"
         strike = "text-decoration:line-through;opacity:.5;" if gcompleted else ""
         lbl = f"{gcurrent:.0f} / {gtarget}"
         goals_html += (
@@ -9902,13 +9929,13 @@ def admin_dashboard():
   .cards{{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}}
   .card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px;min-width:150px;flex:1}}
   .card label{{color:#777;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:4px}}
-  .card .value{{color:#FFD700;font-size:28px;font-weight:900}}
+  .card .value{{color:#f59e0b;font-size:28px;font-weight:900}}
   .card .value.green{{color:#4caf50}}
   .form-panel{{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:20px;margin-top:24px}}
   .form-panel h2{{margin-top:0;margin-bottom:14px;font-size:11px;color:#555;letter-spacing:1.5px;text-transform:uppercase}}
   .form-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}}
   .form-grid input,.form-grid select{{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:13px}}
-  .form-grid input:focus,.form-grid select:focus{{outline:none;border-color:#FFD700}}
+  .form-grid input:focus,.form-grid select:focus{{outline:none;border-color:#f59e0b}}
   .form-grid label{{display:block;color:#666;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}}
   .btn-del{{background:none;border:1px solid #c62828;color:#c62828;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}}
   .btn-del:hover{{background:#c62828;color:#fff}}
@@ -9951,7 +9978,7 @@ def admin_dashboard():
     text-align:center;
   }}
   #pf-price{{
-    color:#FFD700;
+    color:#f59e0b;
     font-size:clamp(56px,12vw,130px);
     font-weight:900;
     letter-spacing:-2px;
@@ -9968,7 +9995,7 @@ def admin_dashboard():
   #pf-stock.low{{color:rgba(255,80,80,0.85)}}
   #pf-bar{{
     position:absolute;bottom:0;left:0;
-    height:4px;background:#FFD700;
+    height:4px;background:#f59e0b;
     width:100%;
     transform-origin:left;
     transform:scaleX(1);
@@ -9986,11 +10013,24 @@ def admin_dashboard():
 {nav}
 <div class="wrap">
 <h1>🏠 Dashboard</h1>
-<div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp; <span id="clock"></span>
-  &nbsp;·&nbsp; <a href="/admin/market">📈 Market Prices</a>
-  &nbsp;·&nbsp; <a href="/admin/system">⚙️ System</a>
-  &nbsp;·&nbsp; <a href="/admin/valuation-report" target="_blank" style="color:#facc15">📊 Valuation</a>
-  &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;">⬇ APK</a>
+<div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp;
+  <a href="/admin/valuation-report" target="_blank" style="color:#f59e0b">📊 Valuation Report</a>
+  &nbsp;·&nbsp;
+  <a href="/download/apk" style="background:#f59e0b;color:#000;padding:2px 9px;border-radius:999px;font-weight:800;font-size:11px;letter-spacing:.3px">⬇ APK</a>
+</div>
+
+<!-- Square-style quick-action card grid -->
+<div class="qa-grid">
+  <a href="/admin/market"       class="qa-card"><div class="qa-icon">📈</div><div class="qa-label">Market</div><div class="qa-sub">Live pricing & eBay</div></a>
+  <a href="/admin/trade-in"     class="qa-card"><div class="qa-icon">🔁</div><div class="qa-label">Trade-In</div><div class="qa-sub">Buy & exchange</div></a>
+  <a href="/admin/bundles"      class="qa-card"><div class="qa-icon">📦</div><div class="qa-label">Bundles</div><div class="qa-sub">Pack deals</div></a>
+  <a href="/admin/csv"          class="qa-card"><div class="qa-icon">📥</div><div class="qa-label">Import</div><div class="qa-sub">CSV & bulk upload</div></a>
+  <a href="/admin/purchases"    class="qa-card"><div class="qa-icon">🛒</div><div class="qa-label">Purchases</div><div class="qa-sub">Stock intake</div></a>
+  <a href="/admin/layby"        class="qa-card"><div class="qa-icon">🏷️</div><div class="qa-label">Layby</div><div class="qa-sub">Held orders</div></a>
+  <a href="/admin/profit-loss"  class="qa-card"><div class="qa-icon">💰</div><div class="qa-label">P&amp;L</div><div class="qa-sub">Profit & loss</div></a>
+  <a href="/admin/eod"          class="qa-card"><div class="qa-icon">🏧</div><div class="qa-label">End of Day</div><div class="qa-sub">Daily close</div></a>
+  <a href="/admin/system"       class="qa-card"><div class="qa-icon">⚙️</div><div class="qa-label">System</div><div class="qa-sub">Settings & tools</div></a>
+  <a href="/admin/logs"         class="qa-card"><div class="qa-icon">📋</div><div class="qa-label">Logs</div><div class="qa-sub">Audit & errors</div></a>
 </div>
 
 <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px;align-items:stretch">
@@ -10247,7 +10287,7 @@ def admin_dashboard():
   <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <button class="btn-gold" onclick="addProduct()">Save Product</button>
     <div id="mkt-price-hint" style="font-size:12px;color:#888;display:none">
-      TCG market: <span id="mkt-price-val" style="color:#FFD700;font-weight:bold"></span>
+      TCG market: <span id="mkt-price-val" style="color:#f59e0b;font-weight:bold"></span>
     </div>
   </div>
 </div>
@@ -10394,8 +10434,8 @@ async function refreshStats() {{
     const pts  = vals.map((v,i) => (PAD + i*step).toFixed(1) + ',' + (H - PAD - ((v/max)*(H-PAD*2))).toFixed(1)).join(' ');
     document.getElementById('sparkline-svg').innerHTML =
       `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%" preserveAspectRatio="none" style="display:block">
-        <polyline points="${{pts}}" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-        ${{vals.map((v,i) => v > 0 ? `<circle cx="${{(PAD+i*step).toFixed(1)}}" cy="${{(H-PAD-((v/max)*(H-PAD*2))).toFixed(1)}}" r="3" fill="#FFD700"/>` : '').join('')}}
+        <polyline points="${{pts}}" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        ${{vals.map((v,i) => v > 0 ? `<circle cx="${{(PAD+i*step).toFixed(1)}}" cy="${{(H-PAD-((v/max)*(H-PAD*2))).toFixed(1)}}" r="3" fill="#f59e0b"/>` : '').join('')}}
       </svg>`;
     document.getElementById('spark-last-refresh').textContent =
       'Refreshed ' + new Date().toLocaleTimeString();
@@ -11203,13 +11243,13 @@ def offline_search():
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{background:#0d0d0d;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}}
-  h1{{color:#FFD700;font-size:22px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}}
+  h1{{color:#f59e0b;font-size:22px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}}
   .sub{{color:#555;font-size:12px;letter-spacing:1px;margin-bottom:20px}}
   .search-bar{{display:flex;gap:10px;margin-bottom:20px}}
   input{{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;
          padding:10px 14px;font-size:14px;outline:none}}
-  input:focus{{border-color:#FFD700}}
-  button{{background:#FFD700;color:#000;border:none;border-radius:8px;padding:10px 20px;
+  input:focus{{border-color:#f59e0b}}
+  button{{background:#f59e0b;color:#000;border:none;border-radius:8px;padding:10px 20px;
           font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px;white-space:nowrap}}
   button:hover{{background:#e5c100}}
   .results{{display:grid;gap:12px}}
@@ -11229,7 +11269,7 @@ def offline_search():
   .status{{color:#888;font-size:12px;margin-bottom:12px;min-height:18px}}
   #back{{display:inline-block;color:#555;font-size:12px;text-decoration:none;
          border:1px solid #333;border-radius:6px;padding:5px 12px;margin-bottom:16px}}
-  #back:hover{{color:#FFD700;border-color:#FFD700}}
+  #back:hover{{color:#f59e0b;border-color:#f59e0b}}
 </style>
 </head>
 <body>
