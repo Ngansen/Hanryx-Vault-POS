@@ -78,6 +78,18 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 import json
+try:
+    import orjson as _orjson
+    def _orjson_dumps(obj, **kw):
+        opts = 0
+        if kw.get("sort_keys"): opts |= _orjson.OPT_SORT_KEYS
+        if kw.get("indent"):    opts |= _orjson.OPT_INDENT_2
+        return _orjson.dumps(obj, option=opts or None).decode()
+    json.loads = _orjson.loads
+    json.dumps = _orjson_dumps
+    _ORJSON = True
+except ImportError:
+    _ORJSON = False
 import datetime
 import functools
 import hashlib
@@ -88,6 +100,7 @@ import re
 import subprocess
 import threading
 import time as _time
+from concurrent.futures import ThreadPoolExecutor as _TPE
 import urllib.parse
 import base64
 import csv
@@ -390,7 +403,7 @@ def _audit_write(action: str, resource: str = "", detail: str = ""):
         except Exception as _e:
             log.debug("[audit] write failed: %s", _e)
 
-    threading.Thread(target=_do_safe, daemon=True).start()
+    _bg(_do_safe)
 
 
 def audit_action(action: str, resource_fn=None):
@@ -493,6 +506,82 @@ _health_cache    = TTLCache(maxsize=1,   ttl=5)    # /health — 5 s TTL
 _qr_scan_cache   = TTLCache(maxsize=500, ttl=300)  # /card/scan — 5 min per QR code
 _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
+
+# ---------------------------------------------------------------------------
+# Worker thread pool — replaces ad-hoc daemon threads for fire-and-forget work
+# ---------------------------------------------------------------------------
+_worker_pool = _TPE(max_workers=8, thread_name_prefix="hvault-worker")
+
+def _bg(fn, *args, **kwargs):
+    """Submit a fire-and-forget task to the shared worker pool."""
+    try:
+        _worker_pool.submit(fn, *args, **kwargs)
+    except Exception as _e:
+        log.warning("[worker] submit failed for %s: %s", getattr(fn, "__name__", fn), _e)
+
+def _queue_unsynced(qr_code: str, change_type: str = "stock", delta: int = 0):
+    """
+    Record a stock/price change that has not yet been pushed to the storefront.
+    Runs in the background so it never blocks the request path.
+    change_type: 'stock' | 'price' | 'new' | 'delete'
+    """
+    def _write():
+        try:
+            db = _direct_db()
+            db.execute(
+                "INSERT INTO unsynced_changes (qr_code, change_type, delta) VALUES (%s, %s, %s)",
+                (qr_code, change_type, delta),
+            )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[unsynced] write failed: %s", _e)
+    _bg(_write)
+
+# ---------------------------------------------------------------------------
+# HTTP retry wrapper — automatic exponential back-off on transient failures
+# ---------------------------------------------------------------------------
+def _http_get(url, *, retries=3, backoff=0.5, timeout=10, headers=None, **kwargs):
+    """GET with retries on network / timeout errors. Raises on final failure."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            r = _requests.get(url, timeout=timeout, headers=headers or {}, **kwargs)
+            r.raise_for_status()
+            return r
+        except (_requests.Timeout, _requests.ConnectionError) as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+        except _requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code < 500:
+                raise
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+    raise last_exc
+
+def _http_post(url, *, retries=2, backoff=0.5, timeout=10, headers=None,
+               json_body=None, data=None, **kwargs):
+    """POST with retries on network / timeout errors. Raises on final failure."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            r = _requests.post(url, timeout=timeout, headers=headers or {},
+                               json=json_body, data=data, **kwargs)
+            r.raise_for_status()
+            return r
+        except (_requests.Timeout, _requests.ConnectionError) as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+        except _requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code < 500:
+                raise
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+    raise last_exc
 
 # ---------------------------------------------------------------------------
 # Smart Scan Engine — in-memory rapidfuzz index + learning cache
@@ -1241,6 +1330,18 @@ def init_db():
             alerted   INTEGER NOT NULL DEFAULT 0,
             updated   BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
+
+        # ── Storefront sync queue — tracks unsynchronised stock/price changes ──
+        f"""CREATE TABLE IF NOT EXISTS unsynced_changes (
+            id          BIGSERIAL PRIMARY KEY,
+            qr_code     TEXT NOT NULL,
+            change_type TEXT NOT NULL DEFAULT 'stock',
+            delta       INTEGER NOT NULL DEFAULT 0,
+            synced      INTEGER NOT NULL DEFAULT 0,
+            created_at  BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_unsynced_qr ON unsynced_changes(qr_code)",
+        "CREATE INDEX IF NOT EXISTS idx_unsynced_pending ON unsynced_changes(synced) WHERE synced = 0",
     ]
 
     for stmt in _ddl_statements:
@@ -1402,29 +1503,32 @@ def _sync_from_github(db, force: bool = False) -> dict:
             reader = csv.DictReader(io.StringIO(file_resp.text))
             items  = list(reader)
 
-        upserted = 0
+        _ts  = int(_time.time() * 1000)
+        rows = []
         for item in items:
             qr   = (item.get("qrCode") or item.get("qr_code") or item.get("barcode") or "").strip()
             name = (item.get("name") or item.get("title") or "").strip()
             if not qr or not name:
                 continue
-            db.execute("""
-                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT(qr_code) DO UPDATE SET
-                    name=excluded.name, price=excluded.price,
-                    category=excluded.category, description=excluded.description,
-                    last_updated=excluded.last_updated
-            """, (
+            rows.append((
                 qr, name,
                 float(item.get("price") or 0),
                 item.get("category") or "General",
                 "", "",
                 item.get("description") or "",
                 int(item.get("stockQuantity") or item.get("stock") or 0),
-                int(_time.time() * 1000),
+                _ts,
             ))
-            upserted += 1
+        if rows:
+            db.executemany("""
+                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT(qr_code) DO UPDATE SET
+                    name=excluded.name, price=excluded.price,
+                    category=excluded.category, description=excluded.description,
+                    last_updated=excluded.last_updated
+            """, rows)
+        upserted = len(rows)
         db.commit()
         log.info("[github-sync] GitHub file → %d products upserted", upserted)
         results["github"] = {"ok": True, "upserted": upserted}
@@ -2445,7 +2549,11 @@ def scan_pending():
         if enriched.get("name") or enriched.get("tcgData"):
             result["resolvedProduct"] = enriched
     _cache_set(_scan_cache, "p", result)
-    return jsonify(result)
+    resp = jsonify(result)
+    resp.headers["Deprecation"] = "true"
+    resp.headers["Link"] = '</scan/stream>; rel="successor-version"'
+    resp.headers["Sunset"] = "Sat, 01 Jan 2026 00:00:00 GMT"
+    return resp
 
 
 @app.route("/scan/ack/<int:scan_id>", methods=["POST"])
@@ -2661,7 +2769,7 @@ def card_scan_fast():
                         _enrich_with_tcg(None, qr_code)
                     except Exception as _ee:
                         log.debug("[smart-scan] bg enrich failed for %s: %s", qr_code, _ee)
-                threading.Thread(target=_bg_enrich, daemon=True).start()
+                _bg(_bg_enrich)
 
     def _row_to_scan_result(r, confidence=1.0, method="exact", variant=""):
         return {
@@ -3318,19 +3426,21 @@ def record_sale_history():
     if not items:
         return jsonify({"ok": True, "recorded": 0}), 200
 
-    db       = get_db()
-    recorded = 0
+    db   = get_db()
+    rows = []
     for item in items:
         name  = (item.get("name") or "").strip()
         price = float(item.get("price") or 0)
         qty   = int(item.get("quantity") or 1)
         if not name or price <= 0:
             continue
-        db.execute(
+        rows.append((name, price, qty, sold_at))
+    if rows:
+        db.executemany(
             "INSERT INTO sale_history (name, price, quantity, sold_at) VALUES (%s, %s, %s, %s)",
-            (name, price, qty, sold_at)
+            rows,
         )
-        recorded += 1
+    recorded = len(rows)
     db.commit()
     log.info("[/sales POST] recorded=%d idem_key=%s", recorded, idem_key or "none")
 
@@ -3479,6 +3589,7 @@ def inventory_decrement():
             if result.rowcount > 0:
                 updated += 1
                 _invalidate_inventory(qr_code=qr)
+                _queue_unsynced(qr, "stock", -qty)
         except Exception as e:
             errors.append({"qrCode": qr, "error": str(e)})
 
@@ -4789,7 +4900,7 @@ def admin_add_product():
         "tags":        tags,
         "savedAt":     _now_ms(),
     }
-    threading.Thread(target=_fire_webhook, args=(webhook_payload,), daemon=True).start()
+    _bg(_fire_webhook, webhook_payload)
 
     return jsonify({"ok": True, "qrCode": qr_code})
 
@@ -5032,7 +5143,7 @@ def print_receipt():
     if not sale:
         return jsonify({"error": "Sale JSON body required"}), 400
 
-    threading.Thread(target=_do_print, args=(sale,), daemon=True).start()
+    _bg(_do_print, sale)
     return jsonify({"ok": True, "queued": True}), 202
 
 
@@ -9559,7 +9670,7 @@ def _send_sale_email(sale_name: str, price: float, method: str = "", qty: int = 
             log.info("[email] Sale alert sent for: %s", sale_name)
         except Exception as _e:
             log.warning("[email] Failed to send sale alert: %s", _e)
-    threading.Thread(target=_do_send, daemon=True).start()
+    _bg(_do_send)
 
 
 # ---------------------------------------------------------------------------
@@ -9610,7 +9721,7 @@ def _push_stock_to_storefront(items: list):
         except Exception as _e:
             log.warning("[storefront-sync] push failed (non-fatal): %s", _e)
 
-    threading.Thread(target=_do_push, daemon=True).start()
+    _bg(_do_push)
 
 
 @app.route("/admin/email-config", methods=["GET"])
@@ -10723,7 +10834,7 @@ def _run_low_stock_checker():
                             log.info("[low-stock] Alert sent for %s (stock=%s)", name, stock)
                         except Exception as _e:
                             log.warning("[low-stock] Email failed: %s", _e)
-                    threading.Thread(target=_send_alert, daemon=True).start()
+                    _bg(_send_alert)
                 db.execute(
                     "UPDATE low_stock_config SET alerted=1 WHERE qr_code=%s", (r["qr_code"],)
                 )
@@ -10831,6 +10942,47 @@ def api_health_pool():
         "pool_max":   mx,
         "status":     "ok" if used != "?" and used < (mx or 999) else "unknown",
     })
+
+
+# ---------------------------------------------------------------------------
+# 10. Storefront sync queue — GET/POST /api/v1/sync/pending
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/sync/pending", methods=["GET"])
+@require_api_token
+def api_sync_pending():
+    """
+    Returns unsynced stock/price changes for the storefront to pull.
+    Optional ?limit=N (default 100, max 500).
+    """
+    limit = min(int(request.args.get("limit", 100)), 500)
+    db    = get_db()
+    rows  = db.execute(
+        "SELECT id, qr_code, change_type, delta, created_at "
+        "FROM unsynced_changes WHERE synced = 0 ORDER BY id ASC LIMIT %s",
+        (limit,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/sync/ack", methods=["POST"])
+@require_api_token
+def api_sync_ack():
+    """
+    Mark one or more unsynced_changes rows as synced.
+    Body: { "ids": [1, 2, 3] }
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    ids  = [int(i) for i in (body.get("ids") or []) if str(i).isdigit()]
+    if not ids:
+        return jsonify({"error": "ids array required"}), 400
+    db = get_db()
+    db.execute(
+        "UPDATE unsynced_changes SET synced=1 WHERE id = ANY(%s::bigint[])",
+        (ids,),
+    )
+    db.commit()
+    return jsonify({"ok": True, "acked": len(ids)})
 
 
 def _warmup_smart_scanner():

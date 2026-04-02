@@ -20,6 +20,32 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── PgBouncer — connection pooler ────────────────────────────────────────────
+  # Sits between Flask and PostgreSQL in transaction-pooling mode.
+  # Keeps PostgreSQL connection count low (Pi 5 RAM-friendly) while Flask can
+  # open as many short-lived client connections as it needs.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      POOL_MODE:         transaction
+      MAX_CLIENT_CONN:   200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE:     5
+      RESERVE_POOL_SIZE: 5
+      SERVER_RESET_QUERY: DISCARD ALL
+      LOG_CONNECTIONS:   "0"
+      LOG_DISCONNECTIONS: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Flask POS server ──────────────────────────────────────────────────────────
   # Handles: tablet POS, admin dashboard, scan queue, Zettle, BT receipt printer
   # Accessible: LAN (port 8080) + Tailscale VPN hostname
@@ -30,7 +56,7 @@ services:
     ports:
       - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
     environment:
-      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@pgbouncer:5432/vaultpos
       FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
 
@@ -63,6 +89,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
 
   # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
   # Public-facing React + Express customer website with PayPal checkout.
