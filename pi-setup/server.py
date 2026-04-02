@@ -997,29 +997,286 @@ class _SmartScanner:
         return self._build_result(item, confidence, method)
 
     def _get_suggestions(self, qr: str) -> list:
-        """Return top-3 fuzzy name suggestions when no match is confident enough."""
+        """
+        Return up to 5 suggestions when no confident match is found.
+
+        Two sources, merged and ranked:
+          1. Inventory fuzzy match  — in-stock cards with similar names
+          2. Canonical PokeAPI names — full Pokédex for "not in stock" hints
+
+        Source 2 only fires when source 1 returns nothing useful (best score < 0.65),
+        so we don't show "not in stock" suggestions when a real inventory hit exists.
+        """
         with self._lock:
             names = list(self._names)
             index = list(self._index)
-        if not names:
-            return []
-        results = _rfprocess.extract(qr, names, scorer=_fuzz.WRatio, limit=3)
+
         suggestions = []
-        for name, score, idx in results:
-            item = index[idx]
-            suggestions.append({
-                "name":       name,
-                "qrCode":     item.get("qr_code"),
-                "score":      round(score / 100.0, 3),
-                "price":      item.get("price"),
-                "rarity":     item.get("rarity") or "",
-                "variant":    item.get("_variant", ""),
-                "imageUrl":   item.get("image_url") or "",
-            })
-        return suggestions
+
+        # ── Source 1: inventory ───────────────────────────────────────────────
+        if names:
+            results = _rfprocess.extract(qr, names, scorer=_fuzz.WRatio, limit=3)
+            for name, score, idx in results:
+                item = index[idx]
+                suggestions.append({
+                    "name":       name,
+                    "qrCode":     item.get("qr_code"),
+                    "score":      round(score / 100.0, 3),
+                    "price":      item.get("price"),
+                    "rarity":     item.get("rarity") or "",
+                    "variant":    item.get("_variant", ""),
+                    "imageUrl":   item.get("image_url") or "",
+                    "inStock":    True,
+                    "source":     "inventory",
+                })
+
+        # ── Source 2: canonical Pokédex (only when inventory results are weak) ─
+        best_inv_score = max((s["score"] for s in suggestions), default=0.0)
+        if best_inv_score < 0.65 and _RAPIDFUZZ_AVAILABLE:
+            canon = _normalize_to_canonical(qr, threshold=60)
+            if canon:
+                # Only add if the canonical name isn't already in suggestions
+                already = any(
+                    s["name"].lower() == canon["canonical"].lower()
+                    for s in suggestions
+                )
+                if not already:
+                    suggestions.append({
+                        "name":      canon["canonical"],
+                        "qrCode":    None,
+                        "score":     canon["score"],
+                        "price":     None,
+                        "rarity":    "",
+                        "variant":   "",
+                        "imageUrl":  (
+                            f"https://raw.githubusercontent.com/PokeAPI/sprites/master/"
+                            f"sprites/pokemon/other/official-artwork/{canon['pokedex_no']}.png"
+                        ),
+                        "inStock":   False,
+                        "source":    "pokedex",
+                        "pokedexNo": canon["pokedex_no"],
+                        "hint":      "Not in your stock — add it via Trade-In or Purchase Order",
+                    })
+
+        # Sort by score descending, cap at 5
+        suggestions.sort(key=lambda x: x["score"], reverse=True)
+        return suggestions[:5]
 
 
 _smart_scanner = _SmartScanner()
+
+
+# ---------------------------------------------------------------------------
+# PokéAPI canonical Pokémon name cache
+# ---------------------------------------------------------------------------
+# Fetches every species name once from pokeapi.co and stores it in PostgreSQL.
+# Loaded into a module-level in-memory list for zero-latency lookups.
+# Refreshed weekly in the background — no per-request network calls.
+# ---------------------------------------------------------------------------
+
+_POKEAPI_BASE = "https://pokeapi.co/api/v2"
+_POKEAPI_CACHE_TTL_DAYS = 7
+
+# Slugs that need a special display name (PokeAPI returns lowercase-hyphen slugs)
+_SLUG_SPECIAL: dict[str, str] = {
+    "mr-mime":    "Mr. Mime",
+    "mime-jr":    "Mime Jr.",
+    "mr-rime":    "Mr. Rime",
+    "type-null":  "Type: Null",
+    "ho-oh":      "Ho-Oh",
+    "porygon-z":  "Porygon-Z",
+    "jangmo-o":   "Jangmo-o",
+    "hakamo-o":   "Hakamo-o",
+    "kommo-o":    "Kommo-o",
+    "tapu-koko":  "Tapu Koko",
+    "tapu-lele":  "Tapu Lele",
+    "tapu-bulu":  "Tapu Bulu",
+    "tapu-fini":  "Tapu Fini",
+    "chi-yu":     "Chi-Yu",
+    "chien-pao":  "Chien-Pao",
+    "ting-lu":    "Ting-Lu",
+    "wo-chien":   "Wo-Chien",
+    "great-tusk": "Great Tusk",
+    "scream-tail":"Scream Tail",
+    "brute-bonnet":"Brute Bonnet",
+    "flutter-mane":"Flutter Mane",
+    "slither-wing":"Slither Wing",
+    "sandy-shocks":"Sandy Shocks",
+    "iron-treads": "Iron Treads",
+    "iron-bundle": "Iron Bundle",
+    "iron-hands":  "Iron Hands",
+    "iron-jugulis":"Iron Jugulis",
+    "iron-moth":   "Iron Moth",
+    "iron-thorns": "Iron Thorns",
+    "roaring-moon":"Roaring Moon",
+    "iron-valiant":"Iron Valiant",
+    "walking-wake":"Walking Wake",
+    "iron-leaves": "Iron Leaves",
+    "gouging-fire":"Gouging Fire",
+    "raging-bolt": "Raging Bolt",
+    "iron-boulder":"Iron Boulder",
+    "iron-crown":  "Iron Crown",
+    "terapagos":   "Terapagos",
+}
+
+
+def _slug_to_name(slug: str) -> str:
+    """Convert a PokeAPI slug like 'mr-mime' to a display name like 'Mr. Mime'."""
+    if slug in _SLUG_SPECIAL:
+        return _SLUG_SPECIAL[slug]
+    return " ".join(part.capitalize() for part in slug.split("-"))
+
+
+# Module-level in-memory list: [{slug, name, pokedex_no}]
+_pokeapi_names_lock  = threading.Lock()
+_pokeapi_names_list: list[dict] = []   # full dicts
+_pokeapi_names_strs: list[str]  = []   # just the display names (for rapidfuzz)
+_pokeapi_names_ready = False
+
+
+def _pokeapi_fetch_and_store() -> int:
+    """
+    Fetch all species names from PokeAPI and upsert into pokeapi_name_cache.
+    Returns the count of names stored, or 0 on failure.
+    """
+    try:
+        resp = _requests.get(
+            f"{_POKEAPI_BASE}/pokemon-species",
+            params={"limit": 10000, "offset": 0},
+            timeout=20,
+            headers={"User-Agent": "HanryxVault-POS/1.0"},
+        )
+        resp.raise_for_status()
+        data    = resp.json()
+        results = data.get("results", [])
+    except Exception as _e:
+        log.warning("[pokeapi] fetch failed: %s", _e)
+        return 0
+
+    db  = _direct_db()
+    now = _now_ms()
+    for idx, entry in enumerate(results, start=1):
+        slug = entry.get("name", "")
+        name = _slug_to_name(slug)
+        db.execute(
+            """
+            INSERT INTO pokeapi_name_cache (slug, name, pokedex_no, fetched_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (slug) DO UPDATE
+              SET name=EXCLUDED.name,
+                  pokedex_no=EXCLUDED.pokedex_no,
+                  fetched_at=EXCLUDED.fetched_at
+            """,
+            (slug, name, idx, now),
+        )
+    db.commit()
+    db.close()
+    log.info("[pokeapi] stored %d species names", len(results))
+    return len(results)
+
+
+def _load_pokeapi_names_from_db() -> list[dict]:
+    """Read all rows from pokeapi_name_cache into memory."""
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT slug, name, pokedex_no FROM pokeapi_name_cache ORDER BY pokedex_no ASC"
+        ).fetchall()
+        db.close()
+        return [{"slug": r["slug"], "name": r["name"], "pokedex_no": r["pokedex_no"]} for r in rows]
+    except Exception as _e:
+        log.warning("[pokeapi] db load failed: %s", _e)
+        return []
+
+
+def _ensure_pokeapi_names():
+    """
+    Load canonical Pokémon names into memory.
+    On first call: checks DB freshness (< 7 days) — fetches from PokeAPI if stale.
+    Thread-safe; subsequent calls are no-ops.
+    """
+    global _pokeapi_names_ready, _pokeapi_names_list, _pokeapi_names_strs
+    with _pokeapi_names_lock:
+        if _pokeapi_names_ready:
+            return
+
+    # Check cache freshness in DB
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT MAX(fetched_at) as last_fetch, COUNT(*) as cnt FROM pokeapi_name_cache"
+        ).fetchone()
+        db.close()
+        count      = row["cnt"] or 0
+        last_fetch = row["last_fetch"] or 0
+        age_days   = (_now_ms() - last_fetch) / 86_400_000
+        stale      = count < 100 or age_days > _POKEAPI_CACHE_TTL_DAYS
+    except Exception:
+        count  = 0
+        stale  = True
+
+    if stale:
+        log.info("[pokeapi] cache stale (%d entries, %.1f days old) — fetching fresh", count, age_days if count else 0)
+        _bg(_pokeapi_fetch_and_store)
+        # Use whatever is already in DB while background fetch runs
+    
+    entries = _load_pokeapi_names_from_db()
+
+    with _pokeapi_names_lock:
+        _pokeapi_names_list  = entries
+        _pokeapi_names_strs  = [e["name"] for e in entries]
+        _pokeapi_names_ready = len(entries) > 0
+    
+    log.info("[pokeapi] canonical name index ready: %d species", len(entries))
+
+
+def _normalize_to_canonical(query: str, threshold: int = 70) -> dict | None:
+    """
+    Find the closest canonical Pokémon species name to `query` using rapidfuzz.
+    Returns {canonical, slug, pokedex_no, score} or None if below threshold.
+
+    Used to:
+      • Clean up typos before eBay price searches  (e.g. "Chrizard" → "Charizard")
+      • Power "Did you mean?" suggestions for cards not in stock
+    """
+    if not _RAPIDFUZZ_AVAILABLE:
+        return None
+    with _pokeapi_names_lock:
+        names   = list(_pokeapi_names_strs)
+        entries = list(_pokeapi_names_list)
+    if not names:
+        return None
+
+    # Use Jaro-Winkler for short name strings (prefix-heavy, good for species names)
+    # then verify with WRatio for word-reordered inputs
+    from rapidfuzz.distance import JaroWinkler as _jw
+    jw_scores = [(i, _jw.similarity(query, n) * 100) for i, n in enumerate(names)]
+    best_jw   = max(jw_scores, key=lambda x: x[1])
+
+    wr_result = _rfprocess.extractOne(query, names, scorer=_fuzz.WRatio, score_cutoff=threshold)
+
+    # Pick whichever algorithm scored higher
+    if wr_result and wr_result[1] >= best_jw[1]:
+        matched_name, score, idx = wr_result
+    elif best_jw[1] >= threshold:
+        idx  = best_jw[0]
+        score = best_jw[1]
+        matched_name = names[idx]
+    else:
+        return None
+
+    entry = entries[idx]
+    return {
+        "canonical":   matched_name,
+        "slug":        entry["slug"],
+        "pokedex_no":  entry["pokedex_no"],
+        "score":       round(score / 100.0, 3),
+        "exact":       matched_name.lower() == query.lower(),
+    }
+
+
+# Warm up the name index on startup in the background
+_bg(_ensure_pokeapi_names)
 
 
 # ---------------------------------------------------------------------------
@@ -12018,34 +12275,56 @@ def api_pricing_intelligent():
     if not name:
         return jsonify({"error": "name is required"}), 400
 
-    # Normalise input to English
+    # ── Step 1: translate non-English input to English ────────────────────────
     card = _translate_card_input(
         {"name": name, "set": set_n or None, "number": number or None},
         lang,
     )
+
+    # ── Step 2: canonical name normalisation via PokéAPI name index ──────────
+    # Corrects typos and non-canonical spellings before hitting eBay.
+    # e.g. "Chrizard" → "Charizard", "Genger" → "Gengar"
+    canon_match = None
+    english_name = (card.get("name") or "").strip()
+    if english_name:
+        _ensure_pokeapi_names()
+        canon_match = _normalize_to_canonical(english_name, threshold=72)
+        if canon_match and not canon_match["exact"]:
+            # Swap in the corrected name; preserve original for response transparency
+            card = {**card, "name": canon_match["canonical"]}
+            log.debug(
+                "[pricing] canonical correction: %r → %r (score %.2f)",
+                english_name, canon_match["canonical"], canon_match["score"],
+            )
+
+    # ── Step 3: build eBay query string ───────────────────────────────────────
     query = " ".join(filter(None, [
         card.get("name"), card.get("number"), card.get("set")
     ])).strip()
 
-    # Check cache
-    pricing  = None
-    matched  = []
+    # ── Step 4: check cache ───────────────────────────────────────────────────
+    pricing    = None
+    matched    = []
     from_cache = False
     if not refresh:
         pricing, from_cache = _get_pricing_cache(query)
 
+    # ── Step 5: live eBay scrape ──────────────────────────────────────────────
     if not pricing:
         sales   = _fetch_ebay_sales(card)
         matched = _filter_and_score(sales, card)
         pricing = _build_price_model(matched)
         _bg(_set_pricing_cache, query, pricing)
+        _bg(_store_ebay_sales_bg, query, matched)
 
     return jsonify({
-        "card":        card,
-        "query":       query,
-        "pricing":     pricing,
-        "from_cache":  from_cache,
-        "top_matches": matched[:5] if matched else [],
+        "card":             card,
+        "query":            query,
+        "pricing":          pricing,
+        "from_cache":       from_cache,
+        "top_matches":      matched[:5] if matched else [],
+        "canonical":        canon_match,        # name correction info (or null)
+        "input_name":       english_name,       # original name before correction
     })
 
 
@@ -12063,6 +12342,83 @@ def api_pricing_cache_delete(query_path):
     except Exception:
         pass
     return jsonify({"ok": True, "invalidated": query})
+
+
+# ── GET /api/v1/pokeapi/normalize ─────────────────────────────────────────────
+
+@app.route("/api/v1/pokeapi/normalize", methods=["GET"])
+def api_pokeapi_normalize():
+    """
+    Canonicalise any Pokémon name string using the PokéAPI species index.
+
+    Query params:
+      q         — input name (required)
+      threshold — minimum score 0–100 (default 70)
+
+    Returns:
+      { input, canonical, slug, pokedex_no, score, exact, in_stock,
+        inventory_item }
+    """
+    q         = (request.args.get("q") or "").strip()
+    threshold = int(request.args.get("threshold", 70))
+    if not q:
+        return jsonify({"error": "q is required"}), 400
+
+    _ensure_pokeapi_names()
+    match = _normalize_to_canonical(q, threshold=threshold)
+    if not match:
+        return jsonify({"input": q, "canonical": None, "score": 0, "exact": False})
+
+    # Check if the canonical name is in stock
+    db = get_db()
+    inv_row = db.execute(
+        "SELECT qr_code, name, price, stock, rarity, image_url "
+        "FROM inventory WHERE LOWER(name) LIKE %s AND stock > 0 LIMIT 1",
+        (f"%{match['canonical'].lower()}%",),
+    ).fetchone()
+
+    return jsonify({
+        "input":          q,
+        "canonical":      match["canonical"],
+        "slug":           match["slug"],
+        "pokedex_no":     match["pokedex_no"],
+        "score":          match["score"],
+        "exact":          match["exact"],
+        "in_stock":       inv_row is not None,
+        "inventory_item": dict(inv_row) if inv_row else None,
+        "sprite_url": (
+            f"https://raw.githubusercontent.com/PokeAPI/sprites/master/"
+            f"sprites/pokemon/other/official-artwork/{match['pokedex_no']}.png"
+        ),
+    })
+
+
+# ── POST /api/v1/pokeapi/names/refresh ───────────────────────────────────────
+
+@app.route("/api/v1/pokeapi/names/refresh", methods=["POST"])
+@require_admin
+def api_pokeapi_names_refresh():
+    """
+    Force a fresh fetch of all Pokémon species names from PokéAPI.
+    Runs in the background — returns immediately.
+    """
+    global _pokeapi_names_ready
+    with _pokeapi_names_lock:
+        _pokeapi_names_ready = False   # mark stale so _ensure_pokeapi_names re-fetches
+
+    def _do_refresh():
+        count = _pokeapi_fetch_and_store()
+        if count:
+            entries = _load_pokeapi_names_from_db()
+            global _pokeapi_names_list, _pokeapi_names_strs, _pokeapi_names_ready
+            with _pokeapi_names_lock:
+                _pokeapi_names_list  = entries
+                _pokeapi_names_strs  = [e["name"] for e in entries]
+                _pokeapi_names_ready = True
+            log.info("[pokeapi] refresh complete: %d names", count)
+
+    _bg(_do_refresh)
+    return jsonify({"ok": True, "message": "Refresh started in background"})
 
 
 # ---------------------------------------------------------------------------
