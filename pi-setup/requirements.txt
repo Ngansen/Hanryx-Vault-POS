@@ -43,5 +43,8 @@ deep-translator>=1.11.0
 # QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
 evdev>=1.6.1
 
+# OCR card scanning — image → text → smart scan pipeline
+pytesseract>=0.3.10
+
 # Receipt printer (optional — server uses raw ESC/POS bytes by default)
 # python-escpos>=3.0  # uncomment if you want the higher-level API
