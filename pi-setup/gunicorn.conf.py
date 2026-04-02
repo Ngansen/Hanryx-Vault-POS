@@ -37,14 +37,18 @@ def post_fork(server, worker):
             _warmup_smart_scanner,
             _run_low_stock_checker,
             _prewarm_all_pricing_bg,
+            _prewarm_lang_all_bg,
         )
         threading.Thread(target=sync_inventory_from_cloud,  daemon=True).start()
         threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
         threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
-        # Pre-warm pricing only from the first worker to serialise eBay calls
+        # Both pre-warm daemons only in the first worker to serialise eBay calls
         if worker.age == 1:
             threading.Thread(
                 target=_prewarm_all_pricing_bg, daemon=True, name="pricing-prewarm"
+            ).start()
+            threading.Thread(
+                target=_prewarm_lang_all_bg, daemon=True, name="lang-prewarm"
             ).start()
     except Exception as _e:
         server.log.warning("post_fork startup thread error: %s", _e)

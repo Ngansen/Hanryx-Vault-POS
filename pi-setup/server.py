@@ -7646,10 +7646,30 @@ def admin_market():
   .lang-price{{font-size:14px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
   .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 5px;display:inline-block}}
   .lang-ebay{{font-size:9px;color:#475569;margin-top:3px;line-height:1.3}}
+  .lang-tradein{{font-size:9px;color:#60a5fa;margin-top:2px}}
   .lang-src{{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;display:inline-block;margin-top:3px}}
   .lang-src.live{{background:#052e16;color:#4ade80}}
   .lang-src.est{{background:#1c1400;color:#fbbf24}}
   .lang-src.cached{{background:#0f172a;color:#818cf8}}
+  .arb-badge{{display:inline-block;font-size:9px;font-weight:800;border-radius:3px;padding:1px 5px;margin-top:2px}}
+  .arb-parity{{background:#422006;color:#fb923c}}
+  .arb-premium{{background:#2d0a0a;color:#f87171}}
+  .arb-lowdata{{background:#1c1c00;color:#facc15}}
+  /* lang title row */
+  .lang-title-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}}
+  .lang-age{{font-size:9px;color:#475569;margin-right:6px}}
+  .lang-refresh-btn{{background:none;border:1px solid #334155;border-radius:5px;color:#94a3b8;font-size:11px;padding:2px 8px;cursor:pointer}}
+  .lang-refresh-btn:hover{{border-color:#FFD700;color:#FFD700}}
+  /* eBay vs TCGPlayer delta bar */
+  .lang-delta{{border-radius:7px;padding:8px 12px;margin-bottom:10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+  .lang-delta.up{{background:#052e16;border:1px solid #166534}}
+  .lang-delta.down{{background:#2d0a0a;border:1px solid #7f1d1d}}
+  .lang-delta.neutral{{background:#0f172a;border:1px solid #1e3a5f}}
+  .lang-delta-label{{color:#94a3b8;font-size:10px}}
+  .lang-delta-val{{font-weight:800}}
+  .lang-delta.up .lang-delta-val{{color:#4ade80}}
+  .lang-delta.down .lang-delta-val{{color:#f87171}}
+  .lang-delta.neutral .lang-delta-val{{color:#94a3b8}}
   /* local status */
   .local-box{{background:#0d1f0d;border:1px solid #15803d33;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;display:none}}
   .local-box.visible{{display:flex}}
@@ -7797,7 +7817,14 @@ def admin_market():
         </div>
 
         <div class="lang-wrap">
-          <div class="lang-title">🌐 Language Variant Pricing</div>
+          <div class="lang-title-row">
+            <div class="lang-title">🌐 Language Variant Pricing</div>
+            <div style="display:flex;align-items:center">
+              <span class="lang-age" id="langAge"></span>
+              <button class="lang-refresh-btn" id="langRefreshBtn" onclick="onLangRefresh()" title="Force fresh eBay scrape">↺</button>
+            </div>
+          </div>
+          <div class="lang-delta" id="langDelta" style="display:none"></div>
           <div class="lang-grid" id="langGrid"></div>
         </div>
 
@@ -7867,10 +7894,12 @@ let _timer   = null;
 let _vTimer  = null;
 let _lastData = null;
 let _rawTiers = {{}};
-let _langData = null;   // null = not yet fetched; {{}} = fetch done (may have nulls)
-let _selId    = null;
+let _langData       = null;   // null = not yet fetched; object = done
+let _langFetchedAt  = null;   // Date when last fetch completed
+let _langCurrentCard = null;  // {{name,set,number,variant}} of card in view
+let _selId          = null;
 
-// Static fallback estimates used while live data is loading
+// Static fallback estimates when live eBay data is unavailable
 const _LANG_DEFAULTS = {{jp:20, kr:45, cn:40, tw:35}};
 
 const inp   = document.getElementById('cardInput');
@@ -8086,6 +8115,54 @@ function renderTiers() {{
   applyCond();
 }}
 
+function _renderLangDelta(tcgRaw) {{
+  const bar = document.getElementById('langDelta');
+  if (!bar || !_langData || !_langData.en || !_langData.en.median || !tcgRaw) {{
+    if (bar) bar.style.display = 'none';
+    return;
+  }}
+  const ebayEN = _langData.en.median;
+  const pct    = Math.round((ebayEN / tcgRaw - 1) * 100);
+  const cls    = pct > 5 ? 'up' : pct < -5 ? 'down' : 'neutral';
+  const arrow  = pct > 5 ? '▲' : pct < -5 ? '▼' : '≈';
+  const label  = pct > 5
+    ? `eBay selling ${{Math.abs(pct)}}% ABOVE TCGPlayer — real market higher than listed`
+    : pct < -5
+    ? `eBay selling ${{Math.abs(pct)}}% BELOW TCGPlayer — market softer than listed`
+    : `eBay and TCGPlayer within 5% — prices aligned`;
+  bar.className = `lang-delta ${{cls}}`;
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span class="lang-delta-label">eBay EN vs TCGPlayer:</span>
+    <span class="lang-delta-val">${{arrow}} ${{pct > 0 ? '+' : ''}}${{pct}}%</span>
+    <span class="lang-delta-label" style="flex:1">${{label}}</span>
+    <span class="lang-delta-label">eBay: $${{ebayEN.toFixed(2)}} · TCG: $${{tcgRaw.toFixed(2)}}</span>
+  `;
+}}
+
+function _updateLangAge() {{
+  const el = document.getElementById('langAge');
+  if (!el || !_langFetchedAt) {{ if (el) el.textContent = ''; return; }}
+  const secs = Math.round((Date.now() - _langFetchedAt) / 1000);
+  if (secs < 60)        el.textContent = `fetched ${{secs}}s ago`;
+  else if (secs < 3600) el.textContent = `fetched ${{Math.round(secs/60)}}m ago`;
+  else                  el.textContent = `fetched ${{Math.round(secs/3600)}}h ago`;
+}}
+setInterval(_updateLangAge, 20000);
+
+function onLangRefresh() {{
+  if (!_langCurrentCard) return;
+  const btn = document.getElementById('langRefreshBtn');
+  if (btn) {{ btn.disabled = true; btn.textContent = '…'; }}
+  loadLangPrices(
+    _langCurrentCard.name, _langCurrentCard.set,
+    _langCurrentCard.number, _langCurrentCard.variant,
+    true
+  ).finally(() => {{
+    if (btn) {{ btn.disabled = false; btn.textContent = '↺'; }}
+  }});
+}}
+
 function applyCond() {{
   if (!_lastData && !Object.keys(_rawTiers).length) return;
   const m = parseFloat(condD.value) || 1;
@@ -8099,7 +8176,10 @@ function applyCond() {{
   document.getElementById('rAvg').textContent   = raw > 0 ? '$' + mktM.toFixed(2) : '—';
   document.getElementById('rTrade').textContent = raw > 0 ? '$' + trade.toFixed(2) : '—';
 
-  // language grid — 5 languages, live eBay data when available
+  // eBay EN vs TCGPlayer delta bar
+  _renderLangDelta(raw);
+
+  // language grid — 5 languages with live data, arbitrage flags, trade-in
   const selLang = langS.value;
   const langs = [
     {{code:'EN', flag:'🇺🇸', key:null}},
@@ -8110,29 +8190,39 @@ function applyCond() {{
   ];
 
   document.getElementById('langGrid').innerHTML = langs.map(l => {{
-    let price, pct, ebayLine = '', srcBadge = '';
+    let price, pct, count = 0, ebayLine = '', srcBadge = '', arbBadge = '';
 
     if (!l.key) {{
-      // English baseline — always uses TCGPlayer market price
       price = mktM;
       pct   = null;
       if (_langData && _langData.en && _langData.en.median) {{
+        count    = _langData.en.count || 0;
         const src = _langData.data_source === 'cached' ? 'cached' : 'live';
-        ebayLine = `eBay: $${{_langData.en.median.toFixed(2)}} · ${{_langData.en.count}} sold`;
-        srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+        ebayLine  = `eBay median: $${{_langData.en.median.toFixed(2)}} · ${{count}} sold`;
+        srcBadge  = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
       }}
     }} else {{
       const ld = _langData && _langData[l.key];
       if (ld && ld.pct_off !== null && ld.pct_off !== undefined) {{
-        // Real market data available
         pct   = ld.pct_off;
+        count = ld.count || 0;
         price = mktM * (1 - pct / 100);
         const src = _langData.data_source === 'cached' ? 'cached' : 'live';
-        if (ld.median) ebayLine = `eBay: $${{ld.median.toFixed(2)}} · ${{ld.count}} sold`;
-        else           ebayLine = 'No recent sales';
+        if (ld.median) {{
+          ebayLine = `eBay: $${{ld.median.toFixed(2)}} · ${{count}} sold`;
+        }} else {{
+          ebayLine = 'No recent sales';
+        }}
         srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+        // Arbitrage flags
+        if (count > 0 && count < 5) {{
+          arbBadge = `<span class="arb-badge arb-lowdata">⚠ Low data (${{count}})</span>`;
+        }} else if (pct < 0) {{
+          arbBadge = `<span class="arb-badge arb-premium">🔥 Premium — higher than EN</span>`;
+        }} else if (pct <= 10 && count >= 5) {{
+          arbBadge = `<span class="arb-badge arb-parity">⚠ Near parity (${{pct}}% off)</span>`;
+        }}
       }} else {{
-        // Fallback estimate (loading or no eBay data found)
         pct      = _LANG_DEFAULTS[l.key] || 30;
         price    = mktM * (1 - pct / 100);
         ebayLine = _langData ? 'No eBay sales found' : '';
@@ -8140,6 +8230,8 @@ function applyCond() {{
       }}
     }}
 
+    const tradein   = price * 0.80;
+    const tradeStr  = mktM > 0 ? `<div class="lang-tradein">Trade-in: $${{tradein.toFixed(2)}}</div>` : '';
     const highlighted = l.code === selLang ? 'border:1px solid #FFD700' : '';
     const pctBadge = pct !== null
       ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{pct}}% off</span>`
@@ -8150,26 +8242,32 @@ function applyCond() {{
       <div class="lang-code">${{l.code}}</div>
       <div class="lang-price">${{mktM > 0 ? '$' + price.toFixed(2) : 'N/A'}}</div>
       ${{pctBadge}}
+      ${{tradeStr}}
       ${{ebayLine ? `<div class="lang-ebay">${{ebayLine}}</div>` : ''}}
+      ${{arbBadge}}
       ${{srcBadge}}
     </div>`;
   }}).join('');
 }}
 
-async function loadLangPrices(name, set, number, variant) {{
+async function loadLangPrices(name, set, number, variant, forceRefresh) {{
   if (!name) return;
-  // Render immediately with estimate badges while the fetch runs
+  _langCurrentCard = {{name, set, number, variant}};
   _langData = null;
   applyCond();
+  _updateLangAge();
   try {{
     const p = new URLSearchParams({{name}});
-    if (set)     p.set('set', set);
-    if (number)  p.set('number', number);
-    if (variant) p.set('variant', variant);
+    if (set)          p.set('set', set);
+    if (number)       p.set('number', number);
+    if (variant)      p.set('variant', variant);
+    if (forceRefresh) p.set('refresh', '1');
     const r = await fetch('/api/v1/pricing/language?' + p);
     if (!r.ok) return;
-    _langData = await r.json();
+    _langData      = await r.json();
+    _langFetchedAt = Date.now();
     applyCond();
+    _updateLangAge();
   }} catch(e) {{ /* non-fatal — estimates remain */ }}
 }}
 
@@ -12218,6 +12316,48 @@ def _filter_and_score(items: list, card: dict) -> list:
     )
 
 
+def _filter_and_score_lang(items: list, card: dict) -> list:
+    """
+    Lenient scorer for non-English language eBay listings.
+
+    Foreign-language listings (JP, KR, CN, TW) won't contain the English
+    card name in their title, so the standard scorer's +5 name-match bonus
+    is unavailable — every card would fail the ≥6 threshold even when it is
+    exactly the right card.
+
+    Changes vs the English scorer:
+      • Threshold lowered to ≥ 2 (vs 6)
+      • Name-match and set-name checks dropped (foreign titles won't match)
+      • Card-number check kept (+5) — numbers are the same in every language
+      • "pokemon" mention kept (+1) — appears in many foreign listings
+      • Graded-card penalty kept (−5 for PSA on raw lookups)
+      • Bulk-lot penalty kept (−8, belt-and-braces after _sanitize_listings)
+    """
+    clean = _sanitize_listings(items)
+    scored = []
+    for item in clean:
+        t     = (item.get("title") or "").lower()
+        score = 0
+
+        number = card.get("number") or ""
+        if number and number in t:
+            score += 5
+
+        if "pokemon" in t or "pokémon" in t:
+            score += 1
+
+        if card.get("grade", "raw") == "raw" and "psa" in t:
+            score -= 5
+
+        if any(kw in t for kw in _BULK_KEYWORDS):
+            score -= 8
+
+        if score >= 2:
+            scored.append({**item, "score": score})
+
+    return sorted(scored, key=lambda x: x["score"], reverse=True)
+
+
 # Keywords that indicate bulk lots — excluded before price modelling
 _BULK_KEYWORDS = frozenset([
     "lot", "bundle", "collection", "bulk", "joblot",
@@ -12462,7 +12602,12 @@ def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
                 seen.add(key)
                 items.append(item)
 
-    scored = _filter_and_score(items, card)
+    # Foreign-language listings won't have the English card name in the title,
+    # so use the lenient scorer when a language suffix is present.
+    if lang_suffix:
+        scored = _filter_and_score_lang(items, card)
+    else:
+        scored = _filter_and_score(items, card)
     return _build_price_model(scored)
 
 
@@ -12788,6 +12933,97 @@ def _prewarm_all_pricing_bg() -> None:
         "[prewarm] complete — %d warmed, %d already cached (skipped), %d total",
         warmed, skipped, total,
     )
+
+
+def _prewarm_lang_all_bg() -> None:
+    """
+    Startup daemon: pre-warm the language pricing cache for every inventory item.
+
+    Runs 10 minutes after boot so the EN pre-warm has had a head start and
+    eBay rate limits are not doubled up.  Sleeps 5 s between items.
+
+    Skips any item whose language cache key already exists in Redis.
+    """
+    import time as _time
+    _time.sleep(600)   # let EN pre-warm finish first
+    log.info("[lang-prewarm] starting language pricing pre-warm …")
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT name, set_name, card_number, variant "
+            "FROM inventory WHERE name IS NOT NULL AND name != '' "
+            "ORDER BY updated_at DESC NULLS LAST"
+        ).fetchall()
+        db.close()
+    except Exception as _e:
+        log.warning("[lang-prewarm] could not load inventory: %s", _e)
+        return
+
+    total = len(rows)
+    done  = 0
+
+    for i, row in enumerate(rows, 1):
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+        if not name:
+            continue
+
+        card = {"name": name, "set": set_n, "number": number, "variant": variant}
+        rkey = "lang_pricing:" + hashlib.md5(
+            json.dumps(
+                {k: (card.get(k) or "").lower()
+                 for k in ("name", "set", "number", "variant")},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+
+        if _rcache_get(rkey):
+            log.debug("[lang-prewarm] [%d/%d] cached — skip '%s'", i, total, name[:40])
+            continue
+
+        try:
+            log.info("[lang-prewarm] [%d/%d] fetching '%s' …", i, total, name[:40])
+            lang_codes = list(_LANG_QUERY_SUFFIXES.keys())
+            suffixes   = list(_LANG_QUERY_SUFFIXES.values())
+
+            with _TPE(max_workers=5) as pool:
+                fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+                fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+                en_model  = fut_en.result()
+                lang_models = [f.result() for f in fut_langs]
+
+            en_med = en_model.get("market") or 0
+
+            def _pct_off_pw(model: dict, _em: float = en_med):
+                m = model.get("market")
+                if not m or not _em:
+                    return None
+                return max(0, round((1 - m / _em) * 100))
+
+            result: dict = {
+                "card": card,
+                "en":   {"median": en_model.get("market"),
+                         "count":  en_model.get("sample_size", 0)},
+            }
+            for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+                result[code] = {
+                    "median":  model.get("market"),
+                    "count":   model.get("sample_size", 0),
+                    "pct_off": _pct_off_pw(model),
+                }
+
+            _rcache_set(rkey, result, ttl=600)
+            done += 1
+            log.info("[lang-prewarm] [%d/%d] done for '%s'", i, total, name[:40])
+
+        except Exception as _ie:
+            log.warning("[lang-prewarm] error for '%s': %s", name[:40], _ie)
+
+        _time.sleep(5)   # 5 s between items, rate-limit safe
+
+    log.info("[lang-prewarm] complete — %d items processed of %d total", done, total)
 
 
 # ── GET /api/v1/pricing/intelligent ─────────────────────────────────────────
@@ -13311,6 +13547,7 @@ if __name__ == "__main__":
     threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
     threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
     threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
+    threading.Thread(target=_prewarm_lang_all_bg,       daemon=True, name="lang-prewarm").start()
     _cleanup_scan_queue()
     log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
