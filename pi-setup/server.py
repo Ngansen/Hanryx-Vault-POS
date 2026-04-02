@@ -7637,13 +7637,19 @@ def admin_market():
   /* language grid */
   .lang-wrap{{background:#111827;border:1px solid #1e3a5f;border-radius:10px;padding:14px 16px;margin-bottom:16px}}
   .lang-title{{font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}}
-  .lang-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
-  @media(max-width:520px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
-  .lang-cell{{background:#0f172a;border-radius:8px;padding:10px;text-align:center}}
-  .lang-flag{{font-size:18px;line-height:1;margin-bottom:3px}}
+  .lang-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}}
+  @media(max-width:600px){{.lang-grid{{grid-template-columns:repeat(3,1fr)}}}}
+  @media(max-width:380px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
+  .lang-cell{{background:#0f172a;border-radius:8px;padding:9px 6px;text-align:center}}
+  .lang-flag{{font-size:16px;line-height:1;margin-bottom:3px}}
   .lang-code{{font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1px;margin-bottom:4px}}
-  .lang-price{{font-size:15px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
-  .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 6px;display:inline-block}}
+  .lang-price{{font-size:14px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
+  .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 5px;display:inline-block}}
+  .lang-ebay{{font-size:9px;color:#475569;margin-top:3px;line-height:1.3}}
+  .lang-src{{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;display:inline-block;margin-top:3px}}
+  .lang-src.live{{background:#052e16;color:#4ade80}}
+  .lang-src.est{{background:#1c1400;color:#fbbf24}}
+  .lang-src.cached{{background:#0f172a;color:#818cf8}}
   /* local status */
   .local-box{{background:#0d1f0d;border:1px solid #15803d33;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;display:none}}
   .local-box.visible{{display:flex}}
@@ -7722,7 +7728,8 @@ def admin_market():
       <option value="EN">🇺🇸 EN</option>
       <option value="JP">🇯🇵 JP</option>
       <option value="KR">🇰🇷 KR</option>
-      <option value="CN">🇨🇳 CN</option>
+      <option value="CN">🇨🇳 CN (S)</option>
+      <option value="TW">🇹🇼 TW (T)</option>
     </select>
   </div>
   <p class="hint">Type 2+ characters for instant search &bull; 400 ms debounce &bull; Click a variant card to select it</p>
@@ -7860,8 +7867,11 @@ let _timer   = null;
 let _vTimer  = null;
 let _lastData = null;
 let _rawTiers = {{}};
-let _langFact = {{JP:20, KR:45, CN:40}};
+let _langData = null;   // null = not yet fetched; {{}} = fetch done (may have nulls)
 let _selId    = null;
+
+// Static fallback estimates used while live data is loading
+const _LANG_DEFAULTS = {{jp:20, kr:45, cn:40, tw:35}};
 
 const inp   = document.getElementById('cardInput');
 const condS = document.getElementById('condSelect');
@@ -7948,7 +7958,7 @@ async function doSearch() {{
 
 async function doSearchByName(name) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
-  hide('ebaySection'); _ebayName = '';
+  hide('ebaySection'); _ebayName = ''; _langData = null;
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{name}}));
     const d = await r.json();
@@ -7960,7 +7970,7 @@ async function doSearchByName(name) {{
 
 async function doSearchWithId(id) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
-  hide('ebaySection'); _ebayName = '';
+  hide('ebaySection'); _ebayName = ''; _langData = null;
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{qr: id}}));
     const d = await r.json();
@@ -8052,14 +8062,14 @@ function renderResult(d) {{
   show('result');
   hide('emptyState');
 
-  // Kick off eBay history fetch for this card
+  // Kick off eBay history + live language pricing in parallel
   const t2 = d.tcgData || {{}};
-  triggerEbayHistory(
-    d.name || (t2 && t2.name) || '',
-    (t2.set && t2.set.name) || d.setCode || '',
-    t2.number || '',
-    d.rarity  || '',
-  );
+  const _cardName = d.name || (t2 && t2.name) || '';
+  const _cardSet  = (t2.set && t2.set.name) || d.setCode || '';
+  const _cardNum  = t2.number || '';
+  const _cardVar  = d.rarity  || '';
+  triggerEbayHistory(_cardName, _cardSet, _cardNum, _cardVar);
+  loadLangPrices(_cardName, _cardSet, _cardNum, _cardVar);
 }}
 
 function renderTiers() {{
@@ -8089,25 +8099,78 @@ function applyCond() {{
   document.getElementById('rAvg').textContent   = raw > 0 ? '$' + mktM.toFixed(2) : '—';
   document.getElementById('rTrade').textContent = raw > 0 ? '$' + trade.toFixed(2) : '—';
 
-  // language grid
-  const lang = langS.value;
+  // language grid — 5 languages, live eBay data when available
+  const selLang = langS.value;
   const langs = [
-    {{code:'EN',flag:'🇺🇸',cls:'',pct:null}},
-    {{code:'JP',flag:'🇯🇵',cls:'pct-jp',pct:_langFact.JP}},
-    {{code:'KR',flag:'🇰🇷',cls:'pct-kr',pct:_langFact.KR}},
-    {{code:'CN',flag:'🇨🇳',cls:'pct-cn',pct:_langFact.CN}},
+    {{code:'EN', flag:'🇺🇸', key:null}},
+    {{code:'JP', flag:'🇯🇵', key:'jp'}},
+    {{code:'KR', flag:'🇰🇷', key:'kr'}},
+    {{code:'CN', flag:'🇨🇳', key:'cn'}},
+    {{code:'TW', flag:'🇹🇼', key:'tw'}},
   ];
+
   document.getElementById('langGrid').innerHTML = langs.map(l => {{
-    const price = l.pct ? mktM*(1-l.pct/100) : mktM;
-    const badge = l.pct ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{l.pct}}% off</span>` : `<span class="lang-pct" style="background:#1a1400;color:#FFD700">Base</span>`;
-    const sel   = l.code === lang ? 'border:1px solid #FFD700' : '';
-    return `<div class="lang-cell" style="${{sel}}">
+    let price, pct, ebayLine = '', srcBadge = '';
+
+    if (!l.key) {{
+      // English baseline — always uses TCGPlayer market price
+      price = mktM;
+      pct   = null;
+      if (_langData && _langData.en && _langData.en.median) {{
+        const src = _langData.data_source === 'cached' ? 'cached' : 'live';
+        ebayLine = `eBay: $${{_langData.en.median.toFixed(2)}} · ${{_langData.en.count}} sold`;
+        srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+      }}
+    }} else {{
+      const ld = _langData && _langData[l.key];
+      if (ld && ld.pct_off !== null && ld.pct_off !== undefined) {{
+        // Real market data available
+        pct   = ld.pct_off;
+        price = mktM * (1 - pct / 100);
+        const src = _langData.data_source === 'cached' ? 'cached' : 'live';
+        if (ld.median) ebayLine = `eBay: $${{ld.median.toFixed(2)}} · ${{ld.count}} sold`;
+        else           ebayLine = 'No recent sales';
+        srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+      }} else {{
+        // Fallback estimate (loading or no eBay data found)
+        pct      = _LANG_DEFAULTS[l.key] || 30;
+        price    = mktM * (1 - pct / 100);
+        ebayLine = _langData ? 'No eBay sales found' : '';
+        srcBadge = `<span class="lang-src est">est.</span>`;
+      }}
+    }}
+
+    const highlighted = l.code === selLang ? 'border:1px solid #FFD700' : '';
+    const pctBadge = pct !== null
+      ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{pct}}% off</span>`
+      : `<span class="lang-pct" style="background:#1a1400;color:#FFD700">Base</span>`;
+
+    return `<div class="lang-cell" style="${{highlighted}}">
       <div class="lang-flag">${{l.flag}}</div>
       <div class="lang-code">${{l.code}}</div>
-      <div class="lang-price">${{mktM>0?'$'+price.toFixed(2):'N/A'}}</div>
-      ${{badge}}
+      <div class="lang-price">${{mktM > 0 ? '$' + price.toFixed(2) : 'N/A'}}</div>
+      ${{pctBadge}}
+      ${{ebayLine ? `<div class="lang-ebay">${{ebayLine}}</div>` : ''}}
+      ${{srcBadge}}
     </div>`;
   }}).join('');
+}}
+
+async function loadLangPrices(name, set, number, variant) {{
+  if (!name) return;
+  // Render immediately with estimate badges while the fetch runs
+  _langData = null;
+  applyCond();
+  try {{
+    const p = new URLSearchParams({{name}});
+    if (set)     p.set('set', set);
+    if (number)  p.set('number', number);
+    if (variant) p.set('variant', variant);
+    const r = await fetch('/api/v1/pricing/language?' + p);
+    if (!r.ok) return;
+    _langData = await r.json();
+    applyCond();
+  }} catch(e) {{ /* non-fatal — estimates remain */ }}
 }}
 
 function renderTiersOnly(m) {{
@@ -12356,6 +12419,53 @@ def _parse_ebay_page(html: str) -> list[dict]:
     return items
 
 
+_LANG_QUERY_SUFFIXES: dict[str, str] = {
+    "jp": "japanese",
+    "kr": "korean",
+    "cn": "chinese simplified",
+    "tw": "traditional chinese",
+}
+
+
+def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
+    """
+    Fetch eBay sold listings for a card with a language keyword appended to
+    the query (e.g. "japanese", "korean", "chinese simplified").
+
+    Uses the language-qualified query for the eBay search but scores results
+    against the original card dict so _filter_and_score stays correct —
+    card names don't contain "japanese" etc., so without this the scorer
+    would unfairly penalise every result.
+
+    Fetches 4 pages in parallel (enough for a representative sample).
+    Returns a _build_price_model dict.  market=None when no listings found.
+    """
+    if not _BS4_OK:
+        return {"market": None, "sample_size": 0}
+
+    name   = (card.get("name") or "").strip()
+    number = (card.get("number") or "").strip()
+    set_n  = (card.get("set") or "").strip()
+
+    parts = [p for p in [name, lang_suffix, number, set_n, "pokemon"] if p]
+    query = " ".join(parts).strip()
+
+    with _TPE(max_workers=4) as pool:
+        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 5)))
+
+    items: list[dict] = []
+    seen:  set[str]   = set()
+    for html in htmls:
+        for item in _parse_ebay_page(html):
+            key = f"{item['title'][:60]}:{item['price']}"
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+
+    scored = _filter_and_score(items, card)
+    return _build_price_model(scored)
+
+
 def _fetch_ebay_sales(card: dict) -> list[dict]:
     """
     Fetch eBay sold listings for a card across 6 pages in parallel (≤90 days).
@@ -12886,6 +12996,120 @@ def api_pricing_history():
         "data_source":    data_source,
         "canonical":      canon,
     })
+
+
+# ── GET /api/v1/pricing/language ──────────────────────────────────────────────
+
+@app.route("/api/v1/pricing/language", methods=["GET"])
+@require_api_token
+def api_pricing_language():
+    """
+    Real market-based language pricing for a Pokémon card.
+
+    Fires 5 parallel eBay scrapes (EN + JP + KR + CN/Simplified +
+    TW/Traditional Chinese) then calculates each language's actual median
+    sold price and percentage discount vs the English baseline.
+
+    Results are cached in Redis for 10 minutes so repeat views are instant.
+
+    Query params:
+      name     — card name (required)
+      set      — set name (optional)
+      number   — card number (optional)
+      variant  — card variant e.g. "Rainbow Rare" (optional)
+      lang     — input language ISO code (default "en")
+      refresh  — "1" to skip cache and force fresh eBay scrapes
+
+    Returns:
+      {
+        card, data_source,
+        en: {median, count, query},
+        jp: {median, count, pct_off, query},
+        kr: {median, count, pct_off, query},
+        cn: {median, count, pct_off, query},
+        tw: {median, count, pct_off, query},
+      }
+    """
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    lang    = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # Translate + canonicalise
+    card = _translate_card_input(
+        {"name": name, "set": set_n or None, "number": number or None,
+         "variant": variant or None},
+        lang,
+    )
+    _ensure_pokeapi_names()
+    canon = _normalize_to_canonical((card.get("name") or ""), threshold=72)
+    if canon and not canon["exact"]:
+        card = {**card, "name": canon["canonical"]}
+
+    # Cache key — shared across all callers for the same card
+    rkey = "lang_pricing:" + hashlib.md5(
+        json.dumps(
+            {k: (card.get(k) or "").lower()
+             for k in ("name", "set", "number", "variant")},
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+    if not refresh:
+        cached = _rcache_get(rkey)
+        if cached:
+            return jsonify({**cached, "data_source": "cached"})
+
+    # EN + 4 language eBay scrapes — all in parallel
+    lang_codes = list(_LANG_QUERY_SUFFIXES.keys())   # jp, kr, cn, tw
+    suffixes   = list(_LANG_QUERY_SUFFIXES.values())
+
+    with _TPE(max_workers=5) as pool:
+        fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+        fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+        en_model  = fut_en.result()
+        lang_models = [f.result() for f in fut_langs]
+
+    en_med = en_model.get("market") or 0
+
+    def _pct_off(model: dict):
+        m = model.get("market")
+        if not m or not en_med:
+            return None
+        return max(0, round((1 - m / en_med) * 100))
+
+    en_query = " ".join(filter(None, [
+        card.get("name"), card.get("number"), card.get("set"), "pokemon"
+    ]))
+
+    result: dict = {
+        "card": card,
+        "en":   {
+            "median": en_model.get("market"),
+            "count":  en_model.get("sample_size", 0),
+            "query":  en_query,
+        },
+    }
+
+    for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+        result[code] = {
+            "median":  model.get("market"),
+            "count":   model.get("sample_size", 0),
+            "pct_off": _pct_off(model),
+            "query":   " ".join(filter(None, [
+                card.get("name"), suffix,
+                card.get("number"), card.get("set"), "pokemon",
+            ])),
+        }
+
+    _rcache_set(rkey, result, ttl=600)
+
+    return jsonify({**result, "data_source": "live"})
 
 
 # ── GET /api/v1/pokeapi/normalize ─────────────────────────────────────────────
