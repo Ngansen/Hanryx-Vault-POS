@@ -1564,6 +1564,20 @@ def init_db():
             pricing     JSONB NOT NULL,
             created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
+
+        # ── eBay 90-day sold history ────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS ebay_sold_history (
+            id          BIGSERIAL PRIMARY KEY,
+            query       TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            price       DOUBLE PRECISION NOT NULL,
+            sold_date   DATE,
+            score       INTEGER NOT NULL DEFAULT 0,
+            scraped_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_query      ON ebay_sold_history (query)",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_date       ON ebay_sold_history (sold_date DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_scraped_at ON ebay_sold_history (scraped_at DESC)",
     ]
 
     for stmt in _ddl_statements:
@@ -11584,19 +11598,56 @@ def _build_price_model(items: list) -> dict:
     }
 
 
+_EBAY_DATE_FMTS = (
+    "%b %d, %Y",   # Nov 15, 2024
+    "%d %b, %Y",   # 15 Nov, 2024
+    "%B %d, %Y",   # November 15, 2024
+    "%d %B %Y",    # 15 November 2024
+    "%b %d %Y",    # Nov 15 2024
+)
+
+
+def _parse_ebay_date(raw: str) -> "datetime.date | None":
+    """Parse an eBay sold-date string like 'Sold Nov 15, 2024' into a date."""
+    clean = re.sub(r"^(sold|ended)\s*", "", raw.strip(), flags=re.IGNORECASE)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    for fmt in _EBAY_DATE_FMTS:
+        try:
+            return datetime.datetime.strptime(clean, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
 def _fetch_ebay_page(query: str, page: int) -> str:
-    """Fetch one page of eBay sold listings. Returns raw HTML or ''."""
+    """
+    Fetch one page of eBay completed/sold listings filtered to the last 90 days.
+    _dcat=183050 narrows to the 'Pokémon Individual Cards' category.
+    _ipg=240 requests 240 results per page (eBay max).
+    """
     if not _BS4_OK:
         return ""
     url = (
-        f"https://www.ebay.com/sch/i.html"
-        f"?_nkw={urllib.parse.quote(query)}&_pgn={page}&LH_Sold=1&LH_Complete=1"
+        "https://www.ebay.com/sch/i.html"
+        f"?_nkw={urllib.parse.quote(query)}"
+        f"&_pgn={page}"
+        "&LH_Sold=1"
+        "&LH_Complete=1"
+        "&_dcat=183050"      # Pokémon Individual Cards category
+        "&_sadis=90"         # sold within last 90 days
+        "&_ipg=240"          # max items per page
     )
     try:
         r = _requests.get(
-            url,
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+            url, timeout=12,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
         )
         r.raise_for_status()
         return r.text
@@ -11605,8 +11656,57 @@ def _fetch_ebay_page(query: str, page: int) -> str:
         return ""
 
 
+def _parse_ebay_page(html: str) -> list[dict]:
+    """Parse one page of eBay sold-listing HTML into [{title, price, sold_date}]."""
+    if not html:
+        return []
+    soup  = _BS4(html, "lxml")
+    items = []
+    for el in soup.select(".s-item"):
+        title_el = el.select_one(".s-item__title")
+        price_el = el.select_one(".s-item__price")
+        if not title_el or not price_el:
+            continue
+        title_text = title_el.get_text(strip=True)
+        if title_text.lower() in ("shop on ebay", ""):
+            continue
+
+        # Price — take the first number when a range like "$1.50 to $3.00" is shown
+        price_str = re.sub(r"[^0-9.]", "", price_el.get_text().split("to")[0])
+        try:
+            price = float(price_str)
+        except (ValueError, TypeError):
+            continue
+        if price <= 0:
+            continue
+
+        # Sold date — eBay shows it in various span classes
+        sold_date = None
+        for sel in (
+            ".s-item__ended-date",
+            ".s-item__title--tag .POSITIVE",
+            ".SECONDARY_INFO",
+            "[class*='sold-date']",
+        ):
+            date_el = el.select_one(sel)
+            if date_el:
+                sold_date = _parse_ebay_date(date_el.get_text(strip=True))
+                if sold_date:
+                    break
+
+        items.append({
+            "title":     title_text,
+            "price":     price,
+            "sold_date": sold_date,      # datetime.date | None
+        })
+    return items
+
+
 def _fetch_ebay_sales(card: dict) -> list[dict]:
-    """Fetch eBay sold listings for a card across 3 pages in parallel."""
+    """
+    Fetch eBay sold listings for a card across 6 pages in parallel (≤90 days).
+    Returns [{title, price, sold_date}].
+    """
     if not _BS4_OK:
         return []
     name   = (card.get("name") or "").strip()
@@ -11614,30 +11714,75 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
     set_n  = (card.get("set") or "").strip()
     query  = " ".join(filter(None, [name, number, set_n, "pokemon"])).strip()
 
-    with _TPE(max_workers=3) as pool:
-        pages = list(pool.map(lambda p: _fetch_ebay_page(query, p), [1, 2, 3]))
+    with _TPE(max_workers=6) as pool:
+        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 7)))
 
-    items = []
-    for html in pages:
-        if not html:
-            continue
-        soup = _BS4(html, "lxml")
-        for el in soup.select(".s-item"):
-            title_el = el.select_one(".s-item__title")
-            price_el = el.select_one(".s-item__price")
-            if not title_el or not price_el:
-                continue
-            title_text = title_el.get_text(strip=True)
-            if title_text.lower() in ("shop on ebay", ""):
-                continue
-            price_str = re.sub(r"[^0-9.]", "", price_el.get_text().split("to")[0])
-            try:
-                price = float(price_str)
-                if price > 0:
-                    items.append({"title": title_text, "price": price})
-            except (ValueError, TypeError):
-                pass
+    items: list[dict] = []
+    seen:  set[str]   = set()
+    for html in htmls:
+        for item in _parse_ebay_page(html):
+            key = f"{item['title'][:60]}:{item['price']}"
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
     return items
+
+
+def _build_period_model(items: list[dict], days: int) -> dict:
+    """
+    Build a price model for the last `days` days.
+    Items without a sold_date are always included (conservative — don't discard).
+    """
+    cutoff = datetime.date.today() - datetime.timedelta(days=days)
+    windowed = [
+        i for i in items
+        if i.get("sold_date") is None or i["sold_date"] >= cutoff
+    ]
+    return _build_price_model(windowed)
+
+
+def _calc_price_trend(items: list[dict]) -> dict:
+    """
+    Calculate week-by-week median price for the last 13 weeks.
+    Returns {weeks: [{week_ending, median, count}], direction: 'up'|'down'|'flat'}.
+    """
+    today   = datetime.date.today()
+    buckets: dict[int, list[float]] = {}   # week_index → prices
+
+    for item in items:
+        d = item.get("sold_date")
+        if d is None:
+            continue
+        delta = (today - d).days
+        if delta < 0 or delta > 91:
+            continue
+        week_idx = delta // 7   # 0 = most recent, 12 = oldest
+        buckets.setdefault(week_idx, []).append(item["price"])
+
+    weeks = []
+    for idx in sorted(buckets):
+        prices = _remove_outliers(buckets[idx])
+        if prices:
+            week_end = today - datetime.timedelta(days=idx * 7)
+            weeks.append({
+                "week_ending": str(week_end),
+                "median":      round(sorted(prices)[len(prices) // 2], 2),
+                "count":       len(prices),
+            })
+
+    # Direction: compare average of most-recent 2 weeks vs oldest 2 weeks
+    direction = "flat"
+    if len(weeks) >= 4:
+        recent = sum(w["median"] for w in weeks[:2]) / 2
+        older  = sum(w["median"] for w in weeks[-2:]) / 2
+        if older > 0:
+            pct_change = (recent - older) / older
+            if pct_change >  0.05:
+                direction = "up"
+            elif pct_change < -0.05:
+                direction = "down"
+
+    return {"weeks": weeks, "direction": direction}
 
 
 def _get_pricing_cache(query: str):
@@ -11680,6 +11825,69 @@ def _set_pricing_cache(query: str, pricing: dict):
         log.debug("[pricing-cache] write failed: %s", _e)
 
 
+def _store_ebay_sales_bg(query: str, matched: list[dict]):
+    """
+    Persist eBay matched sold listings to ebay_sold_history for analytics.
+    Runs in a background thread. Deduplicates within the last 24 hours so
+    repeated refreshes don't double-count.
+    """
+    if not matched:
+        return
+    try:
+        db   = _direct_db()
+        now  = _now_ms()
+        cutoff = now - 86_400_000  # 24 h ago in ms
+        for item in matched:
+            sold_date = item.get("sold_date")
+            db.execute(
+                """
+                INSERT INTO ebay_sold_history (query, title, price, sold_date, score, scraped_at)
+                SELECT %s, %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ebay_sold_history
+                    WHERE query=%s AND title=%s AND scraped_at >= %s
+                )
+                """,
+                (
+                    query, item["title"], item["price"],
+                    str(sold_date) if sold_date else None,
+                    item.get("score", 0), now,
+                    query, item["title"], cutoff,
+                ),
+            )
+        db.commit()
+        db.close()
+    except Exception as _e:
+        log.debug("[ebay-history] store failed: %s", _e)
+
+
+def _load_ebay_history(query: str, days: int = 90) -> list[dict]:
+    """Load stored eBay sold listings for a query from the last `days` days."""
+    try:
+        db      = _direct_db()
+        cutoff  = datetime.date.today() - datetime.timedelta(days=days)
+        rows    = db.execute(
+            "SELECT title, price, sold_date, score "
+            "FROM ebay_sold_history "
+            "WHERE query=%s AND (sold_date IS NULL OR sold_date >= %s) "
+            "ORDER BY sold_date DESC NULLS LAST",
+            (query, str(cutoff)),
+        ).fetchall()
+        db.close()
+        result = []
+        for r in rows:
+            sd = r["sold_date"]
+            result.append({
+                "title":     r["title"],
+                "price":     r["price"],
+                "sold_date": datetime.date.fromisoformat(str(sd)) if sd else None,
+                "score":     r["score"],
+            })
+        return result
+    except Exception:
+        return []
+
+
 # ── GET /api/v1/pricing/intelligent ─────────────────────────────────────────
 
 @app.route("/api/v1/pricing/intelligent", methods=["GET"])
@@ -11688,7 +11896,7 @@ def api_pricing_intelligent():
     """
     Intelligent market-price lookup combining:
       1. Optional multi-language input normalisation (Google Translate)
-      2. eBay sold-listing scraper (3 pages, parallel, cached)
+      2. eBay sold-listing scraper (6 pages, 90-day window, parallel, cached)
       3. Score-based listing filter (name/set/number matching)
       4. Outlier-robust price model (median, avg, confidence)
 
@@ -11700,7 +11908,7 @@ def api_pricing_intelligent():
       refresh  — set "1" to bypass cache and force a fresh eBay fetch
 
     Returns:
-      { card, query, pricing, top_matches }
+      { card, query, pricing, periods, trend, top_matches }
     """
     name   = (request.args.get("name") or "").strip()
     set_n  = (request.args.get("set") or "").strip()
