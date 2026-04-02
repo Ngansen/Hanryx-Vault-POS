@@ -1416,6 +1416,9 @@ def _invalidate_inventory(qr_code: str | None = None):
     # Trigger async embedding when a specific card was changed
     if qr_code and _PGVECTOR_AVAILABLE and _OPENAI_API_KEY:
         _bg(_embed_card_bg, qr_code)
+    # Pre-warm the pricing cache for the changed card so the next lookup is instant
+    if qr_code:
+        _bg(_prewarm_pricing_for_item, qr_code)
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -12295,6 +12298,133 @@ def _load_ebay_history(query: str, days: int = 90) -> list[dict]:
         return []
 
 
+# ── Pricing pre-warm helpers ──────────────────────────────────────────────────
+
+_PREWARM_RATE_SLEEP = 2.5  # seconds between live eBay fetches during bulk pre-warm
+
+
+def _prewarm_pricing_for_item(qr_code: str) -> None:
+    """
+    Background worker: ensure the pricing cache is hot for one inventory item.
+    Safe to call from any thread.  Silently skips when cache is already present.
+    """
+    try:
+        db  = _direct_db()
+        row = db.execute(
+            "SELECT name, set_name, card_number, variant "
+            "FROM inventory WHERE qr_code=%s LIMIT 1",
+            (qr_code,),
+        ).fetchone()
+        db.close()
+        if not row or not (row["name"] or "").strip():
+            return
+
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+
+        # Same query-building logic as _fetch_ebay_sales
+        variant_part = variant if variant and variant.lower() not in name.lower() else ""
+        query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+
+        _, already_cached = _get_pricing_cache(query)
+        if already_cached:
+            log.debug("[prewarm] cache hot — skipping %s (%s)", qr_code, query[:60])
+            return
+
+        log.info("[prewarm] fetching eBay data for %s (%s)", qr_code, query[:60])
+        card    = {"name": name, "set": set_n, "number": number, "variant": variant}
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        if not matched:
+            log.debug("[prewarm] no listings found for %s", query[:60])
+            return
+
+        pricing = _build_price_model(matched)
+        _set_pricing_cache(query, pricing)
+        _store_ebay_sales_bg(query, matched)
+        log.info(
+            "[prewarm] cached %d listings for '%s' — median £%.2f",
+            len(matched), query[:60], pricing.get("median", 0),
+        )
+    except Exception as _e:
+        log.warning("[prewarm] error for qr=%s: %s", qr_code, _e)
+
+
+def _prewarm_all_pricing_bg() -> None:
+    """
+    Startup daemon: pre-warm the pricing cache for every item in inventory.
+
+    Strategy
+    --------
+    - Waits 30 s after boot so the server is fully initialised.
+    - Queries inventory ordered by most-recently updated first, so freshly
+      added/edited cards are warmed before older ones.
+    - Checks the two-level cache (Redis → PG) before each scrape — already-hot
+      items are skipped instantly, so re-starts/redeployments are fast.
+    - Sleeps 2.5 s between live scrapes to stay well under eBay's rate limits.
+    """
+    import time as _time
+    _time.sleep(30)
+    log.info("[prewarm] starting bulk pricing pre-warm …")
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT qr_code, name, set_name, card_number, variant "
+            "FROM inventory ORDER BY updated_at DESC NULLS LAST"
+        ).fetchall()
+        db.close()
+    except Exception as _e:
+        log.warning("[prewarm] could not load inventory: %s", _e)
+        return
+
+    total   = len(rows)
+    warmed  = 0
+    skipped = 0
+
+    for i, row in enumerate(rows, 1):
+        qr      = row["qr_code"]
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+
+        if not name:
+            skipped += 1
+            continue
+
+        variant_part = variant if variant and variant.lower() not in name.lower() else ""
+        query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+
+        try:
+            _, cached = _get_pricing_cache(query)
+            if cached:
+                skipped += 1
+                continue
+
+            log.info("[prewarm] [%d/%d] fetching '%s' …", i, total, query[:60])
+            card    = {"name": name, "set": set_n, "number": number, "variant": variant}
+            sales   = _fetch_ebay_sales(card)
+            matched = _filter_and_score(sales, card)
+            if matched:
+                pricing = _build_price_model(matched)
+                _set_pricing_cache(query, pricing)
+                _store_ebay_sales_bg(query, matched)
+                warmed += 1
+                log.info("[prewarm] [%d/%d] done — median £%.2f", i, total, pricing.get("median", 0))
+
+        except Exception as _ie:
+            log.warning("[prewarm] item %s error: %s", qr, _ie)
+
+        _time.sleep(_PREWARM_RATE_SLEEP)
+
+    log.info(
+        "[prewarm] complete — %d warmed, %d already cached (skipped), %d total",
+        warmed, skipped, total,
+    )
+
+
 # ── GET /api/v1/pricing/intelligent ─────────────────────────────────────────
 
 @app.route("/api/v1/pricing/intelligent", methods=["GET"])
@@ -12701,6 +12831,7 @@ if __name__ == "__main__":
     threading.Thread(target=sync_inventory_from_cloud,  daemon=True).start()
     threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
     threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
+    threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
     _cleanup_scan_queue()
     log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
