@@ -725,6 +725,193 @@ def _detect_variant(name: str, rarity: str, description: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# CLIP + FAISS — visual card identification engine
+# ---------------------------------------------------------------------------
+_CLIP_CONFIDENCE_THRESHOLD = 0.92
+_FAISS_INDEX_PATH = "/tmp/hanryx_cards.index"
+_FAISS_IDS_PATH   = "/tmp/hanryx_cards_ids.json"
+
+_clip_model      = None
+_clip_preprocess = None
+_clip_lock       = threading.Lock()
+_faiss_index_obj = None
+_faiss_card_ids  : list = []
+_faiss_lock      = threading.Lock()
+
+# Duplicate-prevention: qr_code → last-seen epoch
+_clip_last_seen  : dict = {}
+_CLIP_COOLDOWN   = 2.0   # seconds between same-card auto-adds
+
+_VARIANT_MULTIPLIERS: dict = {
+    "1st edition":  3.50,
+    "rainbow rare": 1.80,
+    "secret rare":  1.60,
+    "full art":     1.50,
+    "alt art":      2.00,
+    "gold":         2.50,
+    "vstar":        1.30,
+    "vmax":         1.25,
+    "v":            1.10,
+    "gx":           1.15,
+    "ex":           1.10,
+    "holo":         1.20,
+    "reverse holo": 0.85,
+    "promo":        1.05,
+    "normal":       1.00,
+}
+
+
+def _apply_variant_multiplier(price: float, variant: str) -> float:
+    mult = _VARIANT_MULTIPLIERS.get((variant or "").strip().lower(), 1.00)
+    return round(float(price) * mult, 2)
+
+
+def _clip_recently_seen(qr_code: str) -> bool:
+    """Return True if this card was auto-added within the cooldown window."""
+    now = _time.time()
+    if qr_code in _clip_last_seen and now - _clip_last_seen[qr_code] < _CLIP_COOLDOWN:
+        return True
+    _clip_last_seen[qr_code] = now
+    return False
+
+
+def _load_clip_model() -> bool:
+    """Lazy-load CLIP ViT-B/32 on CPU (thread-safe). Returns True on success."""
+    global _clip_model, _clip_preprocess
+    if _clip_model is not None:
+        return True
+    with _clip_lock:
+        if _clip_model is not None:
+            return True
+        try:
+            import clip as _openai_clip
+            _clip_model, _clip_preprocess = _openai_clip.load("ViT-B/32", device="cpu")
+            log.info("[CLIP] ViT-B/32 loaded on CPU")
+            return True
+        except Exception as exc:
+            log.warning(f"[CLIP] unavailable — visual scan disabled: {exc}")
+            return False
+
+
+def _clip_embed_bytes(img_bytes: bytes):
+    """Return unit-normalised CLIP embedding (1×512 float32 ndarray), or None."""
+    if not _load_clip_model():
+        return None
+    try:
+        import torch as _torch
+        import numpy as _np
+        from PIL import Image as _PILImg
+        img    = _PILImg.open(io.BytesIO(img_bytes)).convert("RGB")
+        tensor = _clip_preprocess(img).unsqueeze(0)
+        with _torch.no_grad():
+            emb = _clip_model.encode_image(tensor).float()
+        emb = emb / emb.norm(dim=-1, keepdim=True)
+        return emb.cpu().numpy()
+    except Exception as exc:
+        log.debug(f"[CLIP] embed error: {exc}")
+        return None
+
+
+def _build_faiss_index_bg():
+    """Background thread: fetch card images, embed with CLIP, save FAISS index."""
+    global _faiss_index_obj, _faiss_card_ids
+    try:
+        import faiss
+        import numpy as _np
+        if not _load_clip_model():
+            return
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT qr_code, image_url FROM inventory "
+            "WHERE image_url != '' AND stock > 0"
+        ).fetchall()
+        vectors, ids = [], []
+        for qr_code, image_url in rows:
+            try:
+                resp = _requests.get(image_url, timeout=8)
+                emb  = _clip_embed_bytes(resp.content)
+                if emb is not None:
+                    vectors.append(emb)
+                    ids.append(qr_code)
+            except Exception as e:
+                log.debug(f"[FAISS] skip {qr_code}: {e}")
+        if not vectors:
+            log.warning("[FAISS] no vectors built — no card images available")
+            return
+        all_vecs = _np.vstack(vectors).astype("float32")
+        idx = faiss.IndexFlatIP(all_vecs.shape[1])
+        idx.add(all_vecs)
+        faiss.write_index(idx, _FAISS_INDEX_PATH)
+        with open(_FAISS_IDS_PATH, "w") as f:
+            json.dump(ids, f)
+        with _faiss_lock:
+            _faiss_index_obj = idx
+            _faiss_card_ids  = ids
+        log.info(f"[FAISS] index built: {len(ids)} cards indexed")
+    except Exception as exc:
+        log.error(f"[FAISS] build error: {exc}")
+
+
+def _ensure_faiss_index():
+    """Load FAISS index from disk, or trigger a background build if missing."""
+    global _faiss_index_obj, _faiss_card_ids
+    with _faiss_lock:
+        if _faiss_index_obj is not None:
+            return
+        try:
+            import faiss
+            if os.path.exists(_FAISS_INDEX_PATH) and os.path.exists(_FAISS_IDS_PATH):
+                _faiss_index_obj = faiss.read_index(_FAISS_INDEX_PATH)
+                with open(_FAISS_IDS_PATH) as f:
+                    _faiss_card_ids = json.load(f)
+                log.info(f"[FAISS] loaded from disk: {len(_faiss_card_ids)} cards")
+                return
+        except Exception as exc:
+            log.warning(f"[FAISS] disk load failed: {exc}")
+    threading.Thread(target=_build_faiss_index_bg, daemon=True, name="faiss-build").start()
+
+
+def _clip_find_top(img_bytes: bytes, k: int = 3) -> list:
+    """Return top-k [{qr_code, confidence}] sorted by cosine similarity desc."""
+    import numpy as _np
+    _ensure_faiss_index()
+    with _faiss_lock:
+        idx = _faiss_index_obj
+        ids = list(_faiss_card_ids)
+    if idx is None or not ids:
+        return []
+    emb = _clip_embed_bytes(img_bytes)
+    if emb is None:
+        return []
+    k_actual = min(k, len(ids))
+    scores, indices = idx.search(emb.astype("float32"), k_actual)
+    out = []
+    for i in range(k_actual):
+        j = int(indices[0][i])
+        if 0 <= j < len(ids):
+            out.append({"qr_code": ids[j], "confidence": round(float(scores[0][i]), 3)})
+    return out
+
+
+def _enrich_clip_matches(matches: list, db) -> list:
+    """Look up inventory rows for each raw match and return enriched dicts."""
+    out = []
+    for m in matches:
+        row = db.execute(
+            "SELECT qr_code, name, price, stock, variant, condition, category, "
+            "set_code, image_url FROM inventory WHERE qr_code=%s",
+            (m["qr_code"],)
+        ).fetchone()
+        if not row:
+            continue
+        card  = dict(row)
+        v     = card.get("variant") or "normal"
+        price = _apply_variant_multiplier(float(card.get("price") or 0), v)
+        out.append({"card": card, "price": price, "confidence": m["confidence"]})
+    return out
+
+
 _SET_YEAR_MAP: dict[str, int] = {
     "SV":   2023,  # Scarlet & Violet
     "SWSH": 2020,  # Sword & Shield
@@ -6264,6 +6451,7 @@ def _admin_nav(active: str = "dashboard") -> str:
     pages = [
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("market",    "/admin/market",      "📈", "Market"),
+        ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
         ("trade-in",  "/admin/trade-in",    "🔁", "Trade-In"),
         ("bundles",   "/admin/bundles",     "📦", "Bundles"),
         ("csv",       "/admin/csv",         "📥", "Import"),
@@ -10022,6 +10210,7 @@ def admin_dashboard():
 <!-- Square-style quick-action card grid -->
 <div class="qa-grid">
   <a href="/admin/market"       class="qa-card"><div class="qa-icon">📈</div><div class="qa-label">Market</div><div class="qa-sub">Live pricing & eBay</div></a>
+  <a href="/admin/scan-ai"      class="qa-card"><div class="qa-icon">🤖</div><div class="qa-label">AI Scan</div><div class="qa-sub">CLIP visual scan</div></a>
   <a href="/admin/trade-in"     class="qa-card"><div class="qa-icon">🔁</div><div class="qa-label">Trade-In</div><div class="qa-sub">Buy & exchange</div></a>
   <a href="/admin/bundles"      class="qa-card"><div class="qa-icon">📦</div><div class="qa-label">Bundles</div><div class="qa-sub">Pack deals</div></a>
   <a href="/admin/csv"          class="qa-card"><div class="qa-icon">📥</div><div class="qa-label">Import</div><div class="qa-sub">CSV & bulk upload</div></a>
@@ -13574,6 +13763,479 @@ def api_embeddings_status():
         "pending":       total - done,
         "coverage_pct":  round(done / total * 100, 1) if total else 0,
     })
+
+
+# ---------------------------------------------------------------------------
+# AI Visual Scan — /scan/frame · /scan/intelligent · /scan/intelligent/select
+#                  /admin/ai-index/rebuild · /admin/scan-ai
+# ---------------------------------------------------------------------------
+
+@app.route("/scan/frame", methods=["POST"])
+def scan_frame():
+    """
+    Live-camera frame scan endpoint (bulk mode by default).
+    Body: { image: <base64 JPEG data-URI or raw>, bulk_mode: bool }
+    Returns: { auto_added, card, price, confidence }
+          OR { skipped: true }
+          OR { confidence, options: [...] }
+    """
+    body       = request.get_json(force=True, silent=True) or {}
+    image_data = body.get("image", "")
+    bulk_mode  = bool(body.get("bulk_mode", True))
+    if not image_data:
+        return jsonify({"error": "image required"}), 400
+    raw       = image_data.split(",", 1)[1] if "," in image_data else image_data
+    img_bytes = base64.b64decode(raw)
+    matches   = _clip_find_top(img_bytes, k=3)
+    if not matches:
+        return jsonify({"error": "index not ready — trigger /admin/ai-index/rebuild"}), 503
+    db       = get_db()
+    enriched = _enrich_clip_matches(matches, db)
+    if not enriched:
+        return jsonify({"error": "matched QR codes not found in inventory"}), 404
+    best     = enriched[0]
+    top_conf = best["confidence"]
+    card     = best["card"]
+    if bulk_mode and top_conf >= _CLIP_CONFIDENCE_THRESHOLD:
+        if _clip_recently_seen(card["qr_code"]):
+            return jsonify({"skipped": True})
+        v     = card.get("variant") or "normal"
+        price = _apply_variant_multiplier(float(card.get("price") or 0), v)
+        db.execute("UPDATE inventory SET stock = stock + 1 WHERE qr_code=%s", (card["qr_code"],))
+        return jsonify({
+            "auto_added": True,
+            "card":       card["name"],
+            "qr_code":    card["qr_code"],
+            "price":      price,
+            "confidence": top_conf,
+            "source":     "frame_bulk",
+        })
+    return jsonify({"confidence": top_conf, "options": enriched, "source": "frame_top3"})
+
+
+@app.route("/scan/intelligent", methods=["POST"])
+def scan_intelligent():
+    """
+    Single-shot AI image scan. Accepts multipart file upload or base64 JSON.
+    Body: { image: <base64>, bulk_mode: bool }
+    """
+    bulk_mode = False
+    img_bytes = None
+    if "image" in request.files:
+        img_bytes = request.files["image"].read()
+        bulk_mode = request.form.get("bulk_mode", "false").lower() == "true"
+    else:
+        body      = request.get_json(force=True, silent=True) or {}
+        bulk_mode = bool(body.get("bulk_mode", False))
+        raw       = body.get("image", "")
+        if raw:
+            img_bytes = base64.b64decode(raw.split(",", 1)[1] if "," in raw else raw)
+    if not img_bytes:
+        return jsonify({"error": "No image provided"}), 400
+    matches  = _clip_find_top(img_bytes, k=3)
+    if not matches:
+        return jsonify({"error": "Index not ready — use /admin/scan-ai to rebuild"}), 503
+    db       = get_db()
+    enriched = _enrich_clip_matches(matches, db)
+    if not enriched:
+        return jsonify({"error": "Matched QR codes not found in inventory"}), 404
+    best     = enriched[0]
+    top_conf = best["confidence"]
+    card     = best["card"]
+    if bulk_mode and top_conf >= _CLIP_CONFIDENCE_THRESHOLD:
+        if _clip_recently_seen(card["qr_code"]):
+            return jsonify({"skipped": True})
+        db.execute("UPDATE inventory SET stock = stock + 1 WHERE qr_code=%s", (card["qr_code"],))
+        return jsonify({
+            "auto_added": True,
+            "card":       card["name"],
+            "qr_code":    card["qr_code"],
+            "price":      best["price"],
+            "confidence": top_conf,
+            "source":     "ai_bulk_auto",
+        })
+    if top_conf >= _CLIP_CONFIDENCE_THRESHOLD:
+        return jsonify({
+            "card":       card,
+            "price":      best["price"],
+            "confidence": top_conf,
+            "source":     "ai_auto",
+        })
+    return jsonify({"options": enriched, "source": "ai_top3"})
+
+
+@app.route("/scan/intelligent/select", methods=["POST"])
+def scan_intelligent_select():
+    """User selects one card from the top-3 options."""
+    body      = request.get_json(force=True, silent=True) or {}
+    qr_code   = body.get("qr_code", "")
+    variant   = body.get("variant", "")
+    condition = body.get("condition", "NM")
+    if not qr_code:
+        return jsonify({"error": "qr_code required"}), 400
+    db  = get_db()
+    row = db.execute(
+        "SELECT qr_code, name, price, stock, variant, condition, category, set_code, image_url "
+        "FROM inventory WHERE qr_code=%s", (qr_code,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Card not found"}), 404
+    card  = dict(row)
+    v     = variant or card.get("variant") or "normal"
+    price = _apply_variant_multiplier(float(card.get("price") or 0), v)
+    return jsonify({"card": card, "price": price, "variant": v,
+                    "condition": condition, "source": "user_selected"})
+
+
+@app.route("/admin/ai-index/rebuild", methods=["POST"])
+@require_admin
+def admin_ai_rebuild_index():
+    """Trigger a background rebuild of the CLIP/FAISS card image index."""
+    global _faiss_index_obj, _faiss_card_ids
+    with _faiss_lock:
+        _faiss_index_obj = None
+        _faiss_card_ids  = []
+    threading.Thread(target=_build_faiss_index_bg, daemon=True, name="faiss-rebuild").start()
+    return jsonify({"status": "rebuilding", "message": "FAISS index rebuild started in background"})
+
+
+@app.route("/admin/ai-index/status", methods=["GET"])
+@require_admin
+def admin_ai_index_status():
+    with _faiss_lock:
+        count = len(_faiss_card_ids)
+        ready = _faiss_index_obj is not None
+    return jsonify({"ready": ready, "indexed_cards": count})
+
+
+@app.route("/admin/scan-ai")
+@require_admin
+def admin_scan_ai():
+    with _faiss_lock:
+        idx_count = len(_faiss_card_ids)
+        idx_ready = _faiss_index_obj is not None
+    idx_badge  = "ok" if idx_ready else ""
+    idx_text   = f"✓ {idx_count} cards indexed" if idx_ready else "⚠ Index not built"
+    nav        = _admin_nav("scan-ai")
+    return render_template_string(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — AI Visual Scanner</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .scanner-wrap{{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}}
+  .camera-panel{{flex:1;min-width:280px}}
+  .results-panel{{flex:1;min-width:280px}}
+  #video{{width:100%;border-radius:14px;background:#000;display:block;aspect-ratio:4/3;object-fit:cover}}
+  #canvas{{display:none}}
+  .scan-status{{display:flex;align-items:center;gap:10px;margin:12px 0}}
+  .scan-dot{{width:10px;height:10px;border-radius:50%;background:#333;transition:.3s}}
+  .scan-dot.live{{background:#22c55e;box-shadow:0 0 8px #22c55e88}}
+  .scan-dot.warn{{background:#f59e0b;box-shadow:0 0 8px #f59e0b88}}
+  .cond-btn{{background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#666;
+             padding:8px 14px;cursor:pointer;font-size:12px;font-weight:700;transition:.15s}}
+  .cond-btn.active{{background:#f59e0b;border-color:#f59e0b;color:#000}}
+  .opt-card{{background:#141414;border:1px solid #222;border-radius:12px;padding:14px;
+             display:flex;gap:12px;align-items:center;cursor:pointer;transition:.15s;margin-bottom:10px}}
+  .opt-card:hover{{border-color:#f59e0b;background:#1a1100}}
+  .opt-img{{width:60px;height:84px;object-fit:contain;border-radius:6px;background:#111;flex-shrink:0}}
+  .opt-conf{{font-size:10px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-top:4px}}
+  .opt-name{{color:#e0e0e0;font-weight:700;font-size:14px;margin-bottom:2px}}
+  .opt-price{{color:#f59e0b;font-size:20px;font-weight:900}}
+  .idx-badge{{display:inline-block;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;
+              padding:4px 10px;font-size:11px;color:#555}}
+  .idx-badge.ok{{border-color:#22c55e44;color:#22c55e}}
+  .stat-chip{{display:inline-block;background:#141414;border:1px solid #222;border-radius:6px;
+              padding:4px 12px;font-size:11px;color:#555;margin-right:8px}}
+  .stat-chip span{{color:#e0e0e0;font-weight:700}}
+  .bulk-row{{display:flex;align-items:center;gap:10px;margin-bottom:14px}}
+  .bulk-row input[type=checkbox]{{width:18px;height:18px;accent-color:#f59e0b;cursor:pointer}}
+</style>
+</head>
+<body>
+{{nav}}
+<div class="wrap">
+<h1>🤖 AI Visual Scanner</h1>
+<div class="subtitle" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  CLIP&nbsp;+&nbsp;FAISS live card identification &nbsp;·&nbsp;
+  <span id="idx-status" class="idx-badge {idx_badge}">{idx_text}</span>
+  <button onclick="rebuildIndex()" class="btn-gold" style="font-size:11px;padding:5px 14px">↺ Rebuild Index</button>
+  <span id="rebuild-msg" style="color:#555;font-size:11px"></span>
+</div>
+
+<div class="scanner-wrap" style="margin-top:20px">
+
+  <!-- ── Camera panel ───────────────────────────────────────────────── -->
+  <div class="camera-panel">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
+    <div class="scan-status">
+      <span class="scan-dot" id="scan-dot"></span>
+      <span id="scan-label" style="font-size:12px;color:#555">Camera off</span>
+    </div>
+
+    <div class="bulk-row">
+      <input type="checkbox" id="bulk-mode" checked>
+      <label for="bulk-mode" style="font-size:13px;color:#aaa;cursor:pointer">
+        Bulk Mode — auto-add high-confidence cards instantly
+      </label>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Condition</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="cond-btn active" onclick="setCond(this,'NM')">NM</button>
+        <button class="cond-btn" onclick="setCond(this,'LP')">LP</button>
+        <button class="cond-btn" onclick="setCond(this,'MP')">MP</button>
+        <button class="cond-btn" onclick="setCond(this,'HP')">HP</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn-gold" id="start-btn" onclick="startCamera()">▶ Start Camera</button>
+      <button onclick="stopCamera()"
+        style="background:#1a1a1a;border:1px solid #333;color:#888;
+               border-radius:8px;padding:10px 18px;cursor:pointer;font-size:13px">
+        ■ Stop
+      </button>
+    </div>
+
+    <div style="margin-top:14px">
+      <span class="stat-chip">Scans <span id="cnt-scans">0</span></span>
+      <span class="stat-chip">Auto-added <span id="cnt-added">0</span></span>
+      <span class="stat-chip">Skipped <span id="cnt-skip">0</span></span>
+    </div>
+  </div>
+
+  <!-- ── Results panel ──────────────────────────────────────────────── -->
+  <div class="results-panel">
+    <h2 style="margin-top:0">Match Results</h2>
+    <div id="results">
+      <p style="color:#333;font-size:13px">Start the camera to begin scanning.</p>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div id="toast" style="position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;
+  padding:12px 20px;border-radius:10px;font-weight:bold;display:none;z-index:99;
+  box-shadow:0 4px 20px #0008;font-size:14px;max-width:300px"></div>
+
+<script>
+let scanning  = false;
+let stream    = null;
+let condition = 'NM';
+let cntScans  = 0, cntAdded = 0, cntSkip = 0;
+
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx2d  = canvas.getContext('2d');
+const dot    = document.getElementById('scan-dot');
+const lbl    = document.getElementById('scan-label');
+
+/* ── Condition selector ──────────────────────────────────────────── */
+function setCond(btn, c) {{
+  document.querySelectorAll('.cond-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  condition = c;
+}}
+
+/* ── Toast + audio beep ──────────────────────────────────────────── */
+function showToast(msg, err) {{
+  const t = document.getElementById('toast');
+  t.textContent    = msg;
+  t.style.display  = 'block';
+  t.style.background = err ? '#dc2626' : '#22c55e';
+  clearTimeout(t._t);
+  t._t = setTimeout(() => {{ t.style.display = 'none'; }}, 2800);
+}}
+
+function playBeep() {{
+  try {{
+    const ac   = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+    osc.start();
+    osc.stop(ac.currentTime + 0.18);
+  }} catch(e) {{}}
+}}
+
+/* ── Stats ───────────────────────────────────────────────────────── */
+function updateStats() {{
+  document.getElementById('cnt-scans').textContent = cntScans;
+  document.getElementById('cnt-added').textContent = cntAdded;
+  document.getElementById('cnt-skip').textContent  = cntSkip;
+}}
+
+/* ── Render helpers ──────────────────────────────────────────────── */
+function renderAutoCard(name, price, conf, imgUrl) {{
+  document.getElementById('results').innerHTML = `
+    <div class="opt-card" style="border-color:#22c55e44;background:#001a05;cursor:default">
+      ${{imgUrl ? '<img class="opt-img" src="' + imgUrl + '">' : '<div class="opt-img"></div>'}}
+      <div style="flex:1">
+        <div style="color:#22c55e;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">✓ Auto-matched</div>
+        <div class="opt-name">${{name}}</div>
+        <div class="opt-price">$${{Number(price).toFixed(2)}}</div>
+        <div class="opt-conf">Confidence: ${{(conf*100).toFixed(1)}}%</div>
+      </div>
+    </div>`;
+}}
+
+function renderOptions(options) {{
+  const r = document.getElementById('results');
+  r.innerHTML = '<div style="font-size:10px;color:#f59e0b;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Select the correct card</div>';
+  options.forEach(opt => {{
+    const card = opt.card;
+    const div  = document.createElement('div');
+    div.className = 'opt-card';
+    div.innerHTML = `
+      <img class="opt-img" src="${{card.image_url || ''}}" onerror="this.style.opacity=0.15">
+      <div style="flex:1">
+        <div class="opt-name">${{card.name || ''}}</div>
+        <div style="color:#555;font-size:11px;margin-bottom:6px">${{card.set_code || ''}} · ${{card.variant || 'Normal'}}</div>
+        <div class="opt-price">$${{Number(opt.price).toFixed(2)}}</div>
+        <div class="opt-conf">Confidence: ${{(opt.confidence*100).toFixed(1)}}%</div>
+      </div>`;
+    div.onclick = () => selectCard(card.qr_code, card.variant || 'normal', card.image_url, card.name, opt.price, opt.confidence);
+    r.appendChild(div);
+  }});
+}}
+
+/* ── Select card from top-3 ──────────────────────────────────────── */
+async function selectCard(qrCode, variant, imgUrl, name, price, conf) {{
+  try {{
+    const res  = await fetch('/scan/intelligent/select', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{qr_code: qrCode, variant, condition}})
+    }});
+    const data = await res.json();
+    if (data.card) {{
+      showToast(`✓ Selected: ${{data.card.name}} ($${{data.price.toFixed(2)}})`);
+      playBeep();
+      renderAutoCard(data.card.name, data.price, 1.0, data.card.image_url);
+    }}
+  }} catch(e) {{ showToast('Error selecting card', true); }}
+}}
+
+/* ── Camera controls ─────────────────────────────────────────────── */
+async function startCamera() {{
+  try {{
+    stream = await navigator.mediaDevices.getUserMedia({{
+      video: {{ facingMode: 'environment', width: {{ideal:640}}, height: {{ideal:480}} }}
+    }});
+    video.srcObject = stream;
+    scanning = true;
+    dot.classList.add('live');
+    lbl.textContent = 'Scanning…';
+    document.getElementById('start-btn').textContent = '⬤ Live';
+    video.addEventListener('loadeddata', () => {{ scanLoop(); }}, {{once: true}});
+  }} catch(e) {{
+    showToast('Camera access denied — check browser permissions', true);
+  }}
+}}
+
+function stopCamera() {{
+  scanning = false;
+  if (stream) {{ stream.getTracks().forEach(t => t.stop()); stream = null; }}
+  video.srcObject = null;
+  dot.classList.remove('live','warn');
+  lbl.textContent = 'Camera off';
+  document.getElementById('start-btn').textContent = '▶ Start Camera';
+}}
+
+/* ── Core scan loop (~3 fps, 320×240 JPEG 0.5) ───────────────────── */
+async function scanLoop() {{
+  if (!scanning) return;
+
+  canvas.width  = 320;
+  canvas.height = 240;
+  ctx2d.drawImage(video, 0, 0, 320, 240);
+  const imageData = canvas.toDataURL('image/jpeg', 0.5);
+
+  try {{
+    cntScans++;
+    updateStats();
+
+    const res  = await fetch('/scan/frame', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body: JSON.stringify({{
+        image:     imageData,
+        bulk_mode: document.getElementById('bulk-mode').checked
+      }})
+    }});
+    const data = await res.json();
+
+    if (data.skipped) {{
+      cntSkip++;
+      updateStats();
+
+    }} else if (data.auto_added) {{
+      cntAdded++;
+      updateStats();
+      showToast(`✅ ${{data.card}} ($${{Number(data.price||0).toFixed(2)}})`);
+      playBeep();
+      renderAutoCard(data.card, data.price, data.confidence, '');
+      // brief pause so same card doesn't re-scan immediately
+      await new Promise(r => setTimeout(r, 800));
+
+    }} else if (data.options && data.options.length) {{
+      dot.classList.remove('live');
+      dot.classList.add('warn');
+      lbl.textContent = 'Select card…';
+      renderOptions(data.options);
+      // Pause scanning until user picks a card
+      scanning = false;
+      if (stream) {{ stream.getTracks().forEach(t => t.stop()); stream = null; }}
+      video.srcObject = null;
+      document.getElementById('start-btn').textContent = '▶ Start Camera';
+      return;
+    }}
+
+  }} catch(e) {{
+    dot.classList.remove('live');
+  }}
+
+  // ~3 fps
+  setTimeout(() => {{ if (scanning) requestAnimationFrame(scanLoop); }}, 300);
+}}
+
+/* ── FAISS index management ──────────────────────────────────────── */
+async function rebuildIndex() {{
+  document.getElementById('rebuild-msg').textContent = 'Rebuilding…';
+  try {{
+    await fetch('/admin/ai-index/rebuild', {{method: 'POST'}});
+    document.getElementById('rebuild-msg').textContent = '✓ Rebuild started (runs in background ~1 min)';
+    setTimeout(checkIndexStatus, 8000);
+  }} catch(e) {{
+    document.getElementById('rebuild-msg').textContent = 'Error starting rebuild';
+  }}
+}}
+
+async function checkIndexStatus() {{
+  try {{
+    const res  = await fetch('/admin/ai-index/status');
+    const data = await res.json();
+    const badge = document.getElementById('idx-status');
+    badge.textContent = data.ready ? `✓ ${{data.indexed_cards}} cards indexed` : '⚠ Building…';
+    badge.className   = 'idx-badge' + (data.ready ? ' ok' : '');
+    if (data.ready) document.getElementById('rebuild-msg').textContent = '';
+  }} catch(e) {{}}
+}}
+
+setInterval(checkIndexStatus, 15000);
+</script>
+</body></html>""".replace("{nav}", nav))
 
 
 # ---------------------------------------------------------------------------
