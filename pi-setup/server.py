@@ -1578,6 +1578,16 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_ebay_sold_query      ON ebay_sold_history (query)",
         "CREATE INDEX IF NOT EXISTS idx_ebay_sold_date       ON ebay_sold_history (sold_date DESC)",
         "CREATE INDEX IF NOT EXISTS idx_ebay_sold_scraped_at ON ebay_sold_history (scraped_at DESC)",
+
+        # ── PokéAPI canonical species name cache ───────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS pokeapi_name_cache (
+            id          SERIAL PRIMARY KEY,
+            slug        TEXT UNIQUE NOT NULL,
+            name        TEXT NOT NULL,
+            pokedex_no  INTEGER,
+            fetched_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pokeapi_name ON pokeapi_name_cache (name)",
     ]
 
     for stmt in _ddl_statements:
