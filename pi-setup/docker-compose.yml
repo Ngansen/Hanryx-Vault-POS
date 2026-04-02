@@ -5,7 +5,7 @@ services:
   #   vaultpos   — Flask POS server (inventory, sales, scan queue, etc.)
   #   storefront — HanRyx-Vault public storefront (products, orders, users)
   db:
-    image: postgres:16-bookworm
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB:       vaultpos

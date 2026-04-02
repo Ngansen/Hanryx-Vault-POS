@@ -670,6 +670,17 @@ except ImportError:
     _RAPIDFUZZ_AVAILABLE = False
     log.warning("[smart-scan] rapidfuzz not installed — fuzzy matching disabled (pip install rapidfuzz)")
 
+# ---------------------------------------------------------------------------
+# pgvector + OpenAI embeddings — semantic vector search
+# ---------------------------------------------------------------------------
+try:
+    from pgvector.psycopg2 import register_vector as _pgvector_register
+    _PGVECTOR_AVAILABLE = True
+except ImportError:
+    _pgvector_register  = None
+    _PGVECTOR_AVAILABLE = False
+    log.info("[pgvector] Python package not installed — vector search disabled")
+
 
 def _smart_normalize(text: str) -> str:
     """Strip everything except lowercase letters and digits for index comparison."""
@@ -1105,6 +1116,9 @@ def _invalidate_inventory(qr_code: str | None = None):
         _rcache_del(_REDIS_INV_KEY, f"{_REDIS_QR_PREFIX}{qr_code}")
     else:
         _rcache_del(_REDIS_INV_KEY)
+    # Trigger async embedding when a specific card was changed
+    if qr_code and _PGVECTOR_AVAILABLE and _OPENAI_API_KEY:
+        _bg(_embed_card_bg, qr_code)
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -1204,6 +1218,15 @@ def _calculate_final_price(base: float, language: str = "English",
 
 def init_db():
     db = _direct_db()
+
+    # Enable pgvector extension (no-op if already installed or not available)
+    if _PGVECTOR_AVAILABLE:
+        try:
+            db.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            db.commit()
+            log.info("[pgvector] Extension enabled")
+        except Exception as _pve:
+            log.warning("[pgvector] Could not enable extension: %s", _pve)
 
     _ddl_statements = [
         f"""CREATE TABLE IF NOT EXISTS sales (
@@ -1576,6 +1599,7 @@ def init_db():
         ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT    NOT NULL DEFAULT ''"),
         ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT    NOT NULL DEFAULT ''"),
         ("release_year",    "ALTER TABLE inventory ADD COLUMN release_year     INTEGER NOT NULL DEFAULT 0"),
+        # card_vector uses pgvector type — only added when extension is present
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
@@ -1623,7 +1647,7 @@ def init_db():
     except Exception as _rye:
         log.warning("[DB] release_year backfill skipped: %s", _rye)
 
-    # Add indexes for fast number/year searches
+    # Add indexes for fast number/year/rarity searches
     try:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
@@ -1637,6 +1661,25 @@ def init_db():
         db.commit()
     except Exception:
         pass
+
+    # pgvector: add card_vector column + HNSW index (only when extension is loaded)
+    if _PGVECTOR_AVAILABLE:
+        try:
+            if not _col_exists("inventory", "card_vector"):
+                db.execute(
+                    "ALTER TABLE inventory ADD COLUMN card_vector vector(1536)"
+                )
+                db.commit()
+                log.info("[pgvector] Added card_vector column")
+            # HNSW index — cosine similarity, ~1 ms per query on Pi 5
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inventory_card_vector
+                ON inventory USING hnsw (card_vector vector_cosine_ops)
+            """)
+            db.commit()
+            log.info("[pgvector] HNSW index ready")
+        except Exception as _ve:
+            log.warning("[pgvector] Schema setup skipped: %s", _ve)
 
     db.close()
     log.info("[DB] Initialized PostgreSQL database")
@@ -2194,24 +2237,150 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         LIMIT 200
     """, like_args).fetchall()
 
-    if not rows:
-        return []
-
     def _r(key, row, default=""):
         return row[key] if key in row.keys() else default
 
-    scored = sorted(
-        rows,
-        key=lambda r: _score_card(
-            r["name"], r["set_code"] or "", r["qr_code"], tokens,
-            card_number  = _r("card_number",  r),
-            variant      = _r("variant",      r),
-            rarity       = _r("rarity",       r),
-            release_year = _r("release_year", r, 0),
-        ),
-        reverse=True,
-    )
-    return [_row_to_dict(r) for r in scored[:limit]]
+    if rows:
+        scored = sorted(
+            rows,
+            key=lambda r: _score_card(
+                r["name"], r["set_code"] or "", r["qr_code"], tokens,
+                card_number  = _r("card_number",  r),
+                variant      = _r("variant",      r),
+                rarity       = _r("rarity",       r),
+                release_year = _r("release_year", r, 0),
+            ),
+            reverse=True,
+        )
+        return [_row_to_dict(r) for r in scored[:limit]]
+
+    # 6 — vector / semantic fallback (only when text search returns nothing)
+    return _vector_search(db, q, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# pgvector embedding helpers
+# ---------------------------------------------------------------------------
+
+def _embed_text(text: str) -> list[float] | None:
+    """
+    Generate a 1 536-dim embedding via OpenAI text-embedding-3-small.
+    Returns None when OPENAI_API_KEY is absent, pgvector is unavailable,
+    or the API call fails.  Never raises.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return None
+    try:
+        resp = _http_post(
+            "https://api.openai.com/v1/embeddings",
+            headers={"Authorization": f"Bearer {_OPENAI_API_KEY}",
+                     "Content-Type": "application/json"},
+            json_body={"model": "text-embedding-3-small",
+                       "input": text[:8000]},
+            timeout=15,
+        )
+        return resp.json()["data"][0]["embedding"]
+    except Exception as _ee:
+        log.warning("[embed] text-embedding-3-small failed: %s", _ee)
+        return None
+
+
+def _vec_to_pg(vec: list[float]) -> str:
+    """Serialise a float list to the pgvector literal format '[x,y,...]'."""
+    return "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
+
+
+def _embed_card_bg(qr_code: str):
+    """
+    Background task: generate an embedding for a single card and persist it.
+    Called via _bg() so it never blocks the request thread.
+    Silently skips when pgvector / OpenAI are unavailable.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return
+    db = None
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT name, rarity, set_code, variant, release_year, description "
+            "FROM inventory WHERE qr_code = %s",
+            (qr_code,),
+        ).fetchone()
+        if not row:
+            return
+        text = (
+            f"{row['name']} {row['rarity']} {row['set_code']} "
+            f"{row['variant']} {row['release_year'] or ''} "
+            f"{(row['description'] or '')[:200]}"
+        ).strip()
+        vec = _embed_text(text)
+        if vec is None:
+            return
+        db.execute(
+            "UPDATE inventory SET card_vector = %s::vector WHERE qr_code = %s",
+            (_vec_to_pg(vec), qr_code),
+        )
+        db.commit()
+        log.info("[embed] Embedded %s (%d dims)", qr_code, len(vec))
+    except Exception as _be:
+        log.warning("[embed] Background embed failed for %s: %s", qr_code, _be)
+    finally:
+        try:
+            if db:
+                db.close()
+        except Exception:
+            pass
+
+
+def _vector_search(db, query_text: str, limit: int = 10) -> list[dict]:
+    """
+    Embed query_text and return inventory rows ordered by cosine similarity
+    using pgvector's <=> operator.  Returns [] on any failure.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return []
+    vec = _embed_text(query_text)
+    if vec is None:
+        return []
+    vec_str = _vec_to_pg(vec)
+    try:
+        rows = db.execute(
+            """
+            SELECT *,
+                   ROUND((1 - (card_vector <=> %s::vector))::numeric, 4) AS similarity
+            FROM inventory
+            WHERE card_vector IS NOT NULL
+            ORDER BY card_vector <=> %s::vector
+            LIMIT %s
+            """,
+            (vec_str, vec_str, limit),
+        ).fetchall()
+    except Exception as _vs_err:
+        log.warning("[vector-search] Query failed: %s", _vs_err)
+        return []
+
+    out = []
+    for r in rows:
+        keys = r.keys() if hasattr(r, "keys") else []
+        out.append({
+            "qrCode":        r["qr_code"],
+            "name":          r["name"],
+            "price":         r["price"],
+            "category":      r["category"] or "General",
+            "rarity":        r["rarity"] or "",
+            "setCode":       r["set_code"] or "",
+            "cardNumber":    r["card_number"]  if "card_number"  in keys else "",
+            "variant":       r["variant"]      if "variant"      in keys else "",
+            "releaseYear":   r["release_year"] if "release_year" in keys else 0,
+            "description":   r["description"] or "",
+            "stockQuantity": r["stock"],
+            "lastUpdated":   r["last_updated"],
+            "imageUrl":      r["image_url"]    if "image_url"    in keys else "",
+            "tcgId":         r["tcg_id"]       if "tcg_id"       in keys else "",
+            "similarity":    float(r["similarity"]),
+            "_searchMethod": "vector",
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -11639,6 +11808,65 @@ def _warmup_smart_scanner():
         log.info("[smart-scan] Index warmed up at startup")
     except Exception as e:
         log.warning("[smart-scan] Warm-up failed (non-fatal): %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Embeddings management
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/embeddings/rebuild", methods=["POST"])
+@require_admin
+def api_embeddings_rebuild():
+    """
+    Admin: queue background embedding jobs for every card that has no vector yet
+    (or all cards when ?force=1 is passed).  Returns immediately; embedding
+    happens in background threads so it never blocks the server.
+
+    POST /api/v1/embeddings/rebuild
+    POST /api/v1/embeddings/rebuild?force=1   # re-embed all cards
+    """
+    if not _PGVECTOR_AVAILABLE:
+        return jsonify({"error": "pgvector extension not available"}), 503
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    force = request.args.get("force", "0") == "1"
+    db    = get_db()
+
+    if force:
+        rows = db.execute("SELECT qr_code FROM inventory").fetchall()
+    else:
+        rows = db.execute(
+            "SELECT qr_code FROM inventory WHERE card_vector IS NULL"
+        ).fetchall()
+
+    queued = 0
+    for r in rows:
+        _bg(_embed_card_bg, r["qr_code"])
+        queued += 1
+
+    log.info("[embed] Rebuild queued %d cards (force=%s)", queued, force)
+    return jsonify({"queued": queued, "force": force}), 202
+
+
+@app.route("/api/v1/embeddings/status", methods=["GET"])
+@require_admin
+def api_embeddings_status():
+    """Return counts of embedded vs total cards."""
+    if not _PGVECTOR_AVAILABLE:
+        return jsonify({"pgvector": False}), 200
+    db    = get_db()
+    total = db.execute("SELECT COUNT(*) AS n FROM inventory").fetchone()["n"]
+    done  = db.execute(
+        "SELECT COUNT(*) AS n FROM inventory WHERE card_vector IS NOT NULL"
+    ).fetchone()["n"]
+    return jsonify({
+        "pgvector":      True,
+        "total":         total,
+        "embedded":      done,
+        "pending":       total - done,
+        "coverage_pct":  round(done / total * 100, 1) if total else 0,
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -46,5 +46,8 @@ evdev>=1.6.1
 # OCR card scanning — image → text → smart scan pipeline
 pytesseract>=0.3.10
 
+# pgvector — semantic/embedding similarity search in PostgreSQL
+pgvector>=0.3.0
+
 # Receipt printer (optional — server uses raw ESC/POS bytes by default)
 # python-escpos>=3.0  # uncomment if you want the higher-level API

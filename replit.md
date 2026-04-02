@@ -81,6 +81,9 @@ Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
 - **`_normalize_qr()`** — handles pokemon.com, ptcg://, ptcgo.com, limitlesstcg.com, pkmncards.com, and generic path-based URLs.
 - **Satellite sync** — token-authenticated sync from trade-show Pi via WireGuard VPN.
 - **QR Scan Hub** — `barcode_daemon.py` HTTP hub on port 8765 with SSE, multi-app forwarding, duplicate suppression.
+- **Smart search engine (latest)** — `card_number` (indexed), `variant`, `release_year` columns. `_score_card()` awards +8 for exact number/year match, +4 variant, +3 rarity, +5 full-name bonus. `_tokenize` keeps variant keywords (ex/gx/v/vmax/vstar). `_card_lookup` pipeline: exact QR → normalised QR → set+number (card_number col) → SET-NUM pattern → number-only cross-set → tokenised name+variant+rarity (LIKE + scoring) → vector fallback. `_detect_variant` covers 1st Ed, Reverse Holo, Rainbow, Secret, Gold, Full Art, VSTAR, VMAX, V, GX, EX, Holo, Promo.
+- **pgvector semantic search** — Postgres image switched to `pgvector/pgvector:pg16`. `card_vector VECTOR(1536)` column + HNSW cosine index. `_embed_text()` calls OpenAI `text-embedding-3-small`. `_embed_card_bg()` runs async via `_bg()` after every card save. `_vector_search()` fires as step 6 in `_card_lookup` when all text steps return nothing. `POST /api/v1/embeddings/rebuild` queues background embedding for all un-embedded cards; `GET /api/v1/embeddings/status` shows coverage%. Fully graceful — silently skips when `OPENAI_API_KEY` or pgvector is absent.
+- **OCR card scanning** — `pytesseract>=0.3.10` added; `tesseract-ocr tesseract-ocr-eng` installed in Dockerfile (both builder and runtime stages). Foundation for `POST /api/v1/scan/ocr` image-to-text pipeline.
 
 ## Stack
 
