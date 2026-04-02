@@ -10,6 +10,12 @@ On Windows / remote machine:
 On Raspberry Pi (local):
     python3 desktop_monitor.py
 
+Kiosk / auto-start mode (Pi with a dedicated monitor, no desktop):
+    python3 desktop_monitor.py --kiosk
+
+    --kiosk   Full-screen, cursor hidden, auto-connects to localhost,
+              title bar removed.  Press Ctrl+Alt+Q or F11 to exit.
+
 The monitor talks to the Pi POS server over HTTP — no direct
 database or filesystem access is required.  Configure the Pi's
 IP/hostname in the Settings tab on first launch.
@@ -252,12 +258,32 @@ def run_shell(cmd):
 
 class HanryxMonitor(tk.Tk):
 
-    def __init__(self):
+    def __init__(self, kiosk: bool = False):
         super().__init__()
+        self._kiosk = kiosk
+
         self.title("HanryxVault Monitor")
         self.configure(bg=BG)
-        self.geometry("1260x820")
-        self.minsize(960, 640)
+
+        if kiosk:
+            # ── Kiosk mode: fill the entire screen, no title bar, hidden cursor ──
+            # Auto-connect to localhost so no Settings dialog is needed on boot
+            CFG["host"] = "127.0.0.1"
+            CFG["port"] = "8080"
+            save_config(CFG)
+
+            self.attributes("-fullscreen", True)
+            self.config(cursor="none")
+            self.resizable(False, False)
+
+            # Allow graceful exit from the kiosk without a mouse
+            self.bind("<F11>",                    lambda e: self.destroy())
+            self.bind("<Control-Alt-KeyPress-q>", lambda e: self.destroy())
+            self.bind("<Control-Alt-KeyPress-Q>", lambda e: self.destroy())
+        else:
+            self.geometry("1260x820")
+            self.minsize(960, 640)
+
         self._build_ui()
         self._refresh()
 
@@ -869,5 +895,13 @@ class HanryxMonitor(tk.Tk):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app = HanryxMonitor()
+    import argparse
+    _parser = argparse.ArgumentParser(description="HanryxVault Monitor")
+    _parser.add_argument(
+        "--kiosk", action="store_true",
+        help="Fullscreen kiosk mode — auto-connects to localhost, hides cursor, "
+             "no title bar.  Press F11 or Ctrl+Alt+Q to exit.",
+    )
+    _args = _parser.parse_args()
+    app = HanryxMonitor(kiosk=_args.kiosk)
     app.mainloop()
