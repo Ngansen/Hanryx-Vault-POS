@@ -679,23 +679,59 @@ def _smart_normalize(text: str) -> str:
 def _detect_variant(name: str, rarity: str, description: str) -> str:
     """
     Infer card variant from metadata fields.
-    Priority: 1st Ed > Reverse Holo > Holo > Promo > Full Art > Secret Rare > Rainbow > ""
+    Priority: 1st Ed > Reverse Holo > Rainbow > Secret > Gold > Full Art >
+              VSTAR > VMAX > V > GX > EX > Holo > Promo > ""
     """
     combined = f"{name} {rarity} {description}".lower()
+    name_lc  = name.lower()
+    rar_lc   = rarity.lower()
     if "1st edition" in combined or "first edition" in combined:
         return "1st Edition"
-    if "reverse holo" in combined or "reverse" in rarity.lower():
+    if "reverse holo" in combined or "reverse" in rar_lc:
         return "Reverse Holo"
+    if "rainbow" in combined:
+        return "Rainbow Rare"
+    if "secret" in rar_lc:
+        return "Secret Rare"
+    if "gold" in rar_lc:
+        return "Gold"
+    if "full art" in combined:
+        return "Full Art"
+    if "vstar" in name_lc:
+        return "VSTAR"
+    if "vmax" in name_lc:
+        return "VMAX"
+    if re.search(r'\bv\b', name_lc):
+        return "V"
+    if "gx" in name_lc:
+        return "GX"
+    if re.search(r'\bex\b', name_lc):
+        return "EX"
     if "holo" in combined:
         return "Holo"
     if "promo" in combined:
         return "Promo"
-    if "full art" in combined:
-        return "Full Art"
-    if "rainbow" in combined:
-        return "Rainbow Rare"
-    if "secret" in rarity.lower():
-        return "Secret Rare"
+    return ""
+
+
+def _extract_card_number(qr_code: str, name: str = "") -> str:
+    """
+    Extract the numeric card number from a QR/barcode string.
+    Examples:
+      'SV1-025'    → '25'
+      'SV1EN-025'  → '25'
+      'SWSH01-001' → '1'
+    Falls back to parsing 'NNN/TTT' patterns from the card name.
+    Returns empty string if nothing can be extracted.
+    """
+    # Primary: SET-NUM format in qr_code (e.g. 'SV1-025', 'SWSH01-001')
+    m = re.search(r'[A-Za-z]{2,8}[-/]0*(\d{1,4}[a-zA-Z]?)', qr_code)
+    if m:
+        return m.group(1).lstrip("0") or "0"
+    # Fallback: 'NNN/TTT' in card name (e.g. '025/165')
+    m = re.search(r'\b0*(\d{1,4})/\d+\b', name)
+    if m:
+        return m.group(1).lstrip("0") or "0"
     return ""
 
 
@@ -791,7 +827,8 @@ class _SmartScanner:
         try:
             rows = db.execute(
                 "SELECT qr_code, name, price, category, rarity, set_code, "
-                "description, stock, image_url, tcg_id, condition, item_type "
+                "description, stock, image_url, tcg_id, condition, item_type, "
+                "card_number, variant "
                 "FROM inventory ORDER BY name ASC LIMIT %s",
                 (self.MAX_INDEX_SIZE,)
             ).fetchall()
@@ -805,11 +842,14 @@ class _SmartScanner:
         for r in rows:
             item = dict(r)
             item["_norm_name"] = _smart_normalize(item.get("name") or "")
-            item["_variant"]   = _detect_variant(
-                item.get("name") or "",
-                item.get("rarity") or "",
-                item.get("description") or "",
-            )
+            # Use persisted variant; fall back to runtime detection for legacy rows
+            if not item.get("variant"):
+                item["variant"] = _detect_variant(
+                    item.get("name") or "",
+                    item.get("rarity") or "",
+                    item.get("description") or "",
+                )
+            item["_variant"] = item["variant"]
             items.append(item)
             names.append(item.get("name") or "")
             qr_map[item["qr_code"]] = item
@@ -1484,12 +1524,39 @@ def init_db():
         ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
         ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
         ("search_key",      "ALTER TABLE inventory ADD COLUMN search_key       TEXT NOT NULL DEFAULT ''"),
+        ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT NOT NULL DEFAULT ''"),
+        ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT NOT NULL DEFAULT ''"),
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
             db.execute(ddl)
             db.commit()
             log.info("[DB] Migration: added %s.%s column", table, col)
+
+    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET card_number = LTRIM(
+                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+                '0'
+            )
+            WHERE card_number = ''
+              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+        """)
+        db.commit()
+        log.info("[DB] Backfilled card_number column")
+    except Exception as _be:
+        log.warning("[DB] card_number backfill skipped: %s", _be)
+
+    # Add index on card_number for fast number-only searches
+    try:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
+        )
+        db.commit()
+    except Exception:
+        pass
 
     db.close()
     log.info("[DB] Initialized PostgreSQL database")
@@ -1861,28 +1928,41 @@ def _normalize_qr(raw: str) -> str:
 
 def _tokenize(text: str) -> list[str]:
     """Split a card name into searchable tokens, ignoring small words."""
-    _STOP = {"the", "a", "an", "of", "in", "ex", "v", "vmax", "vstar", "gx"}
+    # Keep variant keywords (ex, gx, v, vmax, vstar) — they are searchable
+    _STOP = {"the", "a", "an", "of", "in"}
     return [t for t in re.split(r'[\s\-_/\\,\.]+', text.lower()) if t and t not in _STOP]
 
 
-def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str]) -> int:
+def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str],
+                card_number: str = "", variant: str = "") -> int:
     """
     Return a relevance score (higher = better match) for a candidate card
     against a list of search tokens.  Purely in-Python — no extra DB round-trip.
+
+    Bonuses:
+      +8  — token exactly equals the card_number (e.g. searching '25' matches number '25')
+      +4  — token appears in the variant string (e.g. 'ex', 'holo', 'vmax')
+      +3  — token is an exact word-boundary token in the name
+      +2  — token appears anywhere in the name
+      +1  — token appears in set_code or qr_code
+      +5  — ALL tokens matched in name (full-name bonus)
     """
-    score     = 0
-    name_lc   = name.lower()
-    set_lc    = set_code.lower()
-    qr_lc     = qr_code.lower()
-    name_toks = _tokenize(name)
+    score      = 0
+    name_lc    = name.lower()
+    set_lc     = set_code.lower()
+    qr_lc      = qr_code.lower()
+    variant_lc = variant.lower()
+    name_toks  = _tokenize(name)
 
     for t in tokens:
-        if t in name_lc:    score += 2
-        if t in name_toks:  score += 3  # exact token boundary match
-        if t in set_lc:     score += 1
-        if t in qr_lc:      score += 1
+        if card_number and t == card_number:   score += 8  # exact number hit
+        if variant_lc and t in variant_lc:     score += 4  # variant keyword hit
+        if t in name_lc:                        score += 2
+        if t in name_toks:                      score += 3  # word-boundary hit
+        if t in set_lc:                         score += 1
+        if t in qr_lc:                          score += 1
 
-    # Bonus: all tokens matched
+    # Bonus: all tokens found somewhere in the name
     if all(t in name_lc for t in tokens):
         score += 5
 
@@ -1896,8 +1976,10 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     Fuzzy card lookup.  Priority order:
       1. Exact qr_code match (fast path — used by scanner)
       2. Normalised QR → qr_code match
-      3. Set code + card number (extracted from name or explicit params)
-      4. Tokenised name search
+      3. Set code + card number — uses card_number column (exact, fast)
+      3b. Extract SET-NUM pattern from free-text query
+      4. Number-only search (card_num across all sets)
+      5. Tokenised name + variant search with relevance scoring
     Returns at most `limit` results sorted by relevance.
     """
     def _row_to_dict(r) -> dict:
@@ -1909,6 +1991,8 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
             "category":      r["category"] or "General",
             "rarity":        r["rarity"] or "",
             "setCode":       r["set_code"] or "",
+            "cardNumber":    r["card_number"] if "card_number" in keys else "",
+            "variant":       r["variant"]     if "variant"     in keys else "",
             "description":   r["description"] or "",
             "stockQuantity": r["stock"],
             "lastUpdated":   r["last_updated"],
@@ -1937,32 +2021,57 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         if not q:
             q = norm
 
-    # 2 — explicit set + number
+    # 2 — explicit set + number (uses card_number column — exact, indexed)
     if set_code and card_num:
+        num_norm = card_num.lstrip("0") or "0"
         rows = db.execute("""
             SELECT * FROM inventory
-            WHERE UPPER(set_code) = UPPER(%s)
-              AND (name LIKE %s OR qr_code LIKE %s)
+            WHERE UPPER(set_code) = UPPER(%s) AND card_number = %s
             ORDER BY name ASC LIMIT %s
-        """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
+        """, (set_code, num_norm, limit)).fetchall()
+        if not rows:
+            # Fallback: LIKE on name/qr for legacy rows without card_number populated
+            rows = db.execute("""
+                SELECT * FROM inventory
+                WHERE UPPER(set_code) = UPPER(%s)
+                  AND (name LIKE %s OR qr_code LIKE %s)
+                ORDER BY name ASC LIMIT %s
+            """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
         if rows:
             return [_row_to_dict(r) for r in rows]
 
-    # 3 — try to extract set+number from q (e.g. "SV1 001" or "sv1-001")
+    # 3 — try to extract SET-NUM pattern from free-text query (e.g. "SV1 001" or "sv1-001")
     if q:
-        _SET_NUM_RE = re.compile(r'\b([A-Za-z]{2,6})\s*[-/]?\s*0*(\d{1,4})\b')
+        _SET_NUM_RE = re.compile(r'\b([A-Za-z]{2,8})\s*[-/]?\s*0*(\d{1,4})\b')
         m = _SET_NUM_RE.search(q)
         if m:
-            s, n = m.group(1).upper(), m.group(2)
+            s, n = m.group(1).upper(), m.group(2).lstrip("0") or "0"
             rows = db.execute("""
                 SELECT * FROM inventory
-                WHERE UPPER(set_code) = %s AND (name LIKE %s OR qr_code LIKE %s)
+                WHERE UPPER(set_code) = %s AND card_number = %s
                 ORDER BY name ASC LIMIT %s
-            """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
+            """, (s, n, limit)).fetchall()
+            if not rows:
+                rows = db.execute("""
+                    SELECT * FROM inventory
+                    WHERE UPPER(set_code) = %s AND (name LIKE %s OR qr_code LIKE %s)
+                    ORDER BY name ASC LIMIT %s
+                """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
             if rows:
                 return [_row_to_dict(r) for r in rows]
 
-    # 4 — tokenised name search with scoring
+    # 4 — number-only search: card_num without set_code → all sets, ordered by set
+    if card_num and not set_code:
+        num_norm = card_num.lstrip("0") or "0"
+        rows = db.execute("""
+            SELECT * FROM inventory
+            WHERE card_number = %s
+            ORDER BY set_code ASC, name ASC LIMIT %s
+        """, (num_norm, limit)).fetchall()
+        if rows:
+            return [_row_to_dict(r) for r in rows]
+
+    # 5 — tokenised name + variant search with relevance scoring
     if not q and name:
         q = name
     if not q:
@@ -1972,9 +2081,12 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     if not tokens:
         return []
 
-    # Pull candidates that contain at least one token (LIKE OR chain)
-    like_clauses = " OR ".join(["LOWER(name) LIKE %s" for _ in tokens])
-    like_args    = [f"%{t}%" for t in tokens]
+    # Candidates: name OR variant matches at least one token
+    like_clauses = " OR ".join(
+        ["LOWER(name) LIKE %s" for _ in tokens] +
+        ["LOWER(variant) LIKE %s" for _ in tokens]
+    )
+    like_args = [f"%{t}%" for t in tokens] + [f"%{t}%" for t in tokens]
     rows = db.execute(f"""
         SELECT * FROM inventory
         WHERE {like_clauses}
@@ -1987,7 +2099,11 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
 
     scored = sorted(
         rows,
-        key=lambda r: _score_card(r["name"], r["set_code"] or "", r["qr_code"], tokens),
+        key=lambda r: _score_card(
+            r["name"], r["set_code"] or "", r["qr_code"], tokens,
+            card_number=r["card_number"] if "card_number" in r.keys() else "",
+            variant=r["variant"]         if "variant"     in r.keys() else "",
+        ),
         reverse=True,
     )
     return [_row_to_dict(r) for r in scored[:limit]]
