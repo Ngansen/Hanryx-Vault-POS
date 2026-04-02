@@ -714,6 +714,55 @@ def _detect_variant(name: str, rarity: str, description: str) -> str:
     return ""
 
 
+_SET_YEAR_MAP: dict[str, int] = {
+    "SV":   2023,  # Scarlet & Violet
+    "SWSH": 2020,  # Sword & Shield
+    "SM":   2017,  # Sun & Moon
+    "XY":   2014,  # XY era
+    "BW":   2011,  # Black & White
+    "HGSS": 2010,  # HeartGold SoulSilver
+    "PL":   2009,  # Platinum
+    "DP":   2007,  # Diamond & Pearl
+    "EX":   2003,  # EX era (vintage)
+    "BASE": 1999,  # Base Set
+    "GY":   1999,  # Gym Heroes/Challenge
+    "TR":   2000,  # Team Rocket
+    "N1":   2000,  # Neo Genesis
+    "N2":   2000,  # Neo Discovery
+    "N4":   2001,  # Neo Destiny
+}
+
+
+def _set_year_from_code(set_code: str) -> int:
+    """
+    Return the approximate release year for a known Pokémon set-code prefix.
+    Checks longest prefix first so 'SWSH' beats 'SW'.
+    Returns 0 if unknown.
+    """
+    sc = set_code.upper()
+    for prefix in sorted(_SET_YEAR_MAP, key=len, reverse=True):
+        if sc.startswith(prefix):
+            return _SET_YEAR_MAP[prefix]
+    # Heuristic: bare numeric suffix might encode year (e.g. BW01→2011)
+    m = re.match(r'[A-Z]+(\d{2})', sc)
+    if m:
+        yr2 = int(m.group(1))
+        if 99 <= yr2 <= 99:   return 1900 + yr2  # 99 = 1999
+        if 0  <= yr2 <= 30:   return 2000 + yr2
+    return 0
+
+
+def _parse_release_year(release_date: str | None) -> int:
+    """
+    Parse a TCG API releaseDate string ('YYYY/MM/DD' or 'YYYY-MM-DD') into a year int.
+    Returns 0 on failure.
+    """
+    if not release_date:
+        return 0
+    m = re.match(r'(\d{4})', str(release_date))
+    return int(m.group(1)) if m else 0
+
+
 def _extract_card_number(qr_code: str, name: str = "") -> str:
     """
     Extract the numeric card number from a QR/barcode string.
@@ -1524,8 +1573,9 @@ def init_db():
         ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
         ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
         ("search_key",      "ALTER TABLE inventory ADD COLUMN search_key       TEXT NOT NULL DEFAULT ''"),
-        ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT NOT NULL DEFAULT ''"),
-        ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT NOT NULL DEFAULT ''"),
+        ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT    NOT NULL DEFAULT ''"),
+        ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT    NOT NULL DEFAULT ''"),
+        ("release_year",    "ALTER TABLE inventory ADD COLUMN release_year     INTEGER NOT NULL DEFAULT 0"),
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
@@ -1549,10 +1599,40 @@ def init_db():
     except Exception as _be:
         log.warning("[DB] card_number backfill skipped: %s", _be)
 
-    # Add index on card_number for fast number-only searches
+    # Backfill release_year from set_code for existing rows
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET release_year = CASE
+                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
+                ELSE 0
+            END
+            WHERE release_year = 0 AND set_code != ''
+        """)
+        db.commit()
+        log.info("[DB] Backfilled release_year column")
+    except Exception as _rye:
+        log.warning("[DB] release_year backfill skipped: %s", _rye)
+
+    # Add indexes for fast number/year searches
     try:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_release_year ON inventory(release_year)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_rarity ON inventory(rarity)"
         )
         db.commit()
     except Exception:
@@ -1934,35 +2014,41 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str],
-                card_number: str = "", variant: str = "") -> int:
+                card_number: str = "", variant: str = "",
+                rarity: str = "", release_year: int = 0) -> int:
     """
     Return a relevance score (higher = better match) for a candidate card
     against a list of search tokens.  Purely in-Python — no extra DB round-trip.
 
     Bonuses:
-      +8  — token exactly equals the card_number (e.g. searching '25' matches number '25')
-      +4  — token appears in the variant string (e.g. 'ex', 'holo', 'vmax')
+      +8  — token exactly equals card_number  (e.g. '25' → number '25')
+      +8  — token is a 4-digit year matching release_year  (e.g. '2023')
+      +4  — token appears in variant string  (e.g. 'ex', 'vmax', 'holo')
+      +3  — token appears in rarity string   (e.g. 'ultra', 'rare', 'secret')
       +3  — token is an exact word-boundary token in the name
       +2  — token appears anywhere in the name
       +1  — token appears in set_code or qr_code
-      +5  — ALL tokens matched in name (full-name bonus)
+      +5  — ALL tokens matched somewhere in the name (full-name bonus)
     """
     score      = 0
     name_lc    = name.lower()
     set_lc     = set_code.lower()
     qr_lc      = qr_code.lower()
     variant_lc = variant.lower()
+    rarity_lc  = rarity.lower()
     name_toks  = _tokenize(name)
 
     for t in tokens:
-        if card_number and t == card_number:   score += 8  # exact number hit
-        if variant_lc and t in variant_lc:     score += 4  # variant keyword hit
-        if t in name_lc:                        score += 2
-        if t in name_toks:                      score += 3  # word-boundary hit
-        if t in set_lc:                         score += 1
-        if t in qr_lc:                          score += 1
+        if card_number and t == card_number:               score += 8
+        if release_year and t.isdigit() and len(t) == 4 \
+                and int(t) == release_year:                score += 8
+        if variant_lc and t in variant_lc:                 score += 4
+        if rarity_lc  and t in rarity_lc:                  score += 3
+        if t in name_lc:                                    score += 2
+        if t in name_toks:                                  score += 3
+        if t in set_lc:                                     score += 1
+        if t in qr_lc:                                      score += 1
 
-    # Bonus: all tokens found somewhere in the name
     if all(t in name_lc for t in tokens):
         score += 5
 
@@ -1991,8 +2077,9 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
             "category":      r["category"] or "General",
             "rarity":        r["rarity"] or "",
             "setCode":       r["set_code"] or "",
-            "cardNumber":    r["card_number"] if "card_number" in keys else "",
-            "variant":       r["variant"]     if "variant"     in keys else "",
+            "cardNumber":    r["card_number"]   if "card_number"   in keys else "",
+            "variant":       r["variant"]       if "variant"       in keys else "",
+            "releaseYear":   r["release_year"]  if "release_year"  in keys else 0,
             "description":   r["description"] or "",
             "stockQuantity": r["stock"],
             "lastUpdated":   r["last_updated"],
@@ -2071,7 +2158,7 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         if rows:
             return [_row_to_dict(r) for r in rows]
 
-    # 5 — tokenised name + variant search with relevance scoring
+    # 5 — tokenised name + variant + rarity search with relevance scoring
     if not q and name:
         q = name
     if not q:
@@ -2081,12 +2168,25 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     if not tokens:
         return []
 
-    # Candidates: name OR variant matches at least one token
+    # Year-only fast path: if the only useful token is a 4-digit year, filter by release_year
+    year_tokens = [t for t in tokens if t.isdigit() and len(t) == 4 and 1996 <= int(t) <= 2030]
+    non_year    = [t for t in tokens if t not in year_tokens]
+    if year_tokens and not non_year:
+        yr = int(year_tokens[0])
+        rows = db.execute("""
+            SELECT * FROM inventory
+            WHERE release_year = %s
+            ORDER BY name ASC LIMIT %s
+        """, (yr, limit)).fetchall()
+        return [_row_to_dict(r) for r in rows]
+
+    # Candidates: match at least one token in name, variant, OR rarity
     like_clauses = " OR ".join(
-        ["LOWER(name) LIKE %s" for _ in tokens] +
-        ["LOWER(variant) LIKE %s" for _ in tokens]
+        ["LOWER(name) LIKE %s"    for _ in tokens] +
+        ["LOWER(variant) LIKE %s" for _ in tokens] +
+        ["LOWER(rarity) LIKE %s"  for _ in tokens]
     )
-    like_args = [f"%{t}%" for t in tokens] + [f"%{t}%" for t in tokens]
+    like_args = [f"%{t}%" for t in tokens] * 3
     rows = db.execute(f"""
         SELECT * FROM inventory
         WHERE {like_clauses}
@@ -2097,12 +2197,17 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     if not rows:
         return []
 
+    def _r(key, row, default=""):
+        return row[key] if key in row.keys() else default
+
     scored = sorted(
         rows,
         key=lambda r: _score_card(
             r["name"], r["set_code"] or "", r["qr_code"], tokens,
-            card_number=r["card_number"] if "card_number" in r.keys() else "",
-            variant=r["variant"]         if "variant"     in r.keys() else "",
+            card_number  = _r("card_number",  r),
+            variant      = _r("variant",      r),
+            rarity       = _r("rarity",       r),
+            release_year = _r("release_year", r, 0),
         ),
         reverse=True,
     )
