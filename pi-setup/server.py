@@ -11538,30 +11538,50 @@ def _score_listing(title: str, card: dict) -> int:
     """
     Score an eBay listing against a card spec.
     Returns an integer; listings scoring < 6 are discarded.
+
+    Positive signals:  name match (+5), number match (+5), set match (+3),
+                       pokémon mention (+1)
+    Negative signals:  ungraded card with PSA in title (−5),
+                       bulk/lot keywords (−8, enough to always fail threshold)
     """
-    title = title.lower()
+    t = title.lower()
     score = 0
+
     name = (card.get("name") or "").lower()
-    if name and name in title:
+    if name and name in t:
         score += 5
+
     number = card.get("number") or ""
-    if number and number in title:
+    if number and number in t:
         score += 5
+
     set_name = (card.get("set") or "").lower()
-    if set_name and set_name in title:
+    if set_name and set_name in t:
         score += 3
-    if "pokemon" in title or "pokémon" in title:
+
+    if "pokemon" in t or "pokémon" in t:
         score += 1
-    if card.get("grade", "raw") == "raw" and "psa" in title:
+
+    # Graded-card penalty for raw lookups
+    if card.get("grade", "raw") == "raw" and "psa" in t:
         score -= 5
+
+    # Bulk-lot penalty — heavy enough to always drop below the 6-point threshold
+    if any(kw in t for kw in _BULK_KEYWORDS):
+        score -= 8
+
     return score
 
 
 def _filter_and_score(items: list, card: dict) -> list:
-    """Filter listings to score >= 6, attach score, sort descending."""
+    """
+    Sanitise bulk lots, score every listing, keep score >= 6, sort descending.
+    _sanitize_listings runs first as a fast pre-filter (no scoring overhead).
+    """
+    clean = _sanitize_listings(items)
     scored = [
         {**item, "score": _score_listing(item.get("title", ""), card)}
-        for item in items
+        for item in clean
     ]
     return sorted(
         (i for i in scored if i["score"] >= 6),
@@ -11570,31 +11590,100 @@ def _filter_and_score(items: list, card: dict) -> list:
     )
 
 
+# Keywords that indicate bulk lots — excluded before price modelling
+_BULK_KEYWORDS = frozenset([
+    "lot", "bundle", "collection", "bulk", "joblot",
+    "x10", "x20", "x25", "x50", "x100",
+    "10x", "20x", "25x", "50x", "100x",
+    "mixed lot", "random lot",
+])
+
+
+def _sanitize_listings(items: list[dict]) -> list[dict]:
+    """
+    Strip bulk-lot and obviously bad listings before scoring or price modelling.
+    Keeps individual card listings only.
+    """
+    clean = []
+    for item in items:
+        title = item.get("title", "").lower()
+        if any(kw in title for kw in _BULK_KEYWORDS):
+            continue
+        # Skip placeholder / free-shipping-only listings (price < $0.25)
+        if (item.get("price") or 0) < 0.25:
+            continue
+        clean.append(item)
+    return clean
+
+
 def _remove_outliers(prices: list[float]) -> list[float]:
-    """Remove prices further than 2 standard deviations from the mean."""
+    """
+    IQR-based outlier removal — robust against the right-skewed distributions
+    typical of Pokémon card prices.
+
+    Method (Tukey's fences):
+      lo = Q1 − 1.5 × IQR
+      hi = Q3 + 1.5 × IQR
+
+    If IQR is 0 (cluster of identical prices) we fall back to ±60 % of the
+    median so a handful of ludicrously high listings still get clipped.
+    Always returns the original list when filtering would leave nothing.
+    """
+    prices = sorted(p for p in prices if p >= 0.25)   # hard floor
     if len(prices) < 3:
         return prices
-    mean = sum(prices) / len(prices)
-    variance = sum((p - mean) ** 2 for p in prices) / len(prices)
-    std = variance ** 0.5
-    return [p for p in prices if abs(p - mean) <= 2 * std] or prices
+
+    n   = len(prices)
+    q1  = prices[n // 4]
+    q3  = prices[(n * 3) // 4]
+    iqr = q3 - q1
+
+    if iqr == 0:
+        median = prices[n // 2]
+        lo, hi = median * 0.40, median * 1.60
+    else:
+        lo = q1 - 1.5 * iqr
+        hi = q3 + 1.5 * iqr
+
+    filtered = [p for p in prices if lo <= p <= hi]
+    return filtered or prices   # never discard everything
 
 
 def _build_price_model(items: list) -> dict:
-    """Build a price model from scored listings: median, avg, low, high, confidence."""
-    prices = sorted(_remove_outliers([i["price"] for i in items if i.get("price")]))
+    """
+    Build a price model from scored listings.
+    Runs sanitisation → IQR outlier removal → statistics.
+    Returns market (median), average, low, high, confidence, sample_size,
+    plus iqr_bounds so callers know what was kept.
+    """
+    # Sanitise bulk lots / junk first
+    clean  = _sanitize_listings(items)
+    raw_prices = [i["price"] for i in clean if i.get("price")]
+    prices = sorted(_remove_outliers(raw_prices))
+
     if not prices:
-        return {"market": None, "average": None, "low": None, "high": None, "confidence": 0}
+        return {
+            "market": None, "average": None, "low": None, "high": None,
+            "confidence": 0, "sample_size": 0,
+            "raw_sample": len(raw_prices), "iqr_bounds": None,
+        }
+
     n      = len(prices)
+    q1     = prices[n // 4]
+    q3     = prices[(n * 3) // 4]
     median = prices[n // 2]
     avg    = sum(prices) / n
+
     return {
-        "market":     round(median, 2),
-        "average":    round(avg, 2),
-        "low":        round(prices[0], 2),
-        "high":       round(prices[-1], 2),
-        "confidence": min(round(n / 20, 2), 1.0),
+        "market":      round(median, 2),
+        "average":     round(avg, 2),
+        "low":         round(prices[0], 2),
+        "high":        round(prices[-1], 2),
+        "confidence":  min(round(n / 20, 2), 1.0),
         "sample_size": n,
+        "raw_sample":  len(raw_prices),      # before outlier removal
+        "iqr_bounds":  {"lo": round(q1 - 1.5 * (q3 - q1), 2),
+                        "hi": round(q3 + 1.5 * (q3 - q1), 2)},
     }
 
 
