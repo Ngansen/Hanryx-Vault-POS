@@ -1,0 +1,62 @@
+flask>=3.0.0
+flask-compress>=1.14
+gunicorn>=21.2.0
+gevent>=24.2.1
+psycopg2-binary>=2.9.9
+cachetools>=5.3.0
+requests>=2.31.0
+qrcode[pil]>=7.4.2
+Pillow>=10.0.0
+openai>=1.30.0
+
+# Smart Pokémon scan engine — fuzzy card name matching and scan learning
+rapidfuzz>=3.6.0
+
+# Enterprise: JWT token auth for APK/Expo endpoints
+PyJWT>=2.9.0
+
+# Enterprise: TOTP 2FA for admin dashboard
+pyotp>=2.9.0
+
+# Enterprise: PDF receipt / Z-report generation
+reportlab>=4.0.0
+
+# Enterprise: error tracking (set SENTRY_DSN env var to enable)
+sentry-sdk[flask]>=2.0.0
+
+# Enterprise: S3 backup uploads (optional — set AWS_* env vars to enable)
+boto3>=1.34.0
+
+# Performance: 3-5x faster JSON serialisation (automatic stdlib fallback)
+orjson>=3.9.0
+
+# Redis — cross-worker pub/sub for SSE and shared L2 cache
+redis>=5.0.0
+
+# Intelligent pricing engine — eBay sold-listing scraper
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Intelligent pricing engine — multi-language card input translation
+deep-translator>=1.11.0
+
+# QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
+evdev>=1.6.1
+
+# OCR card scanning — image → text → smart scan pipeline
+pytesseract>=0.3.10
+
+# pgvector — semantic/embedding similarity search in PostgreSQL
+pgvector>=0.3.0
+
+# Receipt printer (optional — server uses raw ESC/POS bytes by default)
+# python-escpos>=3.0  # uncomment if you want the higher-level API
+
+# CLIP + FAISS — visual card identification engine
+# PyTorch CPU-only (lighter, no CUDA needed on Pi 5)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+torchvision>=0.16.0
+clip @ git+https://github.com/openai/CLIP.git
+faiss-cpu>=1.7.4
+numpy>=1.24.0
