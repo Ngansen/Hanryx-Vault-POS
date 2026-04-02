@@ -7581,6 +7581,7 @@ def admin_market():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HanryxVault — Market Prices</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
 {_ADMIN_BASE_CSS}
   .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
@@ -7667,6 +7668,39 @@ def admin_market():
   .conf-HIGH{{background:#14532d;color:#4ade80}}
   .conf-MED{{background:#7c2d12;color:#fbbf24}}
   .conf-LOW{{background:#1e1e2e;color:#94a3b8}}
+  /* ── eBay sold history section ─────────────────────────── */
+  .ebay-section{{display:none;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:14px;padding:22px 24px;margin-top:20px}}
+  .ebay-section.visible{{display:block}}
+  .ebay-hdr{{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}}
+  .ebay-title{{font-size:14px;font-weight:800;color:#e0e0e0;letter-spacing:.5px}}
+  .ebay-src{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.8px}}
+  .ebay-src.stored{{background:#0f2a0f;color:#4ade80;border:1px solid #15803d44}}
+  .ebay-src.live{{background:#1a1400;color:#FFD700;border:1px solid #FFD70033}}
+  .ebay-refresh{{margin-left:auto;background:#141414;border:1px solid #333;color:#aaa;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;transition:.15s}}
+  .ebay-refresh:hover{{border-color:#FFD700;color:#FFD700}}
+  .ebay-loading{{color:#555;font-size:13px;padding:16px 0;text-align:center}}
+  /* period cards */
+  .period-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}}
+  @media(max-width:540px){{.period-row{{grid-template-columns:1fr}}}}
+  .pcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px}}
+  .pcard-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
+  .pcard-price{{font-size:24px;font-weight:900;color:#FFD700;margin-bottom:4px}}
+  .pcard-meta{{font-size:11px;color:#666}}
+  .trend-badge{{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px}}
+  .trend-up{{background:#0f2a0f;color:#4ade80}}
+  .trend-down{{background:#2a0f0f;color:#f87171}}
+  .trend-flat{{background:#1e1e1e;color:#94a3b8}}
+  /* chart */
+  .chart-wrap{{position:relative;height:200px;margin-bottom:20px}}
+  /* sold listings */
+  .listings-hdr{{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;justify-content:space-between}}
+  .listings-wrap{{max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#333 transparent}}
+  .listing-row{{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;font-size:12px;transition:.1s}}
+  .listing-row:hover{{background:#141414}}
+  .listing-title{{color:#bbb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:12px}}
+  .listing-price{{font-size:13px;font-weight:800;color:#FFD700;white-space:nowrap}}
+  .listing-date{{color:#555;font-size:11px;margin-left:10px;white-space:nowrap}}
+  .iqr-note{{font-size:10px;color:#444;margin-top:10px;text-align:right}}
 </style>
 </head>
 <body>
@@ -7773,6 +7807,35 @@ def admin_market():
           <button class="btn-gold" onclick="location.href='/admin'" style="background:#1a1a2a;color:#aaa;border:1px solid #333">↩ Dashboard</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── eBay sold history chart panel ─────────────────── -->
+  <div class="ebay-section" id="ebaySection">
+    <div class="ebay-hdr">
+      <span style="font-size:16px">📉</span>
+      <span class="ebay-title">eBay Sold History <span style="font-size:11px;color:#555;font-weight:400">(90 days · IQR filtered)</span></span>
+      <span class="ebay-src" id="ebaySrc"></span>
+      <button class="ebay-refresh" id="ebayRefreshBtn" onclick="loadEbayHistory(true)">↺ Live Refresh</button>
+    </div>
+
+    <div class="ebay-loading" id="ebayLoading">Fetching eBay sold listings…</div>
+
+    <div id="ebayBody" style="display:none">
+      <!-- Period summary cards -->
+      <div class="period-row" id="periodRow"></div>
+
+      <!-- Price trend chart -->
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+
+      <!-- Sold listings -->
+      <div class="listings-hdr">
+        <span id="listingsCount"></span>
+        <span id="iqrBounds" style="color:#444;font-size:10px"></span>
+      </div>
+      <div class="listings-wrap" id="listingsWrap"></div>
     </div>
   </div>
 
@@ -7885,6 +7948,7 @@ async function doSearch() {{
 
 async function doSearchByName(name) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  hide('ebaySection'); _ebayName = '';
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{name}}));
     const d = await r.json();
@@ -7896,6 +7960,7 @@ async function doSearchByName(name) {{
 
 async function doSearchWithId(id) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  hide('ebaySection'); _ebayName = '';
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{qr: id}}));
     const d = await r.json();
@@ -7986,6 +8051,15 @@ function renderResult(d) {{
 
   show('result');
   hide('emptyState');
+
+  // Kick off eBay history fetch for this card
+  const t2 = d.tcgData || {{}};
+  triggerEbayHistory(
+    d.name || (t2 && t2.name) || '',
+    (t2.set && t2.set.name) || d.setCode || '',
+    t2.number || '',
+    d.rarity  || '',
+  );
 }}
 
 function renderTiers() {{
@@ -8076,6 +8150,187 @@ function toast(msg, err=false) {{
   const t = document.getElementById('toast');
   t.textContent=msg; t.className=err?'err':'';
   t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
+}}
+
+// ── eBay sold history chart ────────────────────────────────────────────────
+
+let _ebayChart    = null;   // Chart.js instance (destroyed on each re-render)
+let _ebayName     = '';     // last searched card name
+let _ebaySet      = '';     // last set name
+let _ebayNumber   = '';     // last card number
+let _ebayVariant  = '';     // last variant
+
+// Called at the end of renderResult() — kicks off the eBay fetch
+function triggerEbayHistory(name, setName, number, variant) {{
+  _ebayName    = name    || '';
+  _ebaySet     = setName || '';
+  _ebayNumber  = number  || '';
+  _ebayVariant = variant || '';
+  if (!_ebayName) return;
+  const s = document.getElementById('ebaySection');
+  s.classList.add('visible');
+  loadEbayHistory(false);
+}}
+
+async function loadEbayHistory(forceRefresh) {{
+  if (!_ebayName) return;
+
+  // UI: loading state
+  document.getElementById('ebayLoading').style.display = 'block';
+  document.getElementById('ebayBody').style.display    = 'none';
+  document.getElementById('ebaySrc').textContent       = '';
+  document.getElementById('ebayRefreshBtn').disabled   = true;
+  document.getElementById('ebayRefreshBtn').textContent = forceRefresh ? '⏳ Fetching…' : '⏳ Loading…';
+
+  const params = new URLSearchParams({{
+    name:    _ebayName,
+    set:     _ebaySet,
+    number:  _ebayNumber,
+    variant: _ebayVariant,
+    refresh: forceRefresh ? '1' : '0',
+  }});
+
+  try {{
+    const r = await fetch('/api/v1/pricing/history?' + params);
+    if (!r.ok) {{ ebayError('Server returned ' + r.status); return; }}
+    const d = await r.json();
+    if (d.error) {{ ebayError(d.error); return; }}
+    renderEbaySection(d);
+  }} catch(e) {{
+    ebayError('Network error — ' + e.message);
+  }} finally {{
+    document.getElementById('ebayRefreshBtn').disabled  = false;
+    document.getElementById('ebayRefreshBtn').textContent = '↺ Live Refresh';
+  }}
+}}
+
+function ebayError(msg) {{
+  document.getElementById('ebayLoading').textContent = '⚠ ' + msg;
+  document.getElementById('ebayLoading').style.color = '#f87171';
+}}
+
+function renderEbaySection(d) {{
+  // ── Source badge ─────────────────────────────────────────────────────────
+  const srcEl = document.getElementById('ebaySrc');
+  const isLive = d.data_source === 'live';
+  srcEl.textContent = isLive ? '● Live eBay' : '● Cached';
+  srcEl.className   = 'ebay-src ' + (isLive ? 'live' : 'stored');
+
+  // ── Period summary cards ──────────────────────────────────────────────────
+  const trend = d.trend || {{}};
+  const dir   = (trend.direction || 'flat').toLowerCase();
+  const tBadge = dir === 'up'
+    ? '<span class="trend-badge trend-up">↑ Rising</span>'
+    : dir === 'down'
+    ? '<span class="trend-badge trend-down">↓ Falling</span>'
+    : '<span class="trend-badge trend-flat">→ Stable</span>';
+
+  function pCardHTML(label, model) {{
+    if (!model || !model.count) {{
+      return `<div class="pcard"><div class="pcard-label">${{label}}</div><div class="pcard-price" style="color:#333">—</div><div class="pcard-meta">No data</div></div>`;
+    }}
+    const med = model.median != null ? '$' + model.median.toFixed(2) : '—';
+    const avg = model.avg    != null ? 'avg $' + model.avg.toFixed(2) : '';
+    return `<div class="pcard">
+      <div class="pcard-label">${{label}}</div>
+      <div class="pcard-price">${{med}}${{label==='90 Days'?tBadge:''}}</div>
+      <div class="pcard-meta">${{model.count}} sold${{avg?' · '+avg:''}}</div>
+    </div>`;
+  }}
+
+  const pr = d.periods || {{}};
+  document.getElementById('periodRow').innerHTML =
+    pCardHTML('7 Days',  pr['7d'])  +
+    pCardHTML('30 Days', pr['30d']) +
+    pCardHTML('90 Days', pr['90d']);
+
+  // ── Chart.js weekly trend line ─────────────────────────────────────────────
+  if (_ebayChart) {{ _ebayChart.destroy(); _ebayChart = null; }}
+  const weeks = (trend.weeks || []);
+  const hasChart = weeks.length >= 2;
+  document.querySelector('.chart-wrap').style.display = hasChart ? 'block' : 'none';
+  if (hasChart) {{
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    _ebayChart = new Chart(ctx, {{
+      type: 'line',
+      data: {{
+        labels: weeks.map(w => w.week || ''),
+        datasets: [{{
+          label: 'Weekly Median (£)',
+          data:  weeks.map(w => w.median != null ? +w.median.toFixed(2) : null),
+          borderColor:     '#FFD700',
+          backgroundColor: 'rgba(255,215,0,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#FFD700',
+          pointHoverRadius: 6,
+          tension: 0.3,
+          fill: true,
+          spanGaps: true,
+        }}]
+      }},
+      options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {{
+          legend: {{ display: false }},
+          tooltip: {{
+            backgroundColor: '#141414',
+            borderColor: '#FFD70066',
+            borderWidth: 1,
+            titleColor: '#aaa',
+            bodyColor: '#FFD700',
+            bodyFont: {{ size: 14, weight: 'bold' }},
+            callbacks: {{
+              label: ctx => ' £' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '—'),
+            }},
+          }},
+        }},
+        scales: {{
+          x: {{
+            grid:   {{ color: '#1a1a1a' }},
+            ticks:  {{ color: '#555', font: {{ size: 10 }} }},
+          }},
+          y: {{
+            grid:   {{ color: '#1a1a1a' }},
+            ticks:  {{ color: '#888', font: {{ size: 10 }}, callback: v => '£' + v.toFixed(2) }},
+            beginAtZero: false,
+          }},
+        }},
+      }},
+    }});
+  }}
+
+  // ── IQR note ──────────────────────────────────────────────────────────────
+  const iqr = d.iqr_bounds || (pr['90d'] && pr['90d'].iqr_bounds);
+  if (iqr && iqr.lo != null) {{
+    document.getElementById('iqrBounds').textContent =
+      `IQR filter: £${{iqr.lo.toFixed(2)}} – £${{iqr.hi.toFixed(2)}}`;
+  }} else {{
+    document.getElementById('iqrBounds').textContent = '';
+  }}
+
+  // ── Sold listings ─────────────────────────────────────────────────────────
+  const listings = d.sold_listings || [];
+  document.getElementById('listingsCount').textContent =
+    listings.length + ' sold listing' + (listings.length === 1 ? '' : 's') + ' matched';
+
+  document.getElementById('listingsWrap').innerHTML = listings.length
+    ? listings.map(l => {{
+        const price = l.price != null ? '£' + l.price.toFixed(2) : '—';
+        const date  = l.sold_date ? l.sold_date.substring(0, 10) : '—';
+        const title = l.title || '—';
+        return `<div class="listing-row">
+          <span class="listing-title" title="${{title.replace(/"/g,'&quot;')}}">${{title}}</span>
+          <span class="listing-price">${{price}}</span>
+          <span class="listing-date">${{date}}</span>
+        </div>`;
+      }}).join('')
+    : '<div style="color:#444;font-size:12px;padding:12px 0;text-align:center">No sold listings found</div>';
+
+  // ── Show body ─────────────────────────────────────────────────────────────
+  document.getElementById('ebayLoading').style.display = 'none';
+  document.getElementById('ebayBody').style.display    = 'block';
 }}
 </script>
 </body>
