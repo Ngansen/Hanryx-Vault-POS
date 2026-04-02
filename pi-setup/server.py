@@ -78,6 +78,18 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 import json
+try:
+    import orjson as _orjson
+    def _orjson_dumps(obj, **kw):
+        opts = 0
+        if kw.get("sort_keys"): opts |= _orjson.OPT_SORT_KEYS
+        if kw.get("indent"):    opts |= _orjson.OPT_INDENT_2
+        return _orjson.dumps(obj, option=opts or None).decode()
+    json.loads = _orjson.loads
+    json.dumps = _orjson_dumps
+    _ORJSON = True
+except ImportError:
+    _ORJSON = False
 import datetime
 import functools
 import hashlib
@@ -88,11 +100,23 @@ import re
 import subprocess
 import threading
 import time as _time
+from concurrent.futures import ThreadPoolExecutor as _TPE
 import urllib.parse
 import base64
 import csv
 import io
 import requests as _requests
+import redis as _redis_mod
+try:
+    from bs4 import BeautifulSoup as _BS4
+    _BS4_OK = True
+except ImportError:
+    _BS4_OK = False
+try:
+    from deep_translator import GoogleTranslator as _GoogleTranslator
+    _TRANSLATE_OK = True
+except ImportError:
+    _TRANSLATE_OK = False
 import qrcode as _qrcode
 import qrcode.constants as _qrcode_const
 from flask import Flask, request, jsonify, redirect, g, session, render_template_string, Response, send_file
@@ -100,14 +124,55 @@ from flask_compress import Compress
 from cachetools import TTLCache
 
 # ---------------------------------------------------------------------------
-# Logging — replaces bare print() throughout the module
+# Structured JSON logging — every line is machine-parseable
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+import uuid as _uuid_mod
+
+class _JsonFormatter(logging.Formatter):
+    """Emit log records as JSON lines for easy ingestion / grep."""
+    def format(self, record: logging.LogRecord) -> str:
+        doc = {
+            "ts":      self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level":   record.levelname,
+            "logger":  record.name,
+            "msg":     record.getMessage(),
+        }
+        # Inject Flask request context when available
+        try:
+            from flask import has_request_context, g, request as _req
+            if has_request_context():
+                doc["request_id"] = getattr(g, "request_id", "")
+                doc["method"]     = _req.method
+                doc["path"]       = _req.path
+                doc["ip"]         = _req.remote_addr
+        except Exception:
+            pass
+        if record.exc_info:
+            doc["exc"] = self.formatException(record.exc_info)
+        return json.dumps(doc, ensure_ascii=False)
+
+_json_handler = logging.StreamHandler()
+_json_handler.setFormatter(_JsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[_json_handler])
 log = logging.getLogger("hanryxvault")
+
+# ---------------------------------------------------------------------------
+# Sentry error tracking — enabled if SENTRY_DSN env var is set
+# ---------------------------------------------------------------------------
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.05,   # 5 % of requests traced
+            send_default_pii=False,
+        )
+        log.info("[sentry] Error tracking enabled")
+    except ImportError:
+        log.warning("[sentry] sentry-sdk not installed — error tracking disabled")
 
 # ---------------------------------------------------------------------------
 # Zettle OAuth + Payment configuration
@@ -214,11 +279,166 @@ Compress(app)  # gzip all responses automatically
 app.secret_key = os.environ.get("SESSION_SECRET") or os.environ.get(
     "SECRET_KEY", "dev-secret-change-me-in-production"
 )
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"]  = True
+app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
+app.config["SESSION_COOKIE_SECURE"]    = os.environ.get("HTTPS_ONLY", "0") == "1"
 
 # Admin panel password — set ADMIN_PASSWORD env var on the Pi
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "hanryxvault")
+
+# ---------------------------------------------------------------------------
+# Enterprise: JWT + TOTP imports (graceful degradation if not installed)
+# ---------------------------------------------------------------------------
+try:
+    import jwt as _jwt
+    _JWT_AVAILABLE = True
+except ImportError:
+    _JWT_AVAILABLE = False
+
+try:
+    import pyotp as _pyotp
+    _PYOTP_AVAILABLE = True
+except ImportError:
+    _PYOTP_AVAILABLE = False
+
+_JWT_SECRET = os.environ.get("JWT_SECRET", app.secret_key)
+_JWT_ALGO   = "HS256"
+_JWT_TTL_H  = int(os.environ.get("JWT_TTL_HOURS", "24"))
+
+# LAN CIDR allowlist for open (no-auth) APK endpoints.
+# Default: accept any RFC-1918 address. Override via LAN_CIDRS env var.
+# e.g. LAN_CIDRS=192.168.1.0/24,10.0.0.0/8
+import ipaddress as _ipaddress
+_LAN_CIDRS_RAW = os.environ.get("LAN_CIDRS", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8")
+_LAN_NETWORKS  = [_ipaddress.ip_network(c.strip()) for c in _LAN_CIDRS_RAW.split(",") if c.strip()]
+
+
+def _is_lan(ip: str) -> bool:
+    try:
+        addr = _ipaddress.ip_address(ip)
+        return any(addr in net for net in _LAN_NETWORKS)
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: Request ID + security headers middleware
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def _inject_request_id():
+    g.request_id = request.headers.get("X-Request-ID") or _uuid_mod.uuid4().hex[:12]
+    g.admin_user  = session.get("admin_user", "anonymous")
+
+
+@app.after_request
+def _add_security_headers(resp):
+    resp.headers["X-Request-ID"]          = getattr(g, "request_id", "")
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"]        = "SAMEORIGIN"
+    resp.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
+    # CSP: restrictive for API, relaxed for admin HTML pages
+    if resp.content_type and "text/html" in resp.content_type:
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
+        )
+    if os.environ.get("HTTPS_ONLY") == "1":
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: JWT token auth decorator for APK / Expo endpoints
+# ---------------------------------------------------------------------------
+
+def _verify_jwt(token: str) -> dict | None:
+    """Return decoded payload or None on failure."""
+    if not _JWT_AVAILABLE:
+        return None
+    try:
+        return _jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGO])
+    except Exception:
+        return None
+
+
+def require_api_token(fn):
+    """
+    Allow request if ANY of:
+      1. Valid Bearer JWT in Authorization header
+      2. Valid ?token= query param
+      3. Source IP is on the configured LAN subnet (local hardware)
+    Returns 401 JSON otherwise.
+    """
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        # LAN bypass — local Pi hardware always trusted
+        if _is_lan(request.remote_addr):
+            return fn(*args, **kwargs)
+        # JWT check
+        auth = request.headers.get("Authorization", "")
+        token = ""
+        if auth.startswith("Bearer "):
+            token = auth[7:].strip()
+        if not token:
+            token = request.args.get("token", "") or (request.get_json(silent=True) or {}).get("token", "")
+        if token and _verify_jwt(token):
+            return fn(*args, **kwargs)
+        return jsonify({"error": "Unauthorized — provide a valid Bearer token or connect from LAN"}), 401
+    return _wrapped
+
+
+# ---------------------------------------------------------------------------
+# Enterprise: Audit log writer + decorator
+# ---------------------------------------------------------------------------
+
+def _audit_write(action: str, resource: str = "", detail: str = ""):
+    """Write one row to audit_log. Captures request context immediately, writes in background."""
+    try:
+        actor  = session.get("admin_user", "anonymous")
+        ip     = request.remote_addr
+        req_id = getattr(g, "request_id", "")
+    except Exception:
+        actor = ip = req_id = ""
+
+    def _do_safe():
+        try:
+            db = _direct_db()
+            db.execute(
+                "INSERT INTO audit_log (action, actor, resource, detail, ip, request_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (action, actor, resource, detail[:2000], ip, req_id),
+            )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[audit] write failed: %s", _e)
+
+    _bg(_do_safe)
+
+
+def audit_action(action: str, resource_fn=None):
+    """
+    Decorator.  Writes an audit_log row after a successful (non-4xx/5xx) call.
+
+    Usage:
+      @audit_action("inventory.delete", resource_fn=lambda: request.view_args.get("qr_code"))
+      def delete_item(qr_code): ...
+    """
+    def _decorator(fn):
+        @functools.wraps(fn)
+        def _wrapped(*args, **kwargs):
+            result = fn(*args, **kwargs)
+            try:
+                status = result[1] if isinstance(result, tuple) else 200
+                if status < 400:
+                    resource = resource_fn() if resource_fn else ""
+                    _audit_write(action, str(resource))
+            except Exception:
+                pass
+            return result
+        return _wrapped
+    return _decorator
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -299,6 +519,807 @@ _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
 
 # ---------------------------------------------------------------------------
+# Redis — lazy singleton, cross-worker pub/sub + L2 cache
+# ---------------------------------------------------------------------------
+_redis_client_obj  = None
+_redis_client_lock = threading.Lock()
+_REDIS_SCAN_CHAN   = "hanryx:scans"
+_REDIS_INV_KEY     = "hv:inv:all"
+_REDIS_QR_PREFIX   = "hv:qr:"
+
+
+def _redis():
+    """Return a live redis.Redis client, or None if Redis is not reachable."""
+    global _redis_client_obj
+    if _redis_client_obj is not None:
+        return _redis_client_obj
+    with _redis_client_lock:
+        if _redis_client_obj is not None:
+            return _redis_client_obj
+        url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+        try:
+            c = _redis_mod.Redis.from_url(
+                url,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=False,
+            )
+            c.ping()
+            _redis_client_obj = c
+            log.info("[redis] Connected to %s", url)
+        except Exception as _e:
+            log.warning("[redis] Not available (%s) — SSE/cache will use in-process fallback", _e)
+        return _redis_client_obj
+
+
+def _rcache_get(key: str):
+    """Get a JSON-encoded value from Redis. Returns None on miss or error."""
+    try:
+        r = _redis()
+        if not r:
+            return None
+        raw = r.get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _rcache_set(key: str, value, ttl: int = 30):
+    """Store a JSON-encoded value in Redis with a TTL (seconds)."""
+    try:
+        r = _redis()
+        if r:
+            r.set(key, json.dumps(value), ex=ttl)
+    except Exception:
+        pass
+
+
+def _rcache_del(*keys: str):
+    """Delete one or more keys from Redis."""
+    try:
+        r = _redis()
+        if r and keys:
+            r.delete(*keys)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Worker thread pool — replaces ad-hoc daemon threads for fire-and-forget work
+# ---------------------------------------------------------------------------
+_worker_pool = _TPE(max_workers=8, thread_name_prefix="hvault-worker")
+
+def _bg(fn, *args, **kwargs):
+    """Submit a fire-and-forget task to the shared worker pool."""
+    try:
+        _worker_pool.submit(fn, *args, **kwargs)
+    except Exception as _e:
+        log.warning("[worker] submit failed for %s: %s", getattr(fn, "__name__", fn), _e)
+
+def _queue_unsynced(qr_code: str, change_type: str = "stock", delta: int = 0):
+    """
+    Record a stock/price change that has not yet been pushed to the storefront.
+    Runs in the background so it never blocks the request path.
+    change_type: 'stock' | 'price' | 'new' | 'delete'
+    """
+    def _write():
+        try:
+            db = _direct_db()
+            db.execute(
+                "INSERT INTO unsynced_changes (qr_code, change_type, delta) VALUES (%s, %s, %s)",
+                (qr_code, change_type, delta),
+            )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[unsynced] write failed: %s", _e)
+    _bg(_write)
+
+# ---------------------------------------------------------------------------
+# HTTP retry wrapper — automatic exponential back-off on transient failures
+# ---------------------------------------------------------------------------
+def _http_get(url, *, retries=3, backoff=0.5, timeout=10, headers=None, **kwargs):
+    """GET with retries on network / timeout errors. Raises on final failure."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            r = _requests.get(url, timeout=timeout, headers=headers or {}, **kwargs)
+            r.raise_for_status()
+            return r
+        except (_requests.Timeout, _requests.ConnectionError) as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+        except _requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code < 500:
+                raise
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+    raise last_exc
+
+def _http_post(url, *, retries=2, backoff=0.5, timeout=10, headers=None,
+               json_body=None, data=None, **kwargs):
+    """POST with retries on network / timeout errors. Raises on final failure."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            r = _requests.post(url, timeout=timeout, headers=headers or {},
+                               json=json_body, data=data, **kwargs)
+            r.raise_for_status()
+            return r
+        except (_requests.Timeout, _requests.ConnectionError) as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+        except _requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code < 500:
+                raise
+            last_exc = exc
+            if attempt < retries - 1:
+                _time.sleep(backoff * (2 ** attempt))
+    raise last_exc
+
+# ---------------------------------------------------------------------------
+# Smart Scan Engine — in-memory rapidfuzz index + learning cache
+# ---------------------------------------------------------------------------
+try:
+    from rapidfuzz import fuzz as _fuzz, process as _rfprocess
+    _RAPIDFUZZ_AVAILABLE = True
+except ImportError:
+    _RAPIDFUZZ_AVAILABLE = False
+    log.warning("[smart-scan] rapidfuzz not installed — fuzzy matching disabled (pip install rapidfuzz)")
+
+# ---------------------------------------------------------------------------
+# pgvector + OpenAI embeddings — semantic vector search
+# ---------------------------------------------------------------------------
+try:
+    from pgvector.psycopg2 import register_vector as _pgvector_register
+    _PGVECTOR_AVAILABLE = True
+except ImportError:
+    _pgvector_register  = None
+    _PGVECTOR_AVAILABLE = False
+    log.info("[pgvector] Python package not installed — vector search disabled")
+
+
+def _smart_normalize(text: str) -> str:
+    """Strip everything except lowercase letters and digits for index comparison."""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
+def _detect_variant(name: str, rarity: str, description: str) -> str:
+    """
+    Infer card variant from metadata fields.
+    Priority: 1st Ed > Reverse Holo > Rainbow > Secret > Gold > Full Art >
+              VSTAR > VMAX > V > GX > EX > Holo > Promo > ""
+    """
+    combined = f"{name} {rarity} {description}".lower()
+    name_lc  = name.lower()
+    rar_lc   = rarity.lower()
+    if "1st edition" in combined or "first edition" in combined:
+        return "1st Edition"
+    if "reverse holo" in combined or "reverse" in rar_lc:
+        return "Reverse Holo"
+    if "rainbow" in combined:
+        return "Rainbow Rare"
+    if "secret" in rar_lc:
+        return "Secret Rare"
+    if "gold" in rar_lc:
+        return "Gold"
+    if "full art" in combined:
+        return "Full Art"
+    if "vstar" in name_lc:
+        return "VSTAR"
+    if "vmax" in name_lc:
+        return "VMAX"
+    if re.search(r'\bv\b', name_lc):
+        return "V"
+    if "gx" in name_lc:
+        return "GX"
+    if re.search(r'\bex\b', name_lc):
+        return "EX"
+    if "holo" in combined:
+        return "Holo"
+    if "promo" in combined:
+        return "Promo"
+    return ""
+
+
+_SET_YEAR_MAP: dict[str, int] = {
+    "SV":   2023,  # Scarlet & Violet
+    "SWSH": 2020,  # Sword & Shield
+    "SM":   2017,  # Sun & Moon
+    "XY":   2014,  # XY era
+    "BW":   2011,  # Black & White
+    "HGSS": 2010,  # HeartGold SoulSilver
+    "PL":   2009,  # Platinum
+    "DP":   2007,  # Diamond & Pearl
+    "EX":   2003,  # EX era (vintage)
+    "BASE": 1999,  # Base Set
+    "GY":   1999,  # Gym Heroes/Challenge
+    "TR":   2000,  # Team Rocket
+    "N1":   2000,  # Neo Genesis
+    "N2":   2000,  # Neo Discovery
+    "N4":   2001,  # Neo Destiny
+}
+
+
+def _set_year_from_code(set_code: str) -> int:
+    """
+    Return the approximate release year for a known Pokémon set-code prefix.
+    Checks longest prefix first so 'SWSH' beats 'SW'.
+    Returns 0 if unknown.
+    """
+    sc = set_code.upper()
+    for prefix in sorted(_SET_YEAR_MAP, key=len, reverse=True):
+        if sc.startswith(prefix):
+            return _SET_YEAR_MAP[prefix]
+    # Heuristic: bare numeric suffix might encode year (e.g. BW01→2011)
+    m = re.match(r'[A-Z]+(\d{2})', sc)
+    if m:
+        yr2 = int(m.group(1))
+        if 99 <= yr2 <= 99:   return 1900 + yr2  # 99 = 1999
+        if 0  <= yr2 <= 30:   return 2000 + yr2
+    return 0
+
+
+def _parse_release_year(release_date: str | None) -> int:
+    """
+    Parse a TCG API releaseDate string ('YYYY/MM/DD' or 'YYYY-MM-DD') into a year int.
+    Returns 0 on failure.
+    """
+    if not release_date:
+        return 0
+    m = re.match(r'(\d{4})', str(release_date))
+    return int(m.group(1)) if m else 0
+
+
+def _extract_card_number(qr_code: str, name: str = "") -> str:
+    """
+    Extract the numeric card number from a QR/barcode string.
+    Examples:
+      'SV1-025'    → '25'
+      'SV1EN-025'  → '25'
+      'SWSH01-001' → '1'
+    Falls back to parsing 'NNN/TTT' patterns from the card name.
+    Returns empty string if nothing can be extracted.
+    """
+    # Primary: SET-NUM format in qr_code (e.g. 'SV1-025', 'SWSH01-001')
+    m = re.search(r'[A-Za-z]{2,8}[-/]0*(\d{1,4}[a-zA-Z]?)', qr_code)
+    if m:
+        return m.group(1).lstrip("0") or "0"
+    # Fallback: 'NNN/TTT' in card name (e.g. '025/165')
+    m = re.search(r'\b0*(\d{1,4})/\d+\b', name)
+    if m:
+        return m.group(1).lstrip("0") or "0"
+    return ""
+
+
+class _SmartScanner:
+    """
+    In-memory scan resolution pipeline.  Runs on each worker process independently.
+
+    Pipeline priority (returns on first confident match):
+      1. Learning cache — previous confirmed mappings, instant
+      2. Exact in-memory qr_code match
+      3. Set-code + card-number parse and match
+      4. rapidfuzz WRatio name match (threshold 70 / 100)
+      5. FAIL — returns top-3 suggestions
+
+    Invalidated whenever inventory changes (_invalidate_inventory).
+    Loaded lazily on first smart_scan() call after invalidation.
+    """
+
+    FUZZY_THRESHOLD  = 70    # minimum rapidfuzz WRatio score (0–100)
+    MAX_INDEX_SIZE   = 10_000  # safety cap for very large catalogues
+
+    def __init__(self):
+        self._lock         = threading.Lock()
+        self._loaded       = False
+        self._index: list  = []        # list of item dicts (all inventory rows)
+        self._names: list  = []        # parallel list of card names for rapidfuzz
+        self._qr_map: dict = {}        # qr_code → item dict (fast exact lookup)
+        self._learn: dict  = {}        # raw_qr → qr_code (scan learning cache)
+
+    # ── Public interface ──────────────────────────────────────────────────────
+
+    def invalidate(self):
+        with self._lock:
+            self._loaded = False
+            self._index.clear()
+            self._names.clear()
+            self._qr_map.clear()
+            # Intentionally preserve _learn — learned mappings survive invalidations
+
+    def learn(self, raw_qr: str, qr_code: str):
+        """Record that raw_qr resolved to qr_code so future scans are instant."""
+        if raw_qr and qr_code and raw_qr != qr_code:
+            with self._lock:
+                self._learn[raw_qr] = qr_code
+
+    def smart_scan(self, qr: str, db) -> dict:
+        """
+        Run the full resolution pipeline.  Returns:
+          {
+            "found":      bool,
+            "confidence": float (0.0–1.0),
+            "method":     str,
+            "variant":    str,
+            "item":       dict | None,    # inventory row as dict (if found)
+            "suggestions": list           # top-3 name matches (if not found)
+          }
+        """
+        if not _RAPIDFUZZ_AVAILABLE:
+            return self._not_found(qr, [])
+
+        self._ensure_loaded(db)
+        qr = qr.strip()
+
+        # 1 — Learning cache (fastest — previous confirmed mapping)
+        result = self._check_learning(qr)
+        if result:
+            return result
+
+        # 2 — Exact in-memory qr_code match
+        result = self._exact_match(qr)
+        if result:
+            return result
+
+        # 3 — Set + number parse
+        result = self._set_number_match(qr)
+        if result:
+            return result
+
+        # 4 — Fuzzy name match (rapidfuzz WRatio)
+        result = self._fuzzy_match(qr)
+        if result:
+            return result
+
+        # 5 — Failed — return top-3 suggestions
+        return self._not_found(qr, self._get_suggestions(qr))
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _ensure_loaded(self, db):
+        with self._lock:
+            if self._loaded:
+                return
+        try:
+            rows = db.execute(
+                "SELECT qr_code, name, price, category, rarity, set_code, "
+                "description, stock, image_url, tcg_id, condition, item_type, "
+                "card_number, variant "
+                "FROM inventory ORDER BY name ASC LIMIT %s",
+                (self.MAX_INDEX_SIZE,)
+            ).fetchall()
+        except Exception as e:
+            log.warning("[smart-scan] Could not load index: %s", e)
+            return
+
+        items = []
+        names = []
+        qr_map = {}
+        for r in rows:
+            item = dict(r)
+            item["_norm_name"] = _smart_normalize(item.get("name") or "")
+            # Use persisted variant; fall back to runtime detection for legacy rows
+            if not item.get("variant"):
+                item["variant"] = _detect_variant(
+                    item.get("name") or "",
+                    item.get("rarity") or "",
+                    item.get("description") or "",
+                )
+            item["_variant"] = item["variant"]
+            items.append(item)
+            names.append(item.get("name") or "")
+            qr_map[item["qr_code"]] = item
+
+        with self._lock:
+            self._index  = items
+            self._names  = names
+            self._qr_map = qr_map
+            self._loaded = True
+        log.info("[smart-scan] Index loaded: %d cards", len(items))
+
+    def _build_result(self, item: dict, confidence: float, method: str) -> dict:
+        return {
+            "found":       True,
+            "confidence":  round(confidence, 3),
+            "method":      method,
+            "variant":     item.get("_variant", ""),
+            "item":        {k: v for k, v in item.items() if not k.startswith("_")},
+            "suggestions": [],
+        }
+
+    def _not_found(self, qr: str, suggestions: list) -> dict:
+        return {
+            "found":       False,
+            "confidence":  0.0,
+            "method":      "none",
+            "variant":     "",
+            "item":        None,
+            "suggestions": suggestions,
+        }
+
+    def _check_learning(self, qr: str) -> dict | None:
+        with self._lock:
+            qr_code = self._learn.get(qr)
+            if not qr_code:
+                return None
+            item = self._qr_map.get(qr_code)
+        if item:
+            return self._build_result(item, 0.99, "learned")
+        return None
+
+    def _exact_match(self, qr: str) -> dict | None:
+        with self._lock:
+            item = self._qr_map.get(qr)
+        if item:
+            return self._build_result(item, 1.0, "exact")
+        return None
+
+    def _set_number_match(self, qr: str) -> dict | None:
+        """Parse SET-NUM patterns like SV1-001 and match by set_code + number."""
+        m = re.search(r'\b([A-Za-z]{2,8})[- ]?0*(\d{1,4}[a-zA-Z]?)\b', qr)
+        if not m:
+            return None
+        set_code = m.group(1).upper()
+        number   = m.group(2).lstrip("0") or "0"
+        with self._lock:
+            for item in self._index:
+                if (item.get("set_code") or "").upper() == set_code:
+                    qr_tail = (item.get("qr_code") or "").upper()
+                    if qr_tail.endswith(f"-{number}") or qr_tail.endswith(number.zfill(3)):
+                        return self._build_result(item, 0.95, "set_number")
+        return None
+
+    def _fuzzy_match(self, qr: str) -> dict | None:
+        """Fuzzy name match using rapidfuzz WRatio (handles typos, partial names)."""
+        with self._lock:
+            names = list(self._names)
+            index = list(self._index)
+        if not names:
+            return None
+
+        result = _rfprocess.extractOne(
+            qr,
+            names,
+            scorer=_fuzz.WRatio,
+            score_cutoff=self.FUZZY_THRESHOLD,
+        )
+        if not result:
+            return None
+
+        matched_name, score, idx = result
+        item = index[idx]
+        confidence = score / 100.0
+        method = "fuzzy_name" if confidence >= 0.85 else "fuzzy_low"
+        return self._build_result(item, confidence, method)
+
+    def _get_suggestions(self, qr: str) -> list:
+        """
+        Return up to 5 suggestions when no confident match is found.
+
+        Two sources, merged and ranked:
+          1. Inventory fuzzy match  — in-stock cards with similar names
+          2. Canonical PokeAPI names — full Pokédex for "not in stock" hints
+
+        Source 2 only fires when source 1 returns nothing useful (best score < 0.65),
+        so we don't show "not in stock" suggestions when a real inventory hit exists.
+        """
+        with self._lock:
+            names = list(self._names)
+            index = list(self._index)
+
+        suggestions = []
+
+        # ── Source 1: inventory ───────────────────────────────────────────────
+        if names:
+            results = _rfprocess.extract(qr, names, scorer=_fuzz.WRatio, limit=3)
+            for name, score, idx in results:
+                item = index[idx]
+                suggestions.append({
+                    "name":       name,
+                    "qrCode":     item.get("qr_code"),
+                    "score":      round(score / 100.0, 3),
+                    "price":      item.get("price"),
+                    "rarity":     item.get("rarity") or "",
+                    "variant":    item.get("_variant", ""),
+                    "imageUrl":   item.get("image_url") or "",
+                    "inStock":    True,
+                    "source":     "inventory",
+                })
+
+        # ── Source 2: canonical Pokédex (only when inventory results are weak) ─
+        best_inv_score = max((s["score"] for s in suggestions), default=0.0)
+        if best_inv_score < 0.65 and _RAPIDFUZZ_AVAILABLE:
+            _ensure_pokeapi_names()   # no-op if already loaded
+            canon = _normalize_to_canonical(qr, threshold=65)
+            if canon:
+                # Only add if the canonical name isn't already in suggestions
+                already = any(
+                    s["name"].lower() == canon["canonical"].lower()
+                    for s in suggestions
+                )
+                if not already:
+                    suggestions.append({
+                        "name":      canon["canonical"],
+                        "qrCode":    None,
+                        "score":     canon["score"],
+                        "price":     None,
+                        "rarity":    "",
+                        "variant":   "",
+                        "imageUrl":  (
+                            f"https://raw.githubusercontent.com/PokeAPI/sprites/master/"
+                            f"sprites/pokemon/other/official-artwork/{canon['pokedex_no']}.png"
+                        ),
+                        "inStock":   False,
+                        "source":    "pokedex",
+                        "pokedexNo": canon["pokedex_no"],
+                        "hint":      "Not in your stock — add it via Trade-In or Purchase Order",
+                    })
+
+        # Sort by score descending, cap at 5
+        suggestions.sort(key=lambda x: x["score"], reverse=True)
+        return suggestions[:5]
+
+
+_smart_scanner = _SmartScanner()
+
+
+# ---------------------------------------------------------------------------
+# PokéAPI canonical Pokémon name cache
+# ---------------------------------------------------------------------------
+# Fetches every species name once from pokeapi.co and stores it in PostgreSQL.
+# Loaded into a module-level in-memory list for zero-latency lookups.
+# Refreshed weekly in the background — no per-request network calls.
+# ---------------------------------------------------------------------------
+
+_POKEAPI_BASE = "https://pokeapi.co/api/v2"
+_POKEAPI_CACHE_TTL_DAYS = 7
+
+# Slugs that need a special display name (PokeAPI returns lowercase-hyphen slugs)
+_SLUG_SPECIAL: dict[str, str] = {
+    "mr-mime":    "Mr. Mime",
+    "mime-jr":    "Mime Jr.",
+    "mr-rime":    "Mr. Rime",
+    "type-null":  "Type: Null",
+    "ho-oh":      "Ho-Oh",
+    "porygon-z":  "Porygon-Z",
+    "jangmo-o":   "Jangmo-o",
+    "hakamo-o":   "Hakamo-o",
+    "kommo-o":    "Kommo-o",
+    "tapu-koko":  "Tapu Koko",
+    "tapu-lele":  "Tapu Lele",
+    "tapu-bulu":  "Tapu Bulu",
+    "tapu-fini":  "Tapu Fini",
+    "chi-yu":     "Chi-Yu",
+    "chien-pao":  "Chien-Pao",
+    "ting-lu":    "Ting-Lu",
+    "wo-chien":   "Wo-Chien",
+    "great-tusk": "Great Tusk",
+    "scream-tail":"Scream Tail",
+    "brute-bonnet":"Brute Bonnet",
+    "flutter-mane":"Flutter Mane",
+    "slither-wing":"Slither Wing",
+    "sandy-shocks":"Sandy Shocks",
+    "iron-treads": "Iron Treads",
+    "iron-bundle": "Iron Bundle",
+    "iron-hands":  "Iron Hands",
+    "iron-jugulis":"Iron Jugulis",
+    "iron-moth":   "Iron Moth",
+    "iron-thorns": "Iron Thorns",
+    "roaring-moon":"Roaring Moon",
+    "iron-valiant":"Iron Valiant",
+    "walking-wake":"Walking Wake",
+    "iron-leaves": "Iron Leaves",
+    "gouging-fire":"Gouging Fire",
+    "raging-bolt": "Raging Bolt",
+    "iron-boulder":"Iron Boulder",
+    "iron-crown":  "Iron Crown",
+    "terapagos":   "Terapagos",
+}
+
+
+def _slug_to_name(slug: str) -> str:
+    """Convert a PokeAPI slug like 'mr-mime' to a display name like 'Mr. Mime'."""
+    if slug in _SLUG_SPECIAL:
+        return _SLUG_SPECIAL[slug]
+    return " ".join(part.capitalize() for part in slug.split("-"))
+
+
+# Module-level in-memory list: [{slug, name, pokedex_no}]
+_pokeapi_names_lock  = threading.Lock()
+_pokeapi_names_list: list[dict] = []   # full dicts
+_pokeapi_names_strs: list[str]  = []   # just the display names (for rapidfuzz)
+_pokeapi_names_ready = False
+
+
+def _pokeapi_fetch_and_store() -> int:
+    """
+    Fetch all species names from PokeAPI and upsert into pokeapi_name_cache.
+    Returns the count of names stored, or 0 on failure.
+    """
+    try:
+        resp = _requests.get(
+            f"{_POKEAPI_BASE}/pokemon-species",
+            params={"limit": 10000, "offset": 0},
+            timeout=20,
+            headers={"User-Agent": "HanryxVault-POS/1.0"},
+        )
+        resp.raise_for_status()
+        data    = resp.json()
+        results = data.get("results", [])
+    except Exception as _e:
+        log.warning("[pokeapi] fetch failed: %s", _e)
+        return 0
+
+    db  = _direct_db()
+    now = _now_ms()
+    for idx, entry in enumerate(results, start=1):
+        slug = entry.get("name", "")
+        name = _slug_to_name(slug)
+        db.execute(
+            """
+            INSERT INTO pokeapi_name_cache (slug, name, pokedex_no, fetched_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (slug) DO UPDATE
+              SET name=EXCLUDED.name,
+                  pokedex_no=EXCLUDED.pokedex_no,
+                  fetched_at=EXCLUDED.fetched_at
+            """,
+            (slug, name, idx, now),
+        )
+    db.commit()
+    db.close()
+    log.info("[pokeapi] stored %d species names", len(results))
+    return len(results)
+
+
+def _load_pokeapi_names_from_db() -> list[dict]:
+    """Read all rows from pokeapi_name_cache into memory."""
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT slug, name, pokedex_no FROM pokeapi_name_cache ORDER BY pokedex_no ASC"
+        ).fetchall()
+        db.close()
+        return [{"slug": r["slug"], "name": r["name"], "pokedex_no": r["pokedex_no"]} for r in rows]
+    except Exception as _e:
+        log.warning("[pokeapi] db load failed: %s", _e)
+        return []
+
+
+def _ensure_pokeapi_names():
+    """
+    Load canonical Pokémon names into memory.
+    On first call: checks DB freshness (< 7 days) — fetches from PokeAPI if stale.
+    Thread-safe; subsequent calls are no-ops.
+    """
+    global _pokeapi_names_ready, _pokeapi_names_list, _pokeapi_names_strs
+    with _pokeapi_names_lock:
+        if _pokeapi_names_ready:
+            return
+
+    # Check cache freshness in DB
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT MAX(fetched_at) as last_fetch, COUNT(*) as cnt FROM pokeapi_name_cache"
+        ).fetchone()
+        db.close()
+        count      = row["cnt"] or 0
+        last_fetch = row["last_fetch"] or 0
+        age_days   = (_now_ms() - last_fetch) / 86_400_000
+        stale      = count < 100 or age_days > _POKEAPI_CACHE_TTL_DAYS
+    except Exception:
+        count  = 0
+        stale  = True
+
+    if stale:
+        log.info("[pokeapi] cache stale (%d entries, %.1f days old) — fetching fresh", count, age_days if count else 0)
+        _bg(_pokeapi_fetch_and_store)
+        # Use whatever is already in DB while background fetch runs
+    
+    entries = _load_pokeapi_names_from_db()
+
+    with _pokeapi_names_lock:
+        _pokeapi_names_list  = entries
+        _pokeapi_names_strs  = [e["name"] for e in entries]
+        _pokeapi_names_ready = len(entries) > 0
+    
+    log.info("[pokeapi] canonical name index ready: %d species", len(entries))
+
+
+def _normalize_to_canonical(query: str, threshold: int = 70) -> dict | None:
+    """
+    Find the closest canonical Pokémon species name to `query` using rapidfuzz.
+    Returns {canonical, slug, pokedex_no, score} or None if below threshold.
+
+    Used to:
+      • Clean up typos before eBay price searches  (e.g. "Chrizard" → "Charizard")
+      • Power "Did you mean?" suggestions for cards not in stock
+    """
+    if not _RAPIDFUZZ_AVAILABLE:
+        return None
+    with _pokeapi_names_lock:
+        names   = list(_pokeapi_names_strs)
+        entries = list(_pokeapi_names_list)
+    if not names:
+        return None
+
+    # Use Jaro-Winkler for short name strings (prefix-heavy, good for species names)
+    # then verify with WRatio for word-reordered inputs
+    from rapidfuzz.distance import JaroWinkler as _jw
+    jw_scores = [(i, _jw.similarity(query, n) * 100) for i, n in enumerate(names)]
+    best_jw   = max(jw_scores, key=lambda x: x[1])
+
+    wr_result = _rfprocess.extractOne(query, names, scorer=_fuzz.WRatio, score_cutoff=threshold)
+
+    # Pick whichever algorithm scored higher
+    if wr_result and wr_result[1] >= best_jw[1]:
+        matched_name, score, idx = wr_result
+    elif best_jw[1] >= threshold:
+        idx  = best_jw[0]
+        score = best_jw[1]
+        matched_name = names[idx]
+    else:
+        return None
+
+    entry = entries[idx]
+    return {
+        "canonical":   matched_name,
+        "slug":        entry["slug"],
+        "pokedex_no":  entry["pokedex_no"],
+        "score":       round(score / 100.0, 3),
+        "exact":       matched_name.lower() == query.lower(),
+    }
+
+
+# Warm up the name index on startup in the background
+_bg(_ensure_pokeapi_names)
+
+
+def _pokeapi_weekly_refresh_loop():
+    """
+    Background daemon thread: wakes every 24 h and re-fetches PokeAPI names
+    when the cache is older than _POKEAPI_CACHE_TTL_DAYS (7 days).
+    Means the cache stays current even on long-running Pi installs that
+    never restart.
+    """
+    import time as _time
+    while True:
+        _time.sleep(86_400)   # check once a day
+        try:
+            db  = _direct_db()
+            row = db.execute(
+                "SELECT MAX(fetched_at) as last_fetch, COUNT(*) as cnt "
+                "FROM pokeapi_name_cache"
+            ).fetchone()
+            db.close()
+            age_days = (_now_ms() - (row["last_fetch"] or 0)) / 86_400_000
+            if age_days >= _POKEAPI_CACHE_TTL_DAYS:
+                log.info("[pokeapi] weekly refresh triggered (%.1f days old)", age_days)
+                count = _pokeapi_fetch_and_store()
+                if count:
+                    entries = _load_pokeapi_names_from_db()
+                    global _pokeapi_names_list, _pokeapi_names_strs, _pokeapi_names_ready
+                    with _pokeapi_names_lock:
+                        _pokeapi_names_list  = entries
+                        _pokeapi_names_strs  = [e["name"] for e in entries]
+                        _pokeapi_names_ready = True
+                    log.info("[pokeapi] weekly refresh complete: %d names", count)
+        except Exception as _e:
+            log.debug("[pokeapi] weekly refresh error: %s", _e)
+
+
+_pokeapi_refresh_thread = threading.Thread(
+    target=_pokeapi_weekly_refresh_loop, daemon=True, name="pokeapi-refresh"
+)
+_pokeapi_refresh_thread.start()
+
+
+# ---------------------------------------------------------------------------
 # Pokémon TCG API — config + in-memory cache
 # ---------------------------------------------------------------------------
 _TCG_API_BASE   = "https://api.pokemontcg.io/v2"
@@ -338,7 +1359,19 @@ _sse_scan_subscribers: list = []   # one Queue per connected SSE client
 
 
 def _sse_broadcast_scan(qr_code: str):
-    """Push a new scan to every connected SSE client instantly."""
+    """
+    Push a new scan to every connected SSE client.
+    Primary path: Redis pub/sub (cross-worker, all gunicorn processes receive it).
+    Fallback: in-process queue list (single worker, no Redis).
+    """
+    # Redis broadcast — reaches SSE clients on *all* workers
+    try:
+        r = _redis()
+        if r:
+            r.publish(_REDIS_SCAN_CHAN, json.dumps({"qrCode": qr_code}))
+    except Exception as _e:
+        log.debug("[sse] Redis publish failed: %s", _e)
+    # In-process fallback — covers clients on this worker when Redis is down
     with _sse_lock:
         dead = []
         for q in _sse_scan_subscribers:
@@ -373,6 +1406,19 @@ def _invalidate_inventory(qr_code: str | None = None):
             _qr_scan_cache.pop(qr_code, None)
         else:
             _qr_scan_cache.clear()
+    # Also invalidate the smart scanner in-memory index
+    _smart_scanner.invalidate()
+    # Bust Redis L2 cache
+    if qr_code:
+        _rcache_del(_REDIS_INV_KEY, f"{_REDIS_QR_PREFIX}{qr_code}")
+    else:
+        _rcache_del(_REDIS_INV_KEY)
+    # Trigger async embedding when a specific card was changed
+    if qr_code and _PGVECTOR_AVAILABLE and _OPENAI_API_KEY:
+        _bg(_embed_card_bg, qr_code)
+    # Pre-warm the pricing cache for the changed card so the next lookup is instant
+    if qr_code:
+        _bg(_prewarm_pricing_for_item, qr_code)
 
 _cloud_sources_env = os.environ.get("CLOUD_INVENTORY_SOURCES", "")
 CLOUD_INVENTORY_SOURCES = (
@@ -472,6 +1518,15 @@ def _calculate_final_price(base: float, language: str = "English",
 
 def init_db():
     db = _direct_db()
+
+    # Enable pgvector extension (no-op if already installed or not available)
+    if _PGVECTOR_AVAILABLE:
+        try:
+            db.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            db.commit()
+            log.info("[pgvector] Extension enabled")
+        except Exception as _pve:
+            log.warning("[pgvector] Could not enable extension: %s", _pve)
 
     _ddl_statements = [
         f"""CREATE TABLE IF NOT EXISTS sales (
@@ -691,6 +1746,148 @@ def init_db():
             notes           TEXT NOT NULL DEFAULT '',
             created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
+
+        # ── Enterprise: Audit log ────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS audit_log (
+            id         BIGSERIAL PRIMARY KEY,
+            ts_ms      BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            actor      TEXT NOT NULL DEFAULT 'anonymous',
+            action     TEXT NOT NULL,
+            resource   TEXT NOT NULL DEFAULT '',
+            detail     TEXT NOT NULL DEFAULT '',
+            ip         TEXT NOT NULL DEFAULT '',
+            request_id TEXT NOT NULL DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_audit_ts     ON audit_log(ts_ms DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_actor  ON audit_log(actor)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)",
+
+        # ── Enterprise: API tokens (JWT issuance) ────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS api_tokens (
+            id          BIGSERIAL PRIMARY KEY,
+            label       TEXT NOT NULL,
+            token_hash  TEXT UNIQUE NOT NULL,
+            created_by  TEXT NOT NULL DEFAULT 'admin',
+            scopes      TEXT NOT NULL DEFAULT 'scan,sales',
+            expires_at  BIGINT,
+            revoked     INTEGER NOT NULL DEFAULT 0,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            last_used   BIGINT
+        )""",
+
+        # ── Enterprise: TOTP 2FA secrets ─────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS totp_secrets (
+            id         BIGSERIAL PRIMARY KEY,
+            username   TEXT UNIQUE NOT NULL DEFAULT 'admin',
+            secret     TEXT NOT NULL,
+            enabled    INTEGER NOT NULL DEFAULT 0,
+            created_at BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Idempotency keys for /sales ──────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS sales_idempotency (
+            idempotency_key TEXT PRIMARY KEY,
+            sale_id         BIGINT,
+            response_json   TEXT NOT NULL DEFAULT '{{}}',
+            created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Returns / refunds ─────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS returns (
+            id           BIGSERIAL PRIMARY KEY,
+            reference    TEXT UNIQUE NOT NULL,
+            original_sale_id BIGINT,
+            reason       TEXT NOT NULL DEFAULT '',
+            refund_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            refund_method TEXT NOT NULL DEFAULT 'original',
+            status       TEXT NOT NULL DEFAULT 'pending',
+            notes        TEXT NOT NULL DEFAULT '',
+            created_by   TEXT NOT NULL DEFAULT 'admin',
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            completed_at BIGINT
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS return_items (
+            id          BIGSERIAL PRIMARY KEY,
+            return_id   BIGINT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+            qr_code     TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            quantity    INTEGER NOT NULL DEFAULT 1,
+            unit_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            restock     INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_return_items ON return_items(return_id)",
+
+        # ── Enterprise: Suppliers ─────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS suppliers (
+            id          BIGSERIAL PRIMARY KEY,
+            name        TEXT UNIQUE NOT NULL,
+            contact     TEXT NOT NULL DEFAULT '',
+            email       TEXT NOT NULL DEFAULT '',
+            phone       TEXT NOT NULL DEFAULT '',
+            address     TEXT NOT NULL DEFAULT '',
+            notes       TEXT NOT NULL DEFAULT '',
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Enterprise: Low-stock alert configuration ─────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS low_stock_config (
+            qr_code   TEXT PRIMARY KEY,
+            threshold INTEGER NOT NULL DEFAULT 1,
+            alerted   INTEGER NOT NULL DEFAULT 0,
+            updated   BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── Storefront sync queue — tracks unsynchronised stock/price changes ──
+        f"""CREATE TABLE IF NOT EXISTS unsynced_changes (
+            id          BIGSERIAL PRIMARY KEY,
+            qr_code     TEXT NOT NULL,
+            change_type TEXT NOT NULL DEFAULT 'stock',
+            delta       INTEGER NOT NULL DEFAULT 0,
+            synced      INTEGER NOT NULL DEFAULT 0,
+            created_at  BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_unsynced_qr ON unsynced_changes(qr_code)",
+        "CREATE INDEX IF NOT EXISTS idx_unsynced_pending ON unsynced_changes(synced) WHERE synced = 0",
+
+        # ── Intelligent pricing engine: translation cache ──────────────────────
+        f"""CREATE TABLE IF NOT EXISTS translation_cache (
+            original    TEXT NOT NULL,
+            lang        TEXT NOT NULL,
+            translated  TEXT NOT NULL,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            PRIMARY KEY (original, lang)
+        )""",
+
+        # ── Intelligent pricing engine: pricing cache ──────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS pricing_cache (
+            query       TEXT PRIMARY KEY,
+            pricing     JSONB NOT NULL,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+
+        # ── eBay 90-day sold history ────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS ebay_sold_history (
+            id          BIGSERIAL PRIMARY KEY,
+            query       TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            price       DOUBLE PRECISION NOT NULL,
+            sold_date   DATE,
+            score       INTEGER NOT NULL DEFAULT 0,
+            scraped_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_query      ON ebay_sold_history (query)",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_date       ON ebay_sold_history (sold_date DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_scraped_at ON ebay_sold_history (scraped_at DESC)",
+
+        # ── PokéAPI canonical species name cache ───────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS pokeapi_name_cache (
+            id          SERIAL PRIMARY KEY,
+            slug        TEXT UNIQUE NOT NULL,
+            name        TEXT NOT NULL,
+            pokedex_no  INTEGER,
+            fetched_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pokeapi_name ON pokeapi_name_cache (name)",
     ]
 
     for stmt in _ddl_statements:
@@ -722,12 +1919,91 @@ def init_db():
         ("tags",            "ALTER TABLE inventory ADD COLUMN tags             TEXT NOT NULL DEFAULT ''"),
         ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
         ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
+        ("search_key",      "ALTER TABLE inventory ADD COLUMN search_key       TEXT NOT NULL DEFAULT ''"),
+        ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT    NOT NULL DEFAULT ''"),
+        ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT    NOT NULL DEFAULT ''"),
+        ("release_year",    "ALTER TABLE inventory ADD COLUMN release_year     INTEGER NOT NULL DEFAULT 0"),
+        # card_vector uses pgvector type — only added when extension is present
     ]:
         table = "sales" if col == "source" else "inventory"
         if not _col_exists(table, col):
             db.execute(ddl)
             db.commit()
             log.info("[DB] Migration: added %s.%s column", table, col)
+
+    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET card_number = LTRIM(
+                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+                '0'
+            )
+            WHERE card_number = ''
+              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+        """)
+        db.commit()
+        log.info("[DB] Backfilled card_number column")
+    except Exception as _be:
+        log.warning("[DB] card_number backfill skipped: %s", _be)
+
+    # Backfill release_year from set_code for existing rows
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET release_year = CASE
+                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
+                ELSE 0
+            END
+            WHERE release_year = 0 AND set_code != ''
+        """)
+        db.commit()
+        log.info("[DB] Backfilled release_year column")
+    except Exception as _rye:
+        log.warning("[DB] release_year backfill skipped: %s", _rye)
+
+    # Add indexes for fast number/year/rarity searches
+    try:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_release_year ON inventory(release_year)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_rarity ON inventory(rarity)"
+        )
+        db.commit()
+    except Exception:
+        pass
+
+    # pgvector: add card_vector column + HNSW index (only when extension is loaded)
+    if _PGVECTOR_AVAILABLE:
+        try:
+            if not _col_exists("inventory", "card_vector"):
+                db.execute(
+                    "ALTER TABLE inventory ADD COLUMN card_vector vector(1536)"
+                )
+                db.commit()
+                log.info("[pgvector] Added card_vector column")
+            # HNSW index — cosine similarity, ~1 ms per query on Pi 5
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inventory_card_vector
+                ON inventory USING hnsw (card_vector vector_cosine_ops)
+            """)
+            db.commit()
+            log.info("[pgvector] HNSW index ready")
+        except Exception as _ve:
+            log.warning("[pgvector] Schema setup skipped: %s", _ve)
 
     db.close()
     log.info("[DB] Initialized PostgreSQL database")
@@ -851,29 +2127,32 @@ def _sync_from_github(db, force: bool = False) -> dict:
             reader = csv.DictReader(io.StringIO(file_resp.text))
             items  = list(reader)
 
-        upserted = 0
+        _ts  = int(_time.time() * 1000)
+        rows = []
         for item in items:
             qr   = (item.get("qrCode") or item.get("qr_code") or item.get("barcode") or "").strip()
             name = (item.get("name") or item.get("title") or "").strip()
             if not qr or not name:
                 continue
-            db.execute("""
-                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT(qr_code) DO UPDATE SET
-                    name=excluded.name, price=excluded.price,
-                    category=excluded.category, description=excluded.description,
-                    last_updated=excluded.last_updated
-            """, (
+            rows.append((
                 qr, name,
                 float(item.get("price") or 0),
                 item.get("category") or "General",
                 "", "",
                 item.get("description") or "",
                 int(item.get("stockQuantity") or item.get("stock") or 0),
-                int(_time.time() * 1000),
+                _ts,
             ))
-            upserted += 1
+        if rows:
+            db.executemany("""
+                INSERT INTO inventory (qr_code, name, price, category, rarity, set_code, description, stock, last_updated)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT(qr_code) DO UPDATE SET
+                    name=excluded.name, price=excluded.price,
+                    category=excluded.category, description=excluded.description,
+                    last_updated=excluded.last_updated
+            """, rows)
+        upserted = len(rows)
         db.commit()
         log.info("[github-sync] GitHub file → %d products upserted", upserted)
         results["github"] = {"ok": True, "upserted": upserted}
@@ -1096,28 +2375,47 @@ def _normalize_qr(raw: str) -> str:
 
 def _tokenize(text: str) -> list[str]:
     """Split a card name into searchable tokens, ignoring small words."""
-    _STOP = {"the", "a", "an", "of", "in", "ex", "v", "vmax", "vstar", "gx"}
+    # Keep variant keywords (ex, gx, v, vmax, vstar) — they are searchable
+    _STOP = {"the", "a", "an", "of", "in"}
     return [t for t in re.split(r'[\s\-_/\\,\.]+', text.lower()) if t and t not in _STOP]
 
 
-def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str]) -> int:
+def _score_card(name: str, set_code: str, qr_code: str, tokens: list[str],
+                card_number: str = "", variant: str = "",
+                rarity: str = "", release_year: int = 0) -> int:
     """
     Return a relevance score (higher = better match) for a candidate card
     against a list of search tokens.  Purely in-Python — no extra DB round-trip.
+
+    Bonuses:
+      +8  — token exactly equals card_number  (e.g. '25' → number '25')
+      +8  — token is a 4-digit year matching release_year  (e.g. '2023')
+      +4  — token appears in variant string  (e.g. 'ex', 'vmax', 'holo')
+      +3  — token appears in rarity string   (e.g. 'ultra', 'rare', 'secret')
+      +3  — token is an exact word-boundary token in the name
+      +2  — token appears anywhere in the name
+      +1  — token appears in set_code or qr_code
+      +5  — ALL tokens matched somewhere in the name (full-name bonus)
     """
-    score     = 0
-    name_lc   = name.lower()
-    set_lc    = set_code.lower()
-    qr_lc     = qr_code.lower()
-    name_toks = _tokenize(name)
+    score      = 0
+    name_lc    = name.lower()
+    set_lc     = set_code.lower()
+    qr_lc      = qr_code.lower()
+    variant_lc = variant.lower()
+    rarity_lc  = rarity.lower()
+    name_toks  = _tokenize(name)
 
     for t in tokens:
-        if t in name_lc:    score += 2
-        if t in name_toks:  score += 3  # exact token boundary match
-        if t in set_lc:     score += 1
-        if t in qr_lc:      score += 1
+        if card_number and t == card_number:               score += 8
+        if release_year and t.isdigit() and len(t) == 4 \
+                and int(t) == release_year:                score += 8
+        if variant_lc and t in variant_lc:                 score += 4
+        if rarity_lc  and t in rarity_lc:                  score += 3
+        if t in name_lc:                                    score += 2
+        if t in name_toks:                                  score += 3
+        if t in set_lc:                                     score += 1
+        if t in qr_lc:                                      score += 1
 
-    # Bonus: all tokens matched
     if all(t in name_lc for t in tokens):
         score += 5
 
@@ -1131,8 +2429,10 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     Fuzzy card lookup.  Priority order:
       1. Exact qr_code match (fast path — used by scanner)
       2. Normalised QR → qr_code match
-      3. Set code + card number (extracted from name or explicit params)
-      4. Tokenised name search
+      3. Set code + card number — uses card_number column (exact, fast)
+      3b. Extract SET-NUM pattern from free-text query
+      4. Number-only search (card_num across all sets)
+      5. Tokenised name + variant search with relevance scoring
     Returns at most `limit` results sorted by relevance.
     """
     def _row_to_dict(r) -> dict:
@@ -1144,6 +2444,9 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
             "category":      r["category"] or "General",
             "rarity":        r["rarity"] or "",
             "setCode":       r["set_code"] or "",
+            "cardNumber":    r["card_number"]   if "card_number"   in keys else "",
+            "variant":       r["variant"]       if "variant"       in keys else "",
+            "releaseYear":   r["release_year"]  if "release_year"  in keys else 0,
             "description":   r["description"] or "",
             "stockQuantity": r["stock"],
             "lastUpdated":   r["last_updated"],
@@ -1172,32 +2475,57 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         if not q:
             q = norm
 
-    # 2 — explicit set + number
+    # 2 — explicit set + number (uses card_number column — exact, indexed)
     if set_code and card_num:
+        num_norm = card_num.lstrip("0") or "0"
         rows = db.execute("""
             SELECT * FROM inventory
-            WHERE UPPER(set_code) = UPPER(%s)
-              AND (name LIKE %s OR qr_code LIKE %s)
+            WHERE UPPER(set_code) = UPPER(%s) AND card_number = %s
             ORDER BY name ASC LIMIT %s
-        """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
+        """, (set_code, num_norm, limit)).fetchall()
+        if not rows:
+            # Fallback: LIKE on name/qr for legacy rows without card_number populated
+            rows = db.execute("""
+                SELECT * FROM inventory
+                WHERE UPPER(set_code) = UPPER(%s)
+                  AND (name LIKE %s OR qr_code LIKE %s)
+                ORDER BY name ASC LIMIT %s
+            """, (set_code, f"%{card_num}%", f"%{card_num}%", limit)).fetchall()
         if rows:
             return [_row_to_dict(r) for r in rows]
 
-    # 3 — try to extract set+number from q (e.g. "SV1 001" or "sv1-001")
+    # 3 — try to extract SET-NUM pattern from free-text query (e.g. "SV1 001" or "sv1-001")
     if q:
-        _SET_NUM_RE = re.compile(r'\b([A-Za-z]{2,6})\s*[-/]?\s*0*(\d{1,4})\b')
+        _SET_NUM_RE = re.compile(r'\b([A-Za-z]{2,8})\s*[-/]?\s*0*(\d{1,4})\b')
         m = _SET_NUM_RE.search(q)
         if m:
-            s, n = m.group(1).upper(), m.group(2)
+            s, n = m.group(1).upper(), m.group(2).lstrip("0") or "0"
             rows = db.execute("""
                 SELECT * FROM inventory
-                WHERE UPPER(set_code) = %s AND (name LIKE %s OR qr_code LIKE %s)
+                WHERE UPPER(set_code) = %s AND card_number = %s
                 ORDER BY name ASC LIMIT %s
-            """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
+            """, (s, n, limit)).fetchall()
+            if not rows:
+                rows = db.execute("""
+                    SELECT * FROM inventory
+                    WHERE UPPER(set_code) = %s AND (name LIKE %s OR qr_code LIKE %s)
+                    ORDER BY name ASC LIMIT %s
+                """, (s, f"%{n}%", f"%{n}%", limit)).fetchall()
             if rows:
                 return [_row_to_dict(r) for r in rows]
 
-    # 4 — tokenised name search with scoring
+    # 4 — number-only search: card_num without set_code → all sets, ordered by set
+    if card_num and not set_code:
+        num_norm = card_num.lstrip("0") or "0"
+        rows = db.execute("""
+            SELECT * FROM inventory
+            WHERE card_number = %s
+            ORDER BY set_code ASC, name ASC LIMIT %s
+        """, (num_norm, limit)).fetchall()
+        if rows:
+            return [_row_to_dict(r) for r in rows]
+
+    # 5 — tokenised name + variant + rarity search with relevance scoring
     if not q and name:
         q = name
     if not q:
@@ -1207,9 +2535,25 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
     if not tokens:
         return []
 
-    # Pull candidates that contain at least one token (LIKE OR chain)
-    like_clauses = " OR ".join(["LOWER(name) LIKE %s" for _ in tokens])
-    like_args    = [f"%{t}%" for t in tokens]
+    # Year-only fast path: if the only useful token is a 4-digit year, filter by release_year
+    year_tokens = [t for t in tokens if t.isdigit() and len(t) == 4 and 1996 <= int(t) <= 2030]
+    non_year    = [t for t in tokens if t not in year_tokens]
+    if year_tokens and not non_year:
+        yr = int(year_tokens[0])
+        rows = db.execute("""
+            SELECT * FROM inventory
+            WHERE release_year = %s
+            ORDER BY name ASC LIMIT %s
+        """, (yr, limit)).fetchall()
+        return [_row_to_dict(r) for r in rows]
+
+    # Candidates: match at least one token in name, variant, OR rarity
+    like_clauses = " OR ".join(
+        ["LOWER(name) LIKE %s"    for _ in tokens] +
+        ["LOWER(variant) LIKE %s" for _ in tokens] +
+        ["LOWER(rarity) LIKE %s"  for _ in tokens]
+    )
+    like_args = [f"%{t}%" for t in tokens] * 3
     rows = db.execute(f"""
         SELECT * FROM inventory
         WHERE {like_clauses}
@@ -1217,15 +2561,150 @@ def _card_lookup(db, q: str = "", qr: str = "", name: str = "",
         LIMIT 200
     """, like_args).fetchall()
 
-    if not rows:
+    def _r(key, row, default=""):
+        return row[key] if key in row.keys() else default
+
+    if rows:
+        scored = sorted(
+            rows,
+            key=lambda r: _score_card(
+                r["name"], r["set_code"] or "", r["qr_code"], tokens,
+                card_number  = _r("card_number",  r),
+                variant      = _r("variant",      r),
+                rarity       = _r("rarity",       r),
+                release_year = _r("release_year", r, 0),
+            ),
+            reverse=True,
+        )
+        return [_row_to_dict(r) for r in scored[:limit]]
+
+    # 6 — vector / semantic fallback (only when text search returns nothing)
+    return _vector_search(db, q, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# pgvector embedding helpers
+# ---------------------------------------------------------------------------
+
+def _embed_text(text: str) -> list[float] | None:
+    """
+    Generate a 1 536-dim embedding via OpenAI text-embedding-3-small.
+    Returns None when OPENAI_API_KEY is absent, pgvector is unavailable,
+    or the API call fails.  Never raises.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return None
+    try:
+        resp = _http_post(
+            "https://api.openai.com/v1/embeddings",
+            headers={"Authorization": f"Bearer {_OPENAI_API_KEY}",
+                     "Content-Type": "application/json"},
+            json_body={"model": "text-embedding-3-small",
+                       "input": text[:8000]},
+            timeout=15,
+        )
+        return resp.json()["data"][0]["embedding"]
+    except Exception as _ee:
+        log.warning("[embed] text-embedding-3-small failed: %s", _ee)
+        return None
+
+
+def _vec_to_pg(vec: list[float]) -> str:
+    """Serialise a float list to the pgvector literal format '[x,y,...]'."""
+    return "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
+
+
+def _embed_card_bg(qr_code: str):
+    """
+    Background task: generate an embedding for a single card and persist it.
+    Called via _bg() so it never blocks the request thread.
+    Silently skips when pgvector / OpenAI are unavailable.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return
+    db = None
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT name, rarity, set_code, variant, release_year, description "
+            "FROM inventory WHERE qr_code = %s",
+            (qr_code,),
+        ).fetchone()
+        if not row:
+            return
+        text = (
+            f"{row['name']} {row['rarity']} {row['set_code']} "
+            f"{row['variant']} {row['release_year'] or ''} "
+            f"{(row['description'] or '')[:200]}"
+        ).strip()
+        vec = _embed_text(text)
+        if vec is None:
+            return
+        db.execute(
+            "UPDATE inventory SET card_vector = %s::vector WHERE qr_code = %s",
+            (_vec_to_pg(vec), qr_code),
+        )
+        db.commit()
+        log.info("[embed] Embedded %s (%d dims)", qr_code, len(vec))
+    except Exception as _be:
+        log.warning("[embed] Background embed failed for %s: %s", qr_code, _be)
+    finally:
+        try:
+            if db:
+                db.close()
+        except Exception:
+            pass
+
+
+def _vector_search(db, query_text: str, limit: int = 10) -> list[dict]:
+    """
+    Embed query_text and return inventory rows ordered by cosine similarity
+    using pgvector's <=> operator.  Returns [] on any failure.
+    """
+    if not _PGVECTOR_AVAILABLE or not _OPENAI_API_KEY:
+        return []
+    vec = _embed_text(query_text)
+    if vec is None:
+        return []
+    vec_str = _vec_to_pg(vec)
+    try:
+        rows = db.execute(
+            """
+            SELECT *,
+                   ROUND((1 - (card_vector <=> %s::vector))::numeric, 4) AS similarity
+            FROM inventory
+            WHERE card_vector IS NOT NULL
+            ORDER BY card_vector <=> %s::vector
+            LIMIT %s
+            """,
+            (vec_str, vec_str, limit),
+        ).fetchall()
+    except Exception as _vs_err:
+        log.warning("[vector-search] Query failed: %s", _vs_err)
         return []
 
-    scored = sorted(
-        rows,
-        key=lambda r: _score_card(r["name"], r["set_code"] or "", r["qr_code"], tokens),
-        reverse=True,
-    )
-    return [_row_to_dict(r) for r in scored[:limit]]
+    out = []
+    for r in rows:
+        keys = r.keys() if hasattr(r, "keys") else []
+        out.append({
+            "qrCode":        r["qr_code"],
+            "name":          r["name"],
+            "price":         r["price"],
+            "category":      r["category"] or "General",
+            "rarity":        r["rarity"] or "",
+            "setCode":       r["set_code"] or "",
+            "cardNumber":    r["card_number"]  if "card_number"  in keys else "",
+            "variant":       r["variant"]      if "variant"      in keys else "",
+            "releaseYear":   r["release_year"] if "release_year" in keys else 0,
+            "description":   r["description"] or "",
+            "stockQuantity": r["stock"],
+            "lastUpdated":   r["last_updated"],
+            "imageUrl":      r["image_url"]    if "image_url"    in keys else "",
+            "tcgId":         r["tcg_id"]       if "tcg_id"       in keys else "",
+            "similarity":    float(r["similarity"]),
+            "_searchMethod": "vector",
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1894,7 +3373,11 @@ def scan_pending():
         if enriched.get("name") or enriched.get("tcgData"):
             result["resolvedProduct"] = enriched
     _cache_set(_scan_cache, "p", result)
-    return jsonify(result)
+    resp = jsonify(result)
+    resp.headers["Deprecation"] = "true"
+    resp.headers["Link"] = '</scan/stream>; rel="successor-version"'
+    resp.headers["Sunset"] = "Sat, 01 Jan 2026 00:00:00 GMT"
+    return resp
 
 
 @app.route("/scan/ack/<int:scan_id>", methods=["POST"])
@@ -1925,29 +3408,49 @@ def scan_stream():
     changes are required to benefit from this endpoint.
     """
     def _generate():
-        q = _queue_mod.Queue()
-        with _sse_lock:
-            _sse_scan_subscribers.append(q)
-        try:
-            while True:
+        r = _redis()
+        if r:
+            # ── Redis pub/sub path (cross-worker) ────────────────────────────
+            pubsub = r.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe(_REDIS_SCAN_CHAN)
+            try:
+                while True:
+                    msg = pubsub.get_message(timeout=15)
+                    if msg and msg.get("type") == "message":
+                        yield f"data: {msg['data'].decode('utf-8', errors='replace')}\n\n"
+                    else:
+                        yield ": heartbeat\n\n"
+            finally:
                 try:
-                    qr_code = q.get(timeout=15)
-                    yield f"data: {json.dumps({'qrCode': qr_code})}\n\n"
-                except _queue_mod.Empty:
-                    yield ": heartbeat\n\n"  # keeps nginx from closing the connection
-        finally:
-            with _sse_lock:
-                try:
-                    _sse_scan_subscribers.remove(q)
-                except ValueError:
+                    pubsub.unsubscribe(_REDIS_SCAN_CHAN)
+                    pubsub.close()
+                except Exception:
                     pass
+        else:
+            # ── In-process queue fallback (single worker / no Redis) ──────────
+            q = _queue_mod.Queue()
+            with _sse_lock:
+                _sse_scan_subscribers.append(q)
+            try:
+                while True:
+                    try:
+                        qr_code = q.get(timeout=15)
+                        yield f"data: {json.dumps({'qrCode': qr_code})}\n\n"
+                    except _queue_mod.Empty:
+                        yield ": heartbeat\n\n"
+            finally:
+                with _sse_lock:
+                    try:
+                        _sse_scan_subscribers.remove(q)
+                    except ValueError:
+                        pass
 
     return Response(
         _generate(),
         content_type="text/event-stream",
         headers={
             "Cache-Control":     "no-cache",
-            "X-Accel-Buffering": "no",   # tell nginx: do not buffer this response
+            "X-Accel-Buffering": "no",
             "Connection":        "keep-alive",
         },
     )
@@ -2095,37 +3598,84 @@ def card_scan_fast():
                 (norm,)
             ).fetchone()
 
+    # ── Smart scan fallback — rapidfuzz fuzzy match when exact DB lookup fails ──
+    smart_result = None
     if not row:
-        result = {
-            "found": False, "code": qr,
-            "name": None, "sku": None, "description": None,
-            "price": None, "stock": None, "rawResponse": None,
-        }
-    else:
-        result = {
-            "found": True,
-            "code": row["qr_code"],
-            "name": row["name"],
-            "sku": row["set_code"] or row["qr_code"],
-            "description": row["description"] or "",
-            "price": str(row["price"]) if row["price"] is not None else None,
-            "stock": str(row["stock"])  if row["stock"]  is not None else None,
+        smart_result = _smart_scanner.smart_scan(qr, db)
+        if smart_result and smart_result["found"]:
+            item = smart_result["item"]
+            # Teach the scanner so future identical scans skip fuzzy entirely
+            _smart_scanner.learn(qr, item["qr_code"])
+            # Trigger background enrichment if this card has no TCG data yet
+            if not item.get("tcg_id"):
+                def _bg_enrich(qr_code=item["qr_code"]):
+                    try:
+                        _enrich_with_tcg(None, qr_code)
+                    except Exception as _ee:
+                        log.debug("[smart-scan] bg enrich failed for %s: %s", qr_code, _ee)
+                _bg(_bg_enrich)
+
+    def _row_to_scan_result(r, confidence=1.0, method="exact", variant=""):
+        return {
+            "found":      True,
+            "code":       r["qr_code"],
+            "name":       r["name"],
+            "sku":        r.get("set_code") or r["qr_code"],
+            "description": r.get("description") or "",
+            "price":      str(r["price"])  if r["price"]  is not None else None,
+            "stock":      str(r["stock"])  if r["stock"]  is not None else None,
+            "confidence": confidence,
+            "method":     method,
+            "variant":    variant or _detect_variant(
+                r.get("name") or "", r.get("rarity") or "", r.get("description") or ""
+            ),
             "rawResponse": {
-                "qrCode":        row["qr_code"],
-                "name":          row["name"],
-                "price":         row["price"],
-                "category":      row["category"] or "General",
-                "rarity":        row["rarity"]   or "",
-                "setCode":       row["set_code"] or "",
-                "description":   row["description"] or "",
-                "stockQuantity": row["stock"],
-                "imageUrl":      row["image_url"] or "",
-                "tcgId":         row["tcg_id"]   or "",
+                "qrCode":        r["qr_code"],
+                "name":          r["name"],
+                "price":         r["price"],
+                "category":      r.get("category") or "General",
+                "rarity":        r.get("rarity")   or "",
+                "setCode":       r.get("set_code") or "",
+                "description":   r.get("description") or "",
+                "stockQuantity": r["stock"],
+                "imageUrl":      r.get("image_url") or "",
+                "tcgId":         r.get("tcg_id")   or "",
             },
         }
 
-    with _cache_lock:
-        _qr_scan_cache[qr] = result
+    if row:
+        result = _row_to_scan_result(row, confidence=1.0, method="exact")
+    elif smart_result and smart_result["found"]:
+        item = smart_result["item"]
+        result = _row_to_scan_result(
+            item,
+            confidence=smart_result["confidence"],
+            method=smart_result["method"],
+            variant=smart_result["variant"],
+        )
+    else:
+        # Nothing found — include fuzzy suggestions so the app can show "Did you mean?"
+        suggestions = (smart_result or {}).get("suggestions", []) if smart_result else []
+        result = {
+            "found":       False,
+            "code":        qr,
+            "name":        None,
+            "sku":         None,
+            "description": None,
+            "price":       None,
+            "stock":       None,
+            "confidence":  0.0,
+            "method":      "none",
+            "variant":     "",
+            "rawResponse": None,
+            "suggestions": suggestions,
+        }
+
+    # Only cache confident matches — low-confidence fuzzy results should re-evaluate
+    # as new inventory is added.
+    if result.get("found") and result.get("confidence", 1.0) >= 0.85:
+        with _cache_lock:
+            _qr_scan_cache[qr] = result
 
     resp = jsonify(result)
     resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -2448,13 +3998,13 @@ def admin_qr_sheet():
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   }}
   .toolbar h1 {{ font-size: 16px; font-weight: bold; flex: 1; }}
-  .toolbar a  {{ color: #FFD700; font-size: 13px; }}
+  .toolbar a  {{ color: #f59e0b; font-size: 13px; }}
   .toolbar .info {{ font-size: 13px; color: #aaa; }}
   .toolbar form {{ display:flex; gap:8px; align-items:center; }}
   .toolbar input {{ padding:4px 8px; border-radius:4px; border:none; font-size:13px; }}
   .toolbar select {{ padding:4px; border-radius:4px; border:none; font-size:13px; }}
   .toolbar button {{ padding:5px 14px; border:none; border-radius:4px; cursor:pointer;
-                     background:#FFD700; font-weight:bold; font-size:13px; }}
+                     background:#f59e0b; font-weight:bold; font-size:13px; }}
 
   /* ── Label grid ─────────────────────────────── */
   .grid {{
@@ -2692,32 +4242,66 @@ def record_sale_history():
     """
     APK lightweight sale recorder.
     Accepts: { items: [{name, price, quantity}], sold_at: <epoch_ms> }
-    Stores each line item in sale_history for local market price calculation.
+    Idempotency: send X-Idempotency-Key header (or idempotency_key in body) — duplicate
+    requests within 24 h return the original response without double-recording.
     No auth required — called by the APK on the local network.
     """
     data    = request.get_json(force=True, silent=True) or {}
     items   = data.get("items", [])
     sold_at = int(data.get("sold_at") or _now_ms())
 
+    # ── Idempotency check ────────────────────────────────────────────────────
+    idem_key = (
+        request.headers.get("X-Idempotency-Key")
+        or data.get("idempotency_key", "")
+    ).strip()
+    if idem_key:
+        db = get_db()
+        existing = db.execute(
+            "SELECT response_json FROM sales_idempotency WHERE idempotency_key = %s "
+            "AND created_at > %s",
+            (idem_key, _now_ms() - 86_400_000),   # 24 h window
+        ).fetchone()
+        if existing:
+            resp = jsonify(json.loads(existing["response_json"]))
+            resp.headers["X-Idempotency-Replayed"] = "true"
+            return resp
+
     if not items:
         return jsonify({"ok": True, "recorded": 0}), 200
 
-    db       = get_db()
-    recorded = 0
+    db   = get_db()
+    rows = []
     for item in items:
         name  = (item.get("name") or "").strip()
         price = float(item.get("price") or 0)
         qty   = int(item.get("quantity") or 1)
         if not name or price <= 0:
             continue
-        db.execute(
+        rows.append((name, price, qty, sold_at))
+    if rows:
+        db.executemany(
             "INSERT INTO sale_history (name, price, quantity, sold_at) VALUES (%s, %s, %s, %s)",
-            (name, price, qty, sold_at)
+            rows,
         )
-        recorded += 1
+    recorded = len(rows)
     db.commit()
-    log.info("[/sales POST] recorded=%d", recorded)
-    return jsonify({"ok": True, "recorded": recorded}), 200
+    log.info("[/sales POST] recorded=%d idem_key=%s", recorded, idem_key or "none")
+
+    result = {"ok": True, "recorded": recorded}
+    if idem_key:
+        try:
+            db.execute(
+                "INSERT INTO sales_idempotency (idempotency_key, response_json) VALUES (%s, %s) "
+                "ON CONFLICT (idempotency_key) DO NOTHING",
+                (idem_key, json.dumps(result))
+            )
+            db.commit()
+        except Exception:
+            pass
+
+    _audit_write("sale.record", f"items={recorded}", f"sold_at={sold_at}")
+    return jsonify(result), 200
 
 
 @app.route("/sales", methods=["GET"])
@@ -2849,6 +4433,7 @@ def inventory_decrement():
             if result.rowcount > 0:
                 updated += 1
                 _invalidate_inventory(qr_code=qr)
+                _queue_unsynced(qr, "stock", -qty)
         except Exception as e:
             errors.append({"qrCode": qr, "error": str(e)})
 
@@ -4159,7 +5744,7 @@ def admin_add_product():
         "tags":        tags,
         "savedAt":     _now_ms(),
     }
-    threading.Thread(target=_fire_webhook, args=(webhook_payload,), daemon=True).start()
+    _bg(_fire_webhook, webhook_payload)
 
     return jsonify({"ok": True, "qrCode": qr_code})
 
@@ -4402,7 +5987,7 @@ def print_receipt():
     if not sale:
         return jsonify({"error": "Sale JSON body required"}), 400
 
-    threading.Thread(target=_do_print, args=(sale,), daemon=True).start()
+    _bg(_do_print, sale)
     return jsonify({"ok": True, "queued": True}), 202
 
 
@@ -4566,7 +6151,7 @@ def _sys_wg_peers() -> int:
 
 
 def _sparkline_svg(values: list, width: int = 336, height: int = 52,
-                   color: str = "#FFD700") -> str:
+                   color: str = "#f59e0b") -> str:
     """Render a list of floats as a minimal SVG bar-chart sparkline."""
     if not values or max(values) == 0:
         return (f'<svg width="{width}" height="{height}">'
@@ -4626,71 +6211,98 @@ _SYS_LOG_SOURCES = {
 
 _ADMIN_BASE_CSS = """
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;padding:0}
-  .admin-nav{display:flex;align-items:center;background:#111;border-bottom:1px solid #222;padding:0 20px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
-  .nav-logo{color:#FFD700;font-weight:900;font-size:16px;letter-spacing:1px;padding:14px 18px 14px 0;border-right:1px solid #222;margin-right:8px;white-space:nowrap}
-  .nav-item{color:#777;text-decoration:none;padding:15px 14px;font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
-  .nav-item:hover{color:#FFD700;text-decoration:none}
-  .nav-active{color:#FFD700 !important;border-bottom-color:#FFD700}
-  .nav-clock{margin-left:auto;color:#444;font-size:12px;padding:15px 0;white-space:nowrap}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0a;color:#e0e0e0;padding:0}
+
+  /* ── Nav bar — Square-style pill navigation ───────────────────────── */
+  .admin-nav{display:flex;align-items:center;background:#111;border-bottom:1px solid #1e1e1e;
+    padding:8px 16px;position:sticky;top:0;z-index:50;gap:6px;overflow-x:auto;
+    scrollbar-width:none}
+  .admin-nav::-webkit-scrollbar{display:none}
+  .nav-brand{display:flex;align-items:center;gap:6px;padding-right:14px;
+    border-right:1px solid #222;margin-right:4px;flex-shrink:0}
+  .nav-logo{color:#f59e0b;font-weight:900;font-size:15px;letter-spacing:.5px;white-space:nowrap}
+  .nav-pill{display:flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid #2a2a2a;
+    border-radius:999px;padding:7px 14px;color:#666;text-decoration:none;font-size:12px;
+    font-weight:600;white-space:nowrap;transition:.15s;flex-shrink:0}
+  .nav-pill:hover{border-color:#f59e0b;color:#f59e0b;background:#1a1100;text-decoration:none}
+  .nav-pill.nav-active{background:#f59e0b;border-color:#f59e0b;color:#000;font-weight:800}
+  .nav-clock{margin-left:auto;color:#333;font-size:11px;white-space:nowrap;flex-shrink:0;
+    padding-left:12px}
+
+  /* ── Quick-action card grid (dashboard) ───────────────────────────── */
+  .qa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));
+    gap:10px;margin-bottom:28px}
+  .qa-card{background:#141414;border:1px solid #222;border-radius:14px;padding:18px 10px;
+    text-align:center;text-decoration:none;transition:.15s;display:block;cursor:pointer}
+  .qa-card:hover{border-color:#f59e0b;background:#1a1100;text-decoration:none;
+    transform:translateY(-1px)}
+  .qa-icon{font-size:26px;line-height:1;margin-bottom:7px}
+  .qa-label{color:#e0e0e0;font-size:12px;font-weight:700;margin-bottom:2px}
+  .qa-sub{color:#444;font-size:10px;line-height:1.3}
+
   .wrap{padding:24px;max-width:1200px;margin:0 auto}
-  h1{color:#FFD700;font-size:22px;margin-bottom:4px}
-  .subtitle{color:#666;font-size:13px;margin-bottom:24px}
-  h2{color:#aaa;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;margin-top:28px}
+  h1{color:#f59e0b;font-size:22px;margin-bottom:4px}
+  .subtitle{color:#555;font-size:13px;margin-bottom:20px}
+  h2{color:#555;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+    margin-bottom:10px;margin-top:28px}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:#555;padding:8px 10px;border-bottom:1px solid #222}
-  td{padding:8px 10px;border-bottom:1px solid #1a1a1a}
-  tr:hover td{background:#1a1a1a}
-  a{color:#FFD700;text-decoration:none}
+  th{text-align:left;color:#444;padding:8px 10px;border-bottom:1px solid #1e1e1e}
+  td{padding:8px 10px;border-bottom:1px solid #141414}
+  tr:hover td{background:#141414}
+  a{color:#f59e0b;text-decoration:none}
   a:hover{text-decoration:underline}
-  #toast{position:fixed;bottom:24px;right:24px;background:#4caf50;color:#fff;padding:12px 20px;border-radius:8px;font-weight:bold;display:none;z-index:99}
-  #toast.err{background:#c62828}
-  .btn-gold{background:#FFD700;color:#000;border:none;border-radius:6px;padding:10px 22px;font-weight:900;font-size:13px;cursor:pointer;letter-spacing:.5px}
-  .btn-gold:hover{background:#ffe033}
+  #toast{position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:12px 20px;
+    border-radius:10px;font-weight:bold;display:none;z-index:99;box-shadow:0 4px 20px #0008}
+  #toast.err{background:#dc2626}
+  .btn-gold{background:#f59e0b;color:#000;border:none;border-radius:8px;padding:10px 22px;
+    font-weight:900;font-size:13px;cursor:pointer;letter-spacing:.3px}
+  .btn-gold:hover{background:#fbbf24}
 """
 
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
-        ("dashboard", "/admin",              "🏠 Dashboard"),
-        ("market",    "/admin/market",       "📈 Market"),
-        ("trade-in",  "/admin/trade-in",     "🔁 Trade-In"),
-        ("bundles",   "/admin/bundles",      "📦 Bundles"),
-        ("csv",       "/admin/csv",           "📥 Import/Export"),
-        ("purchases", "/admin/purchases",    "🛒 Purchases"),
-        ("layby",     "/admin/layby",        "🏷️ Layby"),
-        ("profit",    "/admin/profit-loss",  "💰 P&L"),
-        ("eod",       "/admin/eod",          "🏧 End of Day"),
-        ("system",    "/admin/system",       "⚙️ System"),
-        ("logs",      "/admin/logs",         "📋 Logs"),
+        ("dashboard", "/admin",             "🏠", "Dashboard"),
+        ("market",    "/admin/market",      "📈", "Market"),
+        ("trade-in",  "/admin/trade-in",    "🔁", "Trade-In"),
+        ("bundles",   "/admin/bundles",     "📦", "Bundles"),
+        ("csv",       "/admin/csv",         "📥", "Import"),
+        ("purchases", "/admin/purchases",   "🛒", "Purchases"),
+        ("layby",     "/admin/layby",       "🏷️", "Layby"),
+        ("profit",    "/admin/profit-loss", "💰", "P&L"),
+        ("eod",       "/admin/eod",         "🏧", "End of Day"),
+        ("system",    "/admin/system",      "⚙️", "System"),
+        ("logs",      "/admin/logs",        "📋", "Logs"),
     ]
     items = "".join(
-        f'<a href="{href}" class="nav-item{" nav-active" if k == active else ""}">{lbl}</a>'
-        for k, href, lbl in pages
+        f'<a href="{href}" class="nav-pill{" nav-active" if k == active else ""}">'
+        f'{icon} {lbl}</a>'
+        for k, href, icon, lbl in pages
     )
-    # Hub-dot: tiny coloured circle next to logo that goes green when POS is reachable
-    # (same-origin /health check — reliable proxy for scan-hub daemon health)
     hub_dot = (
-        '<span id="hub-dot" title="Scan Hub status" '
+        '<span id="hub-dot" title="POS hub status" '
         'style="display:inline-block;width:7px;height:7px;border-radius:50%;'
-        'background:#333;margin-left:6px;vertical-align:middle;'
-        'transition:background .4s"></span>'
+        'background:#333;margin-left:6px;vertical-align:middle;transition:background .4s"></span>'
     )
     hub_js = (
         "<script>"
         "(function(){"
+        "var c=document.getElementById('clock');"
+        "if(c){function tk(){c.textContent=new Date().toLocaleTimeString();}tk();setInterval(tk,1000);}"
         "function hb(){fetch('/health',{signal:AbortSignal.timeout(1800)})"
         ".then(r=>{var d=document.getElementById('hub-dot');"
-        "if(d)d.style.background=r.ok?'#4caf50':'#f44336';})"
+        "if(d)d.style.background=r.ok?'#22c55e':'#ef4444';})"
         ".catch(()=>{var d=document.getElementById('hub-dot');"
-        "if(d)d.style.background='#f44336';});};"
+        "if(d)d.style.background='#ef4444';});}"
         "hb();setInterval(hb,20000);"
         "})();"
         "</script>"
     )
     return (
         f'<nav class="admin-nav">'
+        f'<div class="nav-brand">'
         f'<span class="nav-logo">🔐 HANRYX{hub_dot}</span>'
+        f'</div>'
         f'{items}'
         f'<span class="nav-clock" id="clock"></span>'
         f'</nav>'
@@ -5996,11 +7608,12 @@ def admin_market():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HanryxVault — Market Prices</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
 {_ADMIN_BASE_CSS}
   .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
   .search-row input{{flex:1;min-width:200px;background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;color:#e0e0e0;font-size:15px;outline:none;transition:.2s}}
-  .search-row input:focus{{border-color:#FFD700}}
+  .search-row input:focus{{border-color:#f59e0b}}
   .search-row select{{background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px;color:#e0e0e0;font-size:13px;outline:none;cursor:pointer}}
   .hint{{font-size:11px;color:#444;margin-bottom:22px}}
   /* variant strip */
@@ -6012,9 +7625,9 @@ def admin_market():
   .vstrip::-webkit-scrollbar{{height:4px}}.vstrip::-webkit-scrollbar-thumb{{background:#333;border-radius:2px}}
   .vcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:10px;cursor:pointer;min-width:120px;max-width:140px;flex-shrink:0;transition:.15s;text-align:center}}
   .vcard:hover{{border-color:#444;background:#1a1a1a}}
-  .vcard.sel{{border-color:#FFD700;background:#1a1400}}
+  .vcard.sel{{border-color:#f59e0b;background:#1a1400}}
   .vcard img{{width:100%;border-radius:6px;min-height:55px;object-fit:contain;display:block;margin-bottom:6px}}
-  .vcard .vp{{font-size:13px;font-weight:800;color:#FFD700}}
+  .vcard .vp{{font-size:13px;font-weight:800;color:#f59e0b}}
   .vcard .vs{{font-size:10px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}}
   .vcard .vn{{font-size:10px;color:#555}}
   /* result area */
@@ -6037,27 +7650,53 @@ def admin_market():
   .tier-row:last-child{{border-bottom:none}}
   .tier-row.best{{background:#1a1400}}
   .tier-label{{font-size:12px;color:#888}}
-  .tier-price{{font-size:15px;font-weight:800;color:#FFD700}}
+  .tier-price{{font-size:15px;font-weight:800;color:#f59e0b}}
   .tier-na{{color:#444}}
   /* condition */
   .cond-row{{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
   .cond-row label{{font-size:12px;color:#666}}
   .cond-row select{{background:#141414;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
-  .cond-row select:focus{{border-color:#FFD700}}
+  .cond-row select:focus{{border-color:#f59e0b}}
   /* market avg */
-  .mkt-box{{background:#1a1400;border:1px solid #FFD70033;border-radius:10px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}}
-  .mkt-avg{{font-size:32px;font-weight:900;color:#FFD700}}
+  .mkt-box{{background:#1a1400;border:1px solid #f59e0b33;border-radius:10px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px}}
+  .mkt-avg{{font-size:32px;font-weight:900;color:#f59e0b}}
   .trade-val{{font-size:22px;font-weight:800;color:#60a5fa}}
   /* language grid */
   .lang-wrap{{background:#111827;border:1px solid #1e3a5f;border-radius:10px;padding:14px 16px;margin-bottom:16px}}
   .lang-title{{font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}}
-  .lang-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
-  @media(max-width:520px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
-  .lang-cell{{background:#0f172a;border-radius:8px;padding:10px;text-align:center}}
-  .lang-flag{{font-size:18px;line-height:1;margin-bottom:3px}}
+  .lang-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}}
+  @media(max-width:600px){{.lang-grid{{grid-template-columns:repeat(3,1fr)}}}}
+  @media(max-width:380px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
+  .lang-cell{{background:#0f172a;border-radius:8px;padding:9px 6px;text-align:center}}
+  .lang-flag{{font-size:16px;line-height:1;margin-bottom:3px}}
   .lang-code{{font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1px;margin-bottom:4px}}
-  .lang-price{{font-size:15px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
-  .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 6px;display:inline-block}}
+  .lang-price{{font-size:14px;font-weight:900;color:#e0e0e0;margin-bottom:2px}}
+  .lang-pct{{font-size:10px;font-weight:700;border-radius:4px;padding:2px 5px;display:inline-block}}
+  .lang-ebay{{font-size:9px;color:#475569;margin-top:3px;line-height:1.3}}
+  .lang-tradein{{font-size:9px;color:#60a5fa;margin-top:2px}}
+  .lang-src{{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;display:inline-block;margin-top:3px}}
+  .lang-src.live{{background:#052e16;color:#4ade80}}
+  .lang-src.est{{background:#1c1400;color:#fbbf24}}
+  .lang-src.cached{{background:#0f172a;color:#818cf8}}
+  .arb-badge{{display:inline-block;font-size:9px;font-weight:800;border-radius:3px;padding:1px 5px;margin-top:2px}}
+  .arb-parity{{background:#422006;color:#fb923c}}
+  .arb-premium{{background:#2d0a0a;color:#f87171}}
+  .arb-lowdata{{background:#1c1c00;color:#facc15}}
+  /* lang title row */
+  .lang-title-row{{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}}
+  .lang-age{{font-size:9px;color:#475569;margin-right:6px}}
+  .lang-refresh-btn{{background:none;border:1px solid #334155;border-radius:5px;color:#94a3b8;font-size:11px;padding:2px 8px;cursor:pointer}}
+  .lang-refresh-btn:hover{{border-color:#f59e0b;color:#f59e0b}}
+  /* eBay vs TCGPlayer delta bar */
+  .lang-delta{{border-radius:7px;padding:8px 12px;margin-bottom:10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+  .lang-delta.up{{background:#052e16;border:1px solid #166534}}
+  .lang-delta.down{{background:#2d0a0a;border:1px solid #7f1d1d}}
+  .lang-delta.neutral{{background:#0f172a;border:1px solid #1e3a5f}}
+  .lang-delta-label{{color:#94a3b8;font-size:10px}}
+  .lang-delta-val{{font-weight:800}}
+  .lang-delta.up .lang-delta-val{{color:#4ade80}}
+  .lang-delta.down .lang-delta-val{{color:#f87171}}
+  .lang-delta.neutral .lang-delta-val{{color:#94a3b8}}
   /* local status */
   .local-box{{background:#0d1f0d;border:1px solid #15803d33;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;display:none}}
   .local-box.visible{{display:flex}}
@@ -6071,7 +7710,7 @@ def admin_market():
   .empty-sub{{font-size:13px;color:#555;max-width:400px;margin:0 auto 20px;line-height:1.6}}
   .chips{{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}}
   .chip{{background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:6px 14px;font-size:12px;color:#aaa;cursor:pointer;transition:.15s}}
-  .chip:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  .chip:hover{{border-color:#f59e0b;color:#f59e0b;background:#1a1400}}
   /* loading */
   .skeleton{{background:linear-gradient(90deg,#1a1a1a 25%,#222 50%,#1a1a1a 75%);background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:8px;height:20px;margin-bottom:8px}}
   @keyframes shimmer{{0%{{background-position:200% 0}}100%{{background-position:-200% 0}}}}
@@ -6082,6 +7721,39 @@ def admin_market():
   .conf-HIGH{{background:#14532d;color:#4ade80}}
   .conf-MED{{background:#7c2d12;color:#fbbf24}}
   .conf-LOW{{background:#1e1e2e;color:#94a3b8}}
+  /* ── eBay sold history section ─────────────────────────── */
+  .ebay-section{{display:none;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:14px;padding:22px 24px;margin-top:20px}}
+  .ebay-section.visible{{display:block}}
+  .ebay-hdr{{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}}
+  .ebay-title{{font-size:14px;font-weight:800;color:#e0e0e0;letter-spacing:.5px}}
+  .ebay-src{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.8px}}
+  .ebay-src.stored{{background:#0f2a0f;color:#4ade80;border:1px solid #15803d44}}
+  .ebay-src.live{{background:#1a1400;color:#f59e0b;border:1px solid #f59e0b33}}
+  .ebay-refresh{{margin-left:auto;background:#141414;border:1px solid #333;color:#aaa;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;transition:.15s}}
+  .ebay-refresh:hover{{border-color:#f59e0b;color:#f59e0b}}
+  .ebay-loading{{color:#555;font-size:13px;padding:16px 0;text-align:center}}
+  /* period cards */
+  .period-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}}
+  @media(max-width:540px){{.period-row{{grid-template-columns:1fr}}}}
+  .pcard{{background:#141414;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px}}
+  .pcard-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
+  .pcard-price{{font-size:24px;font-weight:900;color:#f59e0b;margin-bottom:4px}}
+  .pcard-meta{{font-size:11px;color:#666}}
+  .trend-badge{{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px}}
+  .trend-up{{background:#0f2a0f;color:#4ade80}}
+  .trend-down{{background:#2a0f0f;color:#f87171}}
+  .trend-flat{{background:#1e1e1e;color:#94a3b8}}
+  /* chart */
+  .chart-wrap{{position:relative;height:200px;margin-bottom:20px}}
+  /* sold listings */
+  .listings-hdr{{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;justify-content:space-between}}
+  .listings-wrap{{max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#333 transparent}}
+  .listing-row{{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;font-size:12px;transition:.1s}}
+  .listing-row:hover{{background:#141414}}
+  .listing-title{{color:#bbb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:12px}}
+  .listing-price{{font-size:13px;font-weight:800;color:#f59e0b;white-space:nowrap}}
+  .listing-date{{color:#555;font-size:11px;margin-left:10px;white-space:nowrap}}
+  .iqr-note{{font-size:10px;color:#444;margin-top:10px;text-align:right}}
 </style>
 </head>
 <body>
@@ -6103,7 +7775,8 @@ def admin_market():
       <option value="EN">🇺🇸 EN</option>
       <option value="JP">🇯🇵 JP</option>
       <option value="KR">🇰🇷 KR</option>
-      <option value="CN">🇨🇳 CN</option>
+      <option value="CN">🇨🇳 CN (S)</option>
+      <option value="TW">🇹🇼 TW (T)</option>
     </select>
   </div>
   <p class="hint">Type 2+ characters for instant search &bull; 400 ms debounce &bull; Click a variant card to select it</p>
@@ -6171,7 +7844,14 @@ def admin_market():
         </div>
 
         <div class="lang-wrap">
-          <div class="lang-title">🌐 Language Variant Pricing</div>
+          <div class="lang-title-row">
+            <div class="lang-title">🌐 Language Variant Pricing</div>
+            <div style="display:flex;align-items:center">
+              <span class="lang-age" id="langAge"></span>
+              <button class="lang-refresh-btn" id="langRefreshBtn" onclick="onLangRefresh()" title="Force fresh eBay scrape">↺</button>
+            </div>
+          </div>
+          <div class="lang-delta" id="langDelta" style="display:none"></div>
           <div class="lang-grid" id="langGrid"></div>
         </div>
 
@@ -6188,6 +7868,35 @@ def admin_market():
           <button class="btn-gold" onclick="location.href='/admin'" style="background:#1a1a2a;color:#aaa;border:1px solid #333">↩ Dashboard</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── eBay sold history chart panel ─────────────────── -->
+  <div class="ebay-section" id="ebaySection">
+    <div class="ebay-hdr">
+      <span style="font-size:16px">📉</span>
+      <span class="ebay-title">eBay Sold History <span style="font-size:11px;color:#555;font-weight:400">(90 days · IQR filtered)</span></span>
+      <span class="ebay-src" id="ebaySrc"></span>
+      <button class="ebay-refresh" id="ebayRefreshBtn" onclick="loadEbayHistory(true)">↺ Live Refresh</button>
+    </div>
+
+    <div class="ebay-loading" id="ebayLoading">Fetching eBay sold listings…</div>
+
+    <div id="ebayBody" style="display:none">
+      <!-- Period summary cards -->
+      <div class="period-row" id="periodRow"></div>
+
+      <!-- Price trend chart -->
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+
+      <!-- Sold listings -->
+      <div class="listings-hdr">
+        <span id="listingsCount"></span>
+        <span id="iqrBounds" style="color:#444;font-size:10px"></span>
+      </div>
+      <div class="listings-wrap" id="listingsWrap"></div>
     </div>
   </div>
 
@@ -6212,8 +7921,13 @@ let _timer   = null;
 let _vTimer  = null;
 let _lastData = null;
 let _rawTiers = {{}};
-let _langFact = {{JP:20, KR:45, CN:40}};
-let _selId    = null;
+let _langData       = null;   // null = not yet fetched; object = done
+let _langFetchedAt  = null;   // Date when last fetch completed
+let _langCurrentCard = null;  // {{name,set,number,variant}} of card in view
+let _selId          = null;
+
+// Static fallback estimates when live eBay data is unavailable
+const _LANG_DEFAULTS = {{jp:20, kr:45, cn:40, tw:35}};
 
 const inp   = document.getElementById('cardInput');
 const condS = document.getElementById('condSelect');
@@ -6300,6 +8014,7 @@ async function doSearch() {{
 
 async function doSearchByName(name) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  hide('ebaySection'); _ebayName = ''; _langData = null;
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{name}}));
     const d = await r.json();
@@ -6311,6 +8026,7 @@ async function doSearchByName(name) {{
 
 async function doSearchWithId(id) {{
   hide('result'); hide('errBox'); hide('emptyState'); show('loading');
+  hide('ebaySection'); _ebayName = ''; _langData = null;
   try {{
     const r = await fetch('/card/enrich?' + new URLSearchParams({{qr: id}}));
     const d = await r.json();
@@ -6401,6 +8117,15 @@ function renderResult(d) {{
 
   show('result');
   hide('emptyState');
+
+  // Kick off eBay history + live language pricing in parallel
+  const t2 = d.tcgData || {{}};
+  const _cardName = d.name || (t2 && t2.name) || '';
+  const _cardSet  = (t2.set && t2.set.name) || d.setCode || '';
+  const _cardNum  = t2.number || '';
+  const _cardVar  = d.rarity  || '';
+  triggerEbayHistory(_cardName, _cardSet, _cardNum, _cardVar);
+  loadLangPrices(_cardName, _cardSet, _cardNum, _cardVar);
 }}
 
 function renderTiers() {{
@@ -6417,6 +8142,54 @@ function renderTiers() {{
   applyCond();
 }}
 
+function _renderLangDelta(tcgRaw) {{
+  const bar = document.getElementById('langDelta');
+  if (!bar || !_langData || !_langData.en || !_langData.en.median || !tcgRaw) {{
+    if (bar) bar.style.display = 'none';
+    return;
+  }}
+  const ebayEN = _langData.en.median;
+  const pct    = Math.round((ebayEN / tcgRaw - 1) * 100);
+  const cls    = pct > 5 ? 'up' : pct < -5 ? 'down' : 'neutral';
+  const arrow  = pct > 5 ? '▲' : pct < -5 ? '▼' : '≈';
+  const label  = pct > 5
+    ? `eBay selling ${{Math.abs(pct)}}% ABOVE TCGPlayer — real market higher than listed`
+    : pct < -5
+    ? `eBay selling ${{Math.abs(pct)}}% BELOW TCGPlayer — market softer than listed`
+    : `eBay and TCGPlayer within 5% — prices aligned`;
+  bar.className = `lang-delta ${{cls}}`;
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span class="lang-delta-label">eBay EN vs TCGPlayer:</span>
+    <span class="lang-delta-val">${{arrow}} ${{pct > 0 ? '+' : ''}}${{pct}}%</span>
+    <span class="lang-delta-label" style="flex:1">${{label}}</span>
+    <span class="lang-delta-label">eBay: $${{ebayEN.toFixed(2)}} · TCG: $${{tcgRaw.toFixed(2)}}</span>
+  `;
+}}
+
+function _updateLangAge() {{
+  const el = document.getElementById('langAge');
+  if (!el || !_langFetchedAt) {{ if (el) el.textContent = ''; return; }}
+  const secs = Math.round((Date.now() - _langFetchedAt) / 1000);
+  if (secs < 60)        el.textContent = `fetched ${{secs}}s ago`;
+  else if (secs < 3600) el.textContent = `fetched ${{Math.round(secs/60)}}m ago`;
+  else                  el.textContent = `fetched ${{Math.round(secs/3600)}}h ago`;
+}}
+setInterval(_updateLangAge, 20000);
+
+function onLangRefresh() {{
+  if (!_langCurrentCard) return;
+  const btn = document.getElementById('langRefreshBtn');
+  if (btn) {{ btn.disabled = true; btn.textContent = '…'; }}
+  loadLangPrices(
+    _langCurrentCard.name, _langCurrentCard.set,
+    _langCurrentCard.number, _langCurrentCard.variant,
+    true
+  ).finally(() => {{
+    if (btn) {{ btn.disabled = false; btn.textContent = '↺'; }}
+  }});
+}}
+
 function applyCond() {{
   if (!_lastData && !Object.keys(_rawTiers).length) return;
   const m = parseFloat(condD.value) || 1;
@@ -6430,25 +8203,99 @@ function applyCond() {{
   document.getElementById('rAvg').textContent   = raw > 0 ? '$' + mktM.toFixed(2) : '—';
   document.getElementById('rTrade').textContent = raw > 0 ? '$' + trade.toFixed(2) : '—';
 
-  // language grid
-  const lang = langS.value;
+  // eBay EN vs TCGPlayer delta bar
+  _renderLangDelta(raw);
+
+  // language grid — 5 languages with live data, arbitrage flags, trade-in
+  const selLang = langS.value;
   const langs = [
-    {{code:'EN',flag:'🇺🇸',cls:'',pct:null}},
-    {{code:'JP',flag:'🇯🇵',cls:'pct-jp',pct:_langFact.JP}},
-    {{code:'KR',flag:'🇰🇷',cls:'pct-kr',pct:_langFact.KR}},
-    {{code:'CN',flag:'🇨🇳',cls:'pct-cn',pct:_langFact.CN}},
+    {{code:'EN', flag:'🇺🇸', key:null}},
+    {{code:'JP', flag:'🇯🇵', key:'jp'}},
+    {{code:'KR', flag:'🇰🇷', key:'kr'}},
+    {{code:'CN', flag:'🇨🇳', key:'cn'}},
+    {{code:'TW', flag:'🇹🇼', key:'tw'}},
   ];
+
   document.getElementById('langGrid').innerHTML = langs.map(l => {{
-    const price = l.pct ? mktM*(1-l.pct/100) : mktM;
-    const badge = l.pct ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{l.pct}}% off</span>` : `<span class="lang-pct" style="background:#1a1400;color:#FFD700">Base</span>`;
-    const sel   = l.code === lang ? 'border:1px solid #FFD700' : '';
-    return `<div class="lang-cell" style="${{sel}}">
+    let price, pct, count = 0, ebayLine = '', srcBadge = '', arbBadge = '';
+
+    if (!l.key) {{
+      price = mktM;
+      pct   = null;
+      if (_langData && _langData.en && _langData.en.median) {{
+        count    = _langData.en.count || 0;
+        const src = _langData.data_source === 'cached' ? 'cached' : 'live';
+        ebayLine  = `eBay median: $${{_langData.en.median.toFixed(2)}} · ${{count}} sold`;
+        srcBadge  = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+      }}
+    }} else {{
+      const ld = _langData && _langData[l.key];
+      if (ld && ld.pct_off !== null && ld.pct_off !== undefined) {{
+        pct   = ld.pct_off;
+        count = ld.count || 0;
+        price = mktM * (1 - pct / 100);
+        const src = _langData.data_source === 'cached' ? 'cached' : 'live';
+        if (ld.median) {{
+          ebayLine = `eBay: $${{ld.median.toFixed(2)}} · ${{count}} sold`;
+        }} else {{
+          ebayLine = 'No recent sales';
+        }}
+        srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+        // Arbitrage flags
+        if (count > 0 && count < 5) {{
+          arbBadge = `<span class="arb-badge arb-lowdata">⚠ Low data (${{count}})</span>`;
+        }} else if (pct < 0) {{
+          arbBadge = `<span class="arb-badge arb-premium">🔥 Premium — higher than EN</span>`;
+        }} else if (pct <= 10 && count >= 5) {{
+          arbBadge = `<span class="arb-badge arb-parity">⚠ Near parity (${{pct}}% off)</span>`;
+        }}
+      }} else {{
+        pct      = _LANG_DEFAULTS[l.key] || 30;
+        price    = mktM * (1 - pct / 100);
+        ebayLine = _langData ? 'No eBay sales found' : '';
+        srcBadge = `<span class="lang-src est">est.</span>`;
+      }}
+    }}
+
+    const tradein   = price * 0.80;
+    const tradeStr  = mktM > 0 ? `<div class="lang-tradein">Trade-in: $${{tradein.toFixed(2)}}</div>` : '';
+    const highlighted = l.code === selLang ? 'border:1px solid #f59e0b' : '';
+    const pctBadge = pct !== null
+      ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{pct}}% off</span>`
+      : `<span class="lang-pct" style="background:#1a1400;color:#f59e0b">Base</span>`;
+
+    return `<div class="lang-cell" style="${{highlighted}}">
       <div class="lang-flag">${{l.flag}}</div>
       <div class="lang-code">${{l.code}}</div>
-      <div class="lang-price">${{mktM>0?'$'+price.toFixed(2):'N/A'}}</div>
-      ${{badge}}
+      <div class="lang-price">${{mktM > 0 ? '$' + price.toFixed(2) : 'N/A'}}</div>
+      ${{pctBadge}}
+      ${{tradeStr}}
+      ${{ebayLine ? `<div class="lang-ebay">${{ebayLine}}</div>` : ''}}
+      ${{arbBadge}}
+      ${{srcBadge}}
     </div>`;
   }}).join('');
+}}
+
+async function loadLangPrices(name, set, number, variant, forceRefresh) {{
+  if (!name) return;
+  _langCurrentCard = {{name, set, number, variant}};
+  _langData = null;
+  applyCond();
+  _updateLangAge();
+  try {{
+    const p = new URLSearchParams({{name}});
+    if (set)          p.set('set', set);
+    if (number)       p.set('number', number);
+    if (variant)      p.set('variant', variant);
+    if (forceRefresh) p.set('refresh', '1');
+    const r = await fetch('/api/v1/pricing/language?' + p);
+    if (!r.ok) return;
+    _langData      = await r.json();
+    _langFetchedAt = Date.now();
+    applyCond();
+    _updateLangAge();
+  }} catch(e) {{ /* non-fatal — estimates remain */ }}
 }}
 
 function renderTiersOnly(m) {{
@@ -6492,6 +8339,187 @@ function toast(msg, err=false) {{
   t.textContent=msg; t.className=err?'err':'';
   t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
 }}
+
+// ── eBay sold history chart ────────────────────────────────────────────────
+
+let _ebayChart    = null;   // Chart.js instance (destroyed on each re-render)
+let _ebayName     = '';     // last searched card name
+let _ebaySet      = '';     // last set name
+let _ebayNumber   = '';     // last card number
+let _ebayVariant  = '';     // last variant
+
+// Called at the end of renderResult() — kicks off the eBay fetch
+function triggerEbayHistory(name, setName, number, variant) {{
+  _ebayName    = name    || '';
+  _ebaySet     = setName || '';
+  _ebayNumber  = number  || '';
+  _ebayVariant = variant || '';
+  if (!_ebayName) return;
+  const s = document.getElementById('ebaySection');
+  s.classList.add('visible');
+  loadEbayHistory(false);
+}}
+
+async function loadEbayHistory(forceRefresh) {{
+  if (!_ebayName) return;
+
+  // UI: loading state
+  document.getElementById('ebayLoading').style.display = 'block';
+  document.getElementById('ebayBody').style.display    = 'none';
+  document.getElementById('ebaySrc').textContent       = '';
+  document.getElementById('ebayRefreshBtn').disabled   = true;
+  document.getElementById('ebayRefreshBtn').textContent = forceRefresh ? '⏳ Fetching…' : '⏳ Loading…';
+
+  const params = new URLSearchParams({{
+    name:    _ebayName,
+    set:     _ebaySet,
+    number:  _ebayNumber,
+    variant: _ebayVariant,
+    refresh: forceRefresh ? '1' : '0',
+  }});
+
+  try {{
+    const r = await fetch('/api/v1/pricing/history?' + params);
+    if (!r.ok) {{ ebayError('Server returned ' + r.status); return; }}
+    const d = await r.json();
+    if (d.error) {{ ebayError(d.error); return; }}
+    renderEbaySection(d);
+  }} catch(e) {{
+    ebayError('Network error — ' + e.message);
+  }} finally {{
+    document.getElementById('ebayRefreshBtn').disabled  = false;
+    document.getElementById('ebayRefreshBtn').textContent = '↺ Live Refresh';
+  }}
+}}
+
+function ebayError(msg) {{
+  document.getElementById('ebayLoading').textContent = '⚠ ' + msg;
+  document.getElementById('ebayLoading').style.color = '#f87171';
+}}
+
+function renderEbaySection(d) {{
+  // ── Source badge ─────────────────────────────────────────────────────────
+  const srcEl = document.getElementById('ebaySrc');
+  const isLive = d.data_source === 'live';
+  srcEl.textContent = isLive ? '● Live eBay' : '● Cached';
+  srcEl.className   = 'ebay-src ' + (isLive ? 'live' : 'stored');
+
+  // ── Period summary cards ──────────────────────────────────────────────────
+  const trend = d.trend || {{}};
+  const dir   = (trend.direction || 'flat').toLowerCase();
+  const tBadge = dir === 'up'
+    ? '<span class="trend-badge trend-up">↑ Rising</span>'
+    : dir === 'down'
+    ? '<span class="trend-badge trend-down">↓ Falling</span>'
+    : '<span class="trend-badge trend-flat">→ Stable</span>';
+
+  function pCardHTML(label, model) {{
+    if (!model || !model.count) {{
+      return `<div class="pcard"><div class="pcard-label">${{label}}</div><div class="pcard-price" style="color:#333">—</div><div class="pcard-meta">No data</div></div>`;
+    }}
+    const med = model.median != null ? '$' + model.median.toFixed(2) : '—';
+    const avg = model.avg    != null ? 'avg $' + model.avg.toFixed(2) : '';
+    return `<div class="pcard">
+      <div class="pcard-label">${{label}}</div>
+      <div class="pcard-price">${{med}}${{label==='90 Days'?tBadge:''}}</div>
+      <div class="pcard-meta">${{model.count}} sold${{avg?' · '+avg:''}}</div>
+    </div>`;
+  }}
+
+  const pr = d.periods || {{}};
+  document.getElementById('periodRow').innerHTML =
+    pCardHTML('7 Days',  pr['7d'])  +
+    pCardHTML('30 Days', pr['30d']) +
+    pCardHTML('90 Days', pr['90d']);
+
+  // ── Chart.js weekly trend line ─────────────────────────────────────────────
+  if (_ebayChart) {{ _ebayChart.destroy(); _ebayChart = null; }}
+  const weeks = (trend.weeks || []);
+  const hasChart = weeks.length >= 2;
+  document.querySelector('.chart-wrap').style.display = hasChart ? 'block' : 'none';
+  if (hasChart) {{
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    _ebayChart = new Chart(ctx, {{
+      type: 'line',
+      data: {{
+        labels: weeks.map(w => w.week || ''),
+        datasets: [{{
+          label: 'Weekly Median (£)',
+          data:  weeks.map(w => w.median != null ? +w.median.toFixed(2) : null),
+          borderColor:     '#f59e0b',
+          backgroundColor: 'rgba(255,215,0,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#f59e0b',
+          pointHoverRadius: 6,
+          tension: 0.3,
+          fill: true,
+          spanGaps: true,
+        }}]
+      }},
+      options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {{
+          legend: {{ display: false }},
+          tooltip: {{
+            backgroundColor: '#141414',
+            borderColor: '#f59e0b66',
+            borderWidth: 1,
+            titleColor: '#aaa',
+            bodyColor: '#f59e0b',
+            bodyFont: {{ size: 14, weight: 'bold' }},
+            callbacks: {{
+              label: ctx => ' £' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '—'),
+            }},
+          }},
+        }},
+        scales: {{
+          x: {{
+            grid:   {{ color: '#1a1a1a' }},
+            ticks:  {{ color: '#555', font: {{ size: 10 }} }},
+          }},
+          y: {{
+            grid:   {{ color: '#1a1a1a' }},
+            ticks:  {{ color: '#888', font: {{ size: 10 }}, callback: v => '£' + v.toFixed(2) }},
+            beginAtZero: false,
+          }},
+        }},
+      }},
+    }});
+  }}
+
+  // ── IQR note ──────────────────────────────────────────────────────────────
+  const iqr = d.iqr_bounds || (pr['90d'] && pr['90d'].iqr_bounds);
+  if (iqr && iqr.lo != null) {{
+    document.getElementById('iqrBounds').textContent =
+      `IQR filter: £${{iqr.lo.toFixed(2)}} – £${{iqr.hi.toFixed(2)}}`;
+  }} else {{
+    document.getElementById('iqrBounds').textContent = '';
+  }}
+
+  // ── Sold listings ─────────────────────────────────────────────────────────
+  const listings = d.sold_listings || [];
+  document.getElementById('listingsCount').textContent =
+    listings.length + ' sold listing' + (listings.length === 1 ? '' : 's') + ' matched';
+
+  document.getElementById('listingsWrap').innerHTML = listings.length
+    ? listings.map(l => {{
+        const price = l.price != null ? '£' + l.price.toFixed(2) : '—';
+        const date  = l.sold_date ? l.sold_date.substring(0, 10) : '—';
+        const title = l.title || '—';
+        return `<div class="listing-row">
+          <span class="listing-title" title="${{title.replace(/"/g,'&quot;')}}">${{title}}</span>
+          <span class="listing-price">${{price}}</span>
+          <span class="listing-date">${{date}}</span>
+        </div>`;
+      }}).join('')
+    : '<div style="color:#444;font-size:12px;padding:12px 0;text-align:center">No sold listings found</div>';
+
+  // ── Show body ─────────────────────────────────────────────────────────────
+  document.getElementById('ebayLoading').style.display = 'none';
+  document.getElementById('ebayBody').style.display    = 'block';
+}}
 </script>
 </body>
 </html>"""
@@ -6515,7 +8543,7 @@ def admin_system():
         for name, svc in _SYS_SERVICES
     )
     site_rows = "".join(
-        f'<tr><td><a href="{url}" target="_blank" style="color:#FFD700">{name}</a></td>'
+        f'<tr><td><a href="{url}" target="_blank" style="color:#f59e0b">{name}</a></td>'
         f'<td><span class="dot" id="site-{_html.escape(name)}">●</span></td>'
         f'<td id="site-lbl-{_html.escape(name)}" style="color:#555">checking…</td></tr>'
         for name, url in _SYS_WEBSITES
@@ -6531,10 +8559,10 @@ def admin_system():
   .stat-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px}}
   .stat-card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px}}
   .stat-label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}}
-  .stat-value{{font-size:30px;font-weight:900;color:#FFD700;line-height:1}}
+  .stat-value{{font-size:30px;font-weight:900;color:#f59e0b;line-height:1}}
   .stat-sub{{font-size:11px;color:#555;margin-top:4px}}
   .bar-wrap{{background:#222;border-radius:4px;height:6px;margin-top:8px;overflow:hidden}}
-  .bar-fill{{height:6px;border-radius:4px;background:linear-gradient(90deg,#FFD700,#f59e0b);transition:width .6s ease}}
+  .bar-fill{{height:6px;border-radius:4px;background:linear-gradient(90deg,#f59e0b,#f59e0b);transition:width .6s ease}}
   .bar-fill.warn{{background:linear-gradient(90deg,#ff9800,#f59e0b)}}
   .bar-fill.crit{{background:linear-gradient(90deg,#f44336,#c62828)}}
   .dot{{font-size:14px;color:#555;transition:.3s}}
@@ -6548,7 +8576,7 @@ def admin_system():
   .act-btn.stop:hover{{background:#2a1a1a}}
   .quick-actions{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}}
   .qa-btn{{background:#141414;border:1px solid #333;color:#e0e0e0;border-radius:8px;padding:12px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px}}
-  .qa-btn:hover{{border-color:#FFD700;color:#FFD700;background:#1a1400}}
+  .qa-btn:hover{{border-color:#f59e0b;color:#f59e0b;background:#1a1400}}
   #refreshStatus{{font-size:12px;color:#555;margin-left:auto;align-self:center}}
 </style>
 </head>
@@ -6772,7 +8800,7 @@ async function refreshWgPeers() {{
     status.textContent = peers.length + ' peer' + (peers.length!==1?'s':'') + ' · refreshed ' + new Date().toLocaleTimeString();
     tbody.innerHTML = peers.map(p => {{
       const nameCell = p.friendly
-        ? `<span style="color:#FFD700;font-weight:700">${{p.friendly}}</span><br><span style="font-size:10px;color:#444">${{p.short_key}}</span>`
+        ? `<span style="color:#f59e0b;font-weight:700">${{p.friendly}}</span><br><span style="font-size:10px;color:#444">${{p.short_key}}</span>`
         : `<span style="color:#555;font-size:11px">${{p.short_key}}</span>`;
       const hsColor = p.handshake_ok ? '#4caf50' : (p.handshake==='Never'?'#555':'#f59e0b');
       return `<tr>
@@ -6842,16 +8870,16 @@ def admin_logs():
   .tab-bar{{display:flex;gap:0;border-bottom:1px solid #222;margin-bottom:20px}}
   .tab{{padding:11px 20px;font-size:13px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:.15s}}
   .tab:hover{{color:#aaa}}
-  .tab.active{{color:#FFD700;border-bottom-color:#FFD700}}
+  .tab.active{{color:#f59e0b;border-bottom-color:#f59e0b}}
   .tab-panel{{display:none}}
   .tab-panel.active{{display:block}}
   .log-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
   .log-controls label{{font-size:12px;color:#666}}
   .log-controls select{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none}}
-  .log-controls select:focus{{border-color:#FFD700}}
-  .log-controls input[type=range]{{accent-color:#FFD700;width:100px}}
+  .log-controls select:focus{{border-color:#f59e0b}}
+  .log-controls input[type=range]{{accent-color:#f59e0b;width:100px}}
   .toggle{{display:flex;align-items:center;gap:6px;font-size:12px;color:#888;cursor:pointer;padding:7px 14px;background:#1a1a1a;border:1px solid #333;border-radius:6px}}
-  .toggle input{{accent-color:#FFD700}}
+  .toggle input{{accent-color:#f59e0b}}
   #logBox{{background:#060606;border:1px solid #1a1a1a;border-radius:10px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#a0a0a0;height:65vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.55}}
   .log-status{{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}}
   .log-status-txt{{font-size:11px;color:#444}}
@@ -6859,8 +8887,8 @@ def admin_logs():
   .log-line-warn{{color:#fbbf24}}
   .log-line-ok{{color:#4ade80}}
   #searchInp{{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:13px;outline:none;width:200px}}
-  #searchInp:focus{{border-color:#FFD700}}
-  .highlight{{background:#FFD70044;border-radius:2px}}
+  #searchInp:focus{{border-color:#f59e0b}}
+  .highlight{{background:#f59e0b44;border-radius:2px}}
   /* Scan History */
   .sh-controls{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#111;border:1px solid #222;border-radius:10px;padding:14px 18px;margin-bottom:16px}}
   .sh-tbl{{width:100%;border-collapse:collapse;font-size:12px}}
@@ -7025,7 +9053,7 @@ async function loadScanLog() {{
       const price = s.price > 0 ? '$' + s.price.toFixed(2) : '—';
       const name  = s.cardName || '<span style="color:#444">—</span>';
       const qr    = `<code style="color:#aaa;font-size:11px">${{s.qrCode}}</code>`;
-      return `<tr><td style="color:#555">${{i+1}}</td><td style="color:#666;font-size:11px">${{t}}</td><td>${{qr}}</td><td>${{name}}</td><td>${{badge}}</td><td style="color:#FFD700">${{price}}</td></tr>`;
+      return `<tr><td style="color:#555">${{i+1}}</td><td style="color:#666;font-size:11px">${{t}}</td><td>${{qr}}</td><td>${{name}}</td><td>${{badge}}</td><td style="color:#f59e0b">${{price}}</td></tr>`;
     }}).join('');
   }} catch(e) {{
     document.getElementById('shStatus').textContent = 'Error: ' + e.message;
@@ -7685,10 +9713,26 @@ def admin_login():
         next_url  = request.form.get("next", "/admin")
         if hashlib.sha256(password.encode()).hexdigest() == \
            hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest():
-            session["admin_authenticated"] = True
-            session.permanent = True
             _clear_login_attempts(ip)
             log.info("[admin] login successful from %s", ip)
+            # Check if TOTP 2FA is enabled
+            try:
+                db2 = _direct_db()
+                totp_row = db2.execute(
+                    "SELECT secret, enabled FROM totp_secrets WHERE username='admin' AND enabled=1"
+                ).fetchone()
+                db2.close()
+            except Exception:
+                totp_row = None
+            if totp_row:
+                # Partial auth — require TOTP next
+                session["admin_2fa_pending"] = True
+                session["admin_next_url"]    = next_url if next_url.startswith("/admin") else "/admin"
+                return redirect("/admin/2fa/verify")
+            session["admin_authenticated"] = True
+            session["admin_user"]          = "admin"
+            session.permanent = True
+            _audit_write("admin.login", "admin_dashboard", f"ip={ip}")
             return redirect(next_url if next_url.startswith("/admin") else "/admin")
         _record_failed_login(ip)
         log.warning("[admin] failed login attempt from %s (attempt %s)",
@@ -7831,7 +9875,7 @@ def admin_dashboard():
         else:
             gcurrent = 0
         pct = min(100, int((gcurrent / gtarget * 100) if gtarget else 0))
-        pct_color = "#4caf50" if pct >= 100 else "#FFD700"
+        pct_color = "#4caf50" if pct >= 100 else "#f59e0b"
         strike = "text-decoration:line-through;opacity:.5;" if gcompleted else ""
         lbl = f"{gcurrent:.0f} / {gtarget}"
         goals_html += (
@@ -7885,13 +9929,13 @@ def admin_dashboard():
   .cards{{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}}
   .card{{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px 20px;min-width:150px;flex:1}}
   .card label{{color:#777;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:4px}}
-  .card .value{{color:#FFD700;font-size:28px;font-weight:900}}
+  .card .value{{color:#f59e0b;font-size:28px;font-weight:900}}
   .card .value.green{{color:#4caf50}}
   .form-panel{{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:20px;margin-top:24px}}
   .form-panel h2{{margin-top:0;margin-bottom:14px;font-size:11px;color:#555;letter-spacing:1.5px;text-transform:uppercase}}
   .form-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}}
   .form-grid input,.form-grid select{{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:13px}}
-  .form-grid input:focus,.form-grid select:focus{{outline:none;border-color:#FFD700}}
+  .form-grid input:focus,.form-grid select:focus{{outline:none;border-color:#f59e0b}}
   .form-grid label{{display:block;color:#666;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}}
   .btn-del{{background:none;border:1px solid #c62828;color:#c62828;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}}
   .btn-del:hover{{background:#c62828;color:#fff}}
@@ -7934,7 +9978,7 @@ def admin_dashboard():
     text-align:center;
   }}
   #pf-price{{
-    color:#FFD700;
+    color:#f59e0b;
     font-size:clamp(56px,12vw,130px);
     font-weight:900;
     letter-spacing:-2px;
@@ -7951,7 +9995,7 @@ def admin_dashboard():
   #pf-stock.low{{color:rgba(255,80,80,0.85)}}
   #pf-bar{{
     position:absolute;bottom:0;left:0;
-    height:4px;background:#FFD700;
+    height:4px;background:#f59e0b;
     width:100%;
     transform-origin:left;
     transform:scaleX(1);
@@ -7969,11 +10013,24 @@ def admin_dashboard():
 {nav}
 <div class="wrap">
 <h1>🏠 Dashboard</h1>
-<div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp; <span id="clock"></span>
-  &nbsp;·&nbsp; <a href="/admin/market">📈 Market Prices</a>
-  &nbsp;·&nbsp; <a href="/admin/system">⚙️ System</a>
-  &nbsp;·&nbsp; <a href="/admin/valuation-report" target="_blank" style="color:#facc15">📊 Valuation</a>
-  &nbsp;·&nbsp; <a href="/download/apk" style="background:#FFD700;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;">⬇ APK</a>
+<div class="subtitle">Raspberry Pi POS &nbsp;·&nbsp;
+  <a href="/admin/valuation-report" target="_blank" style="color:#f59e0b">📊 Valuation Report</a>
+  &nbsp;·&nbsp;
+  <a href="/download/apk" style="background:#f59e0b;color:#000;padding:2px 9px;border-radius:999px;font-weight:800;font-size:11px;letter-spacing:.3px">⬇ APK</a>
+</div>
+
+<!-- Square-style quick-action card grid -->
+<div class="qa-grid">
+  <a href="/admin/market"       class="qa-card"><div class="qa-icon">📈</div><div class="qa-label">Market</div><div class="qa-sub">Live pricing & eBay</div></a>
+  <a href="/admin/trade-in"     class="qa-card"><div class="qa-icon">🔁</div><div class="qa-label">Trade-In</div><div class="qa-sub">Buy & exchange</div></a>
+  <a href="/admin/bundles"      class="qa-card"><div class="qa-icon">📦</div><div class="qa-label">Bundles</div><div class="qa-sub">Pack deals</div></a>
+  <a href="/admin/csv"          class="qa-card"><div class="qa-icon">📥</div><div class="qa-label">Import</div><div class="qa-sub">CSV & bulk upload</div></a>
+  <a href="/admin/purchases"    class="qa-card"><div class="qa-icon">🛒</div><div class="qa-label">Purchases</div><div class="qa-sub">Stock intake</div></a>
+  <a href="/admin/layby"        class="qa-card"><div class="qa-icon">🏷️</div><div class="qa-label">Layby</div><div class="qa-sub">Held orders</div></a>
+  <a href="/admin/profit-loss"  class="qa-card"><div class="qa-icon">💰</div><div class="qa-label">P&amp;L</div><div class="qa-sub">Profit & loss</div></a>
+  <a href="/admin/eod"          class="qa-card"><div class="qa-icon">🏧</div><div class="qa-label">End of Day</div><div class="qa-sub">Daily close</div></a>
+  <a href="/admin/system"       class="qa-card"><div class="qa-icon">⚙️</div><div class="qa-label">System</div><div class="qa-sub">Settings & tools</div></a>
+  <a href="/admin/logs"         class="qa-card"><div class="qa-icon">📋</div><div class="qa-label">Logs</div><div class="qa-sub">Audit & errors</div></a>
 </div>
 
 <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px;align-items:stretch">
@@ -8230,7 +10287,7 @@ def admin_dashboard():
   <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <button class="btn-gold" onclick="addProduct()">Save Product</button>
     <div id="mkt-price-hint" style="font-size:12px;color:#888;display:none">
-      TCG market: <span id="mkt-price-val" style="color:#FFD700;font-weight:bold"></span>
+      TCG market: <span id="mkt-price-val" style="color:#f59e0b;font-weight:bold"></span>
     </div>
   </div>
 </div>
@@ -8377,8 +10434,8 @@ async function refreshStats() {{
     const pts  = vals.map((v,i) => (PAD + i*step).toFixed(1) + ',' + (H - PAD - ((v/max)*(H-PAD*2))).toFixed(1)).join(' ');
     document.getElementById('sparkline-svg').innerHTML =
       `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%" preserveAspectRatio="none" style="display:block">
-        <polyline points="${{pts}}" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-        ${{vals.map((v,i) => v > 0 ? `<circle cx="${{(PAD+i*step).toFixed(1)}}" cy="${{(H-PAD-((v/max)*(H-PAD*2))).toFixed(1)}}" r="3" fill="#FFD700"/>` : '').join('')}}
+        <polyline points="${{pts}}" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        ${{vals.map((v,i) => v > 0 ? `<circle cx="${{(PAD+i*step).toFixed(1)}}" cy="${{(H-PAD-((v/max)*(H-PAD*2))).toFixed(1)}}" r="3" fill="#f59e0b"/>` : '').join('')}}
       </svg>`;
     document.getElementById('spark-last-refresh').textContent =
       'Refreshed ' + new Date().toLocaleTimeString();
@@ -8913,7 +10970,7 @@ def _send_sale_email(sale_name: str, price: float, method: str = "", qty: int = 
             log.info("[email] Sale alert sent for: %s", sale_name)
         except Exception as _e:
             log.warning("[email] Failed to send sale alert: %s", _e)
-    threading.Thread(target=_do_send, daemon=True).start()
+    _bg(_do_send)
 
 
 # ---------------------------------------------------------------------------
@@ -8964,7 +11021,7 @@ def _push_stock_to_storefront(items: list):
         except Exception as _e:
             log.warning("[storefront-sync] push failed (non-fatal): %s", _e)
 
-    threading.Thread(target=_do_push, daemon=True).start()
+    _bg(_do_push)
 
 
 @app.route("/admin/email-config", methods=["GET"])
@@ -9186,13 +11243,13 @@ def offline_search():
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{background:#0d0d0d;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}}
-  h1{{color:#FFD700;font-size:22px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}}
+  h1{{color:#f59e0b;font-size:22px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}}
   .sub{{color:#555;font-size:12px;letter-spacing:1px;margin-bottom:20px}}
   .search-bar{{display:flex;gap:10px;margin-bottom:20px}}
   input{{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;
          padding:10px 14px;font-size:14px;outline:none}}
-  input:focus{{border-color:#FFD700}}
-  button{{background:#FFD700;color:#000;border:none;border-radius:8px;padding:10px 20px;
+  input:focus{{border-color:#f59e0b}}
+  button{{background:#f59e0b;color:#000;border:none;border-radius:8px;padding:10px 20px;
           font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px;white-space:nowrap}}
   button:hover{{background:#e5c100}}
   .results{{display:grid;gap:12px}}
@@ -9212,7 +11269,7 @@ def offline_search():
   .status{{color:#888;font-size:12px;margin-bottom:12px;min-height:18px}}
   #back{{display:inline-block;color:#555;font-size:12px;text-decoration:none;
          border:1px solid #333;border-radius:6px;padding:5px 12px;margin-bottom:16px}}
-  #back:hover{{color:#FFD700;border-color:#FFD700}}
+  #back:hover{{color:#f59e0b;border-color:#f59e0b}}
 </style>
 </head>
 <body>
@@ -9400,6 +11457,2125 @@ def market_price():
     })
 
 
+# ===========================================================================
+# ENTERPRISE ENDPOINTS
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 1. JWT token issuance — POST /api/v1/auth/token
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/auth/token", methods=["POST"])
+@require_admin
+def api_issue_token():
+    """
+    Issue a signed JWT for the APK / Expo app.  Admin-only.
+    Body: { "label": "my-tablet", "ttl_hours": 24, "scopes": "scan,sales" }
+    Response: { "token": "...", "expires_at": <epoch_s>, "label": "..." }
+    """
+    if not _JWT_AVAILABLE:
+        return jsonify({"error": "PyJWT not installed"}), 501
+    body   = request.get_json(silent=True) or {}
+    label  = (body.get("label") or "unnamed").strip()[:80]
+    ttl_h  = min(int(body.get("ttl_hours") or _JWT_TTL_H), 8760)   # cap 1 year
+    scopes = (body.get("scopes") or "scan,sales").strip()
+    exp    = int(_time.time()) + ttl_h * 3600
+    payload = {
+        "sub":    "api_client",
+        "label":  label,
+        "scopes": scopes,
+        "exp":    exp,
+        "iat":    int(_time.time()),
+    }
+    token = _jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALGO)
+    # Store hash so we can revoke
+    t_hash = hashlib.sha256(token.encode()).hexdigest()
+    db = get_db()
+    db.execute(
+        "INSERT INTO api_tokens (label, token_hash, created_by, scopes, expires_at) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (label, t_hash, session.get("admin_user", "admin"), scopes, exp * 1000)
+    )
+    db.commit()
+    _audit_write("api_token.issue", label, f"ttl_hours={ttl_h}")
+    return jsonify({"token": token, "expires_at": exp, "label": label, "scopes": scopes})
+
+
+@app.route("/api/v1/auth/tokens", methods=["GET"])
+@require_admin
+def api_list_tokens():
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, label, created_by, scopes, expires_at, revoked, created_at, last_used "
+        "FROM api_tokens ORDER BY created_at DESC LIMIT 100"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/auth/tokens/<int:token_id>", methods=["DELETE"])
+@require_admin
+def api_revoke_token(token_id):
+    db = get_db()
+    db.execute("UPDATE api_tokens SET revoked=1 WHERE id=%s", (token_id,))
+    db.commit()
+    _audit_write("api_token.revoke", str(token_id))
+    return jsonify({"ok": True, "revoked": token_id})
+
+
+# ---------------------------------------------------------------------------
+# 2. TOTP 2FA — setup, verify, disable
+# ---------------------------------------------------------------------------
+
+_2FA_VERIFY_HTML = """<!doctype html>
+<html><head><meta charset=utf-8><title>2FA — HanryxVault</title>
+<style>body{font-family:Arial,sans-serif;background:#111;color:#e0e0e0;display:flex;
+align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:32px;width:340px}
+h2{color:#d4a843;margin:0 0 24px}input{width:100%;padding:10px;background:#2a2a2a;
+border:1px solid #444;color:#fff;border-radius:6px;font-size:18px;text-align:center;
+letter-spacing:4px;box-sizing:border-box;margin-bottom:12px}
+button{width:100%;padding:12px;background:#d4a843;color:#111;font-size:16px;font-weight:bold;
+border:none;border-radius:6px;cursor:pointer}.err{color:#f87171;font-size:14px;margin-bottom:12px}
+</style></head><body><div class="card"><h2>🔐 Two-Factor Auth</h2>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<form method=POST><input name=code placeholder="000000" maxlength=6 autofocus autocomplete=off>
+<button type=submit>Verify</button></form></div></body></html>"""
+
+_2FA_SETUP_HTML = """<!doctype html>
+<html><head><meta charset=utf-8><title>2FA Setup — HanryxVault</title>
+<style>body{font-family:Arial,sans-serif;background:#111;color:#e0e0e0;display:flex;
+align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:32px;width:380px}
+h2{color:#d4a843;margin:0 0 16px}img{display:block;margin:0 auto 16px;border:4px solid #333;border-radius:8px}
+.secret{font-family:monospace;font-size:13px;background:#2a2a2a;padding:8px 12px;border-radius:6px;
+word-break:break-all;margin-bottom:16px}input{width:100%;padding:10px;background:#2a2a2a;
+border:1px solid #444;color:#fff;border-radius:6px;font-size:18px;text-align:center;
+letter-spacing:4px;box-sizing:border-box;margin-bottom:12px}
+button{width:100%;padding:12px;background:#d4a843;color:#111;font-size:16px;font-weight:bold;
+border:none;border-radius:6px;cursor:pointer}.err{color:#f87171}.ok{color:#34d399}
+p{font-size:13px;color:#aaa}</style></head>
+<body><div class="card"><h2>🔐 Set Up 2FA</h2>
+{% if qr_url %}<img src="{{ qr_url }}" width=200 height=200>
+<p>Scan with Google Authenticator / Authy, then enter the 6-digit code to enable.</p>
+<p class=secret>Manual key: {{ secret }}</p>
+{% endif %}
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% if success %}<p class="ok">{{ success }}</p>{% endif %}
+{% if not enabled %}
+<form method=POST><input name=code placeholder="000000" maxlength=6 autofocus autocomplete=off>
+<button type=submit>Enable 2FA</button></form>
+{% else %}
+<p class=ok>✓ 2FA is currently enabled.</p>
+<form method=POST action=/admin/2fa/disable>
+<button style=background:#ef4444>Disable 2FA</button></form>
+{% endif %}
+</div></body></html>"""
+
+
+@app.route("/admin/2fa/setup", methods=["GET", "POST"])
+@require_admin
+def admin_2fa_setup():
+    if not _PYOTP_AVAILABLE:
+        return jsonify({"error": "pyotp not installed"}), 501
+    db = get_db()
+    row = db.execute("SELECT secret, enabled FROM totp_secrets WHERE username='admin'").fetchone()
+    secret = row["secret"] if row else _pyotp.random_base32()
+    enabled = bool(row and row["enabled"])
+
+    if not row:
+        db.execute(
+            "INSERT INTO totp_secrets (username, secret, enabled) VALUES ('admin', %s, 0)",
+            (secret,)
+        )
+        db.commit()
+
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        totp = _pyotp.TOTP(secret)
+        if totp.verify(code, valid_window=1):
+            db.execute("UPDATE totp_secrets SET enabled=1 WHERE username='admin'")
+            db.commit()
+            _audit_write("admin.2fa.enable", "admin")
+            return render_template_string(_2FA_SETUP_HTML, qr_url=None, secret=secret,
+                                          enabled=True, error=None, success="2FA enabled successfully!")
+        return render_template_string(_2FA_SETUP_HTML, qr_url=_totp_qr_url(secret),
+                                      secret=secret, enabled=False, error="Invalid code — try again", success=None)
+
+    qr_url = _totp_qr_url(secret) if not enabled else None
+    return render_template_string(_2FA_SETUP_HTML, qr_url=qr_url, secret=secret,
+                                  enabled=enabled, error=None, success=None)
+
+
+def _totp_qr_url(secret: str) -> str:
+    """Return a data-URI PNG of the TOTP QR code."""
+    try:
+        import pyotp as _p
+        uri = _p.TOTP(secret).provisioning_uri("admin", issuer_name="HanryxVault")
+        import qrcode as _qrc
+        img = _qrc.make(uri)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
+
+
+@app.route("/admin/2fa/verify", methods=["GET", "POST"])
+def admin_2fa_verify():
+    if not session.get("admin_2fa_pending"):
+        return redirect("/admin/login")
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().replace(" ", "")
+        try:
+            db = _direct_db()
+            row = db.execute(
+                "SELECT secret FROM totp_secrets WHERE username='admin' AND enabled=1"
+            ).fetchone()
+            db.close()
+        except Exception:
+            row = None
+        if row and _PYOTP_AVAILABLE:
+            import pyotp as _p
+            if _p.TOTP(row["secret"]).verify(code, valid_window=1):
+                session.pop("admin_2fa_pending", None)
+                session["admin_authenticated"] = True
+                session["admin_user"]          = "admin"
+                session.permanent = True
+                _audit_write("admin.login.2fa", "admin_dashboard")
+                next_url = session.pop("admin_next_url", "/admin")
+                return redirect(next_url)
+        return render_template_string(_2FA_VERIFY_HTML, error="Invalid code — try again")
+    return render_template_string(_2FA_VERIFY_HTML, error=None)
+
+
+@app.route("/admin/2fa/disable", methods=["POST"])
+@require_admin
+def admin_2fa_disable():
+    db = get_db()
+    db.execute("UPDATE totp_secrets SET enabled=0 WHERE username='admin'")
+    db.commit()
+    _audit_write("admin.2fa.disable", "admin")
+    return redirect("/admin/2fa/setup")
+
+
+# ---------------------------------------------------------------------------
+# 3. Audit log viewer — GET /api/v1/audit-log
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/audit-log", methods=["GET"])
+@require_admin
+def api_audit_log():
+    limit  = min(int(request.args.get("limit", 200)), 1000)
+    action = request.args.get("action", "").strip()
+    actor  = request.args.get("actor", "").strip()
+    db     = get_db()
+    where, args = [], []
+    if action:
+        where.append("action ILIKE %s"); args.append(f"%{action}%")
+    if actor:
+        where.append("actor ILIKE %s"); args.append(f"%{actor}%")
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    args.append(limit)
+    rows = db.execute(
+        f"SELECT id, ts_ms, actor, action, resource, detail, ip, request_id "
+        f"FROM audit_log {clause} ORDER BY ts_ms DESC LIMIT %s",
+        args
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ---------------------------------------------------------------------------
+# 4. Z-report (end-of-day) — GET /api/v1/reports/z-report[/pdf]
+# ---------------------------------------------------------------------------
+
+def _build_z_report(date_str: str, db) -> dict:
+    """Compute Z-report data for the given YYYY-MM-DD date string."""
+    # epoch bounds for the date (local midnight to midnight)
+    try:
+        day_start = int(datetime.datetime.strptime(date_str, "%Y-%m-%d").timestamp() * 1000)
+    except ValueError:
+        day_start = int(datetime.datetime.combine(datetime.date.today(),
+                                                   datetime.time.min).timestamp() * 1000)
+    day_end = day_start + 86_400_000
+
+    rows = db.execute(
+        "SELECT name, price, quantity, sold_at FROM sale_history "
+        "WHERE sold_at >= %s AND sold_at < %s ORDER BY sold_at",
+        (day_start, day_end)
+    ).fetchall()
+
+    total_revenue   = sum(r["price"] * r["quantity"] for r in rows)
+    total_items     = sum(r["quantity"] for r in rows)
+    transaction_cnt = len(rows)
+
+    # Top 10 by revenue
+    card_totals: dict = {}
+    for r in rows:
+        k = r["name"]
+        card_totals[k] = card_totals.get(k, 0) + r["price"] * r["quantity"]
+    top_cards = sorted(card_totals.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    # Payment method breakdown from sales table
+    method_rows = db.execute(
+        "SELECT payment_method, SUM(sale_price) as total, COUNT(*) as cnt "
+        "FROM sales WHERE sold_at >= %s AND sold_at < %s "
+        "GROUP BY payment_method",
+        (day_start, day_end)
+    ).fetchall()
+    by_method = {r["payment_method"] or "unknown": {"total": r["total"], "count": r["cnt"]}
+                 for r in method_rows}
+
+    # Existing EOD reconciliation if saved
+    rec = db.execute(
+        "SELECT * FROM eod_reconciliations WHERE date_str=%s", (date_str,)
+    ).fetchone()
+
+    return {
+        "date":              date_str,
+        "total_revenue":     round(total_revenue, 2),
+        "total_items_sold":  total_items,
+        "transaction_count": transaction_cnt,
+        "by_payment_method": by_method,
+        "top_cards":         [{"name": n, "revenue": round(v, 2)} for n, v in top_cards],
+        "reconciliation":    dict(rec) if rec else None,
+        "generated_at":      datetime.datetime.now().isoformat(),
+    }
+
+
+@app.route("/api/v1/reports/z-report", methods=["GET"])
+@require_admin
+def api_z_report():
+    date_str = request.args.get("date") or datetime.date.today().isoformat()
+    db       = get_db()
+    report   = _build_z_report(date_str, db)
+    return jsonify(report)
+
+
+@app.route("/api/v1/reports/z-report/pdf", methods=["GET"])
+@require_admin
+def api_z_report_pdf():
+    """Generate and stream a PDF Z-report for the given date."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as _rl_colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+    except ImportError:
+        return jsonify({"error": "reportlab not installed"}), 501
+
+    date_str = request.args.get("date") or datetime.date.today().isoformat()
+    db       = get_db()
+    rpt      = _build_z_report(date_str, db)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm,
+                             topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    gold   = _rl_colors.HexColor("#d4a843")
+    elems  = []
+
+    def _h(text, size=14, bold=True):
+        s = styles["Normal"].clone("h")
+        s.fontSize = size; s.textColor = gold; s.spaceAfter = 4
+        if bold: s.fontName = "Helvetica-Bold"
+        return Paragraph(text, s)
+
+    def _p(text, size=10):
+        s = styles["Normal"].clone("p"); s.fontSize = size; s.spaceAfter = 2
+        return Paragraph(text, s)
+
+    elems += [
+        _h("HanryxVault POS", 20),
+        _h(f"Z-Report — {date_str}", 14),
+        Spacer(1, 0.4*cm),
+        _p(f"Generated: {rpt['generated_at']}"),
+        Spacer(1, 0.5*cm),
+    ]
+
+    # Summary table
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Revenue",     f"${rpt['total_revenue']:.2f}"],
+        ["Items Sold",        str(rpt["total_items_sold"])],
+        ["Transactions",      str(rpt["transaction_count"])],
+    ]
+    for method, d in rpt["by_payment_method"].items():
+        summary_data.append([f"  {method.title()}", f"${d['total']:.2f} ({d['count']} txn)"])
+    ts = TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), gold),
+        ("TEXTCOLOR",  (0,0), (-1,0), _rl_colors.black),
+        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0), (-1,-1), 10),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [_rl_colors.white, _rl_colors.HexColor("#f5f5f5")]),
+        ("GRID",       (0,0), (-1,-1), 0.5, _rl_colors.grey),
+        ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+    ])
+    t = Table(summary_data, colWidths=[10*cm, 6*cm])
+    t.setStyle(ts)
+    elems += [t, Spacer(1, 0.6*cm)]
+
+    if rpt["top_cards"]:
+        elems.append(_h("Top Cards by Revenue", 12))
+        card_data = [["Card Name", "Revenue"]] + [
+            [c["name"][:50], f"${c['revenue']:.2f}"] for c in rpt["top_cards"]
+        ]
+        tc = Table(card_data, colWidths=[12*cm, 4*cm])
+        tc.setStyle(ts)
+        elems += [tc, Spacer(1, 0.4*cm)]
+
+    rec = rpt.get("reconciliation")
+    if rec:
+        elems.append(_h("Cash Reconciliation", 12))
+        rec_data = [
+            ["Opening Float",  f"${rec.get('opening_float', 0):.2f}"],
+            ["Expected Cash",  f"${rec.get('expected_cash', 0):.2f}"],
+            ["Actual Cash",    f"${rec.get('actual_cash', 0):.2f}"],
+            ["Discrepancy",    f"${rec.get('discrepancy', 0):.2f}"],
+        ]
+        tr = Table(rec_data, colWidths=[10*cm, 6*cm])
+        tr.setStyle(ts)
+        elems.append(tr)
+
+    doc.build(elems)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf",
+                     as_attachment=True, download_name=f"z-report-{date_str}.pdf")
+
+
+# ---------------------------------------------------------------------------
+# 5. Returns / Refunds — /api/v1/returns
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/returns", methods=["GET"])
+@require_admin
+def api_list_returns():
+    limit = min(int(request.args.get("limit", 50)), 500)
+    db    = get_db()
+    rows  = db.execute(
+        "SELECT r.*, array_agg(row_to_json(ri)) AS items "
+        "FROM returns r LEFT JOIN return_items ri ON ri.return_id=r.id "
+        "GROUP BY r.id ORDER BY r.created_at DESC LIMIT %s", (limit,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/returns", methods=["POST"])
+@require_admin
+def api_create_return():
+    """
+    Body: {
+      "original_sale_id": 42,        (optional)
+      "reason": "customer changed mind",
+      "refund_amount": 12.50,
+      "refund_method": "cash",
+      "items": [{"qr_code": "SV1-1", "name": "Charizard", "quantity": 1,
+                 "unit_price": 12.50, "restock": true}]
+    }
+    Restocked items are incremented back in inventory automatically.
+    """
+    body          = request.get_json(silent=True) or {}
+    items         = body.get("items", [])
+    reason        = (body.get("reason") or "").strip()[:500]
+    refund_amount = float(body.get("refund_amount") or 0)
+    refund_method = (body.get("refund_method") or "original").strip()
+    orig_sale_id  = body.get("original_sale_id")
+    reference     = f"RET-{_now_ms()}"
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO returns (reference, original_sale_id, reason, refund_amount, "
+        "refund_method, status, created_by) VALUES (%s, %s, %s, %s, %s, 'completed', %s)",
+        (reference, orig_sale_id, reason, refund_amount, refund_method,
+         session.get("admin_user", "admin"))
+    )
+    return_id = db.execute("SELECT lastval()").fetchone()[0]
+
+    restocked = []
+    for item in items:
+        qr    = (item.get("qr_code") or "").strip()
+        name  = (item.get("name") or "").strip()
+        qty   = int(item.get("quantity") or 1)
+        price = float(item.get("unit_price") or 0)
+        restock = bool(item.get("restock", True))
+        db.execute(
+            "INSERT INTO return_items (return_id, qr_code, name, quantity, unit_price, restock) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (return_id, qr, name, qty, price, int(restock))
+        )
+        if restock and qr:
+            db.execute(
+                "UPDATE inventory SET stock = stock + %s WHERE qr_code = %s", (qty, qr)
+            )
+            restocked.append(qr)
+            _invalidate_inventory(qr)
+
+    db.commit()
+    _audit_write("return.create", reference, f"items={len(items)} refund=${refund_amount:.2f}")
+    return jsonify({"ok": True, "reference": reference, "return_id": return_id,
+                    "restocked": restocked}), 201
+
+
+@app.route("/api/v1/returns/<int:return_id>", methods=["GET"])
+@require_admin
+def api_get_return(return_id):
+    db  = get_db()
+    row = db.execute("SELECT * FROM returns WHERE id=%s", (return_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    items = db.execute("SELECT * FROM return_items WHERE return_id=%s", (return_id,)).fetchall()
+    result = dict(row)
+    result["items"] = [dict(i) for i in items]
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# 6. Suppliers — /api/v1/suppliers
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/suppliers", methods=["GET"])
+@require_admin
+def api_list_suppliers():
+    db   = get_db()
+    rows = db.execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/suppliers", methods=["POST"])
+@require_admin
+def api_create_supplier():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO suppliers (name, contact, email, phone, address, notes) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (name, body.get("contact",""), body.get("email",""),
+             body.get("phone",""), body.get("address",""), body.get("notes",""))
+        )
+        db.commit()
+    except Exception as e:
+        if "unique" in str(e).lower():
+            return jsonify({"error": "Supplier with that name already exists"}), 409
+        raise
+    sid = db.execute("SELECT lastval()").fetchone()[0]
+    _audit_write("supplier.create", name)
+    return jsonify({"ok": True, "id": sid}), 201
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["GET"])
+@require_admin
+def api_get_supplier(sid):
+    db  = get_db()
+    row = db.execute("SELECT * FROM suppliers WHERE id=%s", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    # attach purchase orders
+    pos = db.execute(
+        "SELECT id, reference, status, total_cost, created_at FROM purchase_orders "
+        "WHERE supplier=(SELECT name FROM suppliers WHERE id=%s) ORDER BY created_at DESC LIMIT 20",
+        (sid,)
+    ).fetchall()
+    result = dict(row)
+    result["purchase_orders"] = [dict(p) for p in pos]
+    return jsonify(result)
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["PUT"])
+@require_admin
+def api_update_supplier(sid):
+    body = request.get_json(silent=True) or {}
+    db   = get_db()
+    db.execute(
+        "UPDATE suppliers SET name=%s, contact=%s, email=%s, phone=%s, address=%s, notes=%s "
+        "WHERE id=%s",
+        (body.get("name",""), body.get("contact",""), body.get("email",""),
+         body.get("phone",""), body.get("address",""), body.get("notes",""), sid)
+    )
+    db.commit()
+    _audit_write("supplier.update", str(sid))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/suppliers/<int:sid>", methods=["DELETE"])
+@require_admin
+def api_delete_supplier(sid):
+    db = get_db()
+    db.execute("DELETE FROM suppliers WHERE id=%s", (sid,))
+    db.commit()
+    _audit_write("supplier.delete", str(sid))
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# 7. Low-stock alerts — /api/v1/stock-alerts
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/stock-alerts", methods=["GET"])
+@require_admin
+def api_list_stock_alerts():
+    """
+    List low-stock alert configs.  Only sealed products appear here — singles are excluded.
+    Query params: ?eligible=1 lists all sealed products in inventory (for adding alerts).
+    """
+    db = get_db()
+
+    # ?eligible=1 → return all sealed products that could have an alert configured
+    if request.args.get("eligible"):
+        rows = db.execute(
+            "SELECT i.qr_code, i.name, i.stock, i.item_type, "
+            "   lsc.threshold, lsc.alerted "
+            "FROM inventory i "
+            "LEFT JOIN low_stock_config lsc ON lsc.qr_code=i.qr_code "
+            "WHERE LOWER(i.item_type) NOT IN ('single', 'card', '') "
+            "ORDER BY i.item_type, i.name"
+        ).fetchall()
+        return jsonify([dict(r) for r in rows])
+
+    rows = db.execute(
+        "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock, i.item_type "
+        "FROM low_stock_config lsc "
+        "LEFT JOIN inventory i ON i.qr_code=lsc.qr_code "
+        "WHERE LOWER(COALESCE(i.item_type,'')) NOT IN ('single', 'card') "
+        "ORDER BY i.name"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/stock-alerts", methods=["POST"])
+@require_admin
+def api_set_stock_alert():
+    """
+    Set a low-stock alert threshold for a product.
+    Only valid for sealed products (booster packs, ETBs, boxes, etc.).
+    Individual card singles are excluded — use reorder logic for those.
+    """
+    body      = request.get_json(silent=True) or {}
+    qr_code   = (body.get("qr_code") or "").strip()
+    threshold = max(1, int(body.get("threshold") or 1))
+    if not qr_code:
+        return jsonify({"error": "qr_code required"}), 400
+
+    db = get_db()
+    # Validate item_type — reject individual card singles
+    item_row = db.execute(
+        "SELECT name, item_type FROM inventory WHERE qr_code=%s", (qr_code,)
+    ).fetchone()
+    if item_row and item_row["item_type"] and \
+            item_row["item_type"].lower() in ("single", "card"):
+        return jsonify({
+            "error": "Low-stock alerts are for sealed products only (booster packs, boxes, ETBs). "
+                     f"'{item_row['name']}' is a {item_row['item_type']}."
+        }), 422
+
+    db.execute(
+        "INSERT INTO low_stock_config (qr_code, threshold, alerted) VALUES (%s, %s, 0) "
+        "ON CONFLICT (qr_code) DO UPDATE SET threshold=EXCLUDED.threshold, alerted=0",
+        (qr_code, threshold)
+    )
+    db.commit()
+    _audit_write("stock_alert.set", qr_code, f"threshold={threshold}")
+    item_name = item_row["name"] if item_row else qr_code
+    return jsonify({"ok": True, "qr_code": qr_code, "name": item_name, "threshold": threshold}), 201
+
+
+@app.route("/api/v1/stock-alerts/<path:qr_code>", methods=["DELETE"])
+@require_admin
+def api_delete_stock_alert(qr_code):
+    db = get_db()
+    db.execute("DELETE FROM low_stock_config WHERE qr_code=%s", (qr_code,))
+    db.commit()
+    _audit_write("stock_alert.delete", qr_code)
+    return jsonify({"ok": True})
+
+
+def _run_low_stock_checker():
+    """Background thread: check every 15 min, email when stock drops below threshold."""
+    import time as _t
+    _t.sleep(60)   # give the server 60 s to finish startup
+    while True:
+        try:
+            db = _direct_db()
+            # Only alert for sealed/product items — never individual card singles
+            rows = db.execute(
+                "SELECT lsc.qr_code, lsc.threshold, lsc.alerted, i.name, i.stock, i.item_type "
+                "FROM low_stock_config lsc "
+                "JOIN inventory i ON i.qr_code=lsc.qr_code "
+                "WHERE i.stock <= lsc.threshold AND lsc.alerted=0 "
+                "AND LOWER(i.item_type) NOT IN ('single', 'card')"
+            ).fetchall()
+            for r in rows:
+                cfg = _get_email_cfg()
+                if cfg["enabled"]:
+                    def _send_alert(name=r["name"], stock=r["stock"], threshold=r["threshold"],
+                                    qr=r["qr_code"]):
+                        try:
+                            import smtplib as _sm, email.mime.multipart as _mm, email.mime.text as _mt
+                            c = _get_email_cfg()
+                            msg = _mm.MIMEMultipart("alternative")
+                            msg["Subject"] = f"⚠️ Low Stock: {name} ({stock} left)"
+                            msg["From"]    = f"HanryxVault <{c['user']}>"
+                            msg["To"]      = c["notify"]
+                            html = (f"<h2>Low Stock Alert</h2>"
+                                    f"<p><strong>{name}</strong> ({qr}) is at <strong>{stock}</strong> "
+                                    f"unit(s) — threshold: {threshold}.</p>"
+                                    f"<p>Please reorder stock.</p>")
+                            msg.attach(_mt.MIMEText(html, "html"))
+                            with _sm.SMTP("smtp.gmail.com", 587, timeout=15) as sv:
+                                sv.ehlo(); sv.starttls()
+                                sv.login(c["user"], c["password"])
+                                sv.sendmail(c["user"], c["notify"], msg.as_string())
+                            log.info("[low-stock] Alert sent for %s (stock=%s)", name, stock)
+                        except Exception as _e:
+                            log.warning("[low-stock] Email failed: %s", _e)
+                    _bg(_send_alert)
+                db.execute(
+                    "UPDATE low_stock_config SET alerted=1 WHERE qr_code=%s", (r["qr_code"],)
+                )
+            db.commit()
+            db.close()
+        except Exception as _e:
+            log.debug("[low-stock] checker error: %s", _e)
+        import time as _t2; _t2.sleep(900)   # 15 min
+
+
+# ---------------------------------------------------------------------------
+# 8. PDF receipt for an individual sale — GET /api/v1/sales/<id>/receipt.pdf
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/sales/<int:sale_id>/receipt.pdf", methods=["GET"])
+@require_admin
+def api_sale_receipt_pdf(sale_id):
+    try:
+        from reportlab.lib.pagesizes import A6
+        from reportlab.lib import colors as _rlc
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+    except ImportError:
+        return jsonify({"error": "reportlab not installed"}), 501
+
+    db  = get_db()
+    row = db.execute("SELECT * FROM sales WHERE id=%s", (sale_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Sale not found"}), 404
+
+    buf  = io.BytesIO()
+    doc  = SimpleDocTemplate(buf, pagesize=A6, rightMargin=1*cm, leftMargin=1*cm,
+                              topMargin=1*cm, bottomMargin=1*cm)
+    ss   = getSampleStyleSheet()
+    gold = _rlc.HexColor("#d4a843")
+
+    def _lbl(text, size=9, bold=False):
+        s = ss["Normal"].clone("l"); s.fontSize = size; s.spaceAfter = 2
+        if bold: s.fontName = "Helvetica-Bold"
+        return Paragraph(text, s)
+
+    items_json = row.get("items") or "[]"
+    try:
+        items = json.loads(items_json) if isinstance(items_json, str) else items_json
+    except Exception:
+        items = []
+
+    elems = [
+        _lbl("HanryxVault", 14, bold=True),
+        _lbl(f"Receipt #{sale_id}", 10),
+        _lbl(datetime.datetime.fromtimestamp(row["sold_at"]/1000).strftime("%d %b %Y %H:%M"), 9),
+        Spacer(1, 0.3*cm),
+    ]
+
+    if items:
+        tdata = [["Item", "Qty", "Price"]] + [
+            [i.get("name","")[:30], str(i.get("quantity",1)), f"${float(i.get('price',0)):.2f}"]
+            for i in items
+        ]
+        t = Table(tdata, colWidths=[7*cm, 1.5*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), gold),
+            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0,0), (-1,-1), 8),
+            ("GRID",       (0,0), (-1,-1), 0.3, _rlc.grey),
+            ("LEFTPADDING",  (0,0), (-1,-1), 4),
+            ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ]))
+        elems.append(t)
+        elems.append(Spacer(1, 0.3*cm))
+
+    total = float(row.get("sale_price") or row.get("total_price") or 0)
+    method = row.get("payment_method") or "POS"
+    elems += [
+        _lbl(f"<b>Total: ${total:.2f}</b>", 11, bold=True),
+        _lbl(f"Payment: {method}", 9),
+        Spacer(1, 0.3*cm),
+        _lbl("Thank you for your purchase!", 8),
+    ]
+
+    doc.build(elems)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf",
+                     as_attachment=True, download_name=f"receipt-{sale_id}.pdf")
+
+
+# ---------------------------------------------------------------------------
+# 9. Connection pool health — GET /api/v1/health/pool
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/health/pool", methods=["GET"])
+@require_admin
+def api_health_pool():
+    pool = _get_pool()
+    try:
+        used = len(pool._used) if hasattr(pool, "_used") else "?"
+        free = len(pool._pool) if hasattr(pool, "_pool") else "?"
+        mx   = pool.maxconn   if hasattr(pool, "maxconn") else "?"
+    except Exception:
+        used = free = mx = "?"
+    return jsonify({
+        "pool_used":  used,
+        "pool_free":  free,
+        "pool_max":   mx,
+        "status":     "ok" if used != "?" and used < (mx or 999) else "unknown",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Intelligent pricing engine
+# ---------------------------------------------------------------------------
+# Ported from the Node.js implementation:
+#   - Multi-language card input normalisation via Google Translate
+#   - eBay sold-listing scraper (3 pages in parallel)
+#   - Score-based listing filter (name, number, set matching)
+#   - Outlier-robust price model (median / mean / confidence)
+#   - PostgreSQL-backed translation + pricing cache
+#   - Redis-backed short-TTL pricing cache (10 min)
+# ---------------------------------------------------------------------------
+
+import statistics as _stats_mod
+
+
+def _translate_with_cache(text: str, target_lang: str) -> str:
+    """Translate text to target_lang, using the DB cache to avoid repeat API calls."""
+    if not text or not _TRANSLATE_OK:
+        return text
+    if target_lang == "en" and all(ord(c) < 128 for c in text):
+        return text  # already ASCII English — skip API
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT translated FROM translation_cache WHERE original=%s AND lang=%s",
+            (text, target_lang),
+        ).fetchone()
+        if row:
+            db.close()
+            return row["translated"]
+        translated = _GoogleTranslator(source="auto", target=target_lang).translate(text)
+        db.execute(
+            "INSERT INTO translation_cache (original, lang, translated) VALUES (%s,%s,%s) "
+            "ON CONFLICT (original, lang) DO UPDATE SET translated=EXCLUDED.translated",
+            (text, target_lang, translated),
+        )
+        db.commit()
+        db.close()
+        return translated
+    except Exception as _e:
+        log.debug("[translate] failed for %r → %s: %s", text[:30], target_lang, _e)
+        return text
+
+
+def _translate_card_input(card: dict, lang: str = "en") -> dict:
+    """Normalise a card dict to English so eBay queries work correctly."""
+    if lang == "en":
+        return card
+    return {
+        "name":         _translate_with_cache(card.get("name", ""), "en"),
+        "set":          _translate_with_cache(card.get("set", ""), "en") if card.get("set") else None,
+        "number":       card.get("number"),
+        "original_lang": lang,
+    }
+
+
+def _score_listing(title: str, card: dict) -> int:
+    """
+    Score an eBay listing against a card spec.
+    Returns an integer; listings scoring < 6 are discarded.
+
+    Positive signals:  name match (+5), number match (+5), set match (+3),
+                       pokémon mention (+1)
+    Negative signals:  ungraded card with PSA in title (−5),
+                       bulk/lot keywords (−8, enough to always fail threshold)
+    """
+    t = title.lower()
+    score = 0
+
+    name = (card.get("name") or "").lower()
+    if name and name in t:
+        score += 5
+
+    number = card.get("number") or ""
+    if number and number in t:
+        score += 5
+
+    set_name = (card.get("set") or "").lower()
+    if set_name and set_name in t:
+        score += 3
+
+    if "pokemon" in t or "pokémon" in t:
+        score += 1
+
+    # Graded-card penalty for raw lookups
+    if card.get("grade", "raw") == "raw" and "psa" in t:
+        score -= 5
+
+    # Bulk-lot penalty — heavy enough to always drop below the 6-point threshold
+    if any(kw in t for kw in _BULK_KEYWORDS):
+        score -= 8
+
+    return score
+
+
+def _filter_and_score(items: list, card: dict) -> list:
+    """
+    Sanitise bulk lots, score every listing, keep score >= 6, sort descending.
+    _sanitize_listings runs first as a fast pre-filter (no scoring overhead).
+    """
+    clean = _sanitize_listings(items)
+    scored = [
+        {**item, "score": _score_listing(item.get("title", ""), card)}
+        for item in clean
+    ]
+    return sorted(
+        (i for i in scored if i["score"] >= 6),
+        key=lambda x: x["score"],
+        reverse=True,
+    )
+
+
+def _filter_and_score_lang(items: list, card: dict) -> list:
+    """
+    Lenient scorer for non-English language eBay listings.
+
+    Foreign-language listings (JP, KR, CN, TW) won't contain the English
+    card name in their title, so the standard scorer's +5 name-match bonus
+    is unavailable — every card would fail the ≥6 threshold even when it is
+    exactly the right card.
+
+    Changes vs the English scorer:
+      • Threshold lowered to ≥ 2 (vs 6)
+      • Name-match and set-name checks dropped (foreign titles won't match)
+      • Card-number check kept (+5) — numbers are the same in every language
+      • "pokemon" mention kept (+1) — appears in many foreign listings
+      • Graded-card penalty kept (−5 for PSA on raw lookups)
+      • Bulk-lot penalty kept (−8, belt-and-braces after _sanitize_listings)
+    """
+    clean = _sanitize_listings(items)
+    scored = []
+    for item in clean:
+        t     = (item.get("title") or "").lower()
+        score = 0
+
+        number = card.get("number") or ""
+        if number and number in t:
+            score += 5
+
+        if "pokemon" in t or "pokémon" in t:
+            score += 1
+
+        if card.get("grade", "raw") == "raw" and "psa" in t:
+            score -= 5
+
+        if any(kw in t for kw in _BULK_KEYWORDS):
+            score -= 8
+
+        if score >= 2:
+            scored.append({**item, "score": score})
+
+    return sorted(scored, key=lambda x: x["score"], reverse=True)
+
+
+# Keywords that indicate bulk lots — excluded before price modelling
+_BULK_KEYWORDS = frozenset([
+    "lot", "bundle", "collection", "bulk", "joblot",
+    "x10", "x20", "x25", "x50", "x100",
+    "10x", "20x", "25x", "50x", "100x",
+    "mixed lot", "random lot",
+])
+
+
+def _sanitize_listings(items: list[dict]) -> list[dict]:
+    """
+    Strip bulk-lot and obviously bad listings before scoring or price modelling.
+    Keeps individual card listings only.
+    """
+    clean = []
+    for item in items:
+        title = item.get("title", "").lower()
+        if any(kw in title for kw in _BULK_KEYWORDS):
+            continue
+        # Skip placeholder / free-shipping-only listings (price < $0.25)
+        if (item.get("price") or 0) < 0.25:
+            continue
+        clean.append(item)
+    return clean
+
+
+def _remove_outliers(prices: list[float]) -> list[float]:
+    """
+    IQR-based outlier removal — robust against the right-skewed distributions
+    typical of Pokémon card prices.
+
+    Method (Tukey's fences):
+      lo = Q1 − 1.5 × IQR
+      hi = Q3 + 1.5 × IQR
+
+    If IQR is 0 (cluster of identical prices) we fall back to ±60 % of the
+    median so a handful of ludicrously high listings still get clipped.
+    Always returns the original list when filtering would leave nothing.
+    """
+    prices = sorted(p for p in prices if p >= 0.25)   # hard floor
+    if len(prices) < 3:
+        return prices
+
+    n   = len(prices)
+    q1  = prices[n // 4]
+    q3  = prices[(n * 3) // 4]
+    iqr = q3 - q1
+
+    if iqr == 0:
+        median = prices[n // 2]
+        lo, hi = median * 0.40, median * 1.60
+    else:
+        lo = q1 - 1.5 * iqr
+        hi = q3 + 1.5 * iqr
+
+    filtered = [p for p in prices if lo <= p <= hi]
+    return filtered or prices   # never discard everything
+
+
+def _build_price_model(items: list) -> dict:
+    """
+    Build a price model from scored listings.
+    Runs sanitisation → IQR outlier removal → statistics.
+    Returns market (median), average, low, high, confidence, sample_size,
+    plus iqr_bounds so callers know what was kept.
+    """
+    # Sanitise bulk lots / junk first
+    clean  = _sanitize_listings(items)
+    raw_prices = [i["price"] for i in clean if i.get("price")]
+    prices = sorted(_remove_outliers(raw_prices))
+
+    if not prices:
+        return {
+            "market": None, "average": None, "low": None, "high": None,
+            "confidence": 0, "sample_size": 0,
+            "raw_sample": len(raw_prices), "iqr_bounds": None,
+        }
+
+    n      = len(prices)
+    q1     = prices[n // 4]
+    q3     = prices[(n * 3) // 4]
+    median = prices[n // 2]
+    avg    = sum(prices) / n
+
+    return {
+        "market":      round(median, 2),
+        "average":     round(avg, 2),
+        "low":         round(prices[0], 2),
+        "high":        round(prices[-1], 2),
+        "confidence":  min(round(n / 20, 2), 1.0),
+        "sample_size": n,
+        "raw_sample":  len(raw_prices),      # before outlier removal
+        "iqr_bounds":  {"lo": round(q1 - 1.5 * (q3 - q1), 2),
+                        "hi": round(q3 + 1.5 * (q3 - q1), 2)},
+    }
+
+
+_EBAY_DATE_FMTS = (
+    "%b %d, %Y",   # Nov 15, 2024
+    "%d %b, %Y",   # 15 Nov, 2024
+    "%B %d, %Y",   # November 15, 2024
+    "%d %B %Y",    # 15 November 2024
+    "%b %d %Y",    # Nov 15 2024
+)
+
+
+def _parse_ebay_date(raw: str) -> "datetime.date | None":
+    """Parse an eBay sold-date string like 'Sold Nov 15, 2024' into a date."""
+    clean = re.sub(r"^(sold|ended)\s*", "", raw.strip(), flags=re.IGNORECASE)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    for fmt in _EBAY_DATE_FMTS:
+        try:
+            return datetime.datetime.strptime(clean, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _fetch_ebay_page(query: str, page: int) -> str:
+    """
+    Fetch one page of eBay completed/sold listings filtered to the last 90 days.
+    _dcat=183050 narrows to the 'Pokémon Individual Cards' category.
+    _ipg=240 requests 240 results per page (eBay max).
+    """
+    if not _BS4_OK:
+        return ""
+    url = (
+        "https://www.ebay.com/sch/i.html"
+        f"?_nkw={urllib.parse.quote(query)}"
+        f"&_pgn={page}"
+        "&LH_Sold=1"
+        "&LH_Complete=1"
+        "&_dcat=183050"      # Pokémon Individual Cards category
+        "&_sadis=90"         # sold within last 90 days
+        "&_ipg=240"          # max items per page
+    )
+    try:
+        r = _requests.get(
+            url, timeout=12,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        r.raise_for_status()
+        return r.text
+    except Exception as _e:
+        log.debug("[ebay] page %d fetch failed: %s", page, _e)
+        return ""
+
+
+def _parse_ebay_page(html: str) -> list[dict]:
+    """Parse one page of eBay sold-listing HTML into [{title, price, sold_date}]."""
+    if not html:
+        return []
+    soup  = _BS4(html, "lxml")
+    items = []
+    for el in soup.select(".s-item"):
+        title_el = el.select_one(".s-item__title")
+        price_el = el.select_one(".s-item__price")
+        if not title_el or not price_el:
+            continue
+        title_text = title_el.get_text(strip=True)
+        if title_text.lower() in ("shop on ebay", ""):
+            continue
+
+        # Price — take the first number when a range like "$1.50 to $3.00" is shown
+        price_str = re.sub(r"[^0-9.]", "", price_el.get_text().split("to")[0])
+        try:
+            price = float(price_str)
+        except (ValueError, TypeError):
+            continue
+        if price <= 0:
+            continue
+
+        # Sold date — eBay shows it in various span classes
+        sold_date = None
+        for sel in (
+            ".s-item__ended-date",
+            ".s-item__title--tag .POSITIVE",
+            ".SECONDARY_INFO",
+            "[class*='sold-date']",
+        ):
+            date_el = el.select_one(sel)
+            if date_el:
+                sold_date = _parse_ebay_date(date_el.get_text(strip=True))
+                if sold_date:
+                    break
+
+        items.append({
+            "title":     title_text,
+            "price":     price,
+            "sold_date": sold_date,      # datetime.date | None
+        })
+    return items
+
+
+_LANG_QUERY_SUFFIXES: dict[str, str] = {
+    "jp": "japanese",
+    "kr": "korean",
+    "cn": "chinese simplified",
+    "tw": "traditional chinese",
+}
+
+
+def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
+    """
+    Fetch eBay sold listings for a card with a language keyword appended to
+    the query (e.g. "japanese", "korean", "chinese simplified").
+
+    Uses the language-qualified query for the eBay search but scores results
+    against the original card dict so _filter_and_score stays correct —
+    card names don't contain "japanese" etc., so without this the scorer
+    would unfairly penalise every result.
+
+    Fetches 4 pages in parallel (enough for a representative sample).
+    Returns a _build_price_model dict.  market=None when no listings found.
+    """
+    if not _BS4_OK:
+        return {"market": None, "sample_size": 0}
+
+    name   = (card.get("name") or "").strip()
+    number = (card.get("number") or "").strip()
+    set_n  = (card.get("set") or "").strip()
+
+    parts = [p for p in [name, lang_suffix, number, set_n, "pokemon"] if p]
+    query = " ".join(parts).strip()
+
+    with _TPE(max_workers=4) as pool:
+        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 5)))
+
+    items: list[dict] = []
+    seen:  set[str]   = set()
+    for html in htmls:
+        for item in _parse_ebay_page(html):
+            key = f"{item['title'][:60]}:{item['price']}"
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+
+    # Foreign-language listings won't have the English card name in the title,
+    # so use the lenient scorer when a language suffix is present.
+    if lang_suffix:
+        scored = _filter_and_score_lang(items, card)
+    else:
+        scored = _filter_and_score(items, card)
+    return _build_price_model(scored)
+
+
+def _fetch_ebay_sales(card: dict) -> list[dict]:
+    """
+    Fetch eBay sold listings for a card across 6 pages in parallel (≤90 days).
+    Returns [{title, price, sold_date}].
+
+    Includes variant in the query when it adds information not already present
+    in the card name — e.g. "Charizard" + "Rainbow Rare" → distinct results
+    from just "Charizard", while "Charizard VMAX" + "VMAX" skips the duplicate.
+    """
+    if not _BS4_OK:
+        return []
+    name    = (card.get("name") or "").strip()
+    number  = (card.get("number") or "").strip()
+    set_n   = (card.get("set") or "").strip()
+    variant = (card.get("variant") or "").strip()
+
+    # Only append variant if it's not already present in the card name
+    variant_part = ""
+    if variant and variant.lower() not in name.lower():
+        variant_part = variant
+
+    query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+
+    with _TPE(max_workers=6) as pool:
+        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 7)))
+
+    items: list[dict] = []
+    seen:  set[str]   = set()
+    for html in htmls:
+        for item in _parse_ebay_page(html):
+            key = f"{item['title'][:60]}:{item['price']}"
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+    return items
+
+
+def _build_period_model(items: list[dict], days: int) -> dict:
+    """
+    Build a price model for the last `days` days.
+    Items without a sold_date are always included (conservative — don't discard).
+    """
+    cutoff = datetime.date.today() - datetime.timedelta(days=days)
+    windowed = [
+        i for i in items
+        if i.get("sold_date") is None or i["sold_date"] >= cutoff
+    ]
+    return _build_price_model(windowed)
+
+
+def _calc_price_trend(items: list[dict]) -> dict:
+    """
+    Calculate week-by-week median price for the last 13 weeks.
+    Returns {weeks: [{week_ending, median, count}], direction: 'up'|'down'|'flat'}.
+    """
+    today   = datetime.date.today()
+    buckets: dict[int, list[float]] = {}   # week_index → prices
+
+    for item in items:
+        d = item.get("sold_date")
+        if d is None:
+            continue
+        delta = (today - d).days
+        if delta < 0 or delta > 91:
+            continue
+        week_idx = delta // 7   # 0 = most recent, 12 = oldest
+        buckets.setdefault(week_idx, []).append(item["price"])
+
+    weeks = []
+    for idx in sorted(buckets):
+        prices = _remove_outliers(buckets[idx])
+        if prices:
+            week_end = today - datetime.timedelta(days=idx * 7)
+            weeks.append({
+                "week_ending": str(week_end),
+                "median":      round(sorted(prices)[len(prices) // 2], 2),
+                "count":       len(prices),
+            })
+
+    # Direction: compare average of most-recent 2 weeks vs oldest 2 weeks
+    direction = "flat"
+    if len(weeks) >= 4:
+        recent = sum(w["median"] for w in weeks[:2]) / 2
+        older  = sum(w["median"] for w in weeks[-2:]) / 2
+        if older > 0:
+            pct_change = (recent - older) / older
+            if pct_change >  0.05:
+                direction = "up"
+            elif pct_change < -0.05:
+                direction = "down"
+
+    return {"weeks": weeks, "direction": direction}
+
+
+def _get_pricing_cache(query: str):
+    """Check Redis first, then PostgreSQL for a cached price model."""
+    # L1: Redis (10 min TTL)
+    rkey = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    cached = _rcache_get(rkey)
+    if cached:
+        return cached, True
+    # L2: PostgreSQL (no TTL — manual invalidation via API)
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT pricing FROM pricing_cache WHERE query=%s", (query,)
+        ).fetchone()
+        db.close()
+        if row:
+            val = row["pricing"] if isinstance(row["pricing"], dict) else json.loads(row["pricing"])
+            _rcache_set(rkey, val, ttl=600)
+            return val, True
+    except Exception:
+        pass
+    return None, False
+
+
+def _set_pricing_cache(query: str, pricing: dict):
+    """Write a price model to Redis + PostgreSQL."""
+    rkey = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    _rcache_set(rkey, pricing, ttl=600)
+    try:
+        db = _direct_db()
+        db.execute(
+            "INSERT INTO pricing_cache (query, pricing) VALUES (%s, %s::jsonb) "
+            "ON CONFLICT (query) DO UPDATE SET pricing=EXCLUDED.pricing, created_at=%s",
+            (query, json.dumps(pricing), _now_ms()),
+        )
+        db.commit()
+        db.close()
+    except Exception as _e:
+        log.debug("[pricing-cache] write failed: %s", _e)
+
+
+def _store_ebay_sales_bg(query: str, matched: list[dict]):
+    """
+    Persist eBay matched sold listings to ebay_sold_history for analytics.
+    Runs in a background thread. Deduplicates within the last 24 hours so
+    repeated refreshes don't double-count.
+    """
+    if not matched:
+        return
+    try:
+        db   = _direct_db()
+        now  = _now_ms()
+        cutoff = now - 86_400_000  # 24 h ago in ms
+        for item in matched:
+            sold_date = item.get("sold_date")
+            db.execute(
+                """
+                INSERT INTO ebay_sold_history (query, title, price, sold_date, score, scraped_at)
+                SELECT %s, %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ebay_sold_history
+                    WHERE query=%s AND title=%s AND scraped_at >= %s
+                )
+                """,
+                (
+                    query, item["title"], item["price"],
+                    str(sold_date) if sold_date else None,
+                    item.get("score", 0), now,
+                    query, item["title"], cutoff,
+                ),
+            )
+        db.commit()
+        db.close()
+    except Exception as _e:
+        log.debug("[ebay-history] store failed: %s", _e)
+
+
+def _load_ebay_history(query: str, days: int = 90) -> list[dict]:
+    """Load stored eBay sold listings for a query from the last `days` days."""
+    try:
+        db      = _direct_db()
+        cutoff  = datetime.date.today() - datetime.timedelta(days=days)
+        rows    = db.execute(
+            "SELECT title, price, sold_date, score "
+            "FROM ebay_sold_history "
+            "WHERE query=%s AND (sold_date IS NULL OR sold_date >= %s) "
+            "ORDER BY sold_date DESC NULLS LAST",
+            (query, str(cutoff)),
+        ).fetchall()
+        db.close()
+        result = []
+        for r in rows:
+            sd = r["sold_date"]
+            result.append({
+                "title":     r["title"],
+                "price":     r["price"],
+                "sold_date": datetime.date.fromisoformat(str(sd)) if sd else None,
+                "score":     r["score"],
+            })
+        return result
+    except Exception:
+        return []
+
+
+# ── Pricing pre-warm helpers ──────────────────────────────────────────────────
+
+_PREWARM_RATE_SLEEP = 2.5  # seconds between live eBay fetches during bulk pre-warm
+
+
+def _prewarm_pricing_for_item(qr_code: str) -> None:
+    """
+    Background worker: ensure the pricing cache is hot for one inventory item.
+    Safe to call from any thread.  Silently skips when cache is already present.
+    """
+    try:
+        db  = _direct_db()
+        row = db.execute(
+            "SELECT name, set_name, card_number, variant "
+            "FROM inventory WHERE qr_code=%s LIMIT 1",
+            (qr_code,),
+        ).fetchone()
+        db.close()
+        if not row or not (row["name"] or "").strip():
+            return
+
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+
+        # Same query-building logic as _fetch_ebay_sales
+        variant_part = variant if variant and variant.lower() not in name.lower() else ""
+        query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+
+        _, already_cached = _get_pricing_cache(query)
+        if already_cached:
+            log.debug("[prewarm] cache hot — skipping %s (%s)", qr_code, query[:60])
+            return
+
+        log.info("[prewarm] fetching eBay data for %s (%s)", qr_code, query[:60])
+        card    = {"name": name, "set": set_n, "number": number, "variant": variant}
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        if not matched:
+            log.debug("[prewarm] no listings found for %s", query[:60])
+            return
+
+        pricing = _build_price_model(matched)
+        _set_pricing_cache(query, pricing)
+        _store_ebay_sales_bg(query, matched)
+        log.info(
+            "[prewarm] cached %d listings for '%s' — median £%.2f",
+            len(matched), query[:60], pricing.get("median", 0),
+        )
+    except Exception as _e:
+        log.warning("[prewarm] error for qr=%s: %s", qr_code, _e)
+
+
+def _prewarm_all_pricing_bg() -> None:
+    """
+    Startup daemon: pre-warm the pricing cache for every item in inventory.
+
+    Strategy
+    --------
+    - Waits 30 s after boot so the server is fully initialised.
+    - Queries inventory ordered by most-recently updated first, so freshly
+      added/edited cards are warmed before older ones.
+    - Checks the two-level cache (Redis → PG) before each scrape — already-hot
+      items are skipped instantly, so re-starts/redeployments are fast.
+    - Sleeps 2.5 s between live scrapes to stay well under eBay's rate limits.
+    """
+    import time as _time
+    _time.sleep(30)
+    log.info("[prewarm] starting bulk pricing pre-warm …")
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT qr_code, name, set_name, card_number, variant "
+            "FROM inventory ORDER BY updated_at DESC NULLS LAST"
+        ).fetchall()
+        db.close()
+    except Exception as _e:
+        log.warning("[prewarm] could not load inventory: %s", _e)
+        return
+
+    total   = len(rows)
+    warmed  = 0
+    skipped = 0
+
+    for i, row in enumerate(rows, 1):
+        qr      = row["qr_code"]
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+
+        if not name:
+            skipped += 1
+            continue
+
+        variant_part = variant if variant and variant.lower() not in name.lower() else ""
+        query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+
+        try:
+            _, cached = _get_pricing_cache(query)
+            if cached:
+                skipped += 1
+                continue
+
+            log.info("[prewarm] [%d/%d] fetching '%s' …", i, total, query[:60])
+            card    = {"name": name, "set": set_n, "number": number, "variant": variant}
+            sales   = _fetch_ebay_sales(card)
+            matched = _filter_and_score(sales, card)
+            if matched:
+                pricing = _build_price_model(matched)
+                _set_pricing_cache(query, pricing)
+                _store_ebay_sales_bg(query, matched)
+                warmed += 1
+                log.info("[prewarm] [%d/%d] done — median £%.2f", i, total, pricing.get("median", 0))
+
+        except Exception as _ie:
+            log.warning("[prewarm] item %s error: %s", qr, _ie)
+
+        _time.sleep(_PREWARM_RATE_SLEEP)
+
+    log.info(
+        "[prewarm] complete — %d warmed, %d already cached (skipped), %d total",
+        warmed, skipped, total,
+    )
+
+
+def _prewarm_lang_all_bg() -> None:
+    """
+    Startup daemon: pre-warm the language pricing cache for every inventory item.
+
+    Runs 10 minutes after boot so the EN pre-warm has had a head start and
+    eBay rate limits are not doubled up.  Sleeps 5 s between items.
+
+    Skips any item whose language cache key already exists in Redis.
+    """
+    import time as _time
+    _time.sleep(600)   # let EN pre-warm finish first
+    log.info("[lang-prewarm] starting language pricing pre-warm …")
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT name, set_name, card_number, variant "
+            "FROM inventory WHERE name IS NOT NULL AND name != '' "
+            "ORDER BY updated_at DESC NULLS LAST"
+        ).fetchall()
+        db.close()
+    except Exception as _e:
+        log.warning("[lang-prewarm] could not load inventory: %s", _e)
+        return
+
+    total = len(rows)
+    done  = 0
+
+    for i, row in enumerate(rows, 1):
+        name    = (row["name"]        or "").strip()
+        set_n   = (row["set_name"]    or "").strip()
+        number  = (row["card_number"] or "").strip()
+        variant = (row["variant"]     or "").strip()
+        if not name:
+            continue
+
+        card = {"name": name, "set": set_n, "number": number, "variant": variant}
+        rkey = "lang_pricing:" + hashlib.md5(
+            json.dumps(
+                {k: (card.get(k) or "").lower()
+                 for k in ("name", "set", "number", "variant")},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+
+        if _rcache_get(rkey):
+            log.debug("[lang-prewarm] [%d/%d] cached — skip '%s'", i, total, name[:40])
+            continue
+
+        try:
+            log.info("[lang-prewarm] [%d/%d] fetching '%s' …", i, total, name[:40])
+            lang_codes = list(_LANG_QUERY_SUFFIXES.keys())
+            suffixes   = list(_LANG_QUERY_SUFFIXES.values())
+
+            with _TPE(max_workers=5) as pool:
+                fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+                fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+                en_model  = fut_en.result()
+                lang_models = [f.result() for f in fut_langs]
+
+            en_med = en_model.get("market") or 0
+
+            def _pct_off_pw(model: dict, _em: float = en_med):
+                m = model.get("market")
+                if not m or not _em:
+                    return None
+                return max(0, round((1 - m / _em) * 100))
+
+            result: dict = {
+                "card": card,
+                "en":   {"median": en_model.get("market"),
+                         "count":  en_model.get("sample_size", 0)},
+            }
+            for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+                result[code] = {
+                    "median":  model.get("market"),
+                    "count":   model.get("sample_size", 0),
+                    "pct_off": _pct_off_pw(model),
+                }
+
+            _rcache_set(rkey, result, ttl=600)
+            done += 1
+            log.info("[lang-prewarm] [%d/%d] done for '%s'", i, total, name[:40])
+
+        except Exception as _ie:
+            log.warning("[lang-prewarm] error for '%s': %s", name[:40], _ie)
+
+        _time.sleep(5)   # 5 s between items, rate-limit safe
+
+    log.info("[lang-prewarm] complete — %d items processed of %d total", done, total)
+
+
+# ── GET /api/v1/pricing/intelligent ─────────────────────────────────────────
+
+@app.route("/api/v1/pricing/intelligent", methods=["GET"])
+@require_api_token
+def api_pricing_intelligent():
+    """
+    Intelligent market-price lookup combining:
+      1. Optional multi-language input normalisation (Google Translate)
+      2. eBay sold-listing scraper (6 pages, 90-day window, parallel, cached)
+      3. Score-based listing filter (name/set/number matching)
+      4. Outlier-robust price model (median, avg, confidence)
+
+    Query params:
+      name     — card name  (required)
+      set      — set name   (optional)
+      number   — card number (optional)
+      variant  — card variant, e.g. "Rainbow Rare", "GX", "Holo" (optional)
+      grade    — "raw" | "psa10" | "psa9" etc. (default "raw")
+      lang     — input language ISO code, e.g. "ja", "de" (default "en")
+      refresh  — set "1" to bypass cache and force a fresh eBay fetch
+
+    Returns:
+      { card, query, pricing, periods, trend, top_matches, canonical, input_name }
+    """
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    grade   = (request.args.get("grade") or "raw").strip().lower()
+    lang    = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # ── Step 1: translate non-English input to English ────────────────────────
+    card = _translate_card_input(
+        {
+            "name":    name,
+            "set":     set_n    or None,
+            "number":  number   or None,
+            "variant": variant  or None,
+            "grade":   grade,
+        },
+        lang,
+    )
+
+    # ── Step 2: canonical name normalisation via PokéAPI name index ──────────
+    # Corrects typos and non-canonical spellings before hitting eBay.
+    # e.g. "Chrizard" → "Charizard", "Genger" → "Gengar"
+    canon_match = None
+    english_name = (card.get("name") or "").strip()
+    if english_name:
+        _ensure_pokeapi_names()
+        canon_match = _normalize_to_canonical(english_name, threshold=72)
+        if canon_match and not canon_match["exact"]:
+            # Swap in the corrected name; preserve original for response transparency
+            card = {**card, "name": canon_match["canonical"]}
+            log.debug(
+                "[pricing] canonical correction: %r → %r (score %.2f)",
+                english_name, canon_match["canonical"], canon_match["score"],
+            )
+
+    # ── Step 3: build eBay query string ───────────────────────────────────────
+    query = " ".join(filter(None, [
+        card.get("name"), card.get("number"), card.get("set")
+    ])).strip()
+
+    # ── Step 4: check cache ───────────────────────────────────────────────────
+    pricing    = None
+    matched    = []
+    from_cache = False
+    if not refresh:
+        pricing, from_cache = _get_pricing_cache(query)
+
+    # ── Step 5: live eBay scrape ──────────────────────────────────────────────
+    if not pricing:
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        pricing = _build_price_model(matched)
+        _bg(_set_pricing_cache, query, pricing)
+        _bg(_store_ebay_sales_bg, query, matched)
+
+    return jsonify({
+        "card":             card,
+        "query":            query,
+        "pricing":          pricing,
+        "from_cache":       from_cache,
+        "top_matches":      matched[:5] if matched else [],
+        "canonical":        canon_match,        # name correction info (or null)
+        "input_name":       english_name,       # original name before correction
+    })
+
+
+@app.route("/api/v1/pricing/cache/<path:query_path>", methods=["DELETE"])
+@require_admin
+def api_pricing_cache_delete(query_path):
+    """Delete a cached price model so the next request fetches fresh data."""
+    query = urllib.parse.unquote(query_path)
+    rkey  = f"hv:pricing:{hashlib.md5(query.encode()).hexdigest()}"
+    _rcache_del(rkey)
+    try:
+        db = get_db()
+        db.execute("DELETE FROM pricing_cache WHERE query=%s", (query,))
+        db.commit()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "invalidated": query})
+
+
+# ── GET /api/v1/pricing/history ───────────────────────────────────────────────
+
+@app.route("/api/v1/pricing/history", methods=["GET"])
+@require_api_token
+def api_pricing_history():
+    """
+    Full 90-day eBay price history for a card with period breakdowns and trend.
+
+    Loads from the ebay_sold_history table first (zero eBay calls if data exists).
+    Falls back to a live scrape when no stored history is found.
+
+    Query params:
+      name     — card name (required)
+      set      — set name (optional)
+      number   — card number (optional)
+      variant  — e.g. "Rainbow Rare", "GX" (optional)
+      lang     — input language ISO code (default "en")
+      refresh  — "1" to force a live re-scrape even if stored data exists
+
+    Returns:
+      {
+        card, query, periods: {7d, 30d, 90d, all}, trend,
+        sold_listings: [{title, price, sold_date, score}],
+        data_source: "stored" | "live",
+        total_listings: int
+      }
+    """
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    lang    = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # Translate + canonicalise
+    card = _translate_card_input(
+        {"name": name, "set": set_n or None, "number": number or None,
+         "variant": variant or None},
+        lang,
+    )
+    _ensure_pokeapi_names()
+    canon = _normalize_to_canonical((card.get("name") or ""), threshold=72)
+    if canon and not canon["exact"]:
+        card = {**card, "name": canon["canonical"]}
+
+    query = " ".join(filter(None, [
+        card.get("name"), card.get("variant"), card.get("number"), card.get("set")
+    ])).strip()
+
+    # Try stored history first (unless refresh forced)
+    matched     = []
+    data_source = "stored"
+    if not refresh:
+        matched = _load_ebay_history(query, days=90)
+
+    # Fall back to live scrape when nothing stored
+    if not matched:
+        data_source = "live"
+        sales   = _fetch_ebay_sales(card)
+        matched = _filter_and_score(sales, card)
+        if matched:
+            _bg(_store_ebay_sales_bg, query, matched)
+
+    # Build period models
+    periods = {
+        "7d":  _build_period_model(matched, 7),
+        "30d": _build_period_model(matched, 30),
+        "90d": _build_period_model(matched, 90),
+        "all": _build_price_model(matched),
+    }
+    trend = _calc_price_trend(matched)
+
+    # Serialise sold_date for JSON
+    listings = [
+        {
+            "title":     m["title"],
+            "price":     m["price"],
+            "sold_date": str(m["sold_date"]) if m.get("sold_date") else None,
+            "score":     m.get("score", 0),
+        }
+        for m in sorted(matched, key=lambda x: x.get("sold_date") or datetime.date.min, reverse=True)
+    ]
+
+    return jsonify({
+        "card":           card,
+        "query":          query,
+        "periods":        periods,
+        "trend":          trend,
+        "sold_listings":  listings,
+        "total_listings": len(listings),
+        "data_source":    data_source,
+        "canonical":      canon,
+    })
+
+
+# ── GET /api/v1/pricing/language ──────────────────────────────────────────────
+
+@app.route("/api/v1/pricing/language", methods=["GET"])
+@require_api_token
+def api_pricing_language():
+    """
+    Real market-based language pricing for a Pokémon card.
+
+    Fires 5 parallel eBay scrapes (EN + JP + KR + CN/Simplified +
+    TW/Traditional Chinese) then calculates each language's actual median
+    sold price and percentage discount vs the English baseline.
+
+    Results are cached in Redis for 10 minutes so repeat views are instant.
+
+    Query params:
+      name     — card name (required)
+      set      — set name (optional)
+      number   — card number (optional)
+      variant  — card variant e.g. "Rainbow Rare" (optional)
+      lang     — input language ISO code (default "en")
+      refresh  — "1" to skip cache and force fresh eBay scrapes
+
+    Returns:
+      {
+        card, data_source,
+        en: {median, count, query},
+        jp: {median, count, pct_off, query},
+        kr: {median, count, pct_off, query},
+        cn: {median, count, pct_off, query},
+        tw: {median, count, pct_off, query},
+      }
+    """
+    name    = (request.args.get("name") or "").strip()
+    set_n   = (request.args.get("set") or "").strip()
+    number  = (request.args.get("number") or "").strip()
+    variant = (request.args.get("variant") or "").strip()
+    lang    = (request.args.get("lang") or "en").strip().lower()
+    refresh = request.args.get("refresh", "0") == "1"
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    # Translate + canonicalise
+    card = _translate_card_input(
+        {"name": name, "set": set_n or None, "number": number or None,
+         "variant": variant or None},
+        lang,
+    )
+    _ensure_pokeapi_names()
+    canon = _normalize_to_canonical((card.get("name") or ""), threshold=72)
+    if canon and not canon["exact"]:
+        card = {**card, "name": canon["canonical"]}
+
+    # Cache key — shared across all callers for the same card
+    rkey = "lang_pricing:" + hashlib.md5(
+        json.dumps(
+            {k: (card.get(k) or "").lower()
+             for k in ("name", "set", "number", "variant")},
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+    if not refresh:
+        cached = _rcache_get(rkey)
+        if cached:
+            return jsonify({**cached, "data_source": "cached"})
+
+    # EN + 4 language eBay scrapes — all in parallel
+    lang_codes = list(_LANG_QUERY_SUFFIXES.keys())   # jp, kr, cn, tw
+    suffixes   = list(_LANG_QUERY_SUFFIXES.values())
+
+    with _TPE(max_workers=5) as pool:
+        fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+        fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+        en_model  = fut_en.result()
+        lang_models = [f.result() for f in fut_langs]
+
+    en_med = en_model.get("market") or 0
+
+    def _pct_off(model: dict):
+        m = model.get("market")
+        if not m or not en_med:
+            return None
+        return max(0, round((1 - m / en_med) * 100))
+
+    en_query = " ".join(filter(None, [
+        card.get("name"), card.get("number"), card.get("set"), "pokemon"
+    ]))
+
+    result: dict = {
+        "card": card,
+        "en":   {
+            "median": en_model.get("market"),
+            "count":  en_model.get("sample_size", 0),
+            "query":  en_query,
+        },
+    }
+
+    for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+        result[code] = {
+            "median":  model.get("market"),
+            "count":   model.get("sample_size", 0),
+            "pct_off": _pct_off(model),
+            "query":   " ".join(filter(None, [
+                card.get("name"), suffix,
+                card.get("number"), card.get("set"), "pokemon",
+            ])),
+        }
+
+    _rcache_set(rkey, result, ttl=600)
+
+    return jsonify({**result, "data_source": "live"})
+
+
+# ── GET /api/v1/pokeapi/normalize ─────────────────────────────────────────────
+
+@app.route("/api/v1/pokeapi/normalize", methods=["GET"])
+def api_pokeapi_normalize():
+    """
+    Canonicalise any Pokémon name string using the PokéAPI species index.
+
+    Query params:
+      q         — input name (required)
+      threshold — minimum score 0–100 (default 70)
+
+    Returns:
+      { input, canonical, slug, pokedex_no, score, exact, in_stock,
+        inventory_item }
+    """
+    q         = (request.args.get("q") or "").strip()
+    threshold = int(request.args.get("threshold", 70))
+    if not q:
+        return jsonify({"error": "q is required"}), 400
+
+    _ensure_pokeapi_names()
+    match = _normalize_to_canonical(q, threshold=threshold)
+    if not match:
+        return jsonify({"input": q, "canonical": None, "score": 0, "exact": False})
+
+    # Check if the canonical name is in stock
+    db = get_db()
+    inv_row = db.execute(
+        "SELECT qr_code, name, price, stock, rarity, image_url "
+        "FROM inventory WHERE LOWER(name) LIKE %s AND stock > 0 LIMIT 1",
+        (f"%{match['canonical'].lower()}%",),
+    ).fetchone()
+
+    return jsonify({
+        "input":          q,
+        "canonical":      match["canonical"],
+        "slug":           match["slug"],
+        "pokedex_no":     match["pokedex_no"],
+        "score":          match["score"],
+        "exact":          match["exact"],
+        "in_stock":       inv_row is not None,
+        "inventory_item": dict(inv_row) if inv_row else None,
+        "sprite_url": (
+            f"https://raw.githubusercontent.com/PokeAPI/sprites/master/"
+            f"sprites/pokemon/other/official-artwork/{match['pokedex_no']}.png"
+        ),
+    })
+
+
+# ── POST /api/v1/pokeapi/names/refresh ───────────────────────────────────────
+
+@app.route("/api/v1/pokeapi/names/refresh", methods=["POST"])
+@require_admin
+def api_pokeapi_names_refresh():
+    """
+    Force a fresh fetch of all Pokémon species names from PokéAPI.
+    Runs in the background — returns immediately.
+    """
+    global _pokeapi_names_ready
+    with _pokeapi_names_lock:
+        _pokeapi_names_ready = False   # mark stale so _ensure_pokeapi_names re-fetches
+
+    def _do_refresh():
+        count = _pokeapi_fetch_and_store()
+        if count:
+            entries = _load_pokeapi_names_from_db()
+            global _pokeapi_names_list, _pokeapi_names_strs, _pokeapi_names_ready
+            with _pokeapi_names_lock:
+                _pokeapi_names_list  = entries
+                _pokeapi_names_strs  = [e["name"] for e in entries]
+                _pokeapi_names_ready = True
+            log.info("[pokeapi] refresh complete: %d names", count)
+
+    _bg(_do_refresh)
+    return jsonify({"ok": True, "message": "Refresh started in background"})
+
+
+# ---------------------------------------------------------------------------
+# 10. Storefront sync queue — GET/POST /api/v1/sync/pending
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/sync/pending", methods=["GET"])
+@require_api_token
+def api_sync_pending():
+    """
+    Returns unsynced stock/price changes for the storefront to pull.
+    Optional ?limit=N (default 100, max 500).
+    """
+    limit = min(int(request.args.get("limit", 100)), 500)
+    db    = get_db()
+    rows  = db.execute(
+        "SELECT id, qr_code, change_type, delta, created_at "
+        "FROM unsynced_changes WHERE synced = 0 ORDER BY id ASC LIMIT %s",
+        (limit,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/sync/ack", methods=["POST"])
+@require_api_token
+def api_sync_ack():
+    """
+    Mark one or more unsynced_changes rows as synced.
+    Body: { "ids": [1, 2, 3] }
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    ids  = [int(i) for i in (body.get("ids") or []) if str(i).isdigit()]
+    if not ids:
+        return jsonify({"error": "ids array required"}), 400
+    db = get_db()
+    db.execute(
+        "UPDATE unsynced_changes SET synced=1 WHERE id = ANY(%s::bigint[])",
+        (ids,),
+    )
+    db.commit()
+    return jsonify({"ok": True, "acked": len(ids)})
+
+
+def _warmup_smart_scanner():
+    """Pre-load the smart scanner index in the background so the first scan is fast."""
+    try:
+        db = _direct_db()
+        _smart_scanner.smart_scan("__warmup__", db)
+        db.close()
+        log.info("[smart-scan] Index warmed up at startup")
+    except Exception as e:
+        log.warning("[smart-scan] Warm-up failed (non-fatal): %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Embeddings management
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/embeddings/rebuild", methods=["POST"])
+@require_admin
+def api_embeddings_rebuild():
+    """
+    Admin: queue background embedding jobs for every card that has no vector yet
+    (or all cards when ?force=1 is passed).  Returns immediately; embedding
+    happens in background threads so it never blocks the server.
+
+    POST /api/v1/embeddings/rebuild
+    POST /api/v1/embeddings/rebuild?force=1   # re-embed all cards
+    """
+    if not _PGVECTOR_AVAILABLE:
+        return jsonify({"error": "pgvector extension not available"}), 503
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    force = request.args.get("force", "0") == "1"
+    db    = get_db()
+
+    if force:
+        rows = db.execute("SELECT qr_code FROM inventory").fetchall()
+    else:
+        rows = db.execute(
+            "SELECT qr_code FROM inventory WHERE card_vector IS NULL"
+        ).fetchall()
+
+    queued = 0
+    for r in rows:
+        _bg(_embed_card_bg, r["qr_code"])
+        queued += 1
+
+    log.info("[embed] Rebuild queued %d cards (force=%s)", queued, force)
+    return jsonify({"queued": queued, "force": force}), 202
+
+
+@app.route("/api/v1/embeddings/status", methods=["GET"])
+@require_admin
+def api_embeddings_status():
+    """Return counts of embedded vs total cards."""
+    if not _PGVECTOR_AVAILABLE:
+        return jsonify({"pgvector": False}), 200
+    db    = get_db()
+    total = db.execute("SELECT COUNT(*) AS n FROM inventory").fetchone()["n"]
+    done  = db.execute(
+        "SELECT COUNT(*) AS n FROM inventory WHERE card_vector IS NOT NULL"
+    ).fetchone()["n"]
+    return jsonify({
+        "pgvector":      True,
+        "total":         total,
+        "embedded":      done,
+        "pending":       total - done,
+        "coverage_pct":  round(done / total * 100, 1) if total else 0,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -9407,7 +13583,11 @@ def market_price():
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
-    threading.Thread(target=sync_inventory_from_cloud, daemon=True).start()
+    threading.Thread(target=sync_inventory_from_cloud,  daemon=True).start()
+    threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
+    threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
+    threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
+    threading.Thread(target=_prewarm_lang_all_bg,       daemon=True, name="lang-prewarm").start()
     _cleanup_scan_queue()
-    log.info("[server] Starting HanryxVault POS on http://0.0.0.0:8080")
+    log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
