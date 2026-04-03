@@ -1,0 +1,31 @@
+mpose.yml logs pos --tail=30
+pos-1  |     db = _direct_db()
+pos-1  |          ^^^^^^^^^^^^
+pos-1  |   File "/app/server.py", line 521, in _direct_db
+pos-1  |     return _PgConn(_get_pool().getconn())
+pos-1  |                    ^^^^^^^^^^^
+pos-1  |   File "/app/server.py", line 471, in _get_pool
+pos-1  |     _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL)
+pos-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 161, in __init__
+pos-1  |     AbstractConnectionPool.__init__(
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 59, in __init__
+pos-1  |     self._connect()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 63, in _connect
+pos-1  |     conn = psycopg2.connect(*self._args, **self._kwargs)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/psycopg2/__init__.py", line 122, in connect
+pos-1  |     conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  | psycopg2.OperationalError: could not translate host name "0202@pgbouncer" to address: Name or service not known
+pos-1  |
+pos-1  | {"ts":"2026-04-03T02:49:33","level":"WARNING","logger":"hanryxvault","msg":"[smart-scan] Warm-up failed (non-fatal): could not translate host name \"0202@pgbouncer\" to address: Name or service not known\n"}
+pos-1  | [2026-04-03 02:49:33 +0000] [1] [INFO] Control socket listening at /root/.gunicorn/gunicorn.ctl
+pos-1  | /opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+pos-1  |   monkey.patch_all()
+pos-1  | /opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+pos-1  |   monkey.patch_all()
+pos-1  | /opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+pos-1  |   monkey.patch_all()
+pos-1  | /opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+pos-1  |   monkey.patch_all(
