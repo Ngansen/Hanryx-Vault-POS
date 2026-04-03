@@ -1,0 +1,303 @@
+ser)@127.0.0.1:44676 no such user: postgres
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
+pgbouncer-1  | 2026-04-03 02:37:48.100 UTC [1] LOG C-0x7fffb0069280: (nodb)/(nouser)@127.0.0.1:47110 no such user: postgres
+pos-1        | Traceback (most recent call last):
+pos-1        |   File "/opt/venv/bin/gunicorn", line 8, in <module>
+pos-1        |     sys.exit(run())
+pos-1        |              ^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+pos-1        |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 235, in run
+pos-1        |     super().run()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 71, in run
+pos-1        |     Arbiter(self).run()
+pos-1        |     ^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1        |     self.setup(app)
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1        |     self.app.wsgi()
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1        |     self.callable = self.load()
+pos-1        |                     ^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1        |     return self.load_wsgiapp()
+pos-1        |            ^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1        |     return util.import_app(self.app_uri)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1        |     mod = importlib.import_module(module)
+pos-1        |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1        |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1        |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1        |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1        |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1        |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+pos-1        |   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+pos-1        |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1        |   File "/app/server.py", line 5399
+pos-1        |     )
+pos-1        |     ^
+pos-1        | SyntaxError: f-string expression part cannot include a backslash
+pos-1 exited with code 1 (restarting)
