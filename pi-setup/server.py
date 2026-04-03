@@ -6515,6 +6515,11 @@ def _admin_nav(active: str = "dashboard") -> str:
     )
 
 
+def _admin_css() -> str:
+    """Return a <style> block containing the shared admin stylesheet."""
+    return f"<style>{_ADMIN_BASE_CSS}</style>"
+
+
 # ---------------------------------------------------------------------------
 # System stats / logs API endpoints
 # ---------------------------------------------------------------------------
@@ -13057,7 +13062,7 @@ def _prewarm_pricing_for_item(qr_code: str) -> None:
     try:
         db  = _direct_db()
         row = db.execute(
-            "SELECT name, set_name, card_number, variant "
+            "SELECT name, set_code, card_number, variant "
             "FROM inventory WHERE qr_code=%s LIMIT 1",
             (qr_code,),
         ).fetchone()
@@ -13066,7 +13071,7 @@ def _prewarm_pricing_for_item(qr_code: str) -> None:
             return
 
         name    = (row["name"]        or "").strip()
-        set_n   = (row["set_name"]    or "").strip()
+        set_n   = (row["set_code"]    or "").strip()
         number  = (row["card_number"] or "").strip()
         variant = (row["variant"]     or "").strip()
 
@@ -13117,7 +13122,7 @@ def _prewarm_all_pricing_bg() -> None:
     try:
         db   = _direct_db()
         rows = db.execute(
-            "SELECT qr_code, name, set_name, card_number, variant "
+            "SELECT qr_code, name, set_code, card_number, variant "
             "FROM inventory ORDER BY updated_at DESC NULLS LAST"
         ).fetchall()
         db.close()
@@ -13132,7 +13137,7 @@ def _prewarm_all_pricing_bg() -> None:
     for i, row in enumerate(rows, 1):
         qr      = row["qr_code"]
         name    = (row["name"]        or "").strip()
-        set_n   = (row["set_name"]    or "").strip()
+        set_n   = (row["set_code"]    or "").strip()
         number  = (row["card_number"] or "").strip()
         variant = (row["variant"]     or "").strip()
 
@@ -13186,7 +13191,7 @@ def _prewarm_lang_all_bg() -> None:
     try:
         db   = _direct_db()
         rows = db.execute(
-            "SELECT name, set_name, card_number, variant "
+            "SELECT name, set_code, card_number, variant "
             "FROM inventory WHERE name IS NOT NULL AND name != '' "
             "ORDER BY updated_at DESC NULLS LAST"
         ).fetchall()
@@ -13200,7 +13205,7 @@ def _prewarm_lang_all_bg() -> None:
 
     for i, row in enumerate(rows, 1):
         name    = (row["name"]        or "").strip()
-        set_n   = (row["set_name"]    or "").strip()
+        set_n   = (row["set_code"]    or "").strip()
         number  = (row["card_number"] or "").strip()
         variant = (row["variant"]     or "").strip()
         if not name:
