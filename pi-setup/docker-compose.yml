@@ -72,7 +72,7 @@ services:
     ports:
       - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
     environment:
-      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@pgbouncer:5432/vaultpos
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
       REDIS_URL:        redis://redis:6379/0
       FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
@@ -106,8 +106,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      pgbouncer:
-        condition: service_started
       redis:
         condition: service_healthy
 
