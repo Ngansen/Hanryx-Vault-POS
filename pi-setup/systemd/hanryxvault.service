@@ -1,0 +1,49 @@
+[Unit]
+Description=HanryxVault POS Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hanryxvault
+Group=hanryxvault
+WorkingDirectory=/opt/hanryxvault
+ExecStart=/opt/hanryxvault/venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class gthread \
+    --threads 4 \
+    --bind 127.0.0.1:8080 \
+    --timeout 30 \
+    --graceful-timeout 20 \
+    --keep-alive 5 \
+    --max-requests 2000 \
+    --max-requests-jitter 200 \
+    --log-level info \
+    --access-logfile /var/log/hanryxvault/access.log \
+    --error-logfile /var/log/hanryxvault/error.log \
+    server:app
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hanryxvault
+
+# Zettle credentials — fill these in after install
+Environment=ZETTLE_CLIENT_ID=__ZETTLE_CLIENT_ID__
+Environment=ZETTLE_CLIENT_SECRET=__ZETTLE_CLIENT_SECRET__
+Environment=ZETTLE_REDIRECT_URI=https://hanryxvault.tailcfc0a3.ts.net/zettle/callback
+
+# Process priority + reliability
+OOMScoreAdjust=-500
+Nice=-5
+LimitNOFILE=65536
+MemorySwapMax=0
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/hanryxvault /var/log/hanryxvault
+
+[Install]
+WantedBy=multi-user.target

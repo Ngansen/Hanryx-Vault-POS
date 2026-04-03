@@ -1,0 +1,43 @@
+[Unit]
+Description=HanryxVault Admin Monitor (Kiosk Display)
+Documentation=https://github.com/Ngansen/HanRyx-Vault
+After=network-online.target docker.service
+Wants=network-online.target
+# Does not hard-Require docker so the monitor can still launch if Docker was
+# started another way (e.g. bare-metal systemd service).
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# ── Environment ───────────────────────────────────────────────────────────────
+Environment=HOME=/home/pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=INSTALL_DIR=/opt/hanryxvault
+Environment=PYTHON=/opt/hanryxvault/venv/bin/python3
+# Fallback to system python3 if the venv doesn't exist yet
+ExecStartPre=/bin/bash -c \
+    'test -x /opt/hanryxvault/venv/bin/python3 || \
+     sed -i "s|PYTHON=.*|PYTHON=$(command -v python3)|" \
+     /etc/systemd/system/hanryxvault-kiosk.service'
+
+# ── Display ───────────────────────────────────────────────────────────────────
+# xinit starts a bare X server on virtual terminal 7 (below the default getty
+# VTs 1-6).  -nocursor hides the hardware cursor at the X driver level.
+# -nolisten tcp blocks remote X connections for security.
+ExecStart=/usr/bin/xinit \
+    /opt/hanryxvault/kiosk/start-monitor.sh \
+    -- :0 vt7 -nocursor -nolisten tcp -dpms
+
+# ── Reliability ───────────────────────────────────────────────────────────────
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hanryxvault-kiosk
+
+[Install]
+WantedBy=graphical.target
