@@ -5,7 +5,7 @@ services:
   #   vaultpos   — Flask POS server (inventory, sales, scan queue, etc.)
   #   storefront — HanRyx-Vault public storefront (products, orders, users)
   db:
-    image: postgres:16-bookworm
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB:       vaultpos
@@ -20,6 +20,45 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Redis — cross-worker pub/sub (SSE) + shared L2 cache ─────────────────────
+  # Scan events published here so all gunicorn workers see them instantly.
+  # Also used as a shared TTL cache in front of PostgreSQL.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── PgBouncer — connection pooler ────────────────────────────────────────────
+  # Sits between Flask and PostgreSQL in transaction-pooling mode.
+  # Keeps PostgreSQL connection count low (Pi 5 RAM-friendly) while Flask can
+  # open as many short-lived client connections as it needs.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      POOL_MODE:         transaction
+      MAX_CLIENT_CONN:   200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE:     5
+      RESERVE_POOL_SIZE: 5
+      SERVER_RESET_QUERY: DISCARD ALL
+      LOG_CONNECTIONS:   "0"
+      LOG_DISCONNECTIONS: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Flask POS server ──────────────────────────────────────────────────────────
   # Handles: tablet POS, admin dashboard, scan queue, Zettle, BT receipt printer
   # Accessible: LAN (port 8080) + Tailscale VPN hostname
@@ -30,7 +69,8 @@ services:
     ports:
       - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
     environment:
-      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@pgbouncer:5432/vaultpos
+      REDIS_URL:        redis://redis:6379/0
       FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
 
@@ -63,13 +103,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
   # Public-facing React + Express customer website with PayPal checkout.
   # nginx routes the public domain to this service on port 3000.
   # Cloned from https://github.com/Ngansen/HanRyx-Vault at build time.
   storefront:
-    build: ./services/storefront
+    build:
+      context: ./services/storefront
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"   # nginx proxies the public domain here
