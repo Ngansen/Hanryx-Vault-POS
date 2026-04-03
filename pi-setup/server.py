@@ -12720,87 +12720,147 @@ def _parse_ebay_date(raw: str) -> "datetime.date | None":
     return None
 
 
-def _fetch_ebay_page(query: str, page: int) -> str:
+
+# ---------------------------------------------------------------------------
+# eBay Finding API — replaces HTML scraping
+# ---------------------------------------------------------------------------
+# Set EBAY_APP_ID (Client ID) and EBAY_CERT_ID (Client Secret) in .env
+# The Finding API only needs EBAY_APP_ID; EBAY_CERT_ID is used to auto-fetch
+# OAuth tokens for the Browse API if needed in future.
+# ---------------------------------------------------------------------------
+
+_EBAY_APP_ID  = os.environ.get("EBAY_APP_ID", "")
+_EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID", "")
+_EBAY_FINDING_URL = "https://svcs.ebay.com/services/search/FindingService/v1"
+
+# Thread-safe OAuth token cache
+_ebay_token_lock  = threading.Lock()
+_ebay_token_cache: dict = {}   # {"token": str, "expires": float}
+
+
+def _ebay_app_token() -> str:
     """
-    Fetch one page of eBay completed/sold listings filtered to the last 90 days.
-    _dcat=183050 narrows to the 'Pokémon Individual Cards' category.
-    _ipg=240 requests 240 results per page (eBay max).
+    Return a valid eBay OAuth application token, refreshing when expired.
+    Uses the Client Credentials Grant (no user interaction needed).
+    Returns "" when credentials are not configured.
     """
-    if not _BS4_OK:
+    if not _EBAY_APP_ID or not _EBAY_CERT_ID:
         return ""
-    url = (
-        "https://www.ebay.com/sch/i.html"
-        f"?_nkw={urllib.parse.quote(query)}"
-        f"&_pgn={page}"
-        "&LH_Sold=1"
-        "&LH_Complete=1"
-        "&_dcat=183050"      # Pokémon Individual Cards category
-        "&_sadis=90"         # sold within last 90 days
-        "&_ipg=240"          # max items per page
-    )
-    try:
-        r = _requests.get(
-            url, timeout=12,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        )
-        r.raise_for_status()
-        return r.text
-    except Exception as _e:
-        log.debug("[ebay] page %d fetch failed: %s", page, _e)
-        return ""
-
-
-def _parse_ebay_page(html: str) -> list[dict]:
-    """Parse one page of eBay sold-listing HTML into [{title, price, sold_date}]."""
-    if not html:
-        return []
-    soup  = _BS4(html, "lxml")
-    items = []
-    for el in soup.select(".s-item"):
-        title_el = el.select_one(".s-item__title")
-        price_el = el.select_one(".s-item__price")
-        if not title_el or not price_el:
-            continue
-        title_text = title_el.get_text(strip=True)
-        if title_text.lower() in ("shop on ebay", ""):
-            continue
-
-        # Price — take the first number when a range like "$1.50 to $3.00" is shown
-        price_str = re.sub(r"[^0-9.]", "", price_el.get_text().split("to")[0])
+    with _ebay_token_lock:
+        if _ebay_token_cache.get("token") and time.time() < _ebay_token_cache.get("expires", 0) - 60:
+            return _ebay_token_cache["token"]
         try:
-            price = float(price_str)
-        except (ValueError, TypeError):
-            continue
-        if price <= 0:
-            continue
+            import base64 as _b64
+            creds = _b64.b64encode(f"{_EBAY_APP_ID}:{_EBAY_CERT_ID}".encode()).decode()
+            r = _requests.post(
+                "https://api.ebay.com/identity/v1/oauth2/token",
+                headers={
+                    "Authorization": f"Basic {creds}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data="grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            _ebay_token_cache["token"]   = data["access_token"]
+            _ebay_token_cache["expires"] = time.time() + int(data.get("expires_in", 7200))
+            log.info("[ebay] OAuth token refreshed, expires in %ss", data.get("expires_in"))
+            return _ebay_token_cache["token"]
+        except Exception as _e:
+            log.warning("[ebay] token refresh failed: %s", _e)
+            return ""
 
-        # Sold date — eBay shows it in various span classes
-        sold_date = None
-        for sel in (
-            ".s-item__ended-date",
-            ".s-item__title--tag .POSITIVE",
-            ".SECONDARY_INFO",
-            "[class*='sold-date']",
-        ):
-            date_el = el.select_one(sel)
-            if date_el:
-                sold_date = _parse_ebay_date(date_el.get_text(strip=True))
-                if sold_date:
-                    break
 
-        items.append({
-            "title":     title_text,
-            "price":     price,
-            "sold_date": sold_date,      # datetime.date | None
-        })
-    return items
+def _ebay_finding_page(query: str, page: int) -> list[dict]:
+    """
+    Fetch one page of eBay completed/sold listings via the Finding API.
+    Returns [{title, price, sold_date}] — no HTML parsing needed.
+
+    Category 183050 = Pokémon Individual Cards.
+    Falls back to empty list when EBAY_APP_ID is not set.
+    """
+    if not _EBAY_APP_ID:
+        log.debug("[ebay] EBAY_APP_ID not set — skipping API call")
+        return []
+
+    params = {
+        "OPERATION-NAME":          "findCompletedItems",
+        "SERVICE-VERSION":         "1.0.0",
+        "SECURITY-APPNAME":        _EBAY_APP_ID,
+        "RESPONSE-DATA-FORMAT":    "JSON",
+        "REST-PAYLOAD":            "",
+        "keywords":                query,
+        "categoryId":              "183050",
+        "itemFilter(0).name":      "SoldItemsOnly",
+        "itemFilter(0).value":     "true",
+        "itemFilter(1).name":      "ListingType",
+        "itemFilter(1).value(0)":  "FixedPrice",
+        "itemFilter(1).value(1)":  "Auction",
+        "itemFilter(1).value(2)":  "AuctionWithBIN",
+        "paginationInput.pageNumber":     str(page),
+        "paginationInput.entriesPerPage": "100",
+        "sortOrder":               "EndTimeSoonest",
+    }
+    try:
+        r = _requests.get(_EBAY_FINDING_URL, params=params, timeout=12)
+        r.raise_for_status()
+        data = r.json()
+        resp = data.get("findCompletedItemsResponse", [{}])[0]
+        search = resp.get("searchResult", [{}])[0]
+        raw_items = search.get("item", [])
+    except Exception as _e:
+        log.debug("[ebay] finding API page %d failed: %s", page, _e)
+        return []
+
+    results = []
+    for it in raw_items:
+        try:
+            title = (it.get("title") or [""])[0]
+            if not title:
+                continue
+
+            # Price
+            selling = (it.get("sellingStatus") or [{}])[0]
+            cp      = (selling.get("currentPrice") or [{}])[0]
+            price   = float(cp.get("__value__", 0))
+            if price <= 0:
+                continue
+
+            # Only include items that actually sold
+            state = (selling.get("sellingState") or [""])[0].lower()
+            if "sales" not in state and "sold" not in state:
+                continue
+
+            # End time → sold date
+            listing  = (it.get("listingInfo") or [{}])[0]
+            end_raw  = (listing.get("endTime") or [""])[0]
+            sold_date = None
+            if end_raw:
+                try:
+                    sold_date = datetime.datetime.fromisoformat(
+                        end_raw.replace("Z", "+00:00")
+                    ).date()
+                except Exception:
+                    pass
+
+            results.append({"title": title, "price": price, "sold_date": sold_date})
+        except Exception:
+            continue
+    return results
+
+
+# Keep these thin wrappers so existing call-sites (_fetch_ebay_sales, etc.) work unchanged
+def _fetch_ebay_page(query: str, page: int) -> list:
+    """Compatibility shim — now returns a list[dict] via the Finding API."""
+    return _ebay_finding_page(query, page)
+
+
+def _parse_ebay_page(raw) -> list[dict]:
+    """Compatibility shim — raw is already a list[dict] from _fetch_ebay_page."""
+    if isinstance(raw, list):
+        return raw
+    return []
 
 
 _LANG_QUERY_SUFFIXES: dict[str, str] = {
@@ -12824,7 +12884,7 @@ def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
     Fetches 4 pages in parallel (enough for a representative sample).
     Returns a _build_price_model dict.  market=None when no listings found.
     """
-    if not _BS4_OK:
+    if not _EBAY_APP_ID:
         return {"market": None, "sample_size": 0}
 
     name   = (card.get("name") or "").strip()
@@ -12864,7 +12924,7 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
     in the card name — e.g. "Charizard" + "Rainbow Rare" → distinct results
     from just "Charizard", while "Charizard VMAX" + "VMAX" skips the duplicate.
     """
-    if not _BS4_OK:
+    if not _EBAY_APP_ID:
         return []
     name    = (card.get("name") or "").strip()
     number  = (card.get("number") or "").strip()
