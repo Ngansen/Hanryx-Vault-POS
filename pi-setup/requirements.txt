@@ -53,8 +53,8 @@ pgvector>=0.3.0
 # python-escpos>=3.0  # uncomment if you want the higher-level API
 
 # CLIP + FAISS — visual card identification engine
-# PyTorch CPU-only (lighter, no CUDA needed on Pi 5)
---extra-index-url https://download.pytorch.org/whl/cpu
+# Use standard PyPI torch wheels — they include ARM64 (Pi 5) builds.
+# Do NOT add --extra-index-url pytorch whl/cpu here; those are x86-only.
 torch>=2.1.0
 torchvision>=0.16.0
 clip @ git+https://github.com/openai/CLIP.git
