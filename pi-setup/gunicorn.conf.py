@@ -20,6 +20,17 @@ errorlog   = "-"
 preload_app = True
 
 
+def on_starting(server):
+    """Initialise the database schema once before workers are forked."""
+    try:
+        from server import init_db, _load_tokens_from_db
+        init_db()
+        _load_tokens_from_db()
+        server.log.info("DB schema initialised successfully")
+    except Exception as _e:
+        server.log.warning("DB init error (will retry on first request): %s", _e)
+
+
 def post_fork(server, worker):
     """Start background threads inside each worker process after fork().
 

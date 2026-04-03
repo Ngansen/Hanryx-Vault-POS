@@ -1,0 +1,32 @@
+s
+ngansen@hanryxvault:~ $ docker compose -f ~/hanryx-vault-pos/pi-setup/docker-compose.yml logs pos --tail=30
+pos-1  |     self.run()
+pos-1  |   File "/usr/local/lib/python3.11/threading.py", line 982, in run
+pos-1  |     self._target(*self._args, **self._kwargs)
+pos-1  |   File "/app/server.py", line 2371, in sync_inventory_from_cloud
+pos-1  |     count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+pos-1  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/app/server.py", line 488, in execute
+pos-1  |     cur.execute(sql.replace("?", "%s"), params or ())
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/psycopg2/extras.py", line 146, in execute
+pos-1  |     return super().execute(query, vars)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  | psycopg2.errors.UndefinedTable: relation "inventory" does not exist
+pos-1  | LINE 1: SELECT COUNT(*) FROM inventory
+pos-1  |                              ^
+pos-1  |
+pos-1  | Exception ignored in thread started by: <bound method Thread._bootstrap of <Thread(Thread-1 (sync_inventory_from_cloud), started daemon 140735264256416)>>
+pos-1  | Traceback (most recent call last):
+pos-1  |   File "/usr/local/lib/python3.11/threading.py", line 1002, in _bootstrap
+pos-1  |     self._bootstrap_inner()
+pos-1  |   File "/usr/local/lib/python3.11/threading.py", line 1049, in _bootstrap_inner
+pos-1  |     self._delete()
+pos-1  |   File "/usr/local/lib/python3.11/threading.py", line 1081, in _delete
+pos-1  |     del _active[get_ident()]
+pos-1  |         ~~~~~~~^^^^^^^^^^^^^
+pos-1  | KeyError: 140735386150784
+pos-1  | {"ts":"2026-04-03T03:15:27","level":"WARNING","logger":"hanryxvault","msg":"[smart-scan] Could not load index: relation \"inventory\" does not exist\nLINE 1: ..., condition, item_type, card_number, variant FROM inventory ...\n                                                             ^\n"}
+pos-1  | {"ts":"2026-04-03T03:15:27","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-03T03:15:27","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: relation \"pokeapi_name_cache\" does not exist\nLINE 1: SELECT slug, name, pokedex_no FROM pokeapi_name_cache ORDER ...\n                                           ^\n"}
+pos-1  | {"ts":"2026-04-03T03:15:27","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | {"ts":"2026-04-03T03:15:27","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
