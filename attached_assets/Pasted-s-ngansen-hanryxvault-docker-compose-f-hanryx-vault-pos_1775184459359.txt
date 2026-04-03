@@ -1,0 +1,32 @@
+s
+ngansen@hanryxvault:~ $ docker compose -f ~/hanryx-vault-pos/pi-setup/docker-compose.yml logs pos --tail=30
+pos-1  |     ^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 63, in __init__
+pos-1  |     self.setup(app)
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 139, in setup
+pos-1  |     self.app.wsgi()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1  |     self.callable = self.load()
+pos-1  |                     ^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1  |     return self.load_wsgiapp()
+pos-1  |            ^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1  |     return util.import_app(self.app_uri)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1  |     mod = importlib.import_module(module)
+pos-1  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+pos-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1  |   File "/app/server.py", line 6570, in <module>
+pos-1  |     @require_auth
+pos-1  |      ^^^^^^^^^^^^
+pos-1  | NameError: name 'require_auth' is not defined. Did you mean: 'require_admin'?
