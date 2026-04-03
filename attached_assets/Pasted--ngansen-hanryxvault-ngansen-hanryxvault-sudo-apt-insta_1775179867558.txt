@@ -1,0 +1,55 @@
+
+ngansen@hanryxvault:~ $ ngansen@hanryxvault:~ $ sudo apt install git -y
+git is already the newest version (1:2.47.3-0+deb13u1).
+git set to manually installed.
+The following packages were automatically installed and are no longer required:
+  alacarte          gnome-menus  libgnome-menu-3-0  retry
+  gir1.2-gmenu-3.0  gtk-nop      python3-gi-cairo
+Use 'sudo apt autoremove' to remove them.
+
+Summary:
+  Upgrading: 0, Installing: 0, Removing: 0, Not Upgrading: 18
+-bash: ngansen@hanryxvault:~: command not found
+-bash: syntax error near unexpected token `('
+git: 'set' is not a git command. See 'git --help'.
+
+The most similar command is
+        reset
+-bash: The: command not found
+
+(alacarte:30345): Gtk-CRITICAL **: 01:29:28.875: gtk_accel_label_set_accel_closure: assertion 'gtk_accel_group_from_accel_closure (accel_closure) != NULL' failed
+
+(alacarte:30345): Gtk-CRITICAL **: 01:29:28.875: gtk_accel_label_set_accel_closure: assertion 'gtk_accel_group_from_accel_closure (accel_closure) != NULL' failed
+Traceback (most recent call last):
+  File "/usr/bin/alacarte", line 26, in <module>
+    main()
+    ~~~~^^
+  File "/usr/share/alacarte/Alacarte/MainWindow.py", line 469, in main
+    app.setMenuBasename(basename)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/usr/share/alacarte/Alacarte/MainWindow.py", line 63, in setMenuBasename
+    self.editor = MenuEditor(menu_basename)
+                  ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/usr/share/alacarte/Alacarte/MenuEditor.py", line 35, in __init__
+    self.load()
+    ~~~~~~~~~^^
+  File "/usr/share/alacarte/Alacarte/MenuEditor.py", line 48, in load
+    if not self.tree.load_sync():
+           ~~~~~~~~~~~~~~~~~~~^^
+gi.repository.GLib.GError: g-io-error-quark: Failed to look up menu_file for "gnome-menus"
+ (0)
+-bash: gir1.2-gmenu-3.0: command not found
+-bash: Use: command not found
+-bash: Summary:: command not found
+-bash: Upgrading:: command not found
+ngansen@hanryxvault:~ $ git clone https://github.com/Ngansen/Hanryx-Vault-POS.git ~/hanryx-vault-pos
+cp ~/hanryx-vault-pos/pi-setup/.env.example ~/hanryx-vault-pos/pi-setup/.env
+nano ~/hanryx-vault-pos/pi-setup/.env
+Cloning into '/home/ngansen/hanryx-vault-pos'...
+remote: Enumerating objects: 53, done.
+remote: Counting objects: 100% (53/53), done.
+remote: Compressing objects: 100% (50/50), done.
+remote: Total 53 (delta 16), reused 0 (delta 0), pack-reused 0 (from 0)
+Receiving objects: 100% (53/53), 209.41 KiB | 1.41 MiB/s, done.
+Resolving deltas: 100% (16/16), done.
+cp: cannot stat '/home/ngansen/hanryx-vault-pos/pi-setup/.env.example': No such file or directory
