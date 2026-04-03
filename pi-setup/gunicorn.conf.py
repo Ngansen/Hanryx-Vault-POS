@@ -32,16 +32,25 @@ def on_starting(server):
 
 
 def post_fork(server, worker):
-    """Start background threads inside each worker process after fork().
+    """Reset DB pool and start background threads after fork.
 
-    Threads don't survive fork(), so any thread that must run in workers
-    (not just the gunicorn master) must be started here.
-
-    The bulk pricing pre-warm is intentionally started only in the first
-    worker (arbiter ID 1) to avoid hammering eBay from every worker at boot.
-    Low-stock checker, cloud sync, and scanner warm-up run in all workers
-    because they are lightweight and idempotent.
+    psycopg2 connections are not fork-safe. With preload_app=True the pool
+    is created in the master process; each worker must discard it and open
+    fresh connections of its own.
     """
+    # ── Reset the inherited connection pool so workers get fresh connections ──
+    try:
+        import server as _srv
+        if _srv._pg_pool is not None:
+            try:
+                _srv._pg_pool.closeall()
+            except Exception:
+                pass
+            _srv._pg_pool = None
+    except Exception as _e:
+        server.log.warning("post_fork pool reset error: %s", _e)
+
+    # ── Start per-worker background threads ───────────────────────────────────
     try:
         from server import (
             sync_inventory_from_cloud,
@@ -53,7 +62,7 @@ def post_fork(server, worker):
         threading.Thread(target=sync_inventory_from_cloud,  daemon=True).start()
         threading.Thread(target=_warmup_smart_scanner,      daemon=True).start()
         threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
-        # Both pre-warm daemons only in the first worker to serialise eBay calls
+        # Pre-warm only in first worker to avoid hammering eBay from every worker
         if worker.age == 1:
             threading.Thread(
                 target=_prewarm_all_pricing_bg, daemon=True, name="pricing-prewarm"
