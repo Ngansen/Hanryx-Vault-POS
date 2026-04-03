@@ -1,0 +1,49 @@
+ngansen@hanryxvault:~ $ git -C ~/hanryx-vault-pos pull
+docker compose -f ~/hanryx-vault-pos/pi-setup/docker-compose.yml up -d --build pos
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 2), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 605 bytes | 21.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   5bc28ad..2bb7e34  main       -> origin/main
+Updating 5bc28ad..2bb7e34
+Fast-forward
+ pi-setup/server.py | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+[+] Building 1.7s (16/16) FINISHED
+ => [internal] load local bake definitions                                 0.0s
+ => => reading from stdin 520B                                             0.0s
+ => [internal] load build definition from Dockerfile                       0.0s
+ => => transferring dockerfile: 921B                                       0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookw  0.4s
+ => [internal] load .dockerignore                                          0.0s
+ => => transferring context: 193B                                          0.0s
+ => [internal] load build context                                          0.1s
+ => => transferring context: 602.04kB                                      0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:420310d  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                      0.0s
+ => CACHED [stage-1 3/5] RUN apt-get update && apt-get install -y --no-in  0.0s
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-in  0.0s
+ => CACHED [builder 4/6] COPY requirements.txt .                           0.0s
+ => CACHED [builder 5/6] RUN python -m venv /opt/venv                      0.0s
+ => CACHED [builder 6/6] RUN pip install --no-cache-dir -r requirements.t  0.0s
+ => CACHED [stage-1 4/5] COPY --from=builder /opt/venv /opt/venv           0.0s
+ => [stage-1 5/5] COPY . .                                                 0.2s
+ => exporting to image                                                     0.6s
+ => => exporting layers                                                    0.3s
+ => => exporting manifest sha256:483ab3389181bdfb6dcca3cfb4f32a85709bfb84  0.0s
+ => => exporting config sha256:f849003fb6a61b761fac97db5fd262f4040377b913  0.0s
+ => => exporting attestation manifest sha256:fce2c509667c63f3a52e964d5a7b  0.1s
+ => => exporting manifest list sha256:c7eb59dfb2c2d07c6a5b979e406d6301e51  0.0s
+ => => naming to docker.io/library/pi-setup-pos:latest                     0.0s
+ => => unpacking to docker.io/library/pi-setup-pos:latest                  0.1s
+ => resolving provenance for metadata file                                 0.0s
+[+] up 5/5
+ ✔ Image pi-setup-pos             Built                                     1.8s
+ ✔ Container pi-setup-redis-1     Healthy                                   1.3s
+ ✔ Container pi-setup-db-1        Healthy                                   1.3s
+ ✔ Container pi-setup-pgbouncer-1 Running                                   0.0s
+ ✔ Container pi-setup-pos-1       Started                                   1.5s
+ngansen@hanryxvault:~ $
