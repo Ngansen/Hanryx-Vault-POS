@@ -5382,18 +5382,22 @@ def admin_bundles():
     css     = _admin_css()
 
     def _brow(b):
-        ts  = datetime.datetime.fromtimestamp(b["created_at"] / 1000).strftime("%d/%m/%Y")
+        ts     = datetime.datetime.fromtimestamp(b["created_at"] / 1000).strftime("%d/%m/%Y")
+        bid    = b['id']
+        bprice = b['bundle_price']
+        bname  = _html.escape(b['name'])
+        bdesc  = _html.escape(b['description'])
         return (
             f"<tr>"
-            f"<td><b>{_html.escape(b['name'])}</b><br><small style='color:#888'>{_html.escape(b['description'])}</small></td>"
-            f"<td style='color:#facc15'>${b['bundle_price']:.2f}</td>"
+            f"<td><b>{bname}</b><br><small style='color:#888'>{bdesc}</small></td>"
+            f"<td style='color:#facc15'>${bprice:.2f}</td>"
             f"<td style='text-align:center'>{b['item_count']}</td>"
             f"<td style='text-align:center'>{b['sold']}</td>"
             f"<td style='color:#888;font-size:12px'>{ts}</td>"
             f"<td>"
-            f"  <button class='btn-gold' onclick='openBundle({b[\"id\"]})' style='background:#2563eb;margin-right:4px'>▶ Manage</button>"
-            f"  <button class='btn-gold' onclick='sellBundle({b[\"id\"]},{b[\"bundle_price\"]:.2f})' style='background:#4ade80;color:#000;margin-right:4px'>💳 Sell</button>"
-            f"  <button class='btn-gold' onclick='deleteBundle({b[\"id\"]})' style='background:#7f1d1d;font-size:11px'>✕</button>"
+            f"  <button class='btn-gold' onclick='openBundle({bid})' style='background:#2563eb;margin-right:4px'>▶ Manage</button>"
+            f"  <button class='btn-gold' onclick='sellBundle({bid},{bprice:.2f})' style='background:#4ade80;color:#000;margin-right:4px'>💳 Sell</button>"
+            f"  <button class='btn-gold' onclick='deleteBundle({bid})' style='background:#7f1d1d;font-size:11px'>✕</button>"
             f"</td>"
             f"</tr>"
         )
