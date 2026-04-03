@@ -330,6 +330,9 @@ def require_admin(fn):
         return fn(*args, **kwargs)
     return _wrapped
 
+# Alias — some routes use @require_auth, same behaviour as @require_admin
+require_auth = require_admin
+
 
 # ---------------------------------------------------------------------------
 # Enterprise: Request ID + security headers middleware
