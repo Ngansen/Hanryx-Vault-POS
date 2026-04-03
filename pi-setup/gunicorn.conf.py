@@ -17,7 +17,7 @@ loglevel   = "info"
 accesslog  = "-"
 errorlog   = "-"
 
-preload_app = True
+preload_app = False
 
 
 def on_starting(server):
