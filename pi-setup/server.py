@@ -321,6 +321,16 @@ def _is_lan(ip: str) -> bool:
         return False
 
 
+def require_admin(fn):
+    """Decorator that redirects unauthenticated requests to /admin/login."""
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return redirect(f"/admin/login?next={request.path}")
+        return fn(*args, **kwargs)
+    return _wrapped
+
+
 # ---------------------------------------------------------------------------
 # Enterprise: Request ID + security headers middleware
 # ---------------------------------------------------------------------------
@@ -9505,16 +9515,6 @@ _ADMIN_LOGIN_HTML = """<!DOCTYPE html>
   </div>
 </body>
 </html>"""
-
-
-def require_admin(fn):
-    """Decorator that redirects unauthenticated requests to /admin/login."""
-    @functools.wraps(fn)
-    def _wrapped(*args, **kwargs):
-        if not session.get("admin_authenticated"):
-            return redirect(f"/admin/login?next={request.path}")
-        return fn(*args, **kwargs)
-    return _wrapped
 
 
 # ---------------------------------------------------------------------------
