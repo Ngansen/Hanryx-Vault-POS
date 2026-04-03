@@ -6464,7 +6464,7 @@ _ADMIN_BASE_CSS = """
 """
 
 # Alias used by some pages that reference _ADMIN_CSS instead of _ADMIN_BASE_CSS
-_ADMIN_CSS = _ADMIN_BASE_CSS
+_ADMIN_CSS = f"<style>{_ADMIN_BASE_CSS}</style>"
 
 
 def _admin_nav(active: str = "dashboard") -> str:
