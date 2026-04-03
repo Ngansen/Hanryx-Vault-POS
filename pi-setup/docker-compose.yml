@@ -113,7 +113,10 @@ services:
   # nginx routes the public domain to this service on port 3000.
   # Cloned from https://github.com/Ngansen/HanRyx-Vault at build time.
   storefront:
-    build: ./services/storefront
+    build:
+      context: ./services/storefront
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"   # nginx proxies the public domain here
