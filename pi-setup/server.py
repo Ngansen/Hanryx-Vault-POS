@@ -6463,6 +6463,9 @@ _ADMIN_BASE_CSS = """
   .btn-gold:hover{background:#fbbf24}
 """
 
+# Alias used by some pages that reference _ADMIN_CSS instead of _ADMIN_BASE_CSS
+_ADMIN_CSS = _ADMIN_BASE_CSS
+
 
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
