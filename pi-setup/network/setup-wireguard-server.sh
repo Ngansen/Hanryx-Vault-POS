@@ -36,8 +36,8 @@ CLIENTS_DIR="/etc/wireguard/clients"
 
 # DuckDNS — fill these in if you want auto-updating DNS
 # (leave blank to skip — you'll use your raw public IP instead)
-DUCKDNS_TOKEN=""
-DUCKDNS_DOMAIN=""                   # e.g. hanryxvault  (without .duckdns.org)
+DUCKDNS_TOKEN="e28fdab6-047d-4e09-b6ed-03f777af2e6c"
+DUCKDNS_DOMAIN="hanryxvault"        # connects as hanryxvault.duckdns.org
 # ─────────────────────────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
