@@ -6544,6 +6544,7 @@ def _admin_nav(active: str = "dashboard") -> str:
         ("eod",       "/admin/eod",         "🏧", "End of Day"),
         ("customers", "/admin/customers",   "👥", "Customers"),
         ("receipt",   "/admin/receipt",     "🖨️", "Receipt"),
+        ("kiosk",     "/admin/kiosk",       "🖥️", "Kiosk"),
         ("system",    "/admin/system",      "⚙️", "System"),
         ("logs",      "/admin/logs",        "📋", "Logs"),
     ]
@@ -14997,6 +14998,424 @@ def api_wantlist_matches():
         return jsonify([dict(r) for r in rows])
     except Exception as _e:
         return jsonify(error=str(_e)), 500
+
+
+# ===========================================================================
+# KIOSK DISPLAY  (customer-facing second screen)
+# ===========================================================================
+
+_KIOSK_SETTINGS_PATH = "/data/kiosk_settings.json"
+
+_KIOSK_DEFAULT: dict = {
+    "enabled":      False,
+    "store_name":   "HanryxVault",
+    "tagline":      "Trading Card Shop",
+    "idle_message": "Welcome! Ask us about today's specials.",
+    "show_social":  True,
+    "instagram":    "@hanryxvault",
+    "website":      "hanryxvault.cards",
+    "bg_color":     "#0a0a0a",
+    "accent_color": "#facc15",
+    "show_tax":     True,
+}
+
+
+def _load_kiosk_settings() -> dict:
+    try:
+        with open(_KIOSK_SETTINGS_PATH) as _f:
+            return {**_KIOSK_DEFAULT, **json.load(_f)}
+    except Exception:
+        return dict(_KIOSK_DEFAULT)
+
+
+def _save_kiosk_settings(s: dict):
+    os.makedirs(os.path.dirname(_KIOSK_SETTINGS_PATH), exist_ok=True)
+    with open(_KIOSK_SETTINGS_PATH, "w") as _f:
+        json.dump(s, _f, indent=2)
+
+
+# In-memory kiosk cart state (updated by POS via POST /kiosk/cart)
+_kiosk_cart_lock = threading.Lock()
+_kiosk_cart: dict = {
+    "active":          False,
+    "items":           [],      # [{name, qty, price}]
+    "subtotal":        0.0,
+    "tax":             0.0,
+    "total":           0.0,
+    "payment_method":  "",
+    "paid":            False,   # briefly True → "thank you" screen
+}
+
+# SSE subscribers for kiosk display
+_kiosk_sse_lock        = threading.Lock()
+_kiosk_sse_subscribers: list = []
+
+
+def _kiosk_broadcast(data: dict):
+    """Push cart state to all connected kiosk SSE clients."""
+    msg = f"data: {json.dumps(data)}\n\n"
+    with _kiosk_sse_lock:
+        dead = []
+        for _q in list(_kiosk_sse_subscribers):
+            try:
+                _q.put_nowait(msg)
+            except Exception:
+                dead.append(_q)
+        for _q in dead:
+            _kiosk_sse_subscribers.remove(_q)
+
+
+@app.route("/kiosk/cart", methods=["POST"])
+def kiosk_cart_update():
+    """POS pushes cart state here so the kiosk display updates live."""
+    data = request.get_json(silent=True) or {}
+    with _kiosk_cart_lock:
+        _kiosk_cart.update(data)
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    return jsonify(ok=True)
+
+
+@app.route("/kiosk/stream")
+def kiosk_sse_stream():
+    """SSE stream — kiosk display subscribes here for live cart updates."""
+    import queue as _q_mod
+    _q = _q_mod.Queue(maxsize=20)
+    with _kiosk_sse_lock:
+        _kiosk_sse_subscribers.append(_q)
+
+    def _generate():
+        # Send current state immediately on connect
+        with _kiosk_cart_lock:
+            snapshot = dict(_kiosk_cart)
+        yield f"data: {json.dumps(snapshot)}\n\n"
+        while True:
+            try:
+                yield _q.get(timeout=25)
+            except Exception:
+                yield ":\n\n"   # keepalive ping
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/kiosk")
+def kiosk_display():
+    """Customer-facing kiosk display — designed for a second screen / TV."""
+    ks      = _load_kiosk_settings()
+    bg      = ks["bg_color"]
+    accent  = ks["accent_color"]
+    name    = ks["store_name"]
+    tagline = ks["tagline"]
+    idle    = ks["idle_message"]
+    ig      = ks["instagram"] if ks.get("show_social") else ""
+    web     = ks["website"]   if ks.get("show_social") else ""
+    enabled = ks["enabled"]
+
+    social_html = ""
+    if ig:
+        social_html += f'<div class="social">📸 {ig}</div>'
+    if web:
+        social_html += f'<div class="social">🌐 {web}</div>'
+
+    disabled_overlay = (
+        '<div id="disabled-overlay">'
+        '🖥️ Kiosk display not yet enabled — configure in Admin → Kiosk'
+        '</div>'
+    ) if not enabled else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} — Customer Display</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
+           font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+#screen{{display:flex;flex-direction:column;height:100vh;padding:40px}}
+#header{{text-align:center;margin-bottom:32px}}
+#header h1{{font-size:clamp(28px,5vw,56px);font-weight:900;color:{accent};letter-spacing:2px}}
+#header p{{font-size:clamp(14px,2vw,22px);color:#999;margin-top:8px}}
+/* IDLE */
+#idle{{flex:1;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;gap:20px;text-align:center}}
+#idle-msg{{font-size:clamp(18px,3vw,36px);color:#ccc;max-width:800px;line-height:1.5}}
+.social{{font-size:clamp(13px,1.8vw,24px);color:#666;margin-top:4px}}
+#idle-clock{{font-size:clamp(40px,8vw,100px);font-weight:200;color:{accent};
+             letter-spacing:4px;margin-bottom:10px}}
+/* CART */
+#cart{{flex:1;display:flex;flex-direction:column;gap:0}}
+#cart-items{{flex:1;overflow:hidden}}
+.cart-row{{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid #222;gap:12px}}
+.cart-name{{flex:1;font-size:clamp(14px,2.2vw,30px);font-weight:600;color:#fff}}
+.cart-qty{{font-size:clamp(13px,1.8vw,22px);color:#999;min-width:40px;text-align:center}}
+.cart-price{{font-size:clamp(14px,2.2vw,30px);font-weight:700;color:{accent};
+             min-width:100px;text-align:right}}
+#totals{{border-top:2px solid {accent};padding-top:20px;margin-top:auto}}
+.total-row{{display:flex;justify-content:space-between;
+            font-size:clamp(14px,2vw,26px);padding:4px 0;color:#ccc}}
+.total-row.grand{{color:#fff;font-size:clamp(22px,3.5vw,44px);
+                  font-weight:900;padding-top:12px;border-top:1px solid #333;margin-top:10px}}
+.total-val{{color:{accent}}}
+/* THANK YOU */
+#thankyou{{flex:1;display:flex;flex-direction:column;align-items:center;
+           justify-content:center;gap:20px;text-align:center}}
+#thankyou h2{{font-size:clamp(40px,8vw,100px);font-weight:900;color:{accent}}}
+#thankyou p{{font-size:clamp(18px,3vw,36px);color:#ccc}}
+#thankyou .method{{font-size:clamp(14px,2vw,28px);color:#666;margin-top:8px}}
+/* disabled overlay */
+#disabled-overlay{{position:fixed;inset:0;background:{bg};
+                   display:flex;align-items:center;justify-content:center;
+                   font-size:clamp(16px,2vw,28px);color:#444;z-index:9999;text-align:center;padding:40px}}
+</style>
+</head>
+<body>
+{disabled_overlay}
+<div id="screen">
+  <div id="header">
+    <h1>{name}</h1>
+    <p>{tagline}</p>
+  </div>
+
+  <!-- IDLE STATE -->
+  <div id="idle">
+    <div id="idle-clock"></div>
+    <div id="idle-msg">{idle}</div>
+    {social_html}
+  </div>
+
+  <!-- CART STATE -->
+  <div id="cart" style="display:none">
+    <div id="cart-items"></div>
+    <div id="totals"></div>
+  </div>
+
+  <!-- THANK YOU STATE -->
+  <div id="thankyou" style="display:none">
+    <h2>Thank You! 🎉</h2>
+    <p>See you next time!</p>
+    <div class="method" id="ty-method"></div>
+  </div>
+</div>
+
+<script>
+(function(){{
+  var idle   = document.getElementById("idle");
+  var cart   = document.getElementById("cart");
+  var ty     = document.getElementById("thankyou");
+  var items  = document.getElementById("cart-items");
+  var totals = document.getElementById("totals");
+  var tyMeth = document.getElementById("ty-method");
+  var clockEl= document.getElementById("idle-clock");
+
+  function tick(){{
+    if(clockEl) clockEl.textContent =
+      new Date().toLocaleTimeString([],{{hour:"2-digit",minute:"2-digit"}});
+  }}
+  tick(); setInterval(tick, 1000);
+
+  function fmt(n){{ return "$"+parseFloat(n||0).toFixed(2); }}
+
+  function resetIdle(){{
+    idle.style.display="flex"; cart.style.display="none"; ty.style.display="none";
+  }}
+
+  function renderCart(state){{
+    if(state.paid){{
+      idle.style.display="none"; cart.style.display="none"; ty.style.display="flex";
+      if(tyMeth) tyMeth.textContent = state.payment_method ? "Paid by "+state.payment_method : "";
+      setTimeout(resetIdle, 5000);
+      return;
+    }}
+    if(!state.active || !state.items || state.items.length===0){{
+      resetIdle(); return;
+    }}
+    idle.style.display="none"; ty.style.display="none"; cart.style.display="flex";
+    items.innerHTML = state.items.map(function(it){{
+      return "<div class='cart-row'>"
+        +"<div class='cart-name'>"+it.name+"</div>"
+        +"<div class='cart-qty'>x"+(it.qty||1)+"</div>"
+        +"<div class='cart-price'>"+fmt(it.price)+"</div>"
+        +"</div>";
+    }}).join("");
+    var sub=state.subtotal||0, tax=state.tax||0, tot=state.total||0;
+    var rows="<div class='total-row'><span>Subtotal</span>"
+             +"<span class='total-val'>"+fmt(sub)+"</span></div>";
+    if(tax>0) rows+="<div class='total-row'><span>Tax</span>"
+                    +"<span class='total-val'>"+fmt(tax)+"</span></div>";
+    rows+="<div class='total-row grand'><span>TOTAL</span>"
+          +"<span class='total-val'>"+fmt(tot)+"</span></div>";
+    totals.innerHTML=rows;
+  }}
+
+  var evtSrc = new EventSource("/kiosk/stream");
+  evtSrc.onmessage = function(e){{
+    try{{ renderCart(JSON.parse(e.data)); }} catch(err){{ console.warn("[kiosk]",err); }}
+  }};
+  evtSrc.onerror = function(){{
+    console.log("[kiosk] SSE reconnecting...");
+  }};
+}})();
+</script>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# Admin kiosk settings page
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/kiosk", methods=["GET"])
+@require_admin
+def admin_kiosk_page():
+    ks  = _load_kiosk_settings()
+    nav = _admin_nav("kiosk")
+    saved_banner = (
+        '<div style="background:#166534;color:#86efac;padding:10px 16px;'
+        'border-radius:8px;margin-bottom:20px">✅ Kiosk settings saved.</div>'
+    ) if request.args.get("saved") else ""
+    enabled_badge = (
+        '🟢 <strong style="color:#4ade80">Enabled</strong> — '
+        'open <a href="/kiosk" target="_blank" style="color:#facc15">/kiosk</a> on your customer screen'
+        if ks["enabled"] else
+        '🔴 <strong style="color:#ef4444">Disabled</strong> — tick the checkbox below to activate'
+    )
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Kiosk Settings</title>{_admin_css()}</head><body>
+{nav}
+<div class="admin-container">
+  <div class="admin-header">
+    <h1>🖥️ Kiosk Display</h1>
+    <p class="admin-subtitle">Customer-facing second screen — configure and preview below.</p>
+  </div>
+  {saved_banner}
+  <div class="admin-card" style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <span style="font-size:22px">{'🟢' if ks['enabled'] else '🔴'}</span>
+    <span style="color:#ccc;font-size:14px">{enabled_badge}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+    <!-- LEFT: settings form -->
+    <div class="admin-card">
+      <h3 style="color:#facc15;margin-bottom:18px">Display Settings</h3>
+      <form method="POST" action="/admin/kiosk/save">
+        <div style="margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" name="enabled" value="1"
+                   {'checked' if ks['enabled'] else ''}
+                   style="width:18px;height:18px;accent-color:#facc15">
+            <span style="color:#ccc;font-size:14px">Enable kiosk display</span>
+          </label>
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Store Name</label>
+          <input class="form-input" name="store_name" value="{ks['store_name']}">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Tagline</label>
+          <input class="form-input" name="tagline" value="{ks['tagline']}">
+        </div>
+        <div style="margin-bottom:14px">
+          <label class="form-label">Idle Screen Message</label>
+          <input class="form-input" name="idle_message" value="{ks['idle_message']}">
+        </div>
+        <div style="margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label class="form-label">Background Colour</label>
+            <input type="color" name="bg_color" value="{ks['bg_color']}"
+                   style="width:100%;height:38px;border-radius:6px;border:none;cursor:pointer">
+          </div>
+          <div>
+            <label class="form-label">Accent Colour</label>
+            <input type="color" name="accent_color" value="{ks['accent_color']}"
+                   style="width:100%;height:38px;border-radius:6px;border:none;cursor:pointer">
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label class="form-label">Social Links</label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer">
+            <input type="checkbox" name="show_social" value="1"
+                   {'checked' if ks.get('show_social') else ''}
+                   style="accent-color:#facc15">
+            <span style="color:#ccc;font-size:13px">Show on idle screen</span>
+          </label>
+          <input class="form-input" name="instagram" value="{ks['instagram']}"
+                 placeholder="@hanryxvault" style="margin-bottom:10px">
+          <input class="form-input" name="website" value="{ks['website']}"
+                 placeholder="hanryxvault.cards">
+        </div>
+        <div style="display:flex;gap:12px;margin-top:20px">
+          <button type="submit" class="btn btn-primary">💾 Save Settings</button>
+          <a href="/kiosk" target="_blank" class="btn btn-secondary">🖥️ Open Display</a>
+        </div>
+      </form>
+    </div>
+
+    <!-- RIGHT: how-to + API reference -->
+    <div>
+      <div class="admin-card" style="margin-bottom:16px">
+        <h3 style="color:#facc15;margin-bottom:12px">How to set up</h3>
+        <ol style="color:#aaa;font-size:13px;line-height:2;padding-left:18px">
+          <li>Connect a second monitor or TV to the Raspberry Pi.</li>
+          <li>Open a browser on that screen and navigate to <strong style="color:#fff">/kiosk</strong>.</li>
+          <li>Press <kbd style="background:#222;padding:1px 6px;border-radius:4px">F11</kbd> for full-screen.</li>
+          <li>The display updates live as you scan items.</li>
+          <li>A "Thank You" screen appears for 5 seconds after payment.</li>
+        </ol>
+      </div>
+      <div class="admin-card">
+        <h3 style="color:#facc15;margin-bottom:12px">POS Integration API</h3>
+        <p style="color:#aaa;font-size:12px;margin-bottom:10px">
+          Push cart state from your POS to update the display in real time:
+        </p>
+        <pre style="background:#111;border-radius:6px;padding:12px;font-size:11px;
+                    color:#86efac;overflow-x:auto;line-height:1.6">POST /kiosk/cart
+Content-Type: application/json
+
+{{
+  "active": true,
+  "items": [
+    {{"name": "Pikachu V", "qty": 1, "price": 12.99}},
+    {{"name": "Charizard VMAX", "qty": 1, "price": 49.99}}
+  ],
+  "subtotal": 62.98,
+  "tax": 6.30,
+  "total": 69.28,
+  "payment_method": "Card",
+  "paid": false
+}}</pre>
+        <p style="color:#555;font-size:11px;margin-top:8px">
+          Set <code style="color:#facc15">paid: true</code> + <code style="color:#facc15">payment_method</code>
+          to trigger the thank-you screen.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>"""
+
+
+@app.route("/admin/kiosk/save", methods=["POST"])
+@require_admin
+def admin_kiosk_save():
+    settings = {
+        "enabled":      bool(request.form.get("enabled")),
+        "store_name":   request.form.get("store_name",   "HanryxVault").strip(),
+        "tagline":      request.form.get("tagline",      "Trading Card Shop").strip(),
+        "idle_message": request.form.get("idle_message", "Welcome!").strip(),
+        "show_social":  bool(request.form.get("show_social")),
+        "instagram":    request.form.get("instagram",    "").strip(),
+        "website":      request.form.get("website",      "").strip(),
+        "bg_color":     request.form.get("bg_color",     "#0a0a0a").strip(),
+        "accent_color": request.form.get("accent_color", "#facc15").strip(),
+        "show_tax":     True,
+    }
+    _save_kiosk_settings(settings)
+    return redirect("/admin/kiosk?saved=1")
 
 
 # ---------------------------------------------------------------------------
