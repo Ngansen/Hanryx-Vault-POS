@@ -1,0 +1,31 @@
+# =============================================================================
+#  HanryxVault — Main Pi Netplan config  (Ubuntu / Pi OS Bookworm w/ netplan)
+#  Use THIS instead of dhcpcd if your system uses netplan:
+#    ls /etc/netplan/   → if files exist, use netplan
+#
+#  Copy to /etc/netplan/10-hanryx.yaml then run: sudo netplan apply
+# =============================================================================
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+    eth0:
+      # Static IP — Pi acts as gateway for the LAN
+      addresses:
+        - 192.168.10.1/24
+      # eth0 has no upstream gateway (traffic routes via wlan0)
+      dhcp4: false
+      dhcp6: false
+      nameservers:
+        addresses: [8.8.8.8, 1.1.1.1]
+
+  wifis:
+    wlan0:
+      # wlan0 gets an IP from your home/upstream router via DHCP
+      dhcp4: true
+      access-points:
+        "YOUR_WIFI_SSID":         # ← replace with your WiFi name
+          password: "YOUR_WIFI_PASSWORD"   # ← replace with your WiFi password
+      nameservers:
+        addresses: [8.8.8.8, 1.1.1.1]

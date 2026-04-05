@@ -1,0 +1,25 @@
+# =============================================================================
+#  HanryxVault — Satellite Pi Netplan config  (Ubuntu / Pi OS Bookworm)
+#  Copy to /etc/netplan/10-hanryx.yaml then run: sudo netplan apply
+# =============================================================================
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+    eth0:
+      addresses:
+        - 192.168.11.1/24
+      dhcp4: false
+      dhcp6: false
+      nameservers:
+        addresses: [8.8.8.8, 1.1.1.1]
+
+  wifis:
+    wlan0:
+      dhcp4: true
+      access-points:
+        "YOUR_WIFI_SSID":
+          password: "YOUR_WIFI_PASSWORD"
+      nameservers:
+        addresses: [8.8.8.8, 1.1.1.1]
