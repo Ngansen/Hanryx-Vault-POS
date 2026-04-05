@@ -2088,6 +2088,36 @@ def init_db():
             fetched_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
         "CREATE INDEX IF NOT EXISTS idx_pokeapi_name ON pokeapi_name_cache (name)",
+
+        # ── Customer database ────────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS customers (
+            id           SERIAL PRIMARY KEY,
+            name         TEXT NOT NULL,
+            email        TEXT NOT NULL DEFAULT '',
+            phone        TEXT NOT NULL DEFAULT '',
+            notes        TEXT NOT NULL DEFAULT '',
+            store_credit NUMERIC(10,2) NOT NULL DEFAULT 0,
+            created_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_customers_name  ON customers(name)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email)",
+
+        # ── Customer wantlist ────────────────────────────────────────────────
+        f"""CREATE TABLE IF NOT EXISTS customer_wantlist (
+            id          SERIAL PRIMARY KEY,
+            customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+            card_name   TEXT NOT NULL,
+            set_code    TEXT NOT NULL DEFAULT '',
+            rarity      TEXT NOT NULL DEFAULT '',
+            max_price   NUMERIC(10,2),
+            notes       TEXT NOT NULL DEFAULT '',
+            notified    BOOLEAN NOT NULL DEFAULT FALSE,
+            fulfilled   BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_wantlist_customer  ON customer_wantlist(customer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_wantlist_pending   ON customer_wantlist(notified, fulfilled)",
+        "CREATE INDEX IF NOT EXISTS idx_wantlist_card_name ON customer_wantlist(card_name)",
     ]
 
     for stmt in _ddl_statements:
@@ -2123,6 +2153,7 @@ def init_db():
         ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT    NOT NULL DEFAULT ''"),
         ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT    NOT NULL DEFAULT ''"),
         ("release_year",    "ALTER TABLE inventory ADD COLUMN release_year     INTEGER NOT NULL DEFAULT 0"),
+        ("resale_price",    "ALTER TABLE inventory ADD COLUMN resale_price     DOUBLE PRECISION NOT NULL DEFAULT 0"),
         # card_vector uses pgvector type — only added when extension is present
     ]:
         table = "sales" if col == "source" else "inventory"
@@ -4771,6 +4802,12 @@ def push_inventory():
                 int(item.get("stock") or item.get("stockQuantity") or item.get("quantity", 0)),
                 _now_ms(),
             ))
+            # Check wantlist for this card in background
+            threading.Thread(
+                target=_check_wantlist_for_card,
+                args=(str(name),),
+                daemon=True,
+            ).start()
             upserted += 1
         except Exception as e:
             log.error("[push/inventory] Error on %s: %s", qr_code, e)
@@ -6160,6 +6197,14 @@ def _do_print(sale: dict):
     """Background-thread print job — tries BT/USB/CUPS in order."""
     fh, path, conf = _open_printer()
 
+    # Merge rich receipt settings (store name, instagram, footer, etc.)
+    rs = _load_receipt_settings()
+    conf["receipt_header"]    = rs.get("store_name",  conf.get("receipt_header",    "HanryxVault"))
+    conf["receipt_subheader"] = rs.get("tagline",     conf.get("receipt_subheader", "Trading Card Shop"))
+    footer_parts = [p for p in [rs.get("website"), rs.get("instagram"), rs.get("phone")] if p]
+    conf["receipt_footer"]    = "  |  ".join(footer_parts) if footer_parts else rs.get("footer_msg", "hanryxvault.cards")
+    conf["paper_width"]       = rs.get("paper_width", "80")
+
     try:
         receipt_bytes = _format_receipt(sale, conf)
 
@@ -6497,6 +6542,8 @@ def _admin_nav(active: str = "dashboard") -> str:
         ("layby",     "/admin/layby",       "🏷️", "Layby"),
         ("profit",    "/admin/profit-loss", "💰", "P&L"),
         ("eod",       "/admin/eod",         "🏧", "End of Day"),
+        ("customers", "/admin/customers",   "👥", "Customers"),
+        ("receipt",   "/admin/receipt",     "🖨️", "Receipt"),
         ("system",    "/admin/system",      "⚙️", "System"),
         ("logs",      "/admin/logs",        "📋", "Logs"),
     ]
@@ -14329,6 +14376,627 @@ async function checkIndexStatus() {{
 setInterval(checkIndexStatus, 15000);
 </script>
 </body></html>""".replace("{nav}", nav))
+
+
+# ===========================================================================
+# RECEIPT CUSTOMISATION
+# ===========================================================================
+
+_RECEIPT_SETTINGS_KEY = "receipt_settings_v2"
+
+
+def _load_receipt_settings() -> dict:
+    defaults = {
+        "store_name":    "HanryxVault",
+        "tagline":       "Trading Card Shop",
+        "website":       "hanryxvault.cards",
+        "instagram":     "",
+        "phone":         "",
+        "address":       "",
+        "footer_msg":    "Thanks for shopping with us!",
+        "paper_width":   "80",
+    }
+    try:
+        db  = _direct_db()
+        row = db.execute("SELECT value FROM server_state WHERE key=%s", (_RECEIPT_SETTINGS_KEY,)).fetchone()
+        db.close()
+        if row:
+            stored = json.loads(row["value"]) if isinstance(row["value"], str) else row["value"]
+            defaults.update(stored)
+    except Exception:
+        pass
+    return defaults
+
+
+def _save_receipt_settings(settings: dict):
+    try:
+        db = _direct_db()
+        db.execute(
+            "INSERT INTO server_state (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+            (_RECEIPT_SETTINGS_KEY, json.dumps(settings)),
+        )
+        db.commit()
+        db.close()
+    except Exception as _e:
+        log.warning("[receipt-settings] save failed: %s", _e)
+
+
+@app.route("/admin/receipt", methods=["GET"])
+@require_admin
+def admin_receipt_page():
+    s   = _load_receipt_settings()
+    nav = _admin_nav("receipt")
+    return f"""<!DOCTYPE html><html><head><title>Receipt Settings | HanryxVault</title>
+{_ADMIN_CSS}</head><body>{nav}
+<div class="admin-content">
+<h1 style="color:#facc15">🖨️ Receipt Customisation</h1>
+<form method="POST" action="/admin/receipt" class="form-panel" style="max-width:680px">
+  <h2 style="color:#facc15;margin-bottom:20px">Store Information</h2>
+  <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+    <div>
+      <label>Store Name</label>
+      <input name="store_name" value="{s['store_name']}" placeholder="HanryxVault" required>
+    </div>
+    <div>
+      <label>Tagline</label>
+      <input name="tagline" value="{s['tagline']}" placeholder="Trading Card Shop">
+    </div>
+    <div>
+      <label>Website</label>
+      <input name="website" value="{s['website']}" placeholder="hanryxvault.cards">
+    </div>
+    <div>
+      <label>Instagram Handle</label>
+      <input name="instagram" value="{s['instagram']}" placeholder="@hanryxvault">
+    </div>
+    <div>
+      <label>Phone</label>
+      <input name="phone" value="{s['phone']}" placeholder="+61 4XX XXX XXX">
+    </div>
+    <div>
+      <label>Address / Location</label>
+      <input name="address" value="{s['address']}" placeholder="Shop 4, Somewhere">
+    </div>
+  </div>
+  <div style="margin-bottom:16px">
+    <label>Footer Message</label>
+    <input name="footer_msg" value="{s['footer_msg']}" placeholder="Thanks for shopping with us!" style="width:100%">
+  </div>
+  <div style="margin-bottom:24px">
+    <label>Paper Width</label>
+    <select name="paper_width" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:6px">
+      <option value="80" {"selected" if s["paper_width"]=="80" else ""}>80mm (standard)</option>
+      <option value="58" {"selected" if s["paper_width"]=="58" else ""}>58mm (narrow)</option>
+    </select>
+  </div>
+  <div style="background:#111;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;font-family:monospace;font-size:12px;color:#aaa">
+    <div style="text-align:center;color:#fff;font-size:14px;font-weight:bold">{s['store_name']}</div>
+    <div style="text-align:center;color:#888">{s['tagline']}</div>
+    <div style="border-top:1px dashed #333;margin:8px 0"></div>
+    <div>Charizard VMAX (Holo)                  $45.00</div>
+    <div>Pikachu V                              $12.00</div>
+    <div style="border-top:1px dashed #333;margin:8px 0"></div>
+    <div style="text-align:right;font-weight:bold;color:#fff">TOTAL: $57.00</div>
+    <div style="border-top:1px dashed #333;margin:8px 0"></div>
+    {"<div style='text-align:center'>🌐 " + s['website'] + "</div>" if s['website'] else ""}
+    {"<div style='text-align:center'>📸 " + s['instagram'] + "</div>" if s['instagram'] else ""}
+    <div style="text-align:center;color:#666">{s['footer_msg']}</div>
+  </div>
+  <button type="submit" class="btn-gold">💾 Save Receipt Settings</button>
+</form>
+</div></body></html>"""
+
+
+@app.route("/admin/receipt", methods=["POST"])
+@require_admin
+def admin_receipt_save():
+    settings = {
+        "store_name":  request.form.get("store_name",  "HanryxVault").strip(),
+        "tagline":     request.form.get("tagline",     "Trading Card Shop").strip(),
+        "website":     request.form.get("website",     "").strip(),
+        "instagram":   request.form.get("instagram",   "").strip(),
+        "phone":       request.form.get("phone",       "").strip(),
+        "address":     request.form.get("address",     "").strip(),
+        "footer_msg":  request.form.get("footer_msg",  "Thanks for shopping with us!").strip(),
+        "paper_width": request.form.get("paper_width", "80"),
+    }
+    _save_receipt_settings(settings)
+    return redirect("/admin/receipt?saved=1")
+
+
+# ===========================================================================
+# CONDITION GRADING GUIDE
+# ===========================================================================
+
+_GRADING_GUIDE_HTML = """<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Card Condition Guide</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#0a0a0a;color:#e0e0e0;padding:24px}
+h1{color:#facc15;font-size:20px;margin-bottom:20px;text-align:center}
+.grade{border-radius:10px;padding:16px 20px;margin-bottom:12px;border:1px solid #2a2a2a}
+.grade h2{font-size:16px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.grade p{color:#aaa;font-size:13px;line-height:1.5}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:bold}
+</style></head><body>
+<h1>🃏 Card Condition Grading Guide</h1>
+
+<div class="grade" style="border-color:#4ade80;background:#001a05">
+  <h2><span class="badge" style="background:#4ade80;color:#000">NM</span> Near Mint</h2>
+  <p>Card looks brand new. No visible wear, scratches, or marks. Corners sharp.
+     Minor handling marks acceptable under close inspection only.
+     Suitable for grading submission.</p>
+</div>
+
+<div class="grade" style="border-color:#86efac;background:#001a0a">
+  <h2><span class="badge" style="background:#86efac;color:#000">LP</span> Lightly Played</h2>
+  <p>Minor wear on corners or edges. Very slight whitening on edges.
+     No creases, bends, or stains. Card still looks great in a sleeve.
+     Most common condition for played cards handled with care.</p>
+</div>
+
+<div class="grade" style="border-color:#facc15;background:#1a1400">
+  <h2><span class="badge" style="background:#facc15;color:#000">MP</span> Moderately Played</h2>
+  <p>Visible corner wear, moderate edge whitening, possible light scratches on surface.
+     No major creases or bends. Card is tournament legal but shows clear use.
+     Significant price reduction from NM.</p>
+</div>
+
+<div class="grade" style="border-color:#f97316;background:#1a0800">
+  <h2><span class="badge" style="background:#f97316;color:#000">HP</span> Heavily Played</h2>
+  <p>Major wear throughout — heavy edge whitening, bent corners, light creases,
+     or surface scratches visible at distance. Card is still identifiable and playable
+     but significantly reduced value. Not suitable for grading.</p>
+</div>
+
+<div class="grade" style="border-color:#ef4444;background:#1a0000">
+  <h2><span class="badge" style="background:#ef4444;color:#fff">DMG</span> Damaged</h2>
+  <p>Major structural damage — deep creases, folds, tears, heavy staining, writing,
+     or ink marks. Card may be bent or warped. Collector value only.
+     Not tournament legal. Typically only worth a fraction of NM price.</p>
+</div>
+
+<div style="margin-top:20px;padding:14px;background:#111;border-radius:8px;border:1px solid #222">
+  <p style="color:#666;font-size:12px;text-align:center">
+    💡 When in doubt, grade conservatively — a customer who feels they got a fair grade
+    will return. Always check both sides of the card and the corners under good light.
+  </p>
+</div>
+</body></html>"""
+
+
+@app.route("/admin/grading-guide", methods=["GET"])
+@require_admin
+def admin_grading_guide():
+    return _GRADING_GUIDE_HTML
+
+
+# ===========================================================================
+# CUSTOMER DATABASE + WANTLIST
+# ===========================================================================
+
+def _check_wantlist_for_card(card_name: str, set_code: str = ""):
+    """
+    When a card is added/updated in inventory, check the wantlist for matches.
+    Marks matching unfulfilled items as notified and logs them.
+    Call this from any route that adds inventory.
+    """
+    try:
+        db    = _direct_db()
+        name  = card_name.strip().lower()
+        rows  = db.execute(
+            "SELECT w.id, w.card_name, w.set_code, w.max_price, "
+            "       c.name AS cust_name, c.email AS cust_email "
+            "FROM customer_wantlist w "
+            "JOIN customers c ON c.id = w.customer_id "
+            "WHERE w.fulfilled=FALSE AND w.notified=FALSE "
+            "AND LOWER(w.card_name) LIKE %s",
+            (f"%{name[:30]}%",),
+        ).fetchall()
+        for row in rows:
+            db.execute(
+                "UPDATE customer_wantlist SET notified=TRUE WHERE id=%s", (row["id"],)
+            )
+            log.info(
+                "[wantlist] MATCH: %s wants '%s' — customer: %s (%s)",
+                row["cust_name"], row["card_name"], row["cust_name"], row["cust_email"]
+            )
+        if rows:
+            db.commit()
+        db.close()
+        return len(rows)
+    except Exception as _e:
+        log.debug("[wantlist] check failed: %s", _e)
+        return 0
+
+
+@app.route("/admin/customers", methods=["GET"])
+@require_admin
+def admin_customers():
+    db     = _direct_db()
+    search = request.args.get("q", "").strip()
+    if search:
+        custs = db.execute(
+            "SELECT c.*, "
+            "  (SELECT COUNT(*) FROM customer_wantlist w WHERE w.customer_id=c.id AND NOT w.fulfilled) AS want_count, "
+            "  (SELECT COUNT(*) FROM customer_wantlist w WHERE w.customer_id=c.id AND w.notified AND NOT w.fulfilled) AS want_matches "
+            "FROM customers c WHERE LOWER(c.name) LIKE %s OR c.email LIKE %s OR c.phone LIKE %s "
+            "ORDER BY c.name LIMIT 100",
+            (f"%{search.lower()}%", f"%{search}%", f"%{search}%"),
+        ).fetchall()
+    else:
+        custs = db.execute(
+            "SELECT c.*, "
+            "  (SELECT COUNT(*) FROM customer_wantlist w WHERE w.customer_id=c.id AND NOT w.fulfilled) AS want_count, "
+            "  (SELECT COUNT(*) FROM customer_wantlist w WHERE w.customer_id=c.id AND w.notified AND NOT w.fulfilled) AS want_matches "
+            "FROM customers c ORDER BY c.name LIMIT 200"
+        ).fetchall()
+    db.close()
+    nav = _admin_nav("customers")
+
+    rows_html = ""
+    for c in custs:
+        credit_col = f'<span style="color:#4ade80">${c["store_credit"]:.2f}</span>' if c["store_credit"] > 0 else '<span style="color:#666">—</span>'
+        match_badge = f' <span style="background:#facc15;color:#000;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:bold">📬 {c["want_matches"]}</span>' if c.get("want_matches", 0) > 0 else ""
+        rows_html += (
+            f"<tr onclick=\"location.href='/admin/customers/{c['id']}'\" style='cursor:pointer'>"
+            f"<td><b>{c['name']}</b>{match_badge}</td>"
+            f"<td style='color:#aaa'>{c['email'] or '—'}</td>"
+            f"<td style='color:#aaa'>{c['phone'] or '—'}</td>"
+            f"<td>{credit_col}</td>"
+            f"<td style='color:#666'>{c['want_count']} item{'s' if c['want_count']!=1 else ''}</td>"
+            f"</tr>"
+        )
+    if not rows_html:
+        rows_html = "<tr><td colspan='5' style='color:#666;text-align:center;padding:20px'>No customers yet</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><title>Customers | HanryxVault</title>
+{_ADMIN_CSS}</head><body>{nav}
+<div class="admin-content">
+<h1 style="color:#facc15">👥 Customer Database</h1>
+
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+  <form method="GET" style="display:flex;gap:8px;flex:1;min-width:200px">
+    <input name="q" value="{search}" placeholder="Search by name, email or phone…"
+           style="flex:1;background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:6px">
+    <button type="submit" class="btn-gold" style="padding:8px 16px">🔍</button>
+  </form>
+  <button class="btn-gold" onclick="document.getElementById('new-cust').style.display='block'"
+          style="background:#4ade80;color:#000">+ New Customer</button>
+</div>
+
+<div id="new-cust" style="display:none;background:#111;border:1px solid #4ade80;border-radius:10px;padding:20px;margin-bottom:20px;max-width:600px">
+  <h2 style="color:#4ade80;margin-bottom:16px">New Customer</h2>
+  <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+    <div><label>Name *</label><input id="nc-name" placeholder="Full name" required></div>
+    <div><label>Email</label><input id="nc-email" type="email" placeholder="email@example.com"></div>
+    <div><label>Phone</label><input id="nc-phone" placeholder="+61 4XX XXX XXX"></div>
+    <div><label>Notes</label><input id="nc-notes" placeholder="VIP, prefers holos, etc."></div>
+  </div>
+  <button class="btn-gold" onclick="createCust()" style="background:#4ade80;color:#000">✓ Create</button>
+  <button class="btn-gold" onclick="document.getElementById('new-cust').style.display='none'"
+          style="background:#333;margin-left:8px">Cancel</button>
+</div>
+
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Store Credit</th><th>Wantlist</th></tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+</div>
+<script>
+async function createCust(){{
+  const name=document.getElementById('nc-name').value.trim();
+  if(!name){{alert('Name required');return;}}
+  const r=await fetch('/admin/customers/create',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{name,email:document.getElementById('nc-email').value.trim(),
+      phone:document.getElementById('nc-phone').value.trim(),
+      notes:document.getElementById('nc-notes').value.trim()}})
+  }});
+  const d=await r.json();
+  if(d.ok)location.href='/admin/customers/'+d.id;
+  else alert(d.error||'Error');
+}}
+</script>
+</body></html>"""
+
+
+@app.route("/admin/customers/create", methods=["POST"])
+@require_admin
+def admin_customers_create():
+    data  = request.get_json(silent=True) or {}
+    name  = (data.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="Name required"), 400
+    email = (data.get("email") or "").strip()[:200]
+    phone = (data.get("phone") or "").strip()[:50]
+    notes = (data.get("notes") or "").strip()[:500]
+    try:
+        db  = _direct_db()
+        row = db.execute(
+            "INSERT INTO customers (name,email,phone,notes) VALUES (%s,%s,%s,%s) RETURNING id",
+            (name, email, phone, notes),
+        ).fetchone()
+        db.commit()
+        db.close()
+        return jsonify(ok=True, id=row["id"])
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+@app.route("/admin/customers/<int:cid>", methods=["GET"])
+@require_admin
+def admin_customer_detail(cid):
+    db   = _direct_db()
+    cust = db.execute("SELECT * FROM customers WHERE id=%s", (cid,)).fetchone()
+    if not cust:
+        db.close()
+        return "Customer not found", 404
+    wants = db.execute(
+        "SELECT * FROM customer_wantlist WHERE customer_id=%s ORDER BY created_at DESC",
+        (cid,),
+    ).fetchall()
+    db.close()
+    nav = _admin_nav("customers")
+
+    want_rows = ""
+    for w in wants:
+        status_col = "#4ade80" if w["fulfilled"] else ("#facc15" if w["notified"] else "#888")
+        status_txt = "Fulfilled ✓" if w["fulfilled"] else ("Match found! 📬" if w["notified"] else "Watching…")
+        max_p = f"${w['max_price']:.2f}" if w["max_price"] else "Any"
+        want_rows += (
+            f"<tr><td><b>{w['card_name']}</b></td>"
+            f"<td style='color:#aaa'>{w['set_code'] or '—'}</td>"
+            f"<td style='color:#aaa'>{w['rarity'] or '—'}</td>"
+            f"<td style='color:#aaa'>{max_p}</td>"
+            f"<td style='color:{status_col}'>{status_txt}</td>"
+            f"<td><button onclick=\"fulfillWant({w['id']})\" style='background:none;border:1px solid #4ade80;"
+            f"color:#4ade80;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer'>✓ Fulfilled</button> "
+            f"<button onclick=\"removeWant({w['id']})\" style='background:none;border:1px solid #c62828;"
+            f"color:#c62828;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer'>✕</button></td></tr>"
+        )
+    if not want_rows:
+        want_rows = "<tr><td colspan='6' style='color:#666'>No wantlist items</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><title>{cust['name']} | HanryxVault</title>
+{_ADMIN_CSS}</head><body>{nav}
+<div class="admin-content">
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap">
+  <div>
+    <h1 style="color:#facc15">👤 {cust['name']}</h1>
+    <div style="color:#888;font-size:13px;margin-top:4px">
+      {("📧 " + cust['email']) if cust['email'] else ""}
+      {"&nbsp;&nbsp;" if cust['email'] and cust['phone'] else ""}
+      {("📞 " + cust['phone']) if cust['phone'] else ""}
+    </div>
+    {("<div style='color:#aaa;font-size:13px;margin-top:4px'>📝 " + cust['notes'] + "</div>") if cust['notes'] else ""}
+  </div>
+  <div style="margin-left:auto;text-align:right">
+    <div style="color:#666;font-size:11px;text-transform:uppercase;letter-spacing:1px">Store Credit</div>
+    <div style="color:#4ade80;font-size:32px;font-weight:900">${cust['store_credit']:.2f}</div>
+    <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end">
+      <input id="credit-amt" type="number" step="0.01" placeholder="Amount"
+             style="width:100px;background:#1e1e1e;color:#fff;border:1px solid #333;padding:6px 10px;border-radius:6px">
+      <button class="btn-gold" onclick="addCredit(1)" style="background:#4ade80;color:#000;padding:6px 12px">+ Add</button>
+      <button class="btn-gold" onclick="addCredit(-1)" style="background:#c62828;padding:6px 12px">− Deduct</button>
+    </div>
+  </div>
+</div>
+
+<div class="form-panel" style="border-color:#facc15;background:#111;margin-bottom:24px">
+  <h2 style="color:#facc15;margin-bottom:16px">📋 Wantlist</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+    <div><label style="color:#aaa;font-size:11px">Card Name *</label><br>
+      <input id="w-name" placeholder="Charizard VMAX" style="width:180px"></div>
+    <div><label style="color:#aaa;font-size:11px">Set Code</label><br>
+      <input id="w-set" placeholder="SV1" style="width:80px"></div>
+    <div><label style="color:#aaa;font-size:11px">Rarity</label><br>
+      <input id="w-rarity" placeholder="Holo Rare" style="width:100px"></div>
+    <div><label style="color:#aaa;font-size:11px">Max Price $</label><br>
+      <input id="w-price" type="number" step="0.01" placeholder="Any" style="width:80px"></div>
+    <div><label style="color:#aaa;font-size:11px">Notes</label><br>
+      <input id="w-notes" placeholder="Optional" style="width:140px"></div>
+    <button class="btn-gold" onclick="addWant()" style="background:#facc15;color:#000">+ Add</button>
+  </div>
+  <table>
+    <thead><tr><th>Card</th><th>Set</th><th>Rarity</th><th>Max Price</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="want-tbody">{want_rows}</tbody>
+  </table>
+</div>
+
+<a href="/admin/customers" style="color:#666;font-size:13px">← Back to customers</a>
+</div>
+<script>
+const CID={cid};
+async function addCredit(sign){{
+  const amt=parseFloat(document.getElementById('credit-amt').value||0)*sign;
+  if(!amt){{alert('Enter an amount');return;}}
+  const r=await fetch('/admin/customers/'+CID+'/credit',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{amount:amt}})
+  }});
+  if((await r.json()).ok)location.reload();
+}}
+async function addWant(){{
+  const name=document.getElementById('w-name').value.trim();
+  if(!name){{alert('Card name required');return;}}
+  const r=await fetch('/admin/customers/'+CID+'/wantlist',{{
+    method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{
+      card_name:name,
+      set_code:document.getElementById('w-set').value.trim(),
+      rarity:document.getElementById('w-rarity').value.trim(),
+      max_price:document.getElementById('w-price').value||null,
+      notes:document.getElementById('w-notes').value.trim()
+    }})
+  }});
+  if((await r.json()).ok)location.reload();
+}}
+async function fulfillWant(wid){{
+  await fetch('/admin/customers/'+CID+'/wantlist/'+wid+'/fulfill',{{method:'POST'}});
+  location.reload();
+}}
+async function removeWant(wid){{
+  if(!confirm('Remove wantlist item?'))return;
+  await fetch('/admin/customers/'+CID+'/wantlist/'+wid,{{method:'DELETE'}});
+  location.reload();
+}}
+</script>
+</body></html>"""
+
+
+@app.route("/admin/customers/<int:cid>/credit", methods=["POST"])
+@require_admin
+def admin_customer_credit(cid):
+    data   = request.get_json(silent=True) or {}
+    amount = float(data.get("amount", 0))
+    try:
+        db = _direct_db()
+        db.execute(
+            "UPDATE customers SET store_credit=store_credit+%s WHERE id=%s", (amount, cid)
+        )
+        db.commit()
+        db.close()
+        return jsonify(ok=True)
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+@app.route("/admin/customers/<int:cid>/wantlist", methods=["POST"])
+@require_admin
+def admin_customer_wantlist_add(cid):
+    data      = request.get_json(silent=True) or {}
+    card_name = (data.get("card_name") or "").strip()
+    if not card_name:
+        return jsonify(ok=False, error="card_name required"), 400
+    set_code  = (data.get("set_code")  or "").strip()
+    rarity    = (data.get("rarity")    or "").strip()
+    notes     = (data.get("notes")     or "").strip()
+    max_price = data.get("max_price")
+    try:
+        max_price = float(max_price) if max_price else None
+    except (ValueError, TypeError):
+        max_price = None
+    try:
+        db = _direct_db()
+        db.execute(
+            "INSERT INTO customer_wantlist (customer_id,card_name,set_code,rarity,max_price,notes) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
+            (cid, card_name, set_code, rarity, max_price, notes),
+        )
+        db.commit()
+        db.close()
+        return jsonify(ok=True)
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+@app.route("/admin/customers/<int:cid>/wantlist/<int:wid>/fulfill", methods=["POST"])
+@require_admin
+def admin_customer_wantlist_fulfill(cid, wid):
+    try:
+        db = _direct_db()
+        db.execute(
+            "UPDATE customer_wantlist SET fulfilled=TRUE WHERE id=%s AND customer_id=%s", (wid, cid)
+        )
+        db.commit()
+        db.close()
+        return jsonify(ok=True)
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+@app.route("/admin/customers/<int:cid>/wantlist/<int:wid>", methods=["DELETE"])
+@require_admin
+def admin_customer_wantlist_remove(cid, wid):
+    try:
+        db = _direct_db()
+        db.execute(
+            "DELETE FROM customer_wantlist WHERE id=%s AND customer_id=%s", (wid, cid)
+        )
+        db.commit()
+        db.close()
+        return jsonify(ok=True)
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+@app.route("/api/customers/search", methods=["GET"])
+@require_admin
+def api_customers_search():
+    q   = (request.args.get("q") or "").strip()
+    db  = _direct_db()
+    rows = db.execute(
+        "SELECT id, name, email, phone, store_credit FROM customers "
+        "WHERE LOWER(name) LIKE %s OR email LIKE %s LIMIT 10",
+        (f"%{q.lower()}%", f"%{q}%"),
+    ).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows])
+
+
+# ===========================================================================
+# COLLECTION vs RESALE PRICING — admin inventory form additions
+# ===========================================================================
+# resale_price column is added via migration above.
+# The /admin/inventory/upsert route should be updated to accept resale_price.
+# The dashboard shows both prices when resale_price > 0.
+
+@app.route("/admin/inventory/<string:qr>/resale-price", methods=["POST"])
+@require_admin
+def admin_set_resale_price(qr):
+    data  = request.get_json(silent=True) or {}
+    price = data.get("resale_price")
+    try:
+        price = round(float(price), 2) if price is not None else 0.0
+    except (ValueError, TypeError):
+        return jsonify(ok=False, error="Invalid price"), 400
+    try:
+        db = _direct_db()
+        db.execute(
+            "UPDATE inventory SET resale_price=%s WHERE qr_code=%s", (price, qr)
+        )
+        db.commit()
+        db.close()
+        return jsonify(ok=True, resale_price=price)
+    except Exception as _e:
+        return jsonify(ok=False, error=str(_e)), 500
+
+
+# ===========================================================================
+# WANTLIST NOTIFICATION — hook into inventory upsert
+# ===========================================================================
+
+@app.route("/api/wantlist/check", methods=["POST"])
+@require_admin
+def api_wantlist_check():
+    """Manually trigger a wantlist check for a given card name."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="name required"), 400
+    matches = _check_wantlist_for_card(name)
+    return jsonify(ok=True, matches=matches)
+
+
+@app.route("/api/wantlist/matches", methods=["GET"])
+@require_admin
+def api_wantlist_matches():
+    """Return all unnotified wantlist matches (for dashboard badge)."""
+    try:
+        db   = _direct_db()
+        rows = db.execute(
+            "SELECT w.card_name, w.set_code, c.name AS customer, c.email "
+            "FROM customer_wantlist w JOIN customers c ON c.id=w.customer_id "
+            "WHERE w.notified=TRUE AND w.fulfilled=FALSE "
+            "ORDER BY w.created_at DESC LIMIT 50"
+        ).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as _e:
+        return jsonify(error=str(_e)), 500
 
 
 # ---------------------------------------------------------------------------
