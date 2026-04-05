@@ -24,6 +24,7 @@ cat > /usr/local/bin/hanryx-nat.sh << EOF
 # Re-apply NAT masquerade after Docker clears iptables on boot
 UPSTREAM="$UPSTREAM_IFACE"
 LAN="$LAN_IFACE"
+HOME_NET="192.168.86.0/24"   # Google Nest home network — blocked from shop
 
 # Masquerade LAN traffic going out via WiFi
 iptables -t nat -C POSTROUTING -o "\$UPSTREAM" -j MASQUERADE 2>/dev/null || \
@@ -43,7 +44,13 @@ iptables -C FORWARD -i "\$LAN" -o "\$UPSTREAM" -j ACCEPT 2>/dev/null || \
 iptables -C INPUT -i "\$LAN" -p tcp --dport 8080 -j ACCEPT 2>/dev/null || \
     iptables -A INPUT -i "\$LAN" -p tcp --dport 8080 -j ACCEPT
 
-echo "[hanryx-nat] NAT rules applied: \$LAN → \$UPSTREAM"
+# ── Network isolation: block shop devices from reaching home network ──────────
+# Shop devices (192.168.10.x) can reach the internet but cannot see or
+# communicate with any device on the Google Nest home network (192.168.86.x).
+iptables -C FORWARD -i "\$LAN" -d "\$HOME_NET" -j DROP 2>/dev/null || \
+    iptables -I FORWARD 1 -i "\$LAN" -d "\$HOME_NET" -j DROP
+
+echo "[hanryx-nat] NAT rules applied: \$LAN → \$UPSTREAM (home network blocked)"
 EOF
 chmod +x /usr/local/bin/hanryx-nat.sh
 
