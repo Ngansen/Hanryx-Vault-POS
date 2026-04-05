@@ -25,11 +25,14 @@ FWD=$(sysctl -n net.ipv4.ip_forward)
 [[ "$FWD" == "1" ]] && ok "IPv4 forwarding enabled" || fail "IPv4 forwarding DISABLED — run: echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward"
 
 section "iptables NAT rules"
-if iptables -t nat -L POSTROUTING -n 2>/dev/null | grep -q MASQUERADE; then
+if [[ $EUID -ne 0 ]]; then
+    warn "Run with sudo for iptables check:  sudo bash check-network.sh"
+    warn "Skipping iptables check (needs root)."
+elif iptables -t nat -L POSTROUTING -n 2>/dev/null | grep -q MASQUERADE; then
     ok "MASQUERADE rule present"
     iptables -t nat -L POSTROUTING -n --line-numbers
 else
-    fail "No MASQUERADE rule — NAT not set up"
+    fail "No MASQUERADE rule — run: sudo bash setup-nat-service.sh"
 fi
 
 section "dnsmasq status"
