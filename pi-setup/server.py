@@ -2174,6 +2174,24 @@ def init_db():
     # Add indexes for fast number/year/rarity searches
     try:
         db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_qr_code    ON inventory(qr_code)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_name        ON inventory(name)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_category    ON inventory(category)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_stock       ON inventory(stock)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_stock_cat   ON inventory(stock, category)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_updated_at  ON inventory(updated_at DESC)"
+        )
+        db.execute(
             "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
         )
         db.execute(
@@ -12894,12 +12912,12 @@ def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
     parts = [p for p in [name, lang_suffix, number, set_n, "pokemon"] if p]
     query = " ".join(parts).strip()
 
-    with _TPE(max_workers=4) as pool:
-        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 5)))
+    futs  = [_worker_pool.submit(_ebay_finding_page, query, p) for p in range(1, 4)]
+    pages = [f.result(timeout=20) for f in futs]
 
     items: list[dict] = []
     seen:  set[str]   = set()
-    for html in htmls:
+    for html in pages:
         for item in _parse_ebay_page(html):
             key = f"{item['title'][:60]}:{item['price']}"
             if key not in seen:
@@ -12938,13 +12956,13 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
 
     query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
 
-    with _TPE(max_workers=6) as pool:
-        htmls = list(pool.map(lambda p: _fetch_ebay_page(query, p), range(1, 7)))
+    futs  = [_worker_pool.submit(_ebay_finding_page, query, p) for p in range(1, 4)]
+    pages = [f.result(timeout=20) for f in futs]
 
     items: list[dict] = []
     seen:  set[str]   = set()
-    for html in htmls:
-        for item in _parse_ebay_page(html):
+    for page in pages:
+        for item in _parse_ebay_page(page):
             key = f"{item['title'][:60]}:{item['price']}"
             if key not in seen:
                 seen.add(key)
