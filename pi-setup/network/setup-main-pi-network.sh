@@ -34,6 +34,7 @@ DHCP_END="192.168.10.200"
 DHCP_LEASE="12h"
 DNS_SERVERS="8.8.8.8,1.1.1.1"  # pushed to downstream clients
 HOSTNAME_LABEL="hanryx-main"
+NM_CON_NAME="hanryx-lan"        # NetworkManager connection name
 # ─────────────────────────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -43,18 +44,44 @@ die()   { echo -e "${RED}[✗] $*${NC}"; exit 1; }
 
 [[ $EUID -ne 0 ]] && die "Run as root: sudo bash $0"
 
+# ── 1. Install packages ───────────────────────────────────────────────────────
 info "Installing packages…"
 apt-get update -qq
 apt-get install -y -qq dnsmasq iptables iptables-persistent netfilter-persistent
 
-# ── 1. Static IP on eth0 via dhcpcd ─────────────────────────────────────────
-DHCPCD_CONF="/etc/dhcpcd.conf"
+# ── 2. Static IP on eth0 — NetworkManager (Pi OS Bookworm) or dhcpcd ─────────
 info "Configuring static IP $LAN_IP on $LAN_IFACE…"
 
-# Remove any previous HanryxVault block
-sed -i '/# BEGIN hanryx-network/,/# END hanryx-network/d' "$DHCPCD_CONF"
+if command -v nmcli &>/dev/null && systemctl is-active --quiet NetworkManager; then
+    info "Using NetworkManager (nmcli)…"
 
-cat >> "$DHCPCD_CONF" << EOF
+    # Remove any existing connection on this interface
+    EXISTING=$(nmcli -t -f NAME,DEVICE con show | grep ":$LAN_IFACE" | cut -d: -f1 || true)
+    if [[ -n "$EXISTING" ]]; then
+        warn "Removing existing NM connection: $EXISTING"
+        nmcli con delete "$EXISTING" 2>/dev/null || true
+    fi
+    # Also remove by name if it already exists
+    nmcli con delete "$NM_CON_NAME" 2>/dev/null || true
+
+    nmcli con add \
+        type ethernet \
+        ifname "$LAN_IFACE" \
+        con-name "$NM_CON_NAME" \
+        ipv4.method manual \
+        ipv4.addresses "$LAN_IP/24" \
+        ipv4.dns "8.8.8.8 1.1.1.1" \
+        ipv6.method disabled \
+        connection.autoconnect yes
+
+    nmcli con up "$NM_CON_NAME"
+    info "NetworkManager: $LAN_IFACE → $LAN_IP/24 active."
+
+else
+    info "Falling back to dhcpcd…"
+    DHCPCD_CONF="/etc/dhcpcd.conf"
+    sed -i '/# BEGIN hanryx-network/,/# END hanryx-network/d' "$DHCPCD_CONF"
+    cat >> "$DHCPCD_CONF" << EOF
 
 # BEGIN hanryx-network — managed by setup-main-pi-network.sh
 interface $LAN_IFACE
@@ -63,8 +90,10 @@ interface $LAN_IFACE
     nohook wpa_supplicant
 # END hanryx-network
 EOF
+    systemctl restart dhcpcd 2>/dev/null || true
+fi
 
-# ── 2. dnsmasq (DHCP + DNS for the LAN) ─────────────────────────────────────
+# ── 3. dnsmasq (DHCP + DNS for the LAN) ──────────────────────────────────────
 info "Writing dnsmasq config…"
 DNSMASQ_CONF="/etc/dnsmasq.d/hanryx-lan.conf"
 cat > "$DNSMASQ_CONF" << EOF
@@ -93,17 +122,16 @@ local=/hanryx.local/
 expand-hosts
 EOF
 
-# ── 3. IP forwarding ─────────────────────────────────────────────────────────
+# ── 4. IP forwarding ──────────────────────────────────────────────────────────
 info "Enabling IP forwarding…"
-SYSCTL_CONF="/etc/sysctl.d/99-hanryx-forward.conf"
-cat > "$SYSCTL_CONF" << EOF
+cat > /etc/sysctl.d/99-hanryx-forward.conf << EOF
 # HanryxVault — allow Pi to route packets between interfaces
 net.ipv4.ip_forward=1
 net.ipv6.conf.all.forwarding=1
 EOF
 sysctl --system -q
 
-# ── 4. iptables NAT (wlan0 ← masquerade ← eth0) ─────────────────────────────
+# ── 5. iptables NAT (eth0 → wlan0) ───────────────────────────────────────────
 info "Setting up NAT masquerade ($LAN_IFACE → $UPSTREAM_IFACE)…"
 iptables -t nat -F POSTROUTING
 iptables -F FORWARD
@@ -118,48 +146,40 @@ iptables -A FORWARD -i "$UPSTREAM_IFACE" -o "$LAN_IFACE" \
 # Forward new connections from LAN to upstream
 iptables -A FORWARD -i "$LAN_IFACE" -o "$UPSTREAM_IFACE" -j ACCEPT
 
+# Allow POS dashboard from LAN
+iptables -C INPUT -i "$LAN_IFACE" -p tcp --dport 8080 -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -i "$LAN_IFACE" -p tcp --dport 8080 -j ACCEPT
+iptables -C INPUT -i lo -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -i lo -j ACCEPT
+
 # Save rules so they survive reboot
 netfilter-persistent save
 info "iptables rules saved."
 
-# ── 5. Persist hostname ───────────────────────────────────────────────────────
+# ── 6. Persist hostname ───────────────────────────────────────────────────────
 info "Setting hostname to $HOSTNAME_LABEL…"
 hostnamectl set-hostname "$HOSTNAME_LABEL"
 grep -q "$HOSTNAME_LABEL" /etc/hosts || \
     echo "127.0.1.1  $HOSTNAME_LABEL" >> /etc/hosts
-
-# Add friendly names to /etc/hosts for downstream devices
 grep -q "satellite-pi" /etc/hosts || \
     echo "192.168.10.10  satellite-pi satellite-pi.hanryx.local" >> /etc/hosts
 grep -q "netgear-r6020" /etc/hosts || \
     echo "192.168.10.11  netgear-r6020 netgear-r6020.hanryx.local" >> /etc/hosts
 
-# ── 6. Resolve port-53 conflict (systemd-resolved vs dnsmasq) ────────────────
-# systemd-resolved listens on 127.0.0.53:53 which blocks dnsmasq from starting.
-# We disable it and write a static resolv.conf instead.
+# ── 7. Resolve port-53 conflict (systemd-resolved vs dnsmasq) ────────────────
 if systemctl is-active --quiet systemd-resolved; then
     info "Stopping systemd-resolved (conflicts with dnsmasq on port 53)…"
     systemctl stop    systemd-resolved
     systemctl disable systemd-resolved
 fi
-# Write a clean resolv.conf that points directly to dnsmasq / upstream DNS
 rm -f /etc/resolv.conf
 printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/resolv.conf
 
-# ── 7. Start & enable services ───────────────────────────────────────────────
-info "Restarting services…"
+# ── 8. Start & enable dnsmasq ────────────────────────────────────────────────
+info "Starting dnsmasq…"
 systemctl unmask dnsmasq
 systemctl enable dnsmasq
 systemctl restart dnsmasq
-systemctl restart dhcpcd
-
-# ── 7. Firewall: allow POS dashboard from LAN only ───────────────────────────
-info "Allowing POS port 8080 from LAN…"
-iptables -C INPUT -i "$LAN_IFACE" -p tcp --dport 8080 -j ACCEPT 2>/dev/null || \
-    iptables -A INPUT -i "$LAN_IFACE" -p tcp --dport 8080 -j ACCEPT
-iptables -C INPUT -i lo -j ACCEPT 2>/dev/null || \
-    iptables -A INPUT -i lo -j ACCEPT
-netfilter-persistent save
 
 echo ""
 echo -e "${GREEN}══════════════════════════════════════════${NC}"
@@ -172,11 +192,12 @@ echo "  Local domain : hanryx.local"
 echo "  Upstream     : $UPSTREAM_IFACE (WiFi)"
 echo ""
 echo "  Next steps:"
-echo "  1. Plug eth0 into the Netgear unmanaged switch."
-echo "  2. Plug R6020 LAN port (not WAN) into the switch."
-echo "  3. Set R6020 to AP mode (disable its DHCP server in its web UI)."
-echo "  4. Run setup-satellite-network.sh on the satellite Pi."
-echo "  5. Run: sudo systemctl status dnsmasq   to confirm DHCP is up."
+echo "  1. Verify eth0 has the IP:  ip addr show eth0"
+echo "  2. Plug eth0 into the Netgear unmanaged switch."
+echo "  3. Plug R6020 LAN port (not WAN) into the switch."
+echo "  4. Set R6020 to AP mode (disable its DHCP in web UI)."
+echo "  5. Run setup-satellite-network.sh on the satellite Pi."
+echo "  6. Run: bash check-network.sh  to verify everything."
 echo ""
 warn "Reboot recommended to apply all settings cleanly:"
 echo "  sudo reboot"
