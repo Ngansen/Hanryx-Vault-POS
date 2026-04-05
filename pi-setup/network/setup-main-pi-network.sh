@@ -134,7 +134,19 @@ grep -q "satellite-pi" /etc/hosts || \
 grep -q "netgear-r6020" /etc/hosts || \
     echo "192.168.10.11  netgear-r6020 netgear-r6020.hanryx.local" >> /etc/hosts
 
-# ── 6. Start & enable services ───────────────────────────────────────────────
+# ── 6. Resolve port-53 conflict (systemd-resolved vs dnsmasq) ────────────────
+# systemd-resolved listens on 127.0.0.53:53 which blocks dnsmasq from starting.
+# We disable it and write a static resolv.conf instead.
+if systemctl is-active --quiet systemd-resolved; then
+    info "Stopping systemd-resolved (conflicts with dnsmasq on port 53)…"
+    systemctl stop    systemd-resolved
+    systemctl disable systemd-resolved
+fi
+# Write a clean resolv.conf that points directly to dnsmasq / upstream DNS
+rm -f /etc/resolv.conf
+printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+
+# ── 7. Start & enable services ───────────────────────────────────────────────
 info "Restarting services…"
 systemctl unmask dnsmasq
 systemctl enable dnsmasq

@@ -135,7 +135,16 @@ iptables -C INPUT -i lo -j ACCEPT 2>/dev/null || \
     iptables -A INPUT -i lo -j ACCEPT
 netfilter-persistent save
 
-# ── 8. Enable services ───────────────────────────────────────────────────────
+# ── 8. Resolve port-53 conflict (systemd-resolved vs dnsmasq) ────────────────
+if systemctl is-active --quiet systemd-resolved; then
+    info "Stopping systemd-resolved (conflicts with dnsmasq on port 53)…"
+    systemctl stop    systemd-resolved
+    systemctl disable systemd-resolved
+fi
+rm -f /etc/resolv.conf
+printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+
+# ── 9. Enable services ───────────────────────────────────────────────────────
 systemctl unmask dnsmasq
 systemctl enable dnsmasq
 systemctl restart dnsmasq
