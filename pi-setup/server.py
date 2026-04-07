@@ -15153,162 +15153,277 @@ def kiosk_sse_stream():
 
 @app.route("/kiosk")
 def kiosk_display():
-    """Customer-facing kiosk display — designed for a second screen / TV."""
+    """Customer-facing kiosk display — one screen, four modes: idle / cart / trade / thankyou."""
     ks      = _load_kiosk_settings()
     bg      = ks["bg_color"]
     accent  = ks["accent_color"]
     name    = ks["store_name"]
     tagline = ks["tagline"]
-    idle    = ks["idle_message"]
+    idle_msg = ks["idle_message"]
     ig      = ks["instagram"] if ks.get("show_social") else ""
     web     = ks["website"]   if ks.get("show_social") else ""
     enabled = ks["enabled"]
 
     social_html = ""
-    if ig:
-        social_html += f'<div class="social">📸 {ig}</div>'
-    if web:
-        social_html += f'<div class="social">🌐 {web}</div>'
+    if ig:  social_html += f'<span class="social-item">📸 {ig}</span>'
+    if web: social_html += f'<span class="social-item">🌐 {web}</span>'
 
-    disabled_overlay = (
-        '<div id="disabled-overlay">'
-        '🖥️ Kiosk display not yet enabled — configure in Admin → Kiosk'
-        '</div>'
-    ) if not enabled else ""
+    dis = ('<div id="dis-overlay">🖥️ Kiosk not enabled — Admin → Kiosk</div>'
+           if not enabled else "")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{name} — Customer Display</title>
+<title>{name}</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
-           font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
-#screen{{display:flex;flex-direction:column;height:100vh;padding:40px}}
-#header{{text-align:center;margin-bottom:32px}}
-#header h1{{font-size:clamp(28px,5vw,56px);font-weight:900;color:{accent};letter-spacing:2px}}
-#header p{{font-size:clamp(14px,2vw,22px);color:#999;margin-top:8px}}
-/* IDLE */
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif}}
+
+/* ── Layout shell ──────────────────────────────── */
+#shell{{display:flex;flex-direction:column;height:100vh}}
+#topbar{{display:flex;justify-content:space-between;align-items:center;
+  padding:18px 40px;border-bottom:1px solid #1a1a1a;flex-shrink:0}}
+#store-name{{font-size:clamp(18px,2.8vw,36px);font-weight:900;color:{accent};letter-spacing:1px}}
+#store-tag{{font-size:clamp(11px,1.4vw,18px);color:#555;margin-top:2px}}
+#topbar-right{{text-align:right}}
+#clock{{font-size:clamp(22px,3.5vw,48px);font-weight:200;color:{accent};letter-spacing:3px}}
+#mode-badge{{font-size:clamp(10px,1.2vw,15px);color:#444;text-transform:uppercase;
+  letter-spacing:1.5px;margin-top:4px}}
+#main{{flex:1;overflow:hidden;display:flex;flex-direction:column}}
+
+/* ── IDLE ─────────────────────────────────────── */
 #idle{{flex:1;display:flex;flex-direction:column;align-items:center;
-       justify-content:center;gap:20px;text-align:center}}
-#idle-msg{{font-size:clamp(18px,3vw,36px);color:#ccc;max-width:800px;line-height:1.5}}
-.social{{font-size:clamp(13px,1.8vw,24px);color:#666;margin-top:4px}}
-#idle-clock{{font-size:clamp(40px,8vw,100px);font-weight:200;color:{accent};
-             letter-spacing:4px;margin-bottom:10px}}
-/* CART */
-#cart{{flex:1;display:flex;flex-direction:column;gap:0}}
+  justify-content:center;gap:18px;text-align:center;padding:40px}}
+#idle-msg{{font-size:clamp(20px,3.5vw,52px);color:#ddd;font-weight:300;line-height:1.4;max-width:860px}}
+.social-item{{font-size:clamp(13px,1.6vw,22px);color:#555;margin:0 16px}}
+
+/* ── CART ─────────────────────────────────────── */
+#cart{{flex:1;display:none;flex-direction:column;padding:0 40px 30px}}
+#cart-header{{font-size:clamp(13px,1.4vw,18px);color:#555;text-transform:uppercase;
+  letter-spacing:1.5px;padding:20px 0 14px;border-bottom:1px solid #1a1a1a}}
 #cart-items{{flex:1;overflow:hidden}}
-.cart-row{{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid #222;gap:12px}}
-.cart-name{{flex:1;font-size:clamp(14px,2.2vw,30px);font-weight:600;color:#fff}}
-.cart-qty{{font-size:clamp(13px,1.8vw,22px);color:#999;min-width:40px;text-align:center}}
-.cart-price{{font-size:clamp(14px,2.2vw,30px);font-weight:700;color:{accent};
-             min-width:100px;text-align:right}}
-#totals{{border-top:2px solid {accent};padding-top:20px;margin-top:auto}}
-.total-row{{display:flex;justify-content:space-between;
-            font-size:clamp(14px,2vw,26px);padding:4px 0;color:#ccc}}
-.total-row.grand{{color:#fff;font-size:clamp(22px,3.5vw,44px);
-                  font-weight:900;padding-top:12px;border-top:1px solid #333;margin-top:10px}}
-.total-val{{color:{accent}}}
-/* THANK YOU */
-#thankyou{{flex:1;display:flex;flex-direction:column;align-items:center;
-           justify-content:center;gap:20px;text-align:center}}
-#thankyou h2{{font-size:clamp(40px,8vw,100px);font-weight:900;color:{accent}}}
-#thankyou p{{font-size:clamp(18px,3vw,36px);color:#ccc}}
-#thankyou .method{{font-size:clamp(14px,2vw,28px);color:#666;margin-top:8px}}
-/* disabled overlay */
-#disabled-overlay{{position:fixed;inset:0;background:{bg};
-                   display:flex;align-items:center;justify-content:center;
-                   font-size:clamp(16px,2vw,28px);color:#444;z-index:9999;text-align:center;padding:40px}}
+.ci{{display:flex;align-items:baseline;padding:14px 0;border-bottom:1px solid #161616;gap:14px}}
+.ci-name{{flex:1;font-size:clamp(15px,2.2vw,32px);font-weight:600;color:#f0f0f0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.ci-cond{{font-size:clamp(11px,1.2vw,16px);color:#555;margin-left:6px;font-weight:400}}
+.ci-qty{{font-size:clamp(13px,1.6vw,22px);color:#666;min-width:44px;text-align:right}}
+.ci-price{{font-size:clamp(15px,2.2vw,32px);font-weight:700;color:{accent};
+  min-width:90px;text-align:right}}
+#cart-totals{{border-top:2px solid {accent};padding-top:18px;margin-top:8px}}
+.tr{{display:flex;justify-content:space-between;padding:5px 0;
+  font-size:clamp(14px,1.8vw,26px);color:#888}}
+.tr.grand{{color:#fff;font-size:clamp(24px,3.8vw,52px);font-weight:900;
+  padding-top:14px;margin-top:6px;border-top:1px solid #222}}
+.tv{{color:{accent}}}
+
+/* ── TRADE ─────────────────────────────────────── */
+#trade{{flex:1;display:none;flex-direction:column;padding:0 40px 30px}}
+#trade-header{{padding:20px 0 14px;border-bottom:1px solid #1a1a1a}}
+#trade-customer{{font-size:clamp(20px,3vw,44px);font-weight:900;color:#fff}}
+#trade-ref{{font-size:clamp(11px,1.3vw,17px);color:#555;margin-top:4px;letter-spacing:1px}}
+#trade-items{{flex:1;overflow:hidden}}
+.ti{{display:flex;align-items:baseline;padding:12px 0;border-bottom:1px solid #161616;gap:14px}}
+.ti-name{{flex:1;font-size:clamp(14px,2vw,28px);font-weight:600;color:#f0f0f0}}
+.ti-cond{{font-size:clamp(11px,1.2vw,16px);padding:2px 8px;border-radius:4px;
+  background:#1a1a1a;color:#888;margin-left:6px}}
+.ti-market{{font-size:clamp(12px,1.4vw,19px);color:#444;min-width:70px;text-align:right}}
+.ti-offer{{font-size:clamp(15px,2vw,28px);font-weight:700;color:{accent};min-width:80px;text-align:right}}
+#trade-totals{{border-top:2px solid #333;padding-top:18px;margin-top:8px;
+  display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+.tot-card{{background:#111;border:1px solid #222;border-radius:12px;padding:16px 20px;text-align:center}}
+.tot-label{{font-size:clamp(11px,1.3vw,17px);color:#555;text-transform:uppercase;
+  letter-spacing:1px;margin-bottom:8px}}
+.tot-value{{font-size:clamp(28px,4.5vw,62px);font-weight:900}}
+.tot-card.cash .tot-value{{color:#22c55e}}
+.tot-card.credit .tot-value{{color:{accent}}}
+.credit-bonus{{font-size:clamp(10px,1.1vw,14px);color:#555;margin-top:4px}}
+
+/* ── TRADE COMPLETE ────────────────────────────── */
+#trade-done{{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:24px;text-align:center;padding:40px}}
+#td-name{{font-size:clamp(22px,3.5vw,50px);color:#fff;font-weight:300}}
+#td-totals{{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;margin-top:10px}}
+.td-card{{background:#111;border:1px solid #222;border-radius:14px;padding:24px 40px;min-width:200px}}
+.td-lbl{{font-size:clamp(12px,1.4vw,18px);color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}}
+.td-amt{{font-size:clamp(36px,5.5vw,80px);font-weight:900}}
+
+/* ── THANK YOU ─────────────────────────────────── */
+#ty{{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px;text-align:center;padding:40px}}
+#ty h2{{font-size:clamp(42px,8vw,110px);font-weight:900;color:{accent}}}
+#ty p{{font-size:clamp(18px,3vw,42px);color:#ccc;font-weight:300}}
+#ty-method{{font-size:clamp(14px,1.8vw,26px);color:#555;margin-top:6px}}
+
+/* ── Disabled ──────────────────────────────────── */
+#dis-overlay{{position:fixed;inset:0;background:{bg};display:flex;align-items:center;
+  justify-content:center;font-size:clamp(16px,2vw,28px);color:#333;z-index:9999;
+  text-align:center;padding:40px}}
 </style>
 </head>
 <body>
-{disabled_overlay}
-<div id="screen">
-  <div id="header">
-    <h1>{name}</h1>
-    <p>{tagline}</p>
+{dis}
+<div id="shell">
+
+  <!-- Top bar — always visible -->
+  <div id="topbar">
+    <div>
+      <div id="store-name">{name}</div>
+      <div id="store-tag">{tagline}</div>
+    </div>
+    <div id="topbar-right">
+      <div id="clock"></div>
+      <div id="mode-badge">Ready</div>
+    </div>
   </div>
 
-  <!-- IDLE STATE -->
-  <div id="idle">
-    <div id="idle-clock"></div>
-    <div id="idle-msg">{idle}</div>
-    {social_html}
-  </div>
+  <div id="main">
 
-  <!-- CART STATE -->
-  <div id="cart" style="display:none">
-    <div id="cart-items"></div>
-    <div id="totals"></div>
-  </div>
+    <!-- IDLE -->
+    <div id="idle">
+      <div id="idle-msg">{idle_msg}</div>
+      <div style="margin-top:8px">{social_html}</div>
+    </div>
 
-  <!-- THANK YOU STATE -->
-  <div id="thankyou" style="display:none">
-    <h2>Thank You! 🎉</h2>
-    <p>See you next time!</p>
-    <div class="method" id="ty-method"></div>
+    <!-- CART (checkout) -->
+    <div id="cart">
+      <div id="cart-header">Your order</div>
+      <div id="cart-items"></div>
+      <div id="cart-totals"></div>
+    </div>
+
+    <!-- TRADE (trade-in calculator) -->
+    <div id="trade">
+      <div id="trade-header">
+        <div id="trade-customer"></div>
+        <div id="trade-ref"></div>
+      </div>
+      <div id="trade-items"></div>
+      <div id="trade-totals">
+        <div class="tot-card cash">
+          <div class="tot-label">Cash Value</div>
+          <div class="tot-value" id="trade-cash">£0.00</div>
+        </div>
+        <div class="tot-card credit">
+          <div class="tot-label">Store Credit</div>
+          <div class="tot-value" id="trade-credit">£0.00</div>
+          <div class="credit-bonus">+20% bonus vs cash</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRADE DONE -->
+    <div id="trade-done">
+      <div style="font-size:clamp(48px,8vw,96px)">🎉</div>
+      <div id="td-name"></div>
+      <div id="td-totals">
+        <div class="td-card"><div class="td-lbl">Cash Value</div><div class="td-amt" style="color:#22c55e" id="td-cash"></div></div>
+        <div class="td-card"><div class="td-lbl">Store Credit</div><div class="td-amt" style="color:{accent}" id="td-credit"></div></div>
+      </div>
+      <div style="font-size:clamp(16px,2vw,28px);color:#555;margin-top:8px">Thank you for trading with us!</div>
+    </div>
+
+    <!-- THANK YOU (after sale) -->
+    <div id="ty">
+      <h2>Thank You!</h2>
+      <p>See you next time</p>
+      <div id="ty-method"></div>
+    </div>
+
   </div>
 </div>
 
 <script>
 (function(){{
-  var idle   = document.getElementById("idle");
-  var cart   = document.getElementById("cart");
-  var ty     = document.getElementById("thankyou");
-  var items  = document.getElementById("cart-items");
-  var totals = document.getElementById("totals");
-  var tyMeth = document.getElementById("ty-method");
-  var clockEl= document.getElementById("idle-clock");
+  var elIdle  = document.getElementById("idle");
+  var elCart  = document.getElementById("cart");
+  var elTrade = document.getElementById("trade");
+  var elTDone = document.getElementById("trade-done");
+  var elTy    = document.getElementById("ty");
+  var elBadge = document.getElementById("mode-badge");
 
-  function tick(){{
-    if(clockEl) clockEl.textContent =
-      new Date().toLocaleTimeString([],{{hour:"2-digit",minute:"2-digit"}});
+  /* clock */
+  var clk = document.getElementById("clock");
+  function tick(){{ clk.textContent = new Date().toLocaleTimeString([],{{hour:"2-digit",minute:"2-digit"}}); }}
+  tick(); setInterval(tick,1000);
+
+  function f(n){{ return "£"+parseFloat(n||0).toFixed(2); }}
+  function esc(s){{ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }}
+
+  function showOnly(el, badge){{
+    [elIdle,elCart,elTrade,elTDone,elTy].forEach(function(e){{ e.style.display="none"; }});
+    el.style.display="flex";
+    if(elBadge) elBadge.textContent = badge||"";
   }}
-  tick(); setInterval(tick, 1000);
 
-  function fmt(n){{ return "$"+parseFloat(n||0).toFixed(2); }}
+  function goIdle(){{ showOnly(elIdle,"Ready"); }}
 
-  function resetIdle(){{
-    idle.style.display="flex"; cart.style.display="none"; ty.style.display="none";
-  }}
-
-  function renderCart(state){{
-    if(state.paid){{
-      idle.style.display="none"; cart.style.display="none"; ty.style.display="flex";
-      if(tyMeth) tyMeth.textContent = state.payment_method ? "Paid by "+state.payment_method : "";
-      setTimeout(resetIdle, 5000);
+  /* ── CART mode ── */
+  function renderCart(s){{
+    if(s.paid){{
+      showOnly(elTy,"Sale complete");
+      var m=document.getElementById("ty-method");
+      if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
+      setTimeout(goIdle,6000);
       return;
     }}
-    if(!state.active || !state.items || state.items.length===0){{
-      resetIdle(); return;
-    }}
-    idle.style.display="none"; ty.style.display="none"; cart.style.display="flex";
-    items.innerHTML = state.items.map(function(it){{
-      return "<div class='cart-row'>"
-        +"<div class='cart-name'>"+it.name+"</div>"
-        +"<div class='cart-qty'>x"+(it.qty||1)+"</div>"
-        +"<div class='cart-price'>"+fmt(it.price)+"</div>"
-        +"</div>";
+    if(!s.active||!s.items||!s.items.length){{ goIdle(); return; }}
+    showOnly(elCart,"Checkout");
+    var ci=document.getElementById("cart-items");
+    ci.innerHTML=s.items.map(function(it){{
+      var cond=it.condition?" <span class='ci-cond'>"+esc(it.condition)+"</span>":"";
+      return "<div class='ci'><div class='ci-name'>"+esc(it.name)+cond+"</div>"
+        +"<div class='ci-qty'>x"+(it.qty||1)+"</div>"
+        +"<div class='ci-price'>"+f(it.price)+"</div></div>";
     }}).join("");
-    var sub=state.subtotal||0, tax=state.tax||0, tot=state.total||0;
-    var rows="<div class='total-row'><span>Subtotal</span>"
-             +"<span class='total-val'>"+fmt(sub)+"</span></div>";
-    if(tax>0) rows+="<div class='total-row'><span>Tax</span>"
-                    +"<span class='total-val'>"+fmt(tax)+"</span></div>";
-    rows+="<div class='total-row grand'><span>TOTAL</span>"
-          +"<span class='total-val'>"+fmt(tot)+"</span></div>";
-    totals.innerHTML=rows;
+    var sub=s.subtotal||0,tax=s.tax||0,tot=s.total||0;
+    var rows="<div class='tr'><span>Subtotal</span><span class='tv'>"+f(sub)+"</span></div>";
+    if(tax>0) rows+="<div class='tr'><span>Tax</span><span class='tv'>"+f(tax)+"</span></div>";
+    rows+="<div class='tr grand'><span>TOTAL</span><span class='tv'>"+f(tot)+"</span></div>";
+    document.getElementById("cart-totals").innerHTML=rows;
   }}
 
-  var evtSrc = new EventSource("/kiosk/stream");
-  evtSrc.onmessage = function(e){{
-    try{{ renderCart(JSON.parse(e.data)); }} catch(err){{ console.warn("[kiosk]",err); }}
+  /* ── TRADE mode ── */
+  function renderTrade(s){{
+    if(s.trade_complete){{
+      showOnly(elTDone,"Trade complete");
+      document.getElementById("td-name").textContent="Thank you, "+(s.trade_customer||"")+"!";
+      document.getElementById("td-cash").textContent=f(s.trade_cash||0);
+      document.getElementById("td-credit").textContent=f(s.trade_credit||0);
+      setTimeout(goIdle,10000);
+      return;
+    }}
+    showOnly(elTrade,"Trade-In");
+    document.getElementById("trade-customer").textContent="Trade-In — "+(s.trade_customer||"");
+    document.getElementById("trade-ref").textContent=s.trade_reference||"";
+    var items=s.trade_items||[];
+    var ti=document.getElementById("trade-items");
+    ti.innerHTML=items.length ? items.map(function(it){{
+      return "<div class='ti'>"
+        +"<div class='ti-name'>"+esc(it.name)+"<span class='ti-cond'>"+esc(it.condition||"")+"</span></div>"
+        +"<div class='ti-market'>"+f(it.market)+" market</div>"
+        +"<div class='ti-offer'>"+f(it.offer)+"</div>"
+        +"</div>";
+    }}).join("")
+    : "<div style='color:#444;padding:20px 0;font-size:clamp(14px,1.8vw,22px)'>Waiting for cards to be assessed…</div>";
+    document.getElementById("trade-cash").textContent=f(s.trade_cash||0);
+    document.getElementById("trade-credit").textContent=f(s.trade_credit||0);
+  }}
+
+  /* ── SSE dispatcher ── */
+  function onData(s){{
+    if(s.mode==="trade"){{ renderTrade(s); return; }}
+    if(s.mode==="idle"){{ goIdle(); return; }}
+    renderCart(s);
+  }}
+
+  var es=new EventSource("/kiosk/stream");
+  es.onmessage=function(e){{
+    try{{ onData(JSON.parse(e.data)); }}catch(err){{ console.warn("[kiosk]",err); }}
   }};
-  evtSrc.onerror = function(){{
-    console.log("[kiosk] SSE reconnecting...");
-  }};
+  es.onerror=function(){{ console.log("[kiosk] SSE reconnecting…"); }};
 }})();
 </script>
 </body>
