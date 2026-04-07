@@ -6621,7 +6621,11 @@ def _admin_nav(active: str = "dashboard") -> str:
     return (
         f'<nav class="admin-nav">'
         f'<div class="nav-brand">'
-        f'<span class="nav-logo">🔐 HANRYX{hub_dot}</span>'
+        f'<a href="/admin" style="display:flex;align-items:center;gap:8px;text-decoration:none">'
+        f'<img src="/static/logo.png" alt="HanryxVault" '
+        f'style="height:34px;width:34px;object-fit:cover;border-radius:50%;border:1px solid #f59e0b33">'
+        f'<span class="nav-logo">HANRYX<span style="color:#666;font-weight:400">VAULT</span>{hub_dot}</span>'
+        f'</a>'
         f'</div>'
         f'{items}'
         f'<span class="nav-clock" id="clock"></span>'
@@ -15269,9 +15273,14 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   <!-- Top bar — always visible -->
   <div id="topbar">
-    <div>
-      <div id="store-name">{name}</div>
-      <div id="store-tag">{tagline}</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <img src="/static/logo.png" alt="HanryxVault"
+           style="height:52px;width:52px;object-fit:cover;border-radius:50%;
+                  border:2px solid {accent};flex-shrink:0">
+      <div>
+        <div id="store-name">{name}</div>
+        <div id="store-tag">{tagline}</div>
+      </div>
     </div>
     <div id="topbar-right">
       <div id="clock"></div>
