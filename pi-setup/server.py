@@ -15211,6 +15211,7 @@ function onYouTubeIframeAPIReady() {{
   ytPlayer = new YT.Player('yt-frame', {{
     videoId: '{yt_vid or ""}',
     playerVars: {{autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,
+      cc_load_policy:1,cc_lang_pref:'en',
       {"loop:1,playlist:'" + yt_vid + "'" if yt_vid and not yt_pid else ""},
       {"list:'" + yt_pid + "',listType:'playlist'" if yt_pid else ""}
     }},
@@ -15223,13 +15224,13 @@ function ytPlay()  {{ if(ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo(); 
 function ytPause() {{ if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }}
 """
         _yt_idle_html = """
-<div id="yt-wrap" style="position:absolute;inset:0;z-index:0">
+<div id="yt-wrap" style="position:fixed;inset:0;z-index:1">
   <div id="yt-frame" style="width:100%;height:100%"></div>
 </div>
 <button id="unmute-btn" onclick="toggleMute(this)"
-  style="position:absolute;bottom:20px;right:20px;z-index:10;
-         background:#0009;border:1px solid #f59e0b44;border-radius:50%;
-         width:48px;height:48px;font-size:20px;cursor:pointer;
+  style="position:fixed;bottom:20px;right:20px;z-index:30;
+         background:#0009;border:1px solid #f59e0b55;border-radius:50%;
+         width:52px;height:52px;font-size:22px;cursor:pointer;
          display:flex;align-items:center;justify-content:center;color:#fff">
   🔇
 </button>"""
@@ -15268,7 +15269,9 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 /* ── Layout shell ──────────────────────────────── */
 #shell{{display:flex;flex-direction:column;height:100vh}}
 #topbar{{display:flex;justify-content:space-between;align-items:center;
-  padding:18px 40px;border-bottom:1px solid #1a1a1a;flex-shrink:0}}
+  padding:18px 40px;border-bottom:1px solid #1a1a1a;flex-shrink:0;
+  position:relative;z-index:20;
+  background:{'linear-gradient(to bottom,rgba(0,0,0,0.82) 0%,rgba(0,0,0,0.55) 100%)' if vid_mode and yt_embed_id else bg}}}
 #store-name{{font-size:clamp(18px,2.8vw,36px);font-weight:900;color:{accent};letter-spacing:1px}}
 #store-tag{{font-size:clamp(11px,1.4vw,18px);color:#555;margin-top:2px}}
 #topbar-right{{text-align:right}}
@@ -15447,14 +15450,23 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   function f(n){{ return "£"+parseFloat(n||0).toFixed(2); }}
   function esc(s){{ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }}
 
+  var elUnmute = document.getElementById("unmute-btn");
+
   function showOnly(el, badge){{
     [elIdle,elCart,elTrade,elTDone,elTy].forEach(function(e){{ e.style.display="none"; }});
     el.style.display="flex";
     if(elBadge) elBadge.textContent = badge||"";
-    if(el !== elIdle) ytPause();
+    if(el !== elIdle){{
+      ytPause();
+      if(elUnmute) elUnmute.style.display="none";
+    }}
   }}
 
-  function goIdle(){{ showOnly(elIdle,"Ready"); ytPlay(); }}
+  function goIdle(){{
+    showOnly(elIdle,"Ready");
+    ytPlay();
+    if(elUnmute) elUnmute.style.display="flex";
+  }}
 
   /* ── CART mode ── */
   function renderCart(s){{
