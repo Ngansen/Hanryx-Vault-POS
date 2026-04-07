@@ -5311,7 +5311,13 @@ def admin_trade_in_create():
         (ref, customer, notes)
     ).fetchone()
     db.commit()
-    return jsonify({"ok": True, "id": row["id"], "reference": ref})
+    new_id = row["id"]
+    _kiosk_broadcast({
+        "mode": "trade", "active": True, "trade_complete": False,
+        "trade_customer": customer, "trade_reference": ref,
+        "trade_items": [], "trade_cash": 0, "trade_credit": 0,
+    })
+    return jsonify({"ok": True, "id": new_id, "reference": ref})
 
 
 @app.route("/admin/trade-in/<int:ti_id>", methods=["GET"])
@@ -5333,6 +5339,39 @@ def admin_trade_in_get(ti_id):
         "notes":       ti["notes"],
         "items":       [dict(i) for i in items],
     })
+
+
+def _kiosk_push_trade(ti_id, complete=False, cancelled=False):
+    """Broadcast current trade-in state to kiosk SSE clients."""
+    if cancelled:
+        _kiosk_broadcast({"mode": "idle", "active": False})
+        return
+    try:
+        db    = get_db()
+        ti    = db.execute("SELECT * FROM trade_ins WHERE id=%s", (ti_id,)).fetchone()
+        if not ti:
+            return
+        items = db.execute(
+            "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+        ).fetchall()
+        cash_total   = float(ti["total_value"] or 0)
+        credit_total = round(cash_total * 1.20, 2)
+        _kiosk_broadcast({
+            "mode":             "trade",
+            "active":           True,
+            "trade_complete":   complete,
+            "trade_customer":   ti["customer"] or "Customer",
+            "trade_reference":  ti["reference"],
+            "trade_items":      [{"name":      it["name"],
+                                  "condition": it["condition"],
+                                  "offer":     float(it["offered_price"] or 0),
+                                  "market":    float(it["market_price"] or 0),
+                                  "accepted":  bool(it["accepted"])} for it in items],
+            "trade_cash":       cash_total,
+            "trade_credit":     credit_total,
+        })
+    except Exception:
+        log.exception("[kiosk] trade broadcast failed")
 
 
 @app.route("/admin/trade-in/<int:ti_id>/add-item", methods=["POST"])
@@ -5363,6 +5402,7 @@ def admin_trade_in_add_item(ti_id):
     db.execute("UPDATE trade_ins SET total_value=%s WHERE id=%s", (total, ti_id))
     db.commit()
     items = db.execute("SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)).fetchall()
+    threading.Thread(target=_kiosk_push_trade, args=(ti_id,), daemon=True).start()
     return jsonify({"ok": True, "items": [dict(i) for i in items]})
 
 
@@ -5378,6 +5418,7 @@ def admin_trade_in_remove_item(ti_id, item_id):
     db.execute("UPDATE trade_ins SET total_value=%s WHERE id=%s", (total, ti_id))
     db.commit()
     items = db.execute("SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)).fetchall()
+    threading.Thread(target=_kiosk_push_trade, args=(ti_id,), daemon=True).start()
     return jsonify({"ok": True, "items": [dict(i) for i in items]})
 
 
@@ -5419,6 +5460,7 @@ def admin_trade_in_complete(ti_id):
     )
     db.commit()
     _invalidate_inventory()
+    threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"complete": True}, daemon=True).start()
     return jsonify({"ok": True, "added": added})
 
 
@@ -5430,6 +5472,7 @@ def admin_trade_in_cancel(ti_id):
         "UPDATE trade_ins SET status='cancelled' WHERE id=%s AND status='open'", (ti_id,)
     )
     db.commit()
+    threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"cancelled": True}, daemon=True).start()
     return jsonify({"ok": True})
 
 
