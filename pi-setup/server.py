@@ -15070,6 +15070,8 @@ _KIOSK_DEFAULT: dict = {
     "bg_color":     "#0a0a0a",
     "accent_color": "#facc15",
     "show_tax":     True,
+    "video_mode":   False,
+    "video_url":    "",
 }
 
 
@@ -15079,6 +15081,27 @@ def _load_kiosk_settings() -> dict:
             return {**_KIOSK_DEFAULT, **json.load(_f)}
     except Exception:
         return dict(_KIOSK_DEFAULT)
+
+
+def _parse_youtube_id(url: str) -> tuple[str, str]:
+    """Return (video_id, playlist_id) from any YouTube URL. Either may be empty."""
+    import urllib.parse as _up
+    vid, pid = "", ""
+    if not url:
+        return vid, pid
+    url = url.strip()
+    p = _up.urlparse(url)
+    qs = _up.parse_qs(p.query)
+    # playlist
+    pid = (qs.get("list") or [""])[0]
+    # video ID
+    if "youtu.be" in p.netloc:
+        vid = p.path.lstrip("/").split("?")[0]
+    else:
+        vid = (qs.get("v") or [""])[0]
+        if not vid and p.path.startswith("/embed/"):
+            vid = p.path.split("/embed/")[1].split("?")[0]
+    return vid, pid
 
 
 def _save_kiosk_settings(s: dict):
@@ -15158,15 +15181,70 @@ def kiosk_sse_stream():
 @app.route("/kiosk")
 def kiosk_display():
     """Customer-facing kiosk display — one screen, four modes: idle / cart / trade / thankyou."""
-    ks      = _load_kiosk_settings()
-    bg      = ks["bg_color"]
-    accent  = ks["accent_color"]
-    name    = ks["store_name"]
-    tagline = ks["tagline"]
+    ks       = _load_kiosk_settings()
+    bg       = ks["bg_color"]
+    accent   = ks["accent_color"]
+    name     = ks["store_name"]
+    tagline  = ks["tagline"]
     idle_msg = ks["idle_message"]
-    ig      = ks["instagram"] if ks.get("show_social") else ""
-    web     = ks["website"]   if ks.get("show_social") else ""
-    enabled = ks["enabled"]
+    ig       = ks["instagram"] if ks.get("show_social") else ""
+    web      = ks["website"]   if ks.get("show_social") else ""
+    enabled  = ks["enabled"]
+    vid_mode = ks.get("video_mode", False)
+    vid_url  = ks.get("video_url", "")
+
+    # Parse YouTube URL
+    yt_vid, yt_pid = _parse_youtube_id(vid_url)
+    # Build embed params
+    yt_embed_id = yt_vid or (yt_pid or "")
+    if vid_mode and yt_embed_id:
+        _yt_player_vars = f"""{{
+          autoplay: 1, mute: 1, controls: 0, rel: 0,
+          modestbranding: 1, playsinline: 1,
+          {"loop: 1, playlist: '" + yt_vid + "'" if yt_vid and not yt_pid else ""},
+          {"list: '" + yt_pid + "', listType: 'playlist'" if yt_pid else ""}
+        }}"""
+        _yt_api_tag = '<script src="https://www.youtube.com/iframe_api"></script>'
+        _yt_init_js = f"""
+var ytPlayer = null;
+function onYouTubeIframeAPIReady() {{
+  ytPlayer = new YT.Player('yt-frame', {{
+    videoId: '{yt_vid or ""}',
+    playerVars: {{autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,
+      {"loop:1,playlist:'" + yt_vid + "'" if yt_vid and not yt_pid else ""},
+      {"list:'" + yt_pid + "',listType:'playlist'" if yt_pid else ""}
+    }},
+    events: {{
+      onReady: function(e) {{ e.target.playVideo(); }}
+    }}
+  }});
+}}
+function ytPlay()  {{ if(ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo();  }}
+function ytPause() {{ if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }}
+"""
+        _yt_idle_html = """
+<div id="yt-wrap" style="position:absolute;inset:0;z-index:0">
+  <div id="yt-frame" style="width:100%;height:100%"></div>
+</div>
+<button id="unmute-btn" onclick="toggleMute(this)"
+  style="position:absolute;bottom:20px;right:20px;z-index:10;
+         background:#0009;border:1px solid #f59e0b44;border-radius:50%;
+         width:48px;height:48px;font-size:20px;cursor:pointer;
+         display:flex;align-items:center;justify-content:center;color:#fff">
+  🔇
+</button>"""
+        _yt_mute_js = """
+var _muted = true;
+function toggleMute(btn) {
+  _muted = !_muted;
+  if (_muted) { if(ytPlayer) ytPlayer.mute();   btn.textContent = '🔇'; }
+  else         { if(ytPlayer) ytPlayer.unMute(); btn.textContent = '🔊'; }
+}"""
+    else:
+        _yt_api_tag  = ""
+        _yt_init_js  = "function ytPlay(){} function ytPause(){}"
+        _yt_idle_html = ""
+        _yt_mute_js  = ""
 
     social_html = ""
     if ig:  social_html += f'<span class="social-item">📸 {ig}</span>'
@@ -15181,6 +15259,7 @@ def kiosk_display():
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name}</title>
+{_yt_api_tag}
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
@@ -15200,9 +15279,13 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
 /* ── IDLE ─────────────────────────────────────── */
 #idle{{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:18px;text-align:center;padding:40px}}
+  justify-content:center;gap:18px;text-align:center;padding:40px;position:relative;overflow:hidden}}
+#idle-text{{position:relative;z-index:5;display:{'none' if vid_mode and yt_embed_id else 'flex'};
+  flex-direction:column;align-items:center;gap:18px}}
 #idle-msg{{font-size:clamp(20px,3.5vw,52px);color:#ddd;font-weight:300;line-height:1.4;max-width:860px}}
 .social-item{{font-size:clamp(13px,1.6vw,22px);color:#555;margin:0 16px}}
+#yt-wrap{{position:absolute;inset:0}}
+#yt-wrap iframe,#yt-wrap div{{width:100%!important;height:100%!important}}
 
 /* ── CART ─────────────────────────────────────── */
 #cart{{flex:1;display:none;flex-direction:column;padding:0 40px 30px}}
@@ -15292,8 +15375,11 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
     <!-- IDLE -->
     <div id="idle">
-      <div id="idle-msg">{idle_msg}</div>
-      <div style="margin-top:8px">{social_html}</div>
+      {_yt_idle_html}
+      <div id="idle-text">
+        <div id="idle-msg">{idle_msg}</div>
+        <div style="margin-top:8px">{social_html}</div>
+      </div>
     </div>
 
     <!-- CART (checkout) -->
@@ -15365,9 +15451,10 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     [elIdle,elCart,elTrade,elTDone,elTy].forEach(function(e){{ e.style.display="none"; }});
     el.style.display="flex";
     if(elBadge) elBadge.textContent = badge||"";
+    if(el !== elIdle) ytPause();
   }}
 
-  function goIdle(){{ showOnly(elIdle,"Ready"); }}
+  function goIdle(){{ showOnly(elIdle,"Ready"); ytPlay(); }}
 
   /* ── CART mode ── */
   function renderCart(s){{
@@ -15434,6 +15521,9 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }};
   es.onerror=function(){{ console.log("[kiosk] SSE reconnecting…"); }};
 }})();
+
+{_yt_init_js}
+{_yt_mute_js}
 </script>
 </body>
 </html>"""
@@ -15521,6 +15611,33 @@ def admin_kiosk_page():
           <input class="form-input" name="website" value="{ks['website']}"
                  placeholder="hanryxvault.cards">
         </div>
+        <hr style="border-color:#1a1a1a;margin:20px 0">
+        <h3 style="color:#facc15;margin-bottom:12px">🎬 Video Idle Mode</h3>
+        <p style="color:#555;font-size:12px;margin-bottom:14px">
+          Play a YouTube video or playlist on the idle screen. The video pauses
+          automatically when a checkout or trade-in starts, and resumes when idle again.
+          Ideal for the satellite Pi — paste any Pokémon YouTube URL below.
+        </p>
+        <div style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+            <input type="checkbox" name="video_mode" value="1"
+                   {'checked' if ks.get('video_mode') else ''}
+                   style="width:18px;height:18px;accent-color:#facc15">
+            <span style="color:#ccc;font-size:14px">Enable video idle screen</span>
+          </label>
+          <label class="form-label">YouTube URL (video or playlist)</label>
+          <input class="form-input" name="video_url"
+                 value="{ks.get('video_url','')}"
+                 placeholder="https://www.youtube.com/watch?v=... or playlist URL"
+                 style="margin-bottom:8px">
+          <p style="color:#444;font-size:11px">
+            💡 Find Pokémon episodes on the official
+            <a href="https://www.youtube.com/@Pokemon" target="_blank"
+               style="color:#f59e0b">@Pokemon YouTube channel</a>.
+            Paste any episode or playlist URL above. Video starts muted
+            (tap 🔊 on the kiosk to unmute).
+          </p>
+        </div>
         <div style="display:flex;gap:12px;margin-top:20px">
           <button type="submit" class="btn btn-primary">💾 Save Settings</button>
           <a href="/kiosk" target="_blank" class="btn btn-secondary">🖥️ Open Display</a>
@@ -15586,6 +15703,8 @@ def admin_kiosk_save():
         "bg_color":     request.form.get("bg_color",     "#0a0a0a").strip(),
         "accent_color": request.form.get("accent_color", "#facc15").strip(),
         "show_tax":     True,
+        "video_mode":   bool(request.form.get("video_mode")),
+        "video_url":    request.form.get("video_url",    "").strip(),
     }
     _save_kiosk_settings(settings)
     return redirect("/admin/kiosk?saved=1")
