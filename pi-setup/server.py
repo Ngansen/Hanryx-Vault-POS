@@ -6535,6 +6535,9 @@ def _admin_nav(active: str = "dashboard") -> str:
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("market",    "/admin/market",      "📈", "Market"),
         ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
+        ("fake-detector", "/admin/fake-detector", "🔍", "Fake Detect"),
+        ("pack-rip",  "/admin/pack-rip",    "🎰", "Pack Rip"),
+        ("buy-list",  "/admin/buy-list",    "📋", "Buy List"),
         ("trade-in",  "/admin/trade-in",    "🔁", "Trade-In"),
         ("bundles",   "/admin/bundles",     "📦", "Bundles"),
         ("csv",       "/admin/csv",         "📥", "Import"),
@@ -10292,6 +10295,9 @@ def admin_dashboard():
 <div class="qa-grid">
   <a href="/admin/market"       class="qa-card"><div class="qa-icon">📈</div><div class="qa-label">Market</div><div class="qa-sub">Live pricing & eBay</div></a>
   <a href="/admin/scan-ai"      class="qa-card"><div class="qa-icon">🤖</div><div class="qa-label">AI Scan</div><div class="qa-sub">CLIP visual scan</div></a>
+  <a href="/admin/fake-detector" class="qa-card"><div class="qa-icon">🔍</div><div class="qa-label">Fake Detect</div><div class="qa-sub">AI authenticity check</div></a>
+  <a href="/admin/pack-rip"     class="qa-card"><div class="qa-icon">🎰</div><div class="qa-label">Pack Rip</div><div class="qa-sub">Live EV tracker</div></a>
+  <a href="/admin/buy-list"     class="qa-card"><div class="qa-icon">📋</div><div class="qa-label">Buy List</div><div class="qa-sub">Smart buying guide</div></a>
   <a href="/admin/trade-in"     class="qa-card"><div class="qa-icon">🔁</div><div class="qa-label">Trade-In</div><div class="qa-sub">Buy & exchange</div></a>
   <a href="/admin/bundles"      class="qa-card"><div class="qa-icon">📦</div><div class="qa-label">Bundles</div><div class="qa-sub">Pack deals</div></a>
   <a href="/admin/csv"          class="qa-card"><div class="qa-icon">📥</div><div class="qa-label">Import</div><div class="qa-sub">CSV & bulk upload</div></a>
@@ -15416,6 +15422,757 @@ def admin_kiosk_save():
     }
     _save_kiosk_settings(settings)
     return redirect("/admin/kiosk?saved=1")
+
+
+# ===========================================================================
+# FAKE CARD DETECTOR
+# ===========================================================================
+
+def _analyze_card_image(img_bytes: bytes) -> dict:
+    """Multi-factor authenticity analysis using Pillow + numpy."""
+    import io
+    from PIL import Image, ImageFilter
+
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    w, h = img.size
+    arr = np.array(img).astype(float)
+
+    checks = {}
+    scores = []
+
+    # 1. Aspect ratio (Pokémon card = 63mm × 88mm = 0.7159)
+    ratio = w / h
+    ideal = 63 / 88
+    diff = abs(ratio - ideal)
+    ratio_score = max(0, min(100, 100 - diff * 400))
+    checks["aspect_ratio"] = {
+        "label": "Card Proportions",
+        "score": round(ratio_score, 1),
+        "note": (f"Ratio {ratio:.3f} vs ideal {ideal:.3f} — looks correct"
+                 if ratio_score > 70 else
+                 f"Ratio {ratio:.3f} vs ideal {ideal:.3f} — proportions off, may be cropped or fake"),
+        "ok": ratio_score > 60,
+    }
+    scores.append(ratio_score)
+
+    # 2. Colour saturation (fakes are often washed-out or over-saturated)
+    r, g, b = arr[:, :, 0] / 255, arr[:, :, 1] / 255, arr[:, :, 2] / 255
+    cmax = np.maximum(np.maximum(r, g), b)
+    cmin = np.minimum(np.minimum(r, g), b)
+    sat = np.where(cmax > 0, (cmax - cmin) / cmax, 0)
+    mean_sat = float(sat.mean())
+    sat_score = max(0, min(100, 100 - abs(mean_sat - 0.45) * 220))
+    checks["saturation"] = {
+        "label": "Colour Saturation",
+        "score": round(sat_score, 1),
+        "note": ("Saturation looks normal for a real card" if sat_score > 65
+                 else "Unusual saturation — washed-out or over-vivid colours suggest a fake"),
+        "ok": sat_score > 60,
+    }
+    scores.append(sat_score)
+
+    # 3. Print sharpness via Laplacian edge variance
+    gray = img.convert("L")
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    lap_var = float(np.array(edges).astype(float).var())
+    sharp_score = min(100, lap_var / 45)
+    checks["sharpness"] = {
+        "label": "Print Sharpness",
+        "score": round(sharp_score, 1),
+        "note": ("Text and artwork edges are crisp" if sharp_score > 45
+                 else "Blurry text or artwork — common in inkjet-printed counterfeits"),
+        "ok": sharp_score > 40,
+    }
+    scores.append(sharp_score)
+
+    # 4. Colour balance (single channel shouldn't dominate heavily)
+    r_m, g_m, b_m = arr[:, :, 0].mean(), arr[:, :, 1].mean(), arr[:, :, 2].mean()
+    bal_diff = float(max(r_m, g_m, b_m) - min(r_m, g_m, b_m))
+    bal_score = max(0, min(100, 100 - bal_diff * 0.7))
+    checks["color_balance"] = {
+        "label": "Colour Balance",
+        "score": round(bal_score, 1),
+        "note": f"R:{r_m:.0f} G:{g_m:.0f} B:{b_m:.0f} — {'balanced' if bal_score > 60 else 'colour cast detected'}",
+        "ok": bal_score > 55,
+    }
+    scores.append(bal_score)
+
+    # 5. Border uniformity (real cards have a tight, uniform border)
+    bp = max(4, int(min(w, h) * 0.035))
+    strips = [
+        np.array(img.crop((0, 0, w, bp))).astype(float),
+        np.array(img.crop((0, h - bp, w, h))).astype(float),
+        np.array(img.crop((0, 0, bp, h))).astype(float),
+        np.array(img.crop((w - bp, 0, w, h))).astype(float),
+    ]
+    border_var = float(np.concatenate([s.flatten() for s in strips]).var())
+    border_score = max(0, min(100, 100 - border_var / 18))
+    checks["border"] = {
+        "label": "Border Consistency",
+        "score": round(border_score, 1),
+        "note": ("Borders are even and uniform" if border_score > 60
+                 else "Uneven or discoloured borders — common on counterfeit prints"),
+        "ok": border_score > 55,
+    }
+    scores.append(border_score)
+
+    # 6. Brightness range (real cards have good dynamic range)
+    brightness = float(np.array(gray).astype(float).std())
+    bright_score = min(100, brightness * 1.2)
+    checks["brightness"] = {
+        "label": "Tonal Range",
+        "score": round(bright_score, 1),
+        "note": ("Good contrast range" if bright_score > 50
+                 else "Flat or washed-out tones — may indicate low-quality print"),
+        "ok": bright_score > 45,
+    }
+    scores.append(bright_score)
+
+    overall = sum(scores) / len(scores)
+    if overall >= 72:
+        verdict, vcolor = "LIKELY AUTHENTIC", "#22c55e"
+    elif overall >= 48:
+        verdict, vcolor = "SUSPICIOUS — VERIFY MANUALLY", "#f59e0b"
+    else:
+        verdict, vcolor = "LIKELY FAKE", "#ef4444"
+
+    return {
+        "overall": round(overall, 1),
+        "verdict": verdict,
+        "verdict_color": vcolor,
+        "checks": checks,
+        "manual_checks": [
+            "Rip test: Tear a corner edge — real cards show a black inner layer",
+            "Light test: Hold to bright light — authentic cards block most light",
+            "Feel: Real cards have a slight texture; fakes are often smooth or too glossy",
+            "Font: HP number weight and attack text should match official card fonts exactly",
+            "Hologram: Energy symbol holo shifts colour when tilted under light",
+            "Rosette pattern: Under magnification real cards show fine printing dots (rosette); fakes appear solid or streaky",
+        ],
+    }
+
+
+@app.route("/admin/fake-detector", methods=["GET"])
+@require_admin
+def admin_fake_detector():
+    nav = _admin_nav("fake-detector")
+    return render_template_string(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Fake Card Detector</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .upload-zone{{border:2px dashed #333;border-radius:16px;padding:40px;text-align:center;cursor:pointer;transition:.2s;background:#111}}
+  .upload-zone:hover,.upload-zone.drag{{border-color:#f59e0b;background:#1a1100}}
+  #preview-img{{max-width:100%;max-height:340px;border-radius:12px;display:none;margin:16px auto;box-shadow:0 4px 24px #0008}}
+  .score-bar{{height:10px;border-radius:6px;background:#1a1a1a;margin:6px 0 14px}}
+  .score-fill{{height:100%;border-radius:6px;transition:width 1s ease}}
+  .check-row{{background:#141414;border:1px solid #222;border-radius:10px;padding:14px;margin-bottom:10px}}
+  .check-label{{font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.8px}}
+  .check-note{{font-size:13px;color:#aaa;margin-top:4px}}
+  .verdict-box{{border-radius:14px;padding:20px;text-align:center;margin:20px 0}}
+  .verdict-score{{font-size:52px;font-weight:900;line-height:1}}
+  .verdict-label{{font-size:20px;font-weight:700;margin-top:8px;letter-spacing:1px}}
+  .manual-check{{background:#141414;border-left:3px solid #f59e0b;padding:10px 14px;margin-bottom:8px;border-radius:0 8px 8px 0;font-size:13px;color:#aaa}}
+  .two-col{{display:flex;gap:20px;flex-wrap:wrap}}
+  .two-col>div{{flex:1;min-width:280px}}
+  .camera-btn{{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 18px;color:#aaa;font-size:13px;cursor:pointer;margin-top:10px}}
+  .camera-btn:hover{{border-color:#f59e0b;color:#f59e0b}}
+</style>
+</head>
+<body>
+{{nav}}
+<div class="wrap">
+<h1>🔍 AI Fake Card Detector</h1>
+<p class="subtitle">Multi-factor image analysis · Checks proportions, colour, sharpness, borders & more</p>
+
+<div class="two-col">
+<div>
+  <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-in').click()">
+    <div style="font-size:48px">📷</div>
+    <div style="color:#888;margin-top:10px">Tap to upload a card photo<br><span style="font-size:12px">or drag & drop · JPG / PNG / WEBP</span></div>
+    <input type="file" id="file-in" accept="image/*" capture="environment" style="display:none">
+  </div>
+  <button class="camera-btn" onclick="document.getElementById('file-in').click()">📸 Use Camera</button>
+  <img id="preview-img" alt="Card preview">
+  <button id="analyse-btn" class="btn-gold" style="display:none;width:100%;margin-top:14px;padding:14px;font-size:16px" onclick="analyseCard()">
+    🔍 Analyse Card
+  </button>
+  <div id="spinner" style="display:none;text-align:center;padding:20px;color:#888">Analysing… please wait</div>
+</div>
+
+<div id="results-panel" style="display:none">
+  <div id="verdict-box" class="verdict-box"></div>
+  <div id="checks-list"></div>
+  <h3 style="margin-top:24px;color:#f59e0b">Manual Checks</h3>
+  <div id="manual-list"></div>
+</div>
+</div>
+</div>
+
+<script>
+const dropZone = document.getElementById('drop-zone');
+const fileIn   = document.getElementById('file-in');
+const preview  = document.getElementById('preview-img');
+const analyseBtn = document.getElementById('analyse-btn');
+let selectedFile = null;
+
+fileIn.addEventListener('change', e => {{
+  selectedFile = e.target.files[0];
+  if (!selectedFile) return;
+  preview.src = URL.createObjectURL(selectedFile);
+  preview.style.display = 'block';
+  analyseBtn.style.display = 'block';
+  document.getElementById('results-panel').style.display = 'none';
+}});
+
+dropZone.addEventListener('dragover', e => {{ e.preventDefault(); dropZone.classList.add('drag'); }});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {{
+  e.preventDefault(); dropZone.classList.remove('drag');
+  selectedFile = e.dataTransfer.files[0];
+  if (!selectedFile) return;
+  preview.src = URL.createObjectURL(selectedFile);
+  preview.style.display = 'block';
+  analyseBtn.style.display = 'block';
+}});
+
+function analyseCard() {{
+  if (!selectedFile) return;
+  analyseBtn.style.display = 'none';
+  document.getElementById('spinner').style.display = 'block';
+  const fd = new FormData();
+  fd.append('image', selectedFile);
+  fetch('/admin/fake-detector/analyse', {{ method:'POST', body:fd }})
+    .then(r => r.json())
+    .then(data => {{
+      document.getElementById('spinner').style.display = 'none';
+      analyseBtn.style.display = 'block';
+      renderResults(data);
+    }})
+    .catch(err => {{
+      document.getElementById('spinner').style.display = 'none';
+      analyseBtn.style.display = 'block';
+      alert('Analysis failed: ' + err);
+    }});
+}}
+
+function renderResults(d) {{
+  const panel = document.getElementById('results-panel');
+  panel.style.display = 'block';
+  document.getElementById('verdict-box').innerHTML = `
+    <div style="background:${{d.verdict_color}}22;border:2px solid ${{d.verdict_color}};border-radius:14px;padding:20px">
+      <div class="verdict-score" style="color:${{d.verdict_color}}">${{d.overall}}<span style="font-size:24px">/100</span></div>
+      <div class="verdict-label" style="color:${{d.verdict_color}}">${{d.verdict}}</div>
+    </div>`;
+  const cl = document.getElementById('checks-list');
+  cl.innerHTML = '<h3 style="margin-top:20px;color:#f59e0b">Analysis Breakdown</h3>';
+  for (const [key, c] of Object.entries(d.checks)) {{
+    const col = c.ok ? '#22c55e' : (c.score > 40 ? '#f59e0b' : '#ef4444');
+    cl.innerHTML += `<div class="check-row">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="check-label">${{c.label}}</span>
+        <span style="color:${{col}};font-weight:900;font-size:18px">${{c.score}}</span>
+      </div>
+      <div class="score-bar"><div class="score-fill" style="width:${{c.score}}%;background:${{col}}"></div></div>
+      <div class="check-note">${{c.note}}</div>
+    </div>`;
+  }}
+  const ml = document.getElementById('manual-list');
+  ml.innerHTML = '';
+  for (const m of d.manual_checks) {{
+    ml.innerHTML += `<div class="manual-check">✓ ${{m}}</div>`;
+  }}
+}}
+</script>
+</body></html>""", nav=nav)
+
+
+@app.route("/admin/fake-detector/analyse", methods=["POST"])
+@require_admin
+def admin_fake_detector_analyse():
+    f = request.files.get("image")
+    if not f:
+        return jsonify({"error": "No image uploaded"}), 400
+    try:
+        result = _analyze_card_image(f.read())
+        return jsonify(result)
+    except Exception as e:
+        log.exception("Fake detector error")
+        return jsonify({"error": str(e)}), 500
+
+
+# ===========================================================================
+# PACK RIP TRACKER  (live EV calculator for pack openings)
+# ===========================================================================
+
+def _pack_rip_init_db():
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pack_rip_sessions (
+                    id        SERIAL PRIMARY KEY,
+                    set_name  VARCHAR(120),
+                    set_code  VARCHAR(20),
+                    box_cost  NUMERIC(10,2) DEFAULT 0,
+                    packs     INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    closed    BOOLEAN DEFAULT FALSE
+                );
+                CREATE TABLE IF NOT EXISTS pack_rip_pulls (
+                    id         SERIAL PRIMARY KEY,
+                    session_id INTEGER REFERENCES pack_rip_sessions(id) ON DELETE CASCADE,
+                    card_name  VARCHAR(200),
+                    card_qr    VARCHAR(100),
+                    rarity     VARCHAR(60),
+                    market_price NUMERIC(10,2) DEFAULT 0,
+                    is_holo    BOOLEAN DEFAULT FALSE,
+                    pulled_at  TIMESTAMPTZ DEFAULT now()
+                );
+            """)
+        conn.commit()
+
+
+@app.route("/admin/pack-rip", methods=["GET"])
+@require_admin
+def admin_pack_rip():
+    try:
+        _pack_rip_init_db()
+    except Exception:
+        pass
+    nav = _admin_nav("pack-rip")
+    # Load recent sessions
+    sessions = []
+    try:
+        with _get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT s.id, s.set_name, s.box_cost, s.packs, s.created_at,
+                           COUNT(p.id) AS pulls,
+                           COALESCE(SUM(p.market_price),0) AS total_value
+                    FROM pack_rip_sessions s
+                    LEFT JOIN pack_rip_pulls p ON p.session_id = s.id
+                    WHERE s.closed = FALSE
+                    GROUP BY s.id ORDER BY s.created_at DESC LIMIT 10
+                """)
+                sessions = cur.fetchall()
+    except Exception:
+        pass
+
+    rows_html = ""
+    for s in sessions:
+        sid, sname, cost, packs, cat, pulls, val = s
+        ev = float(val) - float(cost or 0)
+        ev_col = "#22c55e" if ev >= 0 else "#ef4444"
+        rows_html += f"""<tr onclick="openSession({sid})" style="cursor:pointer">
+          <td>{sname or "—"}</td>
+          <td>${cost or 0:.2f}</td>
+          <td>{packs}</td>
+          <td>{pulls}</td>
+          <td>${val:.2f}</td>
+          <td style="color:{ev_col};font-weight:700">{'+' if ev>=0 else ''}${ev:.2f}</td>
+          <td><button class="btn-gold" style="font-size:11px;padding:4px 12px" onclick="event.stopPropagation();openSession({sid})">Open</button></td>
+        </tr>"""
+
+    return render_template_string(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Pack Rip Tracker</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .stat-big{{font-size:42px;font-weight:900;line-height:1}}
+  .stat-lbl{{font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-top:4px}}
+  .stat-card{{background:#141414;border:1px solid #222;border-radius:12px;padding:18px 22px;flex:1;min-width:140px}}
+  .stats-row{{display:flex;gap:14px;flex-wrap:wrap;margin:20px 0}}
+  .pull-row{{background:#141414;border:1px solid #222;border-radius:10px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px}}
+  .pull-name{{flex:1;font-weight:700;color:#e0e0e0}}
+  .pull-rarity{{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.6px}}
+  .pull-price{{color:#f59e0b;font-weight:900;font-size:18px}}
+  .rarity-btn{{background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#888;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700}}
+  .rarity-btn.active{{border-color:#f59e0b;background:#1a1100;color:#f59e0b}}
+  .holo-badge{{background:#7c3aed22;border:1px solid #7c3aed44;color:#a78bfa;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}}
+  table{{width:100%;border-collapse:collapse}}
+  th{{color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.6px;padding:8px;border-bottom:1px solid #222;text-align:left}}
+  td{{padding:10px 8px;border-bottom:1px solid #111;font-size:13px;color:#ccc}}
+  tr:hover td{{background:#141414}}
+  .modal{{display:none;position:fixed;inset:0;background:#0009;z-index:200;align-items:center;justify-content:center}}
+  .modal.open{{display:flex}}
+  .modal-box{{background:#0f0f0f;border:1px solid #2a2a2a;border-radius:18px;padding:28px;width:95%;max-width:680px;max-height:92vh;overflow-y:auto}}
+</style>
+</head>
+<body>
+{{nav}}
+<div class="wrap">
+<h1>🎰 Pack Rip Tracker</h1>
+<p class="subtitle">Live EV calculation · Log every pull · Track box profitability</p>
+
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+  <button class="btn-gold" onclick="document.getElementById('new-modal').classList.add('open')">+ New Session</button>
+</div>
+
+<h3 style="color:#888;font-size:13px;text-transform:uppercase;letter-spacing:.8px">Active Sessions</h3>
+{"<p style='color:#555'>No active sessions yet. Start one above.</p>" if not rows_html else f'''
+<table>
+  <tr><th>Set</th><th>Box Cost</th><th>Packs</th><th>Cards</th><th>Pulled Value</th><th>EV</th><th></th></tr>
+  {rows_html}
+</table>'''}
+</div>
+
+<!-- New session modal -->
+<div class="modal" id="new-modal">
+<div class="modal-box">
+  <h2 style="margin-top:0">New Pack Rip Session</h2>
+  <label>Set Name<br><input id="ns-name" class="form-input" placeholder="e.g. Surging Sparks" style="width:100%;margin-top:6px"></label>
+  <label style="margin-top:14px;display:block">Box Cost (£)<br><input id="ns-cost" type="number" step="0.01" class="form-input" placeholder="0.00" style="width:100%;margin-top:6px"></label>
+  <label style="margin-top:14px;display:block">Packs per Box<br><input id="ns-packs" type="number" class="form-input" placeholder="36" style="width:100%;margin-top:6px"></label>
+  <div style="display:flex;gap:10px;margin-top:20px">
+    <button class="btn-gold" onclick="createSession()">Start Session</button>
+    <button onclick="document.getElementById('new-modal').classList.remove('open')" style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 20px;color:#aaa;cursor:pointer">Cancel</button>
+  </div>
+</div>
+</div>
+
+<!-- Live session modal -->
+<div class="modal" id="live-modal">
+<div class="modal-box">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0" id="live-title">Session</h2>
+    <button onclick="document.getElementById('live-modal').classList.remove('open')" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer">✕</button>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-big" id="ls-pulled" style="color:#f59e0b">£0.00</div><div class="stat-lbl">Value Pulled</div></div>
+    <div class="stat-card"><div class="stat-big" id="ls-ev">£0.00</div><div class="stat-lbl">EV</div></div>
+    <div class="stat-card"><div class="stat-big" id="ls-count" style="color:#a78bfa">0</div><div class="stat-lbl">Cards Logged</div></div>
+    <div class="stat-card"><div class="stat-big" id="ls-holos" style="color:#a78bfa">0</div><div class="stat-lbl">Holos</div></div>
+  </div>
+  <hr style="border-color:#1a1a1a;margin:16px 0">
+  <h4 style="color:#888;margin:0 0 10px">Log a Pull</h4>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+    <div style="flex:1;min-width:160px">
+      <label style="font-size:12px;color:#666">Card Name</label>
+      <input id="pull-name" class="form-input" placeholder="Charizard ex" style="width:100%;margin-top:4px">
+    </div>
+    <div style="min-width:100px">
+      <label style="font-size:12px;color:#666">Market Price £</label>
+      <input id="pull-price" type="number" step="0.01" class="form-input" placeholder="0.00" style="width:100%;margin-top:4px">
+    </div>
+  </div>
+  <div style="margin:10px 0;display:flex;gap:6px;flex-wrap:wrap" id="rarity-btns">
+    <button class="rarity-btn active" data-r="Common" onclick="setRarity(this)">Common</button>
+    <button class="rarity-btn" data-r="Uncommon" onclick="setRarity(this)">Uncommon</button>
+    <button class="rarity-btn" data-r="Rare" onclick="setRarity(this)">Rare</button>
+    <button class="rarity-btn" data-r="Holo Rare" onclick="setRarity(this)">Holo Rare</button>
+    <button class="rarity-btn" data-r="Ultra Rare" onclick="setRarity(this)">Ultra Rare</button>
+    <button class="rarity-btn" data-r="Secret Rare" onclick="setRarity(this)">Secret Rare</button>
+    <button class="rarity-btn" data-r="Special" onclick="setRarity(this)">Special</button>
+  </div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#aaa;cursor:pointer;margin-bottom:12px">
+    <input type="checkbox" id="pull-holo" style="width:16px;height:16px;accent-color:#7c3aed"> Holo / Foil
+  </label>
+  <button class="btn-gold" style="width:100%;padding:13px" onclick="logPull()">+ Log Pull</button>
+  <hr style="border-color:#1a1a1a;margin:16px 0">
+  <div id="pulls-list"></div>
+  <button onclick="closeSession()" style="margin-top:14px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 20px;color:#888;cursor:pointer;width:100%">Close Session</button>
+</div>
+</div>
+
+<script>
+let activeSession = null, selectedRarity = 'Common';
+
+function setRarity(btn) {{
+  document.querySelectorAll('.rarity-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedRarity = btn.dataset.r;
+}}
+
+function createSession() {{
+  const name = document.getElementById('ns-name').value.trim();
+  const cost = parseFloat(document.getElementById('ns-cost').value) || 0;
+  const packs = parseInt(document.getElementById('ns-packs').value) || 0;
+  fetch('/api/pack-rip/session', {{
+    method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{set_name:name, box_cost:cost, packs}})
+  }}).then(r=>r.json()).then(d=>{{
+    document.getElementById('new-modal').classList.remove('open');
+    openSession(d.id);
+    setTimeout(()=>location.reload(),500);
+  }});
+}}
+
+function openSession(sid) {{
+  activeSession = sid;
+  fetch('/api/pack-rip/session/' + sid)
+    .then(r=>r.json()).then(renderSession);
+  document.getElementById('live-modal').classList.add('open');
+}}
+
+function renderSession(d) {{
+  document.getElementById('live-title').textContent = d.set_name || 'Session';
+  const ev = d.total_value - d.box_cost;
+  document.getElementById('ls-pulled').textContent = '£' + d.total_value.toFixed(2);
+  const evEl = document.getElementById('ls-ev');
+  evEl.textContent = (ev>=0?'+':'') + '£' + ev.toFixed(2);
+  evEl.style.color = ev >= 0 ? '#22c55e' : '#ef4444';
+  document.getElementById('ls-count').textContent = d.pulls.length;
+  document.getElementById('ls-holos').textContent = d.pulls.filter(p=>p.is_holo).length;
+  const pl = document.getElementById('pulls-list');
+  pl.innerHTML = '';
+  [...d.pulls].reverse().forEach(p => {{
+    pl.innerHTML += `<div class="pull-row">
+      <div><div class="pull-name">${{p.card_name}} ${{p.is_holo?'<span class="holo-badge">HOLO</span>':''}}</div>
+      <div class="pull-rarity">${{p.rarity}}</div></div>
+      <div class="pull-price">£${{parseFloat(p.market_price||0).toFixed(2)}}</div>
+    </div>`;
+  }});
+}}
+
+function logPull() {{
+  if (!activeSession) return;
+  const name  = document.getElementById('pull-name').value.trim() || 'Unknown';
+  const price = parseFloat(document.getElementById('pull-price').value) || 0;
+  const holo  = document.getElementById('pull-holo').checked;
+  fetch('/api/pack-rip/pull', {{
+    method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{session_id:activeSession, card_name:name, rarity:selectedRarity, market_price:price, is_holo:holo}})
+  }}).then(r=>r.json()).then(()=>{{
+    document.getElementById('pull-name').value = '';
+    document.getElementById('pull-price').value = '';
+    document.getElementById('pull-holo').checked = false;
+    fetch('/api/pack-rip/session/' + activeSession).then(r=>r.json()).then(renderSession);
+  }});
+}}
+
+function closeSession() {{
+  if (!activeSession) return;
+  if (!confirm('Close this session?')) return;
+  fetch('/api/pack-rip/session/' + activeSession + '/close', {{method:'POST'}})
+    .then(()=>{{ document.getElementById('live-modal').classList.remove('open'); location.reload(); }});
+}}
+</script>
+</body></html>""", nav=nav)
+
+
+@app.route("/api/pack-rip/session", methods=["POST"])
+@require_admin
+def api_pack_rip_create():
+    try:
+        _pack_rip_init_db()
+    except Exception:
+        pass
+    d = request.get_json(force=True) or {}
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO pack_rip_sessions (set_name, box_cost, packs) VALUES (%s,%s,%s) RETURNING id",
+                (d.get("set_name", ""), float(d.get("box_cost", 0)), int(d.get("packs", 0)))
+            )
+            sid = cur.fetchone()[0]
+        conn.commit()
+    return jsonify({"id": sid})
+
+
+@app.route("/api/pack-rip/session/<int:sid>", methods=["GET"])
+@require_admin
+def api_pack_rip_session(sid):
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT set_name, box_cost, packs FROM pack_rip_sessions WHERE id=%s", (sid,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            cur.execute("""
+                SELECT card_name, card_qr, rarity, market_price, is_holo, pulled_at
+                FROM pack_rip_pulls WHERE session_id=%s ORDER BY pulled_at
+            """, (sid,))
+            pulls = [{"card_name": r[0], "card_qr": r[1], "rarity": r[2],
+                      "market_price": float(r[3] or 0), "is_holo": r[4],
+                      "pulled_at": r[5].isoformat() if r[5] else ""} for r in cur.fetchall()]
+    total_value = sum(p["market_price"] for p in pulls)
+    return jsonify({
+        "id": sid, "set_name": row[0], "box_cost": float(row[1] or 0),
+        "packs": row[2], "pulls": pulls, "total_value": total_value,
+    })
+
+
+@app.route("/api/pack-rip/pull", methods=["POST"])
+@require_admin
+def api_pack_rip_log_pull():
+    d = request.get_json(force=True) or {}
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO pack_rip_pulls (session_id, card_name, card_qr, rarity, market_price, is_holo)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (d.get("session_id"), d.get("card_name", "Unknown"),
+                 d.get("card_qr", ""), d.get("rarity", "Common"),
+                 float(d.get("market_price", 0)), bool(d.get("is_holo", False)))
+            )
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/pack-rip/session/<int:sid>/close", methods=["POST"])
+@require_admin
+def api_pack_rip_close(sid):
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE pack_rip_sessions SET closed=TRUE WHERE id=%s", (sid,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+# ===========================================================================
+# SMART BUY LIST  (auto-generated guide: what to buy & at what price)
+# ===========================================================================
+
+@app.route("/admin/buy-list", methods=["GET"])
+@require_admin
+def admin_buy_list():
+    nav = _admin_nav("buy-list")
+    # Build buy list from inventory + eBay pricing
+    candidates = []
+    try:
+        with _get_conn() as conn:
+            with conn.cursor() as cur:
+                # Cards with low or no stock that we have pricing data for
+                cur.execute("""
+                    SELECT i.qr_code, i.name, i.set_code, i.stock,
+                           i.price, i.resale_price,
+                           ep.median_price, ep.low_price, ep.high_price, ep.sample_count,
+                           ep.fetched_at
+                    FROM inventory i
+                    LEFT JOIN ebay_prices ep ON ep.qr_code = i.qr_code
+                    WHERE i.stock <= 2 OR i.stock IS NULL
+                    ORDER BY ep.median_price DESC NULLS LAST
+                    LIMIT 120
+                """)
+                rows = cur.fetchall()
+    except Exception as e:
+        rows = []
+
+    for r in rows:
+        qr, name, set_code, stock, price, resale, median, low, high, samples, fetched = r
+        median = float(median or 0)
+        low    = float(low or 0)
+        price  = float(price or 0)
+        if median < 0.50:
+            continue  # skip bulk commons
+        # Suggest buying at 40% of market median
+        suggested_buy = round(median * 0.40, 2)
+        margin_pct    = round(((median - suggested_buy) / median * 100) if median > 0 else 0, 1)
+        candidates.append({
+            "qr": qr, "name": name, "set_code": set_code,
+            "stock": stock or 0, "list_price": price, "resale": resale or 0,
+            "market": median, "low": low, "high": high or 0,
+            "buy_at": suggested_buy, "margin": margin_pct,
+            "samples": samples or 0,
+            "priority": "HIGH" if median >= 20 else ("MED" if median >= 5 else "LOW"),
+        })
+
+    candidates.sort(key=lambda x: x["market"], reverse=True)
+
+    rows_html = ""
+    for c in candidates:
+        pri_col = "#ef4444" if c["priority"] == "HIGH" else ("#f59e0b" if c["priority"] == "MED" else "#555")
+        rows_html += f"""<tr>
+          <td><a href="/card/enrich?qr={c['qr']}" target="_blank" style="color:#e0e0e0;text-decoration:none">{c['name']}</a><br>
+              <span style="font-size:11px;color:#555">{c['set_code']} · Stock: {c['stock']}</span></td>
+          <td style="color:{pri_col};font-weight:700;font-size:11px;letter-spacing:.5px">{c['priority']}</td>
+          <td style="color:#e0e0e0">£{c['market']:.2f}</td>
+          <td style="color:#555">£{c['low']:.2f} – £{c['high']:.2f}</td>
+          <td style="color:#22c55e;font-weight:900;font-size:16px">£{c['buy_at']:.2f}</td>
+          <td style="color:#a78bfa">{c['margin']}%</td>
+          <td style="color:#555;font-size:11px">{c['samples']} sales</td>
+        </tr>"""
+
+    if not rows_html:
+        rows_html = "<tr><td colspan='7' style='color:#555;padding:24px;text-align:center'>No pricing data yet — visit Admin → Market to fetch eBay prices first.</td></tr>"
+
+    return render_template_string(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Smart Buy List</title>
+<style>
+{_ADMIN_BASE_CSS}
+  table{{width:100%;border-collapse:collapse}}
+  th{{color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.6px;padding:10px 8px;border-bottom:1px solid #222;text-align:left}}
+  td{{padding:10px 8px;border-bottom:1px solid #111;vertical-align:top}}
+  tr:hover td{{background:#141414}}
+  .filter-bar{{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}}
+  .filter-btn{{background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#888;padding:7px 16px;cursor:pointer;font-size:12px;font-weight:700;transition:.15s}}
+  .filter-btn.active{{border-color:#f59e0b;color:#f59e0b;background:#1a1100}}
+  .legend{{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}}
+  .leg-item{{display:flex;align-items:center;gap:6px;font-size:12px;color:#666}}
+  .leg-dot{{width:10px;height:10px;border-radius:50%}}
+</style>
+</head>
+<body>
+{{nav}}
+<div class="wrap">
+<h1>📋 Smart Buy List</h1>
+<p class="subtitle">Auto-generated from eBay pricing · Low / no-stock cards · Suggested buy prices at 40% of market</p>
+
+<div class="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div> HIGH priority (£20+)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div> MED priority (£5–20)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#555"></div> LOW priority (under £5)</div>
+</div>
+
+<div class="filter-bar">
+  <span style="color:#666;font-size:12px">Filter:</span>
+  <button class="filter-btn active" onclick="filterTable('ALL',this)">All</button>
+  <button class="filter-btn" onclick="filterTable('HIGH',this)">High Priority</button>
+  <button class="filter-btn" onclick="filterTable('MED',this)">Med Priority</button>
+  <button class="filter-btn" onclick="filterTable('LOW',this)">Low Priority</button>
+  <input id="search" class="form-input" placeholder="Search cards…" style="flex:1;max-width:240px;padding:7px 12px"
+         oninput="searchTable(this.value)">
+  <button class="btn-gold" style="font-size:12px;padding:7px 16px" onclick="window.print()">🖨️ Print</button>
+</div>
+
+<table id="buy-table">
+  <thead><tr>
+    <th>Card</th><th>Priority</th><th>Market</th><th>Range</th>
+    <th>Buy At</th><th>Margin</th><th>Data</th>
+  </tr></thead>
+  <tbody id="table-body">{rows_html}</tbody>
+</table>
+
+<p style="color:#444;font-size:12px;margin-top:16px">
+  Buy prices calculated at 40% of eBay median sold price (UK). Adjust to suit your margins.<br>
+  Prices update whenever you run a market fetch on the Market page.
+</p>
+</div>
+
+<script>
+let currentFilter = 'ALL';
+
+function filterTable(f, btn) {{
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}}
+
+function searchTable(q) {{ applyFilters(q); }}
+
+function applyFilters(q) {{
+  q = (q || document.getElementById('search').value).toLowerCase();
+  document.querySelectorAll('#table-body tr').forEach(row => {{
+    const txt = row.textContent.toLowerCase();
+    const priCell = row.cells[1] ? row.cells[1].textContent.trim() : '';
+    const matchFilter = currentFilter === 'ALL' || priCell === currentFilter;
+    const matchSearch = !q || txt.includes(q);
+    row.style.display = matchFilter && matchSearch ? '' : 'none';
+  }});
+}}
+</script>
+</body></html>""", nav=nav)
 
 
 # ---------------------------------------------------------------------------
