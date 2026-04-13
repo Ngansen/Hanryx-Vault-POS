@@ -15113,13 +15113,14 @@ def _save_kiosk_settings(s: dict):
 # In-memory kiosk cart state (updated by POS via POST /kiosk/cart)
 _kiosk_cart_lock = threading.Lock()
 _kiosk_cart: dict = {
-    "active":          False,
-    "items":           [],      # [{name, qty, price}]
-    "subtotal":        0.0,
-    "tax":             0.0,
-    "total":           0.0,
-    "payment_method":  "",
-    "paid":            False,   # briefly True → "thank you" screen
+    "active":              False,
+    "items":               [],      # [{name, qty, price}]
+    "subtotal":            0.0,
+    "tax":                 0.0,
+    "total":               0.0,
+    "payment_method":      "",
+    "paid":                False,   # briefly True → "thank you" screen
+    "payment_processing":  False,   # True → "please continue on card reader"
 }
 
 # SSE subscribers for kiosk display
@@ -15147,6 +15148,24 @@ def kiosk_cart_update():
     data = request.get_json(silent=True) or {}
     with _kiosk_cart_lock:
         _kiosk_cart.update(data)
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    return jsonify(ok=True)
+
+
+@app.route("/kiosk/payment-processing", methods=["POST"])
+def kiosk_payment_processing():
+    """Show 'Please continue on card reader' screen on the kiosk display.
+    Call this when the staff presses Charge with Card on the POS.
+    The screen clears automatically when paid=true is received via /kiosk/cart.
+    Optional JSON body: {"total": 12.99}
+    """
+    data = request.get_json(silent=True) or {}
+    with _kiosk_cart_lock:
+        _kiosk_cart["payment_processing"] = True
+        _kiosk_cart["paid"] = False
+        if "total" in data:
+            _kiosk_cart["total"] = float(data["total"])
         snapshot = dict(_kiosk_cart)
     _kiosk_broadcast(snapshot)
     return jsonify(ok=True)
@@ -15309,6 +15328,21 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   padding-top:14px;margin-top:6px;border-top:1px solid #222}}
 .tv{{color:{accent}}}
 
+/* ── CARD PROCESSING ─────────────────────────────── */
+#card-processing{{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:24px;text-align:center;padding:60px}}
+#cp-icon{{font-size:clamp(64px,12vw,140px);animation:cp-pulse 1.6s ease-in-out infinite}}
+@keyframes cp-pulse{{0%,100%{{transform:scale(1);opacity:1}}50%{{transform:scale(1.08);opacity:0.85}}}}
+#cp-msg{{font-size:clamp(24px,4.5vw,64px);font-weight:700;color:#fff;line-height:1.2}}
+#cp-sub{{font-size:clamp(14px,2vw,28px);color:#555;margin-top:4px}}
+#cp-total{{font-size:clamp(32px,6vw,80px);font-weight:900;color:{accent};
+  margin-top:8px;letter-spacing:2px}}
+#cp-bar{{width:min(380px,80vw);height:5px;background:#1a1a1a;border-radius:4px;
+  overflow:hidden;margin-top:8px}}
+#cp-bar-inner{{height:100%;background:{accent};border-radius:4px;
+  animation:cp-bar-anim 1.8s ease-in-out infinite}}
+@keyframes cp-bar-anim{{0%{{width:0%}}60%{{width:100%}}100%{{width:100%;opacity:0}}}}
+
 /* ── TRADE ─────────────────────────────────────── */
 #trade{{flex:1;display:none;flex-direction:column;padding:0 40px 30px}}
 #trade-header{{padding:20px 0 14px;border-bottom:1px solid #1a1a1a}}
@@ -15423,6 +15457,15 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       <div style="font-size:clamp(16px,2vw,28px);color:#555;margin-top:8px">Thank you for trading with us!</div>
     </div>
 
+    <!-- CARD PROCESSING (tap / insert card) -->
+    <div id="card-processing">
+      <div id="cp-icon">💳</div>
+      <div id="cp-msg">Please continue<br>on the card reader</div>
+      <div id="cp-sub">Tap, insert, or swipe your card</div>
+      <div id="cp-total"></div>
+      <div id="cp-bar"><div id="cp-bar-inner"></div></div>
+    </div>
+
     <!-- THANK YOU (after sale) -->
     <div id="ty">
       <h2>Thank You!</h2>
@@ -15440,6 +15483,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   var elTrade = document.getElementById("trade");
   var elTDone = document.getElementById("trade-done");
   var elTy    = document.getElementById("ty");
+  var elCP    = document.getElementById("card-processing");
   var elBadge = document.getElementById("mode-badge");
 
   /* clock */
@@ -15453,7 +15497,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   var elUnmute = document.getElementById("unmute-btn");
 
   function showOnly(el, badge){{
-    [elIdle,elCart,elTrade,elTDone,elTy].forEach(function(e){{ e.style.display="none"; }});
+    [elIdle,elCart,elTrade,elTDone,elTy,elCP].forEach(function(e){{ e.style.display="none"; }});
     el.style.display="flex";
     if(elBadge) elBadge.textContent = badge||"";
     if(el !== elIdle){{
@@ -15475,6 +15519,12 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       var m=document.getElementById("ty-method");
       if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
       setTimeout(goIdle,6000);
+      return;
+    }}
+    if(s.payment_processing){{
+      showOnly(elCP,"Processing payment");
+      var cpTot=document.getElementById("cp-total");
+      if(cpTot) cpTot.textContent = s.total ? "£"+parseFloat(s.total).toFixed(2) : "";
       return;
     }}
     if(!s.active||!s.items||!s.items.length){{ goIdle(); return; }}
@@ -15669,6 +15719,45 @@ def admin_kiosk_page():
           <li>A "Thank You" screen appears for 5 seconds after payment.</li>
         </ol>
       </div>
+      <div class="admin-card" style="margin-bottom:16px">
+        <h3 style="color:#facc15;margin-bottom:8px">💳 Card Reader Screen</h3>
+        <p style="color:#aaa;font-size:13px;margin-bottom:14px">
+          Tap this when you press <strong style="color:#fff">Charge with Card</strong>
+          on your POS — the customer screen will show the card reader prompt instantly.
+          It clears automatically once the payment goes through.
+        </p>
+        <button onclick="triggerCardScreen()"
+          style="background:#facc15;color:#000;border:none;border-radius:8px;
+                 padding:14px 28px;font-size:16px;font-weight:700;cursor:pointer;
+                 width:100%;letter-spacing:0.5px">
+          💳 Show Card Reader Screen on Kiosk
+        </button>
+        <div id="card-trigger-msg" style="margin-top:8px;font-size:12px;color:#aaa"></div>
+        <script>
+        async function triggerCardScreen() {{
+          var btn = event.target;
+          var msg = document.getElementById('card-trigger-msg');
+          btn.disabled = true;
+          btn.textContent = 'Sending…';
+          try {{
+            var r = await fetch('/kiosk/payment-processing', {{method:'POST',
+              headers:{{'Content-Type':'application/json'}}, body:'{{}}'}});
+            if(r.ok) {{
+              msg.textContent = '✅ Card reader screen is now showing on the kiosk display.';
+              msg.style.color = '#4ade80';
+            }} else {{
+              msg.textContent = '❌ Failed — is the kiosk display open?';
+              msg.style.color = '#f87171';
+            }}
+          }} catch(e) {{
+            msg.textContent = '❌ Network error.';
+            msg.style.color = '#f87171';
+          }}
+          btn.disabled = false;
+          btn.textContent = '💳 Show Card Reader Screen on Kiosk';
+        }}
+        </script>
+      </div>
       <div class="admin-card">
         <h3 style="color:#facc15;margin-bottom:12px">POS Integration API</h3>
         <p style="color:#aaa;font-size:12px;margin-bottom:10px">
@@ -15689,7 +15778,15 @@ Content-Type: application/json
   "total": 69.28,
   "payment_method": "Card",
   "paid": false
-}}</pre>
+}}
+
+# Trigger the card reader screen:
+POST /kiosk/payment-processing
+{{"total": 69.28}}
+
+# Mark sale as paid (clears card screen → thank-you screen):
+POST /kiosk/cart
+{{"paid": true, "payment_method": "Card", "payment_processing": false}}</pre>
         <p style="color:#555;font-size:11px;margin-top:8px">
           Set <code style="color:#facc15">paid: true</code> + <code style="color:#facc15">payment_method</code>
           to trigger the thank-you screen.
