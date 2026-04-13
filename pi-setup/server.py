@@ -15469,7 +15469,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     <!-- THANK YOU (after sale) -->
     <div id="ty">
       <h2>Thank You!</h2>
-      <p>See you next time</p>
+      <p>Thank you for supporting my small business</p>
       <div id="ty-method"></div>
     </div>
 
