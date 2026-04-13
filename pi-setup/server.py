@@ -6590,6 +6590,7 @@ def _admin_nav(active: str = "dashboard") -> str:
         ("eod",       "/admin/eod",         "🏧", "End of Day"),
         ("customers", "/admin/customers",   "👥", "Customers"),
         ("receipt",   "/admin/receipt",     "🖨️", "Receipt"),
+        ("enrich",    "/admin/enrich",      "🧬", "Enrich"),
         ("kiosk",     "/admin/kiosk",       "🖥️", "Kiosk"),
         ("system",    "/admin/system",      "⚙️", "System"),
         ("logs",      "/admin/logs",        "📋", "Logs"),
@@ -15051,6 +15052,884 @@ def api_wantlist_matches():
         return jsonify([dict(r) for r in rows])
     except Exception as _e:
         return jsonify(error=str(_e)), 500
+
+
+# ===========================================================================
+# CENTRAL CARD API  +  ENRICHMENT PIPELINE
+# ===========================================================================
+
+# ── Enrichment job tracker ──────────────────────────────────────────────────
+_enrich_lock = threading.Lock()
+_enrich_state: dict = {
+    "running": False, "total": 0, "processed": 0,
+    "enriched": 0, "skipped": 0, "errors": 0,
+    "started_at": 0, "finished_at": 0, "last_card": "",
+    "log": [],
+}
+_PRICE_REFRESH_INTERVAL = 6 * 3600  # 6 hours
+
+
+def _enrich_log(msg: str):
+    with _enrich_lock:
+        _enrich_state["log"].append(f"[{_time.strftime('%H:%M:%S')}] {msg}")
+        if len(_enrich_state["log"]) > 200:
+            _enrich_state["log"] = _enrich_state["log"][-200:]
+    log.info("[enrich] %s", msg)
+
+
+def _enrich_single_card(qr_code: str, db) -> bool:
+    """
+    Enrich one card: TCG API data → update inventory fields → eBay market price
+    → pgvector embedding. Returns True if the card was actually enriched.
+    """
+    row = db.execute(
+        "SELECT qr_code, name, rarity, set_code, image_url, tcg_id, variant, "
+        "price, description, release_year, card_number, condition "
+        "FROM inventory WHERE qr_code = %s", (qr_code,)
+    ).fetchone()
+    if not row:
+        return False
+
+    updated_fields = {}
+    card_name = row["name"]
+    cid = (row["tcg_id"] or qr_code).lower().strip()
+
+    # ── 1. TCG API enrichment ──────────────────────────────────────────────
+    tcg_raw = _tcg_fetch(cid)
+    if not tcg_raw:
+        m = re.match(r'^([a-z0-9]+)-(\d+[a-z]?)$', cid)
+        if m:
+            hits = _tcg_search(name=card_name, set_id=m.group(1), number=m.group(2), limit=1)
+        elif card_name:
+            hits = _tcg_search(name=card_name, limit=1)
+        else:
+            hits = _tcg_search(name=qr_code.replace("-", " "), limit=1)
+        if hits:
+            tcg_raw = hits[0]
+
+    if tcg_raw:
+        summary = _tcg_to_summary(tcg_raw)
+        if not row["name"] and summary.get("name"):
+            updated_fields["name"] = summary["name"]
+            card_name = summary["name"]
+        if not row["rarity"] and summary.get("rarity"):
+            updated_fields["rarity"] = summary["rarity"]
+        if not row["set_code"] and summary.get("set", {}).get("ptcgoCode"):
+            updated_fields["set_code"] = summary["set"]["ptcgoCode"]
+        if not row["image_url"]:
+            img = summary.get("images", {}).get("large") or summary.get("images", {}).get("small")
+            if img:
+                updated_fields["image_url"] = img
+        if not row["tcg_id"] and summary.get("id"):
+            updated_fields["tcg_id"] = summary["id"]
+        if not row["card_number"] and summary.get("number"):
+            updated_fields["card_number"] = summary["number"]
+        if not row["variant"]:
+            v = _detect_variant(
+                summary.get("name", ""),
+                summary.get("rarity", ""),
+                ""
+            )
+            if v:
+                updated_fields["variant"] = v
+
+        # Market price from TCG player
+        tcgp = summary.get("tcgplayer", {})
+        mkt = tcgp.get("marketPrice")
+        if mkt and mkt > 0:
+            updated_fields["resale_price"] = round(mkt, 2)
+            if not row["price"] or float(row["price"]) == 0:
+                updated_fields["price"] = round(mkt, 2)
+
+    # ── 2. eBay market price (best-effort, skip if no eBay key) ────────────
+    try:
+        if _EBAY_APP_ID and card_name:
+            card_dict = {
+                "name": card_name,
+                "number": row["card_number"] or "",
+                "set": row["set_code"] or "",
+                "variant": updated_fields.get("variant", row["variant"] or ""),
+            }
+            sales = _fetch_ebay_sales(card_dict)
+            if sales:
+                prices = [s["price"] for s in sales if s.get("price")]
+                if prices:
+                    prices.sort()
+                    median = prices[len(prices) // 2]
+                    updated_fields["resale_price"] = round(median, 2)
+                    _store_ebay_sales_bg(
+                        f"{card_name} {row['set_code']} pokemon",
+                        sales
+                    )
+    except Exception as _ebe:
+        log.debug("[enrich] eBay skip for %s: %s", qr_code, _ebe)
+
+    # ── 3. Apply updates to DB ─────────────────────────────────────────────
+    if updated_fields:
+        updated_fields["last_updated"] = _now_ms()
+        sets = ", ".join(f"{k}=%s" for k in updated_fields)
+        vals = list(updated_fields.values()) + [qr_code]
+        db.execute(f"UPDATE inventory SET {sets} WHERE qr_code=%s", vals)
+        db.commit()
+
+    # ── 4. Record in price_history ────────────────────────────────────────
+    rp = updated_fields.get("resale_price")
+    if rp:
+        try:
+            db.execute(
+                "INSERT INTO price_history (card_id, card_name, market_price) "
+                "VALUES (%s, %s, %s)",
+                (qr_code, card_name, rp),
+            )
+            db.commit()
+        except Exception:
+            pass
+
+    # ── 5. pgvector embedding (async, non-blocking) ────────────────────────
+    if _PGVECTOR_AVAILABLE and _OPENAI_API_KEY:
+        _bg(_embed_card_bg, qr_code)
+
+    return bool(updated_fields)
+
+
+def _run_bulk_enrich():
+    """Background thread: enrich all cards that are missing key data."""
+    with _enrich_lock:
+        if _enrich_state["running"]:
+            return
+        _enrich_state.update(
+            running=True, total=0, processed=0, enriched=0,
+            skipped=0, errors=0, started_at=_now_ms(), finished_at=0,
+            last_card="", log=[],
+        )
+    _enrich_log("Bulk enrichment started")
+
+    try:
+        db = _direct_db()
+        rows = db.execute(
+            "SELECT qr_code, name FROM inventory ORDER BY last_updated ASC"
+        ).fetchall()
+        db.close()
+
+        with _enrich_lock:
+            _enrich_state["total"] = len(rows)
+        _enrich_log(f"Found {len(rows)} cards to process")
+
+        for i, row in enumerate(rows):
+            qr = row["qr_code"]
+            with _enrich_lock:
+                _enrich_state["processed"] = i + 1
+                _enrich_state["last_card"] = row["name"] or qr
+
+            try:
+                db = _direct_db()
+                did_enrich = _enrich_single_card(qr, db)
+                db.close()
+
+                with _enrich_lock:
+                    if did_enrich:
+                        _enrich_state["enriched"] += 1
+                    else:
+                        _enrich_state["skipped"] += 1
+            except Exception as _ce:
+                with _enrich_lock:
+                    _enrich_state["errors"] += 1
+                _enrich_log(f"Error enriching {qr}: {_ce}")
+
+            # Rate limit: ~1 card/sec for free TCG API tier
+            _time.sleep(1.2)
+
+        _enrich_log("Bulk enrichment complete")
+    except Exception as _be:
+        _enrich_log(f"Bulk enrichment failed: {_be}")
+    finally:
+        with _enrich_lock:
+            _enrich_state["running"] = False
+            _enrich_state["finished_at"] = _now_ms()
+
+
+def _run_price_refresh():
+    """Background thread: refresh market prices for cards not updated in 24h."""
+    _enrich_log("Scheduled price refresh started")
+    try:
+        db = _direct_db()
+        cutoff = _now_ms() - 86_400_000  # 24 hours ago
+        rows = db.execute(
+            "SELECT qr_code, name, set_code, card_number, variant "
+            "FROM inventory WHERE last_updated < %s AND stock > 0 "
+            "ORDER BY last_updated ASC LIMIT 100",
+            (cutoff,)
+        ).fetchall()
+        db.close()
+
+        count = 0
+        for row in rows:
+            qr = row["qr_code"]
+            try:
+                db = _direct_db()
+                _enrich_single_card(qr, db)
+                db.close()
+                count += 1
+            except Exception:
+                pass
+            _time.sleep(1.5)
+
+        _enrich_log(f"Price refresh: updated {count}/{len(rows)} cards")
+    except Exception as _pre:
+        _enrich_log(f"Price refresh failed: {_pre}")
+
+
+def _start_price_refresh_scheduler():
+    """Daemon thread: runs price refresh every 6 hours."""
+    def _loop():
+        _time.sleep(120)  # Wait 2 min after boot before first run
+        while True:
+            try:
+                _run_price_refresh()
+            except Exception:
+                pass
+            _time.sleep(_PRICE_REFRESH_INTERVAL)
+
+    t = threading.Thread(target=_loop, daemon=True, name="price-refresh")
+    t.start()
+    log.info("[enrich] Price refresh scheduler started (every %dh)", _PRICE_REFRESH_INTERVAL // 3600)
+
+
+# Start the scheduler on import
+_start_price_refresh_scheduler()
+
+
+# ── Central Public API: /api/v1/inventory ──────────────────────────────────
+
+@app.route("/api/v1/inventory", methods=["GET", "OPTIONS"])
+def api_v1_inventory():
+    """
+    Paginated card listing with filters. All products read from this endpoint.
+
+    Query params:
+      page=1              per_page=50 (max 200)
+      category=           rarity=            set_code=
+      condition=          language=          item_type=
+      in_stock=1          featured=1         listed=1
+      sort=name           order=asc
+      q=                  (text search on name)
+      min_price=          max_price=
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = min(200, max(1, int(request.args.get("per_page", 50))))
+    offset   = (page - 1) * per_page
+
+    where_clauses = []
+    params: list = []
+
+    for col, arg in [
+        ("category",  "category"),  ("rarity",    "rarity"),
+        ("set_code",  "set_code"),  ("condition", "condition"),
+        ("language",  "language"),  ("item_type", "item_type"),
+    ]:
+        v = request.args.get(arg, "").strip()
+        if v:
+            where_clauses.append(f"{col} = %s")
+            params.append(v)
+
+    if request.args.get("in_stock"):
+        where_clauses.append("stock > 0")
+    if request.args.get("featured"):
+        where_clauses.append("featured = 1")
+    if request.args.get("listed"):
+        where_clauses.append("listed_for_sale = 1")
+
+    q = request.args.get("q", "").strip()
+    if q:
+        where_clauses.append("LOWER(name) LIKE %s")
+        params.append(f"%{q.lower()}%")
+
+    min_p = request.args.get("min_price", "").strip()
+    max_p = request.args.get("max_price", "").strip()
+    if min_p:
+        where_clauses.append("price >= %s")
+        params.append(float(min_p))
+    if max_p:
+        where_clauses.append("price <= %s")
+        params.append(float(max_p))
+
+    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sort_col = request.args.get("sort", "name").lower()
+    if sort_col not in ("name", "price", "stock", "last_updated", "rarity", "set_code", "resale_price"):
+        sort_col = "name"
+    order = "DESC" if request.args.get("order", "asc").lower() == "desc" else "ASC"
+
+    db = get_db()
+    total = db.execute(f"SELECT COUNT(*) as cnt FROM inventory {where}", params).fetchone()["cnt"]
+    rows = db.execute(
+        f"SELECT qr_code, name, price, category, rarity, set_code, description, "
+        f"stock, image_url, tcg_id, condition, item_type, language, "
+        f"grading_company, grade, cert_number, variant, release_year, "
+        f"resale_price, purchase_price, sale_price, tags, featured, "
+        f"listed_for_sale, card_number, back_image_url, last_updated "
+        f"FROM inventory {where} ORDER BY {sort_col} {order} "
+        f"LIMIT %s OFFSET %s",
+        params + [per_page, offset],
+    ).fetchall()
+
+    cards = []
+    for r in rows:
+        cards.append({
+            "qr_code":      r["qr_code"],
+            "name":         r["name"],
+            "price":        float(r["price"]),
+            "category":     r["category"],
+            "rarity":       r["rarity"],
+            "set_code":     r["set_code"],
+            "description":  r["description"],
+            "stock":        r["stock"],
+            "image_url":    r["image_url"],
+            "tcg_id":       r["tcg_id"],
+            "condition":    r["condition"],
+            "item_type":    r["item_type"],
+            "language":     r["language"],
+            "grading":      {"company": r["grading_company"], "grade": r["grade"],
+                             "cert": r["cert_number"]} if r["grading_company"] else None,
+            "variant":      r["variant"],
+            "release_year": r["release_year"],
+            "resale_price": float(r["resale_price"]),
+            "purchase_price": float(r["purchase_price"]),
+            "sale_price":   float(r["sale_price"]),
+            "tags":         [t.strip() for t in r["tags"].split(",") if t.strip()] if r["tags"] else [],
+            "featured":     bool(r["featured"]),
+            "listed":       bool(r["listed_for_sale"]),
+            "card_number":  r["card_number"],
+            "back_image":   r["back_image_url"],
+            "updated_at":   r["last_updated"],
+        })
+
+    return jsonify({
+        "cards": cards,
+        "pagination": {
+            "page": page, "per_page": per_page,
+            "total": total, "pages": (total + per_page - 1) // per_page,
+        },
+    })
+
+
+@app.route("/api/v1/inventory/<path:qr>", methods=["GET", "OPTIONS"])
+def api_v1_inventory_detail(qr):
+    """Single card detail with full TCG data and price history."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    db = get_db()
+    r = db.execute("SELECT * FROM inventory WHERE qr_code = %s", (qr,)).fetchone()
+    if not r:
+        return jsonify({"error": "Card not found"}), 404
+
+    enriched = _enrich_with_tcg(dict(r), qr)
+
+    # Price history (last 30 entries)
+    history = db.execute(
+        "SELECT market_price, fetched_ms FROM price_history "
+        "WHERE card_id = %s ORDER BY fetched_ms DESC LIMIT 30", (qr,)
+    ).fetchall()
+
+    # eBay sold history
+    ebay_history = []
+    try:
+        ebay_rows = db.execute(
+            "SELECT title, price, sold_date, score FROM ebay_sold_history "
+            "WHERE query LIKE %s ORDER BY sold_date DESC LIMIT 20",
+            (f"%{r['name'][:30]}%",)
+        ).fetchall()
+        ebay_history = [{"title": e["title"], "price": float(e["price"]),
+                         "sold_date": str(e["sold_date"]), "score": float(e["score"])}
+                        for e in ebay_rows]
+    except Exception:
+        pass
+
+    card = {
+        "qr_code":      r["qr_code"],
+        "name":         r["name"],
+        "price":        float(r["price"]),
+        "category":     r["category"],
+        "rarity":       r["rarity"],
+        "set_code":     r["set_code"],
+        "description":  r["description"],
+        "stock":        r["stock"],
+        "image_url":    r["image_url"],
+        "tcg_id":       r["tcg_id"],
+        "condition":    r["condition"],
+        "item_type":    r["item_type"],
+        "language":     r["language"],
+        "grading":      {"company": r["grading_company"], "grade": r["grade"],
+                         "cert": r["cert_number"]} if r["grading_company"] else None,
+        "variant":      r["variant"],
+        "release_year": r["release_year"],
+        "resale_price": float(r["resale_price"]),
+        "purchase_price": float(r["purchase_price"]),
+        "sale_price":   float(r["sale_price"]),
+        "tags":         [t.strip() for t in r["tags"].split(",") if t.strip()] if r["tags"] else [],
+        "featured":     bool(r["featured"]),
+        "listed":       bool(r["listed_for_sale"]),
+        "card_number":  r["card_number"],
+        "back_image":   r["back_image_url"],
+        "updated_at":   r["last_updated"],
+        "tcg_data":     enriched.get("tcgData"),
+        "price_history": [{"price": float(h["market_price"]), "at": h["fetched_ms"]}
+                          for h in history],
+        "ebay_history":  ebay_history,
+    }
+
+    return jsonify(card)
+
+
+@app.route("/api/v1/inventory/search", methods=["GET", "OPTIONS"])
+def api_v1_inventory_search():
+    """
+    Smart search — text + pgvector semantic when available.
+    ?q=blue dragon fire card&limit=20
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    q     = request.args.get("q", "").strip()
+    limit = min(100, max(1, int(request.args.get("limit", 20))))
+
+    if not q:
+        return jsonify({"cards": [], "method": "none"})
+
+    db = get_db()
+
+    # Try semantic search first (pgvector)
+    if _PGVECTOR_AVAILABLE and _OPENAI_API_KEY:
+        vec = _embed_text(q)
+        if vec:
+            try:
+                rows = db.execute(
+                    "SELECT qr_code, name, price, rarity, set_code, image_url, "
+                    "stock, condition, variant, resale_price, "
+                    "1 - (card_vector <=> %s::vector) AS similarity "
+                    "FROM inventory WHERE card_vector IS NOT NULL "
+                    "ORDER BY card_vector <=> %s::vector LIMIT %s",
+                    (_vec_to_pg(vec), _vec_to_pg(vec), limit),
+                ).fetchall()
+
+                if rows and float(rows[0]["similarity"]) > 0.3:
+                    return jsonify({
+                        "cards": [{
+                            "qr_code": r["qr_code"], "name": r["name"],
+                            "price": float(r["price"]), "rarity": r["rarity"],
+                            "set_code": r["set_code"], "image_url": r["image_url"],
+                            "stock": r["stock"], "condition": r["condition"],
+                            "variant": r["variant"],
+                            "resale_price": float(r["resale_price"]),
+                            "similarity": round(float(r["similarity"]), 4),
+                        } for r in rows],
+                        "method": "semantic",
+                        "query": q,
+                    })
+            except Exception as _se:
+                log.debug("[api] semantic search fallback: %s", _se)
+
+    # Fallback: text search (ILIKE)
+    rows = db.execute(
+        "SELECT qr_code, name, price, rarity, set_code, image_url, "
+        "stock, condition, variant, resale_price "
+        "FROM inventory WHERE LOWER(name) LIKE %s OR LOWER(description) LIKE %s "
+        "ORDER BY stock DESC, name ASC LIMIT %s",
+        (f"%{q.lower()}%", f"%{q.lower()}%", limit),
+    ).fetchall()
+
+    return jsonify({
+        "cards": [{
+            "qr_code": r["qr_code"], "name": r["name"],
+            "price": float(r["price"]), "rarity": r["rarity"],
+            "set_code": r["set_code"], "image_url": r["image_url"],
+            "stock": r["stock"], "condition": r["condition"],
+            "variant": r["variant"],
+            "resale_price": float(r["resale_price"]),
+        } for r in rows],
+        "method": "text",
+        "query": q,
+    })
+
+
+@app.route("/api/v1/inventory/stats", methods=["GET", "OPTIONS"])
+def api_v1_inventory_stats():
+    """Inventory stats: totals, value, enrichment status."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    db = get_db()
+    stats = {}
+
+    row = db.execute(
+        "SELECT COUNT(*) as total, "
+        "SUM(stock) as total_stock, "
+        "SUM(price * stock) as total_value, "
+        "SUM(resale_price * stock) as total_resale_value, "
+        "SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END) as in_stock, "
+        "SUM(CASE WHEN image_url != '' THEN 1 ELSE 0 END) as with_image, "
+        "SUM(CASE WHEN tcg_id != '' THEN 1 ELSE 0 END) as with_tcg, "
+        "SUM(CASE WHEN resale_price > 0 THEN 1 ELSE 0 END) as with_price, "
+        "SUM(CASE WHEN rarity != '' THEN 1 ELSE 0 END) as with_rarity "
+        "FROM inventory"
+    ).fetchone()
+
+    stats["total_cards"]        = row["total"]
+    stats["total_stock"]        = int(row["total_stock"] or 0)
+    stats["total_value"]        = round(float(row["total_value"] or 0), 2)
+    stats["total_resale_value"] = round(float(row["total_resale_value"] or 0), 2)
+    stats["in_stock"]           = int(row["in_stock"] or 0)
+
+    tc = stats["total_cards"] or 1
+    stats["enrichment"] = {
+        "with_image":  int(row["with_image"] or 0),
+        "with_tcg_id": int(row["with_tcg"] or 0),
+        "with_price":  int(row["with_price"] or 0),
+        "with_rarity": int(row["with_rarity"] or 0),
+        "completeness_pct": round(
+            (int(row["with_image"] or 0) + int(row["with_tcg"] or 0) +
+             int(row["with_price"] or 0) + int(row["with_rarity"] or 0))
+            / (tc * 4) * 100, 1
+        ),
+    }
+
+    # Top categories
+    cats = db.execute(
+        "SELECT category, COUNT(*) as cnt, SUM(stock) as stock "
+        "FROM inventory GROUP BY category ORDER BY cnt DESC LIMIT 10"
+    ).fetchall()
+    stats["categories"] = [{"name": c["category"], "count": c["cnt"],
+                            "stock": int(c["stock"] or 0)} for c in cats]
+
+    # Top sets
+    sets = db.execute(
+        "SELECT set_code, COUNT(*) as cnt FROM inventory "
+        "WHERE set_code != '' GROUP BY set_code ORDER BY cnt DESC LIMIT 10"
+    ).fetchall()
+    stats["top_sets"] = [{"set_code": s["set_code"], "count": s["cnt"]} for s in sets]
+
+    with _enrich_lock:
+        stats["enrich_job"] = dict(_enrich_state)
+        stats["enrich_job"].pop("log", None)
+
+    return jsonify(stats)
+
+
+@app.route("/api/v1/inventory/categories", methods=["GET", "OPTIONS"])
+def api_v1_categories():
+    """List all unique categories, rarities, sets, conditions."""
+    if request.method == "OPTIONS":
+        return "", 204
+    db = get_db()
+    cats = [r[0] for r in db.execute("SELECT DISTINCT category FROM inventory ORDER BY category").fetchall()]
+    rars = [r[0] for r in db.execute("SELECT DISTINCT rarity FROM inventory WHERE rarity != '' ORDER BY rarity").fetchall()]
+    sets = [r[0] for r in db.execute("SELECT DISTINCT set_code FROM inventory WHERE set_code != '' ORDER BY set_code").fetchall()]
+    conds = [r[0] for r in db.execute("SELECT DISTINCT condition FROM inventory WHERE condition != '' ORDER BY condition").fetchall()]
+    langs = [r[0] for r in db.execute("SELECT DISTINCT language FROM inventory WHERE language != '' ORDER BY language").fetchall()]
+    return jsonify({"categories": cats, "rarities": rars, "sets": sets,
+                     "conditions": conds, "languages": langs})
+
+
+# ── Enrichment control endpoints ───────────────────────────────────────────
+
+@app.route("/api/v1/enrich/start", methods=["POST"])
+@require_admin
+def api_v1_enrich_start():
+    """Launch bulk enrichment pipeline (background thread)."""
+    with _enrich_lock:
+        if _enrich_state["running"]:
+            return jsonify({"error": "Enrichment already running", "state": dict(_enrich_state)}), 409
+    _bg(_run_bulk_enrich)
+    return jsonify({"ok": True, "message": "Bulk enrichment started"})
+
+
+@app.route("/api/v1/enrich/status", methods=["GET"])
+def api_v1_enrich_status():
+    """Current enrichment job status."""
+    with _enrich_lock:
+        return jsonify(dict(_enrich_state))
+
+
+@app.route("/api/v1/enrich/card/<path:qr>", methods=["POST"])
+@require_admin
+def api_v1_enrich_card(qr):
+    """Enrich a single card on demand."""
+    try:
+        db = _direct_db()
+        did = _enrich_single_card(qr, db)
+        db.close()
+        return jsonify({"ok": True, "enriched": did, "qr_code": qr})
+    except Exception as _e:
+        return jsonify({"error": str(_e)}), 500
+
+
+@app.route("/api/v1/enrich/price-refresh", methods=["POST"])
+@require_admin
+def api_v1_price_refresh():
+    """Trigger immediate price refresh for stale cards."""
+    _bg(_run_price_refresh)
+    return jsonify({"ok": True, "message": "Price refresh started in background"})
+
+
+# ── Admin enrichment dashboard ─────────────────────────────────────────────
+
+@app.route("/admin/enrich", methods=["GET"])
+@require_admin
+def admin_enrich_page():
+    nav = _admin_nav("enrich")
+    db  = get_db()
+
+    total   = db.execute("SELECT COUNT(*) as c FROM inventory").fetchone()["c"]
+    no_img  = db.execute("SELECT COUNT(*) as c FROM inventory WHERE image_url = ''").fetchone()["c"]
+    no_tcg  = db.execute("SELECT COUNT(*) as c FROM inventory WHERE tcg_id = ''").fetchone()["c"]
+    no_price= db.execute("SELECT COUNT(*) as c FROM inventory WHERE resale_price = 0").fetchone()["c"]
+    no_rar  = db.execute("SELECT COUNT(*) as c FROM inventory WHERE rarity = ''").fetchone()["c"]
+    has_vec = 0
+    if _PGVECTOR_AVAILABLE:
+        try:
+            has_vec = db.execute("SELECT COUNT(*) as c FROM inventory WHERE card_vector IS NOT NULL").fetchone()["c"]
+        except Exception:
+            pass
+
+    enriched_pct = round((1 - (no_img + no_tcg + no_price + no_rar) / max(total * 4, 1)) * 100, 1) if total else 0
+
+    recent = db.execute(
+        "SELECT qr_code, name, image_url, rarity, set_code, resale_price, tcg_id, last_updated "
+        "FROM inventory ORDER BY last_updated DESC LIMIT 20"
+    ).fetchall()
+
+    missing = db.execute(
+        "SELECT qr_code, name, image_url, rarity, resale_price, tcg_id "
+        "FROM inventory WHERE image_url = '' OR tcg_id = '' OR resale_price = 0 OR rarity = '' "
+        "ORDER BY name LIMIT 50"
+    ).fetchall()
+
+    with _enrich_lock:
+        job = dict(_enrich_state)
+
+    running_html = ""
+    if job["running"]:
+        pct = round(job["processed"] / max(job["total"], 1) * 100)
+        running_html = f"""
+<div class="admin-card" style="border:1px solid #facc15;margin-bottom:20px">
+  <h3 style="color:#facc15">🔄 Enrichment Running</h3>
+  <div style="background:#111;border-radius:8px;height:24px;margin:12px 0;overflow:hidden">
+    <div style="background:#facc15;height:100%;width:{pct}%;transition:width 0.5s;border-radius:8px"></div>
+  </div>
+  <p style="color:#ccc;font-size:13px">
+    {job['processed']}/{job['total']} processed —
+    {job['enriched']} enriched, {job['skipped']} skipped, {job['errors']} errors<br>
+    Currently: <strong style="color:#fff">{job['last_card']}</strong>
+  </p>
+</div>"""
+
+    def _status_dot(val, total_cards):
+        pct = round((1 - val / max(total_cards, 1)) * 100)
+        color = "#22c55e" if pct >= 90 else "#f59e0b" if pct >= 50 else "#ef4444"
+        return f'<span style="color:{color};font-weight:700">{pct}%</span>'
+
+    recent_rows = "".join(
+        f"""<tr>
+          <td><img src="{r['image_url']}" style="height:36px;border-radius:4px" onerror="this.style.display='none'"></td>
+          <td style="color:#fff">{r['name'][:40]}</td>
+          <td>{r['set_code']}</td>
+          <td>{r['rarity'][:15]}</td>
+          <td style="color:#facc15">{'£' + f"{r['resale_price']:.2f}" if r['resale_price'] else '—'}</td>
+          <td>{'✅' if r['tcg_id'] else '❌'}</td>
+          <td>{'✅' if r['image_url'] else '❌'}</td>
+          <td><button onclick="enrichOne('{r['qr_code']}')" class="btn btn-small"
+                style="background:#facc15;color:#000;border:none;border-radius:4px;padding:3px 10px;
+                       font-size:11px;cursor:pointer">Enrich</button></td>
+        </tr>"""
+        for r in recent
+    )
+
+    missing_rows = "".join(
+        f"""<tr>
+          <td style="color:#fff">{r['name'][:40]}</td>
+          <td>{'❌' if not r['image_url'] else '✅'}</td>
+          <td>{'❌' if not r['tcg_id'] else '✅'}</td>
+          <td>{'❌' if not r['resale_price'] else '✅'}</td>
+          <td>{'❌' if not r['rarity'] else '✅'}</td>
+          <td><button onclick="enrichOne('{r['qr_code']}')" class="btn btn-small"
+                style="background:#f59e0b;color:#000;border:none;border-radius:4px;padding:3px 10px;
+                       font-size:11px;cursor:pointer">Fix</button></td>
+        </tr>"""
+        for r in missing
+    )
+
+    log_lines = "<br>".join(job.get("log", [])[-30:]) or "<span style='color:#444'>No enrichment activity yet.</span>"
+
+    pgv_status = f"✅ {has_vec}/{total} cards embedded" if _PGVECTOR_AVAILABLE else "❌ pgvector not installed"
+    ebay_status = "✅ Connected" if _EBAY_APP_ID else "❌ No EBAY_APP_ID set"
+    oai_status = "✅ Connected" if _OPENAI_API_KEY else "❌ No OPENAI_API_KEY set"
+    tcg_status = f"✅ {'Key set' if _PTCG_API_KEY else 'Free tier (1k/day)'}"
+
+    return f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Enrich — HanryxVault</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0a0a0a;color:#ccc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}}
+.admin-card{{background:#111;border:1px solid #1a1a1a;border-radius:10px;padding:20px;margin-bottom:16px}}
+.btn{{border:none;border-radius:6px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer}}
+.btn-primary{{background:#facc15;color:#000}} .btn-secondary{{background:#222;color:#ccc}}
+.stat-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px}}
+.stat-card{{background:#111;border:1px solid #1a1a1a;border-radius:10px;padding:16px;text-align:center}}
+.stat-val{{font-size:28px;font-weight:900;color:#facc15}}
+.stat-lbl{{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th{{text-align:left;color:#555;padding:8px 6px;border-bottom:1px solid #1a1a1a;font-size:11px;
+   text-transform:uppercase;letter-spacing:1px}}
+td{{padding:8px 6px;border-bottom:1px solid #0f0f0f;color:#888}}
+.svc{{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}}
+.svc-name{{color:#888;min-width:120px}}
+</style>
+{nav}
+</head><body>
+<div style="max-width:1200px;margin:0 auto">
+  <h1 style="color:#facc15;margin-bottom:6px">🧬 Card Enrichment Pipeline</h1>
+  <p style="color:#555;margin-bottom:20px;font-size:14px">
+    Auto-fill missing data from Pokémon TCG API, eBay pricing, and AI embeddings.
+    Everything flows through the central <code style="color:#facc15">/api/v1/inventory</code> API.
+  </p>
+
+  {running_html}
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-val">{total}</div>
+      <div class="stat-lbl">Total Cards</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{_status_dot(no_img, total)}</div>
+      <div class="stat-lbl">Have Image ({total - no_img}/{total})</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{_status_dot(no_tcg, total)}</div>
+      <div class="stat-lbl">TCG Linked ({total - no_tcg}/{total})</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{_status_dot(no_price, total)}</div>
+      <div class="stat-lbl">Market Priced ({total - no_price}/{total})</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{_status_dot(no_rar, total)}</div>
+      <div class="stat-lbl">Rarity Set ({total - no_rar}/{total})</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="font-size:22px">{enriched_pct}%</div>
+      <div class="stat-lbl">Overall Complete</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+    <div class="admin-card">
+      <h3 style="color:#facc15;margin-bottom:14px">Pipeline Controls</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <button onclick="startEnrich()" class="btn btn-primary" id="enrich-btn">
+          🚀 Enrich All Cards
+        </button>
+        <button onclick="refreshPrices()" class="btn btn-secondary">
+          💰 Refresh Prices Now
+        </button>
+      </div>
+      <div id="enrich-msg" style="font-size:13px;color:#aaa;margin-bottom:14px"></div>
+      <p style="color:#444;font-size:12px">
+        Bulk enrich processes every card: TCG API → eBay sold listings → market price
+        → pgvector embedding. Rate-limited to ~1 card/sec. Prices auto-refresh every 6 hours.
+      </p>
+    </div>
+    <div class="admin-card">
+      <h3 style="color:#facc15;margin-bottom:14px">Service Status</h3>
+      <div class="svc"><span class="svc-name">Pokémon TCG API</span> {tcg_status}</div>
+      <div class="svc"><span class="svc-name">eBay Pricing</span> {ebay_status}</div>
+      <div class="svc"><span class="svc-name">pgvector Search</span> {pgv_status}</div>
+      <div class="svc"><span class="svc-name">OpenAI Embeddings</span> {oai_status}</div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #1a1a1a">
+        <h4 style="color:#888;font-size:12px;margin-bottom:8px">PUBLIC API ENDPOINTS</h4>
+        <div style="font-size:12px;color:#666;line-height:2">
+          <code style="color:#86efac">GET /api/v1/inventory</code> — paginated listing<br>
+          <code style="color:#86efac">GET /api/v1/inventory/&lt;qr&gt;</code> — card detail<br>
+          <code style="color:#86efac">GET /api/v1/inventory/search?q=</code> — smart search<br>
+          <code style="color:#86efac">GET /api/v1/inventory/stats</code> — stats &amp; enrichment<br>
+          <code style="color:#86efac">GET /api/v1/inventory/categories</code> — filter options
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-card" style="margin-bottom:20px">
+    <h3 style="color:#f59e0b;margin-bottom:12px">⚠️ Missing Data ({len(missing)} cards need attention)</h3>
+    <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+      <table><thead><tr>
+        <th>Card</th><th>Image</th><th>TCG</th><th>Price</th><th>Rarity</th><th></th>
+      </tr></thead><tbody>{missing_rows}</tbody></table>
+    </div>
+  </div>
+
+  <div class="admin-card" style="margin-bottom:20px">
+    <h3 style="color:#facc15;margin-bottom:12px">Recently Updated</h3>
+    <div style="overflow-x:auto;max-height:500px;overflow-y:auto">
+      <table><thead><tr>
+        <th></th><th>Card</th><th>Set</th><th>Rarity</th><th>Market</th><th>TCG</th><th>Img</th><th></th>
+      </tr></thead><tbody>{recent_rows}</tbody></table>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h3 style="color:#facc15;margin-bottom:12px">Enrichment Log</h3>
+    <div style="background:#0a0a0a;border-radius:6px;padding:14px;font-size:12px;
+                color:#86efac;max-height:300px;overflow-y:auto;line-height:1.8;
+                font-family:monospace">{log_lines}</div>
+  </div>
+</div>
+
+<script>
+async function startEnrich() {{
+  var btn = document.getElementById('enrich-btn');
+  var msg = document.getElementById('enrich-msg');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  try {{
+    var r = await fetch('/api/v1/enrich/start', {{method:'POST'}});
+    var d = await r.json();
+    if (r.ok) {{
+      msg.textContent = '✅ ' + d.message + ' — refresh this page to see progress.';
+      msg.style.color = '#4ade80';
+    }} else {{
+      msg.textContent = '⚠️ ' + (d.error || 'Failed');
+      msg.style.color = '#f59e0b';
+    }}
+  }} catch(e) {{
+    msg.textContent = '❌ Network error'; msg.style.color = '#ef4444';
+  }}
+  btn.disabled = false; btn.textContent = '🚀 Enrich All Cards';
+}}
+
+async function refreshPrices() {{
+  var msg = document.getElementById('enrich-msg');
+  msg.textContent = 'Starting price refresh…'; msg.style.color = '#aaa';
+  var r = await fetch('/api/v1/enrich/price-refresh', {{method:'POST'}});
+  var d = await r.json();
+  msg.textContent = '✅ ' + d.message; msg.style.color = '#4ade80';
+}}
+
+async function enrichOne(qr) {{
+  var r = await fetch('/api/v1/enrich/card/' + encodeURIComponent(qr), {{method:'POST'}});
+  var d = await r.json();
+  if (d.enriched) {{
+    alert('✅ Enriched: ' + qr);
+    location.reload();
+  }} else {{
+    alert('ℹ️ No new data found for ' + qr);
+  }}
+}}
+</script>
+</body></html>"""
 
 
 # ===========================================================================
