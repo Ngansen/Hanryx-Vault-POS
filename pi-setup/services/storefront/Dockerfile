@@ -1,17 +1,13 @@
 # ── Stage 1: build ─────────────────────────────────────────────────────────────
 FROM node:20-slim AS builder
 
-ARG GITHUB_TOKEN
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    ca-certificates \
-    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN GIT_SSL_NO_VERIFY=1 git clone --depth=1 https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git .
+COPY storefront-src/ .
 
 RUN npm ci
 
