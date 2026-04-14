@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN git config --global http.sslVerify true && \
-    git clone --depth=1 https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git .
+RUN git config --global http.sslVerify false && \
+    git clone --depth=1 https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git . && \
+    git config --global http.sslVerify true
 
 RUN npm ci
 
