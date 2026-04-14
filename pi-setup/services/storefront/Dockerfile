@@ -2,11 +2,16 @@
 FROM node:20-slim AS builder
 
 ARG GITHUB_TOKEN
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN git clone --depth=1 https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git .
+RUN git config --global http.sslVerify true && \
+    git clone --depth=1 https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git .
 
 RUN npm ci
 
