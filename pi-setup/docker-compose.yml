@@ -7,8 +7,6 @@ services:
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
-    # Force md5 password hashing so PgBouncer can authenticate correctly.
-    # PostgreSQL 16 defaults to scram-sha-256 which PgBouncer struggles with.
     command: ["postgres", "-c", "password_encryption=md5"]
     environment:
       POSTGRES_DB:       vaultpos
@@ -22,10 +20,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ── Redis — cross-worker pub/sub (SSE) + shared L2 cache ─────────────────────
-  # Scan events published here so all gunicorn workers see them instantly.
-  # Also used as a shared TTL cache in front of PostgreSQL.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -35,11 +37,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   # ── PgBouncer — connection pooler ────────────────────────────────────────────
-  # Sits between Flask and PostgreSQL in transaction-pooling mode.
-  # Keeps PostgreSQL connection count low (Pi 5 RAM-friendly) while Flask can
-  # open as many short-lived client connections as it needs.
   pgbouncer:
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
@@ -61,16 +66,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   # ── Flask POS server ──────────────────────────────────────────────────────────
   # Handles: tablet POS, admin dashboard, scan queue, Zettle, BT receipt printer
   # Accessible: LAN (port 8080) + Tailscale VPN hostname
-  # Android app should connect to http://<pi-ip>:8080 (LAN) or via WireGuard
   pos:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"   # LAN + VPN accessible — Android APK connects here directly
+      - "8080:8080"
     environment:
       DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
       REDIS_URL:        redis://redis:6379/0
@@ -80,26 +90,13 @@ services:
       SESSION_SECRET:   ${SESSION_SECRET:-change-me-on-the-pi}
       ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-hanryxvault}
 
-      # Pull inventory from the local storefront (internal Docker network)
       CLOUD_INVENTORY_SOURCES: http://storefront:3000/api/products
 
-      # Satellite Pi auth token — REQUIRED if you use a satellite trade-show Pi
-      # Generate with: openssl rand -hex 32
-      # Also register the same value in satellite.conf on the trade-show Pi.
       # SATELLITE_TOKEN: your-secret-token
-
-      # Zettle OAuth
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
-
-      # Pokémon TCG API key (free = 1k/day; with key = 20k/day)
       # PTCG_API_KEY: your-api-key
-
-      # OpenAI — card photo identification via GPT-4o Vision
-      # Get a key at https://platform.openai.com/api-keys
       # OPENAI_API_KEY: sk-...
-
-      # Gmail SMTP for sale alerts
       # SMTP_USER:         you@gmail.com
       # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
       # NOTIFY_EMAIL:      alerts@example.com
@@ -108,11 +105,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
-  # Public-facing React + Express customer website with PayPal checkout.
-  # nginx routes the public domain to this service on port 3000.
-  # Cloned from https://github.com/Ngansen/HanRyx-Vault at build time.
   storefront:
     build:
       context: ./services/storefront
@@ -120,7 +126,7 @@ services:
         GITHUB_TOKEN: ${GITHUB_TOKEN}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"   # nginx proxies the public domain here
+      - "127.0.0.1:3000:3000"
     environment:
       DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/storefront
       PORT:         "3000"
@@ -128,19 +134,26 @@ services:
 
       SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}
 
-      # The storefront pushes inventory updates to the POS (internal Docker network)
-      # Set this so the storefront notifies the POS when you add/update products.
       HANRYX_POS_PUSH_URL: http://pos:8080/push/inventory
 
-      # PayPal credentials for the checkout flow
       # PAYPAL_CLIENT_ID:     your-paypal-client-id
       # PAYPAL_CLIENT_SECRET: your-paypal-client-secret
-
-      # Pokémon TCG API key (shared with POS)
       # PTCG_API_KEY: your-api-key
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

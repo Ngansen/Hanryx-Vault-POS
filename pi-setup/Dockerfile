@@ -26,16 +26,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     tesseract-ocr \
     tesseract-ocr-eng \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r hanryx && useradd -r -g hanryx -d /app -s /sbin/nologin hanryx
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY . .
 
+RUN mkdir -p /app/card-images /app/data && chown -R hanryx:hanryx /app
+
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+
+USER hanryx
 
 EXPOSE 8080
 

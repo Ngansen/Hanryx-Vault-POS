@@ -321,6 +321,45 @@ def _is_lan(ip: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Global error handlers — catch unhandled exceptions and return clean JSON/HTML
+# ---------------------------------------------------------------------------
+@app.errorhandler(404)
+def _handle_404(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not found", "path": request.path}), 404
+    return (
+        f'<html><body style="background:#0d0d0d;color:#e0e0e0;font-family:sans-serif;'
+        f'display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column">'
+        f'<h1 style="color:#f59e0b;font-size:48px">404</h1>'
+        f'<p>Page not found</p>'
+        f'<a href="/admin" style="color:#f59e0b;margin-top:16px">Back to Admin</a>'
+        f'</body></html>'
+    ), 404
+
+
+@app.errorhandler(500)
+def _handle_500(e):
+    log.error("[500] Unhandled exception: %s", e, exc_info=True)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return (
+        f'<html><body style="background:#0d0d0d;color:#e0e0e0;font-family:sans-serif;'
+        f'display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column">'
+        f'<h1 style="color:#f59e0b;font-size:48px">500</h1>'
+        f'<p>Something went wrong — the error has been logged.</p>'
+        f'<a href="/admin" style="color:#f59e0b;margin-top:16px">Back to Admin</a>'
+        f'</body></html>'
+    ), 500
+
+
+@app.errorhandler(405)
+def _handle_405(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Method not allowed"}), 405
+    return "Method not allowed", 405
+
+
 def require_admin(fn):
     """Decorator that redirects unauthenticated requests to /admin/login."""
     @functools.wraps(fn)
@@ -6746,10 +6785,10 @@ def admin_inventory_import():
             continue
         def _f(k, default=0.0):
             try: return float(row.get(k) or default)
-            except: return default
+            except (ValueError, TypeError): return default
         def _i(k, default=0):
             try: return int(float(row.get(k) or default))
-            except: return default
+            except (ValueError, TypeError): return default
         db.execute("""
             INSERT INTO inventory (qr_code,name,price,category,rarity,set_code,description,
                 stock,language,condition,item_type,purchase_price,sale_price,tags,last_updated)
@@ -7143,7 +7182,7 @@ def admin_profit_loss():
     period = request.args.get("period", "30")  # days
     try:
         days = int(period)
-    except:
+    except (ValueError, TypeError):
         days = 30
     since_ms = _now_ms() - days * 86_400_000
     db = get_db()
