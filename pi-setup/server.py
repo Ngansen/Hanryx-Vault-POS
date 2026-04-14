@@ -16174,6 +16174,11 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 #store-tag{{font-size:clamp(11px,1.4vw,18px);color:#555;margin-top:2px}}
 #topbar-right{{text-align:right}}
 #clock{{font-size:clamp(22px,3.5vw,48px);font-weight:200;color:{accent};letter-spacing:3px}}
+#net-badge{{font-size:clamp(10px,1.2vw,14px);padding:2px 8px;border-radius:6px;
+  letter-spacing:.5px;font-weight:600}}
+#net-badge.online{{color:#4ade80;background:#16653411}}
+#net-badge.offline{{color:#f87171;background:#7f1d1d22}}
+#net-badge.checking{{color:#888}}
 #mode-badge{{font-size:clamp(10px,1.2vw,15px);color:#444;text-transform:uppercase;
   letter-spacing:1.5px;margin-top:4px}}
 #main{{flex:1;overflow:hidden;display:flex;flex-direction:column}}
@@ -16516,6 +16521,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       </div>
     </div>
     <div id="topbar-right">
+      <div id="net-badge" title="Network status">⏳</div>
       <div id="clock"></div>
       <div id="mode-badge">Ready</div>
     </div>
@@ -16624,6 +16630,26 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   var clk = document.getElementById("clock");
   function tick(){{ clk.textContent = new Date().toLocaleTimeString([],{{hour:"2-digit",minute:"2-digit"}}); }}
   tick(); setInterval(tick,1000);
+
+  /* ═══ NETWORK STATUS CHECKER ═══ */
+  var netBadge = document.getElementById("net-badge");
+  function checkNetwork(){{
+    if(!netBadge) return;
+    fetch("/health",{{method:"GET",cache:"no-store"}})
+      .then(function(r){{ return r.json(); }})
+      .then(function(d){{
+        var online = navigator.onLine;
+        netBadge.textContent = online ? "🟢 Online" : "🔴 Offline";
+        netBadge.className = online ? "online" : "offline";
+        netBadge.title = online ? "Connected to internet" : "Running on cached data — all features work locally";
+      }})
+      .catch(function(){{
+        netBadge.textContent = "⚠️ Server";
+        netBadge.className = "offline";
+        netBadge.title = "POS server not responding";
+      }});
+  }}
+  checkNetwork(); setInterval(checkNetwork, 30000);
 
   function f(n){{ return "£"+parseFloat(n||0).toFixed(2); }}
   function esc(s){{ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }}

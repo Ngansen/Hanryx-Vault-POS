@@ -62,13 +62,25 @@ info "Enabling Docker to start at boot…"
 systemctl enable docker
 ok "Docker enabled"
 
+# ── 1b. Network timeout guard ─────────────────────────────────────────────
+# Prevent boot from hanging forever waiting for network at trade shows
+info "Setting network-online timeout to 15 s (prevents offline boot hang)…"
+mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d
+cat > /etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf << 'EOF'
+[Service]
+TimeoutStartSec=15
+EOF
+systemctl daemon-reload
+ok "Network timeout guard set (15 s max)"
+
 # ── 2. Systemd service: Docker Compose ─────────────────────────────────────
 info "Creating hanryx-pos.service (Docker Compose)…"
 cat > /etc/systemd/system/hanryx-pos.service << EOF
 [Unit]
 Description=HanryxVault POS — Docker Compose
 Requires=docker.service
-After=docker.service network-online.target
+After=docker.service
+# Wants (not Requires) network — starts even with no internet
 Wants=network-online.target
 
 [Service]
