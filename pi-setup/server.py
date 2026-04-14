@@ -16264,10 +16264,244 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 #dis-overlay{{position:fixed;inset:0;background:{bg};display:flex;align-items:center;
   justify-content:center;font-size:clamp(16px,2vw,28px);color:#333;z-index:9999;
   text-align:center;padding:40px}}
+
+/* ═══════════════════════════════════════════════════
+   HANRYXVAULT ANIMATIONS — Pokémon-themed, gold & black
+   ═══════════════════════════════════════════════════ */
+
+/* ── ambient gold dust particles ── */
+#particles{{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}}
+.particle{{position:absolute;border-radius:50%;opacity:0;animation:gold-rise linear infinite}}
+@keyframes gold-rise{{
+  0%{{transform:translateY(100vh) scale(0);opacity:0}}
+  10%{{opacity:.7}}
+  50%{{opacity:.5}}
+  90%{{opacity:.2}}
+  100%{{transform:translateY(-10vh) scale(1);opacity:0}}
+}}
+
+/* ── CSS Pokéball shapes (pure CSS, no images) ── */
+.pokeball-float{{
+  width:clamp(28px,4vw,52px);height:clamp(28px,4vw,52px);
+  border-radius:50%;position:absolute;pointer-events:none;z-index:2;
+  background:linear-gradient(to bottom,#cc0000 0%,#cc0000 45%,#111 45%,#111 55%,#fff 55%,#fff 100%);
+  border:2px solid #222;
+  box-shadow:0 0 12px {accent}22;
+  animation:float-drift 14s ease-in-out infinite;font-size:0;opacity:0;
+}}
+.pokeball-float::after{{
+  content:'';position:absolute;top:50%;left:50%;
+  width:30%;height:30%;border-radius:50%;transform:translate(-50%,-50%);
+  background:#fff;border:2px solid #333;box-shadow:0 0 4px {accent}44;
+}}
+.pokeball-float.ultra{{
+  background:linear-gradient(to bottom,#111 0%,#111 45%,#facc15 45%,#facc15 55%,#111 55%,#111 100%);
+}}
+.pokeball-float.ultra::after{{background:{accent};border-color:#000}}
+.pokeball-float.master{{
+  background:linear-gradient(to bottom,#6b21a8 0%,#6b21a8 45%,#facc15 45%,#facc15 55%,#333 55%,#333 100%);
+}}
+.pokeball-float.master::after{{background:{accent};border-color:#6b21a8}}
+
+@keyframes float-drift{{
+  0%{{transform:translateY(20px) rotate(-8deg) scale(.85);opacity:0}}
+  12%{{opacity:.30}}
+  50%{{transform:translateY(-35px) rotate(8deg) scale(1);opacity:.22}}
+  88%{{opacity:.12}}
+  100%{{transform:translateY(20px) rotate(-8deg) scale(.85);opacity:0}}
+}}
+
+/* ── energy type icons (CSS-drawn) ── */
+.energy-icon{{
+  width:clamp(24px,3.5vw,44px);height:clamp(24px,3.5vw,44px);
+  border-radius:50%;position:absolute;pointer-events:none;z-index:2;
+  border:2px solid;display:flex;align-items:center;justify-content:center;
+  font-size:clamp(12px,1.8vw,22px);font-weight:900;
+  animation:float-drift 16s ease-in-out infinite;opacity:0;
+}}
+.energy-icon[data-type="fire"]{{
+  background:radial-gradient(circle,#ff6b3520,#ff2d0010);border-color:#ff6b3544;color:#ff6b35;
+}}
+.energy-icon[data-type="fire"]::after{{content:'🔥';font-size:clamp(14px,2vw,26px)}}
+.energy-icon[data-type="electric"]{{
+  background:radial-gradient(circle,{accent}20,{accent}08);border-color:{accent}44;color:{accent};
+}}
+.energy-icon[data-type="electric"]::after{{content:'⚡';font-size:clamp(14px,2vw,26px)}}
+.energy-icon[data-type="water"]{{
+  background:radial-gradient(circle,#3b82f620,#3b82f608);border-color:#3b82f644;color:#3b82f6;
+}}
+.energy-icon[data-type="water"]::after{{content:'💧';font-size:clamp(14px,2vw,26px)}}
+.energy-icon[data-type="psychic"]{{
+  background:radial-gradient(circle,#a855f720,#a855f708);border-color:#a855f744;color:#a855f7;
+}}
+.energy-icon[data-type="psychic"]::after{{content:'🔮';font-size:clamp(14px,2vw,26px)}}
+
+/* ── idle screen — gold text shimmer ── */
+#idle-msg{{
+  animation:gold-shimmer 4s ease-in-out infinite;
+}}
+@keyframes gold-shimmer{{
+  0%,100%{{opacity:.85;filter:brightness(1);text-shadow:0 0 0 transparent}}
+  50%{{opacity:1;filter:brightness(1.1);text-shadow:0 2px 16px {accent}22}}
+}}
+
+/* ── store name gold glow ── */
+#store-name{{
+  animation:vault-glow 3s ease-in-out infinite;
+}}
+@keyframes vault-glow{{
+  0%,100%{{text-shadow:0 0 6px {accent}33}}
+  50%{{text-shadow:0 0 18px {accent}66,0 0 36px {accent}22}}
+}}
+
+/* ── logo border shimmer ── */
+#topbar img{{
+  animation:logo-ring 4s ease-in-out infinite;
+}}
+@keyframes logo-ring{{
+  0%,100%{{box-shadow:0 0 0 0 {accent}44}}
+  50%{{box-shadow:0 0 14px 3px {accent}44}}
+}}
+
+/* ── cart item slide-in ── */
+.ci{{animation:vault-slide-in .45s ease-out both}}
+@keyframes vault-slide-in{{
+  from{{transform:translateX(50px);opacity:0}}
+  to{{transform:translateX(0);opacity:1}}
+}}
+
+/* cart item flash on new */
+.ci-new{{animation:vault-item-flash .6s ease-out}}
+@keyframes vault-item-flash{{
+  0%{{background:{accent}18;transform:scale(1.02);box-shadow:inset 0 0 20px {accent}11}}
+  100%{{background:transparent;transform:scale(1);box-shadow:none}}
+}}
+
+/* ── grand total gold glow ── */
+.tr.grand .tv{{animation:gold-price-glow 2.5s ease-in-out infinite}}
+@keyframes gold-price-glow{{
+  0%,100%{{text-shadow:0 0 4px {accent}44}}
+  50%{{text-shadow:0 0 16px {accent}88,0 0 32px {accent}33}}
+}}
+
+/* ── card processing — Pokéball orbit rings ── */
+#card-processing{{
+  background:radial-gradient(circle at 50% 40%,{accent}06 0%,transparent 55%);
+}}
+#cp-icon{{
+  animation:cp-pulse 1.6s ease-in-out infinite, pokeball-wobble 3s ease-in-out infinite;
+}}
+@keyframes pokeball-wobble{{
+  0%,100%{{transform:scale(1) perspective(300px) rotateY(0deg)}}
+  25%{{transform:scale(1.06) perspective(300px) rotateY(10deg)}}
+  75%{{transform:scale(1.06) perspective(300px) rotateY(-10deg)}}
+}}
+#cp-ring{{position:absolute;width:clamp(160px,28vw,280px);height:clamp(160px,28vw,280px);
+  border:3px solid {accent}33;border-top-color:{accent}77;border-radius:50%;
+  animation:pokering 3s linear infinite}}
+@keyframes pokering{{
+  0%{{transform:rotate(0deg)}}
+  100%{{transform:rotate(360deg)}}
+}}
+#cp-ring2{{position:absolute;width:clamp(200px,34vw,340px);height:clamp(200px,34vw,340px);
+  border:2px dashed {accent}18;border-left-color:{accent}44;border-radius:50%;
+  animation:pokering 6s linear infinite reverse}}
+
+/* ── thank you — Pokéball catch celebration ── */
+#ty h2{{animation:vault-catch .9s cubic-bezier(.36,1.1,.46,1.3) both}}
+@keyframes vault-catch{{
+  0%{{transform:scale(0) rotate(-5deg);opacity:0;filter:brightness(2)}}
+  50%{{transform:scale(1.1) rotate(1deg);opacity:1;filter:brightness(1.3)}}
+  100%{{transform:scale(1) rotate(0);opacity:1;filter:brightness(1)}}
+}}
+#ty p{{animation:vault-rise .7s ease-out .35s both}}
+@keyframes vault-rise{{
+  from{{transform:translateY(24px);opacity:0}}
+  to{{transform:translateY(0);opacity:1}}
+}}
+#confetti-canvas{{position:fixed;inset:0;pointer-events:none;z-index:25}}
+
+/* ── trade-in item entrance ── */
+.ti{{animation:vault-slide-in .4s ease-out both}}
+
+/* ── trade done — gold burst ── */
+#trade-done .td-card{{animation:vault-pop .5s cubic-bezier(.36,1.1,.46,1.3) both}}
+@keyframes vault-pop{{
+  from{{transform:scale(0);opacity:0}}
+  to{{transform:scale(1);opacity:1}}
+}}
+
+/* ── BRAND PULSE screen (sale complete interstitial) ── */
+#brand-pulse{{
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;gap:0;
+}}
+#bp-logo{{
+  width:clamp(180px,30vw,380px);height:auto;border-radius:18px;
+  animation:bp-zoom 2.2s cubic-bezier(.22,1,.36,1) both;
+  position:relative;z-index:3;
+  border:3px solid {accent}55;
+  filter:drop-shadow(0 0 24px {accent}66);
+}}
+@keyframes bp-zoom{{
+  0%{{transform:scale(0) rotate(-10deg);opacity:0;filter:drop-shadow(0 0 0 transparent)}}
+  40%{{transform:scale(1.15) rotate(2deg);opacity:1;filter:drop-shadow(0 0 40px {accent}88)}}
+  60%{{transform:scale(.95) rotate(-1deg);filter:drop-shadow(0 0 30px {accent}66)}}
+  80%{{transform:scale(1.05) rotate(0);filter:drop-shadow(0 0 50px {accent}aa)}}
+  100%{{transform:scale(1) rotate(0);filter:drop-shadow(0 0 20px {accent}66)}}
+}}
+#bp-ring-outer{{
+  position:absolute;width:clamp(200px,36vw,400px);height:clamp(200px,36vw,400px);
+  border:3px solid {accent}44;border-top-color:{accent};border-radius:50%;z-index:2;
+  animation:bp-ring-spin 1.8s linear infinite, bp-ring-grow 2s ease-out both;
+}}
+#bp-ring-inner{{
+  position:absolute;width:clamp(160px,28vw,320px);height:clamp(160px,28vw,320px);
+  border:2px solid {accent}22;border-bottom-color:{accent}66;border-radius:50%;z-index:2;
+  animation:bp-ring-spin 2.4s linear infinite reverse, bp-ring-grow 2s ease-out .1s both;
+}}
+@keyframes bp-ring-spin{{0%{{transform:rotate(0)}}100%{{transform:rotate(360deg)}}}}
+@keyframes bp-ring-grow{{
+  0%{{transform:scale(0);opacity:0}}
+  50%{{opacity:1}}
+  100%{{transform:scale(1);opacity:.7}}
+}}
+#bp-text{{
+  font-size:clamp(22px,4.5vw,56px);font-weight:900;letter-spacing:.15em;
+  color:{accent};margin-top:clamp(16px,3vw,36px);z-index:3;
+  animation:bp-text-in 1s ease-out .6s both;
+  text-shadow:0 0 20px {accent}44;
+}}
+@keyframes bp-text-in{{
+  0%{{transform:translateY(30px) scale(.8);opacity:0;letter-spacing:.6em}}
+  100%{{transform:translateY(0) scale(1);opacity:1;letter-spacing:.15em}}
+}}
+#bp-flash{{
+  position:absolute;inset:0;z-index:1;
+  background:radial-gradient(circle at 50% 45%,{accent}18 0%,transparent 65%);
+  animation:bp-flash-pulse 1.2s ease-in-out infinite;
+}}
+@keyframes bp-flash-pulse{{
+  0%,100%{{opacity:.3}}
+  50%{{opacity:.8}}
+}}
+
+/* ── gold sparkles on price updates ── */
+.sparkle{{position:absolute;width:5px;height:5px;border-radius:50%;
+  background:{accent};pointer-events:none;z-index:30;
+  animation:gold-spark .7s ease-out forwards}}
+@keyframes gold-spark{{
+  0%{{transform:scale(1);opacity:1}}
+  100%{{transform:scale(0) translate(var(--sx),var(--sy));opacity:0}}
+}}
 </style>
 </head>
 <body>
 {dis}
+<!-- Ambient floating particles -->
+<div id="particles"></div>
+<!-- Confetti canvas (thank you + trade done) -->
+<canvas id="confetti-canvas"></canvas>
 <div id="shell">
 
   <!-- Top bar — always visible -->
@@ -16292,6 +16526,14 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     <!-- IDLE -->
     <div id="idle">
       {_yt_idle_html}
+      <div class="float-card pokeball-float" style="left:6%;top:22%;animation-delay:0s"></div>
+      <div class="float-card energy-icon" style="left:78%;top:12%;animation-delay:2.5s" data-type="fire"></div>
+      <div class="float-card pokeball-float ultra" style="left:88%;top:58%;animation-delay:4.5s"></div>
+      <div class="float-card energy-icon" style="left:14%;top:68%;animation-delay:6.5s" data-type="electric"></div>
+      <div class="float-card pokeball-float" style="left:52%;top:8%;animation-delay:8s"></div>
+      <div class="float-card energy-icon" style="left:62%;top:72%;animation-delay:3.5s" data-type="water"></div>
+      <div class="float-card energy-icon" style="left:32%;top:38%;animation-delay:5.5s" data-type="psychic"></div>
+      <div class="float-card pokeball-float master" style="left:42%;top:82%;animation-delay:7s"></div>
       <div id="idle-text">
         <div id="idle-msg">{idle_msg}</div>
         <div style="margin-top:8px">{social_html}</div>
@@ -16338,11 +16580,24 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
     <!-- CARD PROCESSING (tap / insert card) -->
     <div id="card-processing">
-      <div id="cp-icon">💳</div>
+      <div style="position:relative;display:flex;align-items:center;justify-content:center">
+        <div id="cp-ring"></div>
+        <div id="cp-ring2"></div>
+        <div id="cp-icon">💳</div>
+      </div>
       <div id="cp-msg">Please continue<br>on the card reader</div>
       <div id="cp-sub">Tap, insert, or swipe your card</div>
       <div id="cp-total"></div>
       <div id="cp-bar"><div id="cp-bar-inner"></div></div>
+    </div>
+
+    <!-- SALE COMPLETE — brand pulse (before thank you) -->
+    <div id="brand-pulse">
+      <div id="bp-ring-outer"></div>
+      <div id="bp-ring-inner"></div>
+      <img id="bp-logo" src="/static/brand-pulse.jpeg" alt="HanryxVault">
+      <div id="bp-text">SALE COMPLETE</div>
+      <div id="bp-flash"></div>
     </div>
 
     <!-- THANK YOU (after sale) -->
@@ -16362,6 +16617,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   var elTDone = document.getElementById("trade-done");
   var elTy    = document.getElementById("ty");
   var elCP    = document.getElementById("card-processing");
+  var elBP    = document.getElementById("brand-pulse");
   var elBadge = document.getElementById("mode-badge");
 
   /* clock */
@@ -16374,8 +16630,103 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   var elUnmute = document.getElementById("unmute-btn");
 
+  /* ═══ GOLD DUST PARTICLE SYSTEM ═══ */
+  (function initParticles(){{
+    var box = document.getElementById("particles");
+    if(!box) return;
+    var goldShades = ["{accent}","#d4a017","#b8860b","#daa520","#f5c842"];
+    function spawn(){{
+      var p = document.createElement("div");
+      p.className = "particle";
+      var size = 2 + Math.random()*4;
+      var dur  = 8 + Math.random()*14;
+      var clr  = goldShades[Math.floor(Math.random()*goldShades.length)];
+      p.style.cssText = "width:"+size+"px;height:"+size+"px;left:"+Math.random()*100+
+        "%;background:"+clr+";animation-duration:"+dur+"s;animation-delay:"+Math.random()*6+"s;"+
+        "box-shadow:0 0 "+(size*2)+"px "+clr+"44";
+      box.appendChild(p);
+      setTimeout(function(){{ p.remove(); }}, (dur+6)*1000);
+    }}
+    for(var i=0;i<18;i++) spawn();
+    setInterval(function(){{ if(box.children.length<30) spawn(); }}, 1200);
+  }})();
+
+  /* ═══ CONFETTI CANNON (gold Pokéball-themed) ═══ */
+  var confCanvas = document.getElementById("confetti-canvas");
+  var confCtx = confCanvas ? confCanvas.getContext("2d") : null;
+  var confPieces = [];
+  var confRunning = false;
+
+  function resizeConfetti(){{
+    if(!confCanvas) return;
+    confCanvas.width = window.innerWidth;
+    confCanvas.height = window.innerHeight;
+  }}
+  window.addEventListener("resize", resizeConfetti);
+  resizeConfetti();
+
+  function fireConfetti(){{
+    if(!confCtx) return;
+    confPieces = [];
+    var colors = ["{accent}","#fff","#cc0000","#d4a017","#f5c842","#b8860b","#6b21a8"];
+    for(var i=0;i<120;i++){{
+      confPieces.push({{
+        x: window.innerWidth/2 + (Math.random()-.5)*200,
+        y: window.innerHeight/2,
+        vx: (Math.random()-.5)*14,
+        vy: -8 - Math.random()*10,
+        w: 4+Math.random()*6, h: 6+Math.random()*8,
+        rot: Math.random()*360, rv: (Math.random()-.5)*12,
+        color: colors[Math.floor(Math.random()*colors.length)],
+        gravity: 0.15+Math.random()*0.1,
+        life: 1
+      }});
+    }}
+    if(!confRunning){{ confRunning=true; animConfetti(); }}
+  }}
+
+  function animConfetti(){{
+    if(!confCtx) return;
+    confCtx.clearRect(0,0,confCanvas.width,confCanvas.height);
+    var alive = false;
+    for(var i=0;i<confPieces.length;i++){{
+      var p=confPieces[i];
+      if(p.life<=0) continue;
+      alive=true;
+      p.x+=p.vx; p.y+=p.vy; p.vy+=p.gravity;
+      p.rot+=p.rv; p.life-=0.006;
+      confCtx.save();
+      confCtx.translate(p.x,p.y);
+      confCtx.rotate(p.rot*Math.PI/180);
+      confCtx.globalAlpha=Math.max(0,p.life);
+      confCtx.fillStyle=p.color;
+      confCtx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      confCtx.restore();
+    }}
+    if(alive) requestAnimationFrame(animConfetti);
+    else{{ confRunning=false; confCtx.clearRect(0,0,confCanvas.width,confCanvas.height); }}
+  }}
+
+  /* ═══ SPARKLE BURST (fires around a target element) ═══ */
+  function spawnSparkles(el){{
+    if(!el) return;
+    var rect=el.getBoundingClientRect();
+    var cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+    for(var i=0;i<8;i++){{
+      var sp=document.createElement("div");
+      sp.className="sparkle";
+      var angle=Math.random()*Math.PI*2;
+      var dist=30+Math.random()*50;
+      sp.style.left=cx+"px"; sp.style.top=cy+"px";
+      sp.style.setProperty("--sx",Math.cos(angle)*dist+"px");
+      sp.style.setProperty("--sy",Math.sin(angle)*dist+"px");
+      document.body.appendChild(sp);
+      setTimeout(function(){{ sp.remove(); }},700);
+    }}
+  }}
+
   function showOnly(el, badge){{
-    [elIdle,elCart,elTrade,elTDone,elTy,elCP].forEach(function(e){{ e.style.display="none"; }});
+    [elIdle,elCart,elTrade,elTDone,elTy,elCP,elBP].forEach(function(e){{ e.style.display="none"; }});
     el.style.display="flex";
     if(elBadge) elBadge.textContent = badge||"";
     if(el !== elIdle){{
@@ -16391,12 +16742,26 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }}
 
   /* ── CART mode ── */
+  var _prevItemCount = 0;
   function renderCart(s){{
     if(s.paid){{
-      showOnly(elTy,"Sale complete");
-      var m=document.getElementById("ty-method");
-      if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
-      setTimeout(goIdle,6000);
+      showOnly(elBP,"Sale complete");
+      var bpLogo = document.getElementById("bp-logo");
+      if(bpLogo){{ bpLogo.style.animation="none"; void bpLogo.offsetWidth; bpLogo.style.animation=""; }}
+      var bpText = document.getElementById("bp-text");
+      if(bpText){{ bpText.style.animation="none"; void bpText.offsetWidth; bpText.style.animation=""; }}
+      var bpRO = document.getElementById("bp-ring-outer");
+      if(bpRO){{ bpRO.style.animation="none"; void bpRO.offsetWidth; bpRO.style.animation=""; }}
+      var bpRI = document.getElementById("bp-ring-inner");
+      if(bpRI){{ bpRI.style.animation="none"; void bpRI.offsetWidth; bpRI.style.animation=""; }}
+      setTimeout(function(){{
+        showOnly(elTy,"Thank you");
+        var m=document.getElementById("ty-method");
+        if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
+        fireConfetti();
+        setTimeout(function(){{ spawnSparkles(document.querySelector("#ty h2")); }}, 300);
+        setTimeout(goIdle,6000);
+      }}, 2800);
       return;
     }}
     if(s.payment_processing){{
@@ -16405,15 +16770,21 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       if(cpTot) cpTot.textContent = s.total ? "£"+parseFloat(s.total).toFixed(2) : "";
       return;
     }}
-    if(!s.active||!s.items||!s.items.length){{ goIdle(); return; }}
+    if(!s.active||!s.items||!s.items.length){{ _prevItemCount=0; goIdle(); return; }}
     showOnly(elCart,"Checkout");
     var ci=document.getElementById("cart-items");
-    ci.innerHTML=s.items.map(function(it){{
+    var newCount = s.items.length;
+    ci.innerHTML=s.items.map(function(it,idx){{
       var cond=it.condition?" <span class='ci-cond'>"+esc(it.condition)+"</span>":"";
-      return "<div class='ci'><div class='ci-name'>"+esc(it.name)+cond+"</div>"
+      var isNew = idx >= _prevItemCount ? " ci-new" : "";
+      return "<div class='ci"+isNew+"' style='animation-delay:"+(idx*0.06)+"s'><div class='ci-name'>"+esc(it.name)+cond+"</div>"
         +"<div class='ci-qty'>x"+(it.qty||1)+"</div>"
         +"<div class='ci-price'>"+f(it.price)+"</div></div>";
     }}).join("");
+    if(newCount > _prevItemCount && _prevItemCount > 0){{
+      setTimeout(function(){{ spawnSparkles(ci.lastElementChild); }}, 200);
+    }}
+    _prevItemCount = newCount;
     var sub=s.subtotal||0,tax=s.tax||0,tot=s.total||0;
     var rows="<div class='tr'><span>Subtotal</span><span class='tv'>"+f(sub)+"</span></div>";
     if(tax>0) rows+="<div class='tr'><span>Tax</span><span class='tv'>"+f(tax)+"</span></div>";
@@ -16428,6 +16799,8 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       document.getElementById("td-name").textContent="Thank you, "+(s.trade_customer||"")+"!";
       document.getElementById("td-cash").textContent=f(s.trade_cash||0);
       document.getElementById("td-credit").textContent=f(s.trade_credit||0);
+      fireConfetti();
+      setTimeout(function(){{ spawnSparkles(document.querySelector("#trade-done h2,#trade-done .td-card")); }}, 300);
       setTimeout(goIdle,10000);
       return;
     }}
