@@ -571,6 +571,36 @@ def _direct_db() -> _PgConn:
     """Open a pooled connection for use outside a Flask request context."""
     return _PgConn(_get_pool().getconn())
 
+
+class _PooledConn:
+    """Context manager that checks out a raw psycopg2 connection from the pool
+    and returns it on exit.  Used by routes that need cursor-level access."""
+
+    def __init__(self):
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = _get_pool().getconn()
+        return self._conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn is not None:
+            try:
+                if exc_type:
+                    self._conn.rollback()
+                else:
+                    self._conn.commit()
+            except Exception:
+                pass
+            _get_pool().putconn(self._conn)
+            self._conn = None
+        return False
+
+
+def _get_conn():
+    """Return a context-manager that provides a raw psycopg2 connection."""
+    return _PooledConn()
+
 # ---------------------------------------------------------------------------
 # In-memory caches — dramatically reduces SQLite hits on hot endpoints
 # ---------------------------------------------------------------------------
@@ -2119,6 +2149,17 @@ def init_db():
             pricing     JSONB NOT NULL,
             created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
+
+        # ── eBay per-card pricing summary (used by buy-list) ──────────────────
+        f"""CREATE TABLE IF NOT EXISTS ebay_prices (
+            qr_code      TEXT PRIMARY KEY,
+            median_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            low_price     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            high_price    DOUBLE PRECISION NOT NULL DEFAULT 0,
+            sample_count  INTEGER NOT NULL DEFAULT 0,
+            fetched_at    BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebay_prices_median ON ebay_prices(median_price DESC)",
 
         # ── eBay 90-day sold history ────────────────────────────────────────────
         f"""CREATE TABLE IF NOT EXISTS ebay_sold_history (
