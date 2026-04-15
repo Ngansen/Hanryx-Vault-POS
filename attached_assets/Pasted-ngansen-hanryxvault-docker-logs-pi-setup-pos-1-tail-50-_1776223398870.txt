@@ -1,0 +1,51 @@
+ngansen@hanryxvault:~ $ docker logs pi-setup-pos-1 --tail 50
+{"ts":"2026-04-15T03:17:33","level":"WARNING","logger":"hanryxvault","msg":"[prewarm] could not load inventory: column \"updated_at\" does not exist\nLINE 1: ...ode, card_number, variant FROM inventory ORDER BY updated_at...\n                                                             ^\n"}
+172.18.0.1 - - [15/Apr/2026:03:17:33 +0000] "GET /admin/fake-detector HTTP/1.1" 200 3151 "http://localhost:8080/admin/scan-ai" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[2026-04-15 03:18:01 +0000] [1] [INFO] Starting gunicorn 25.3.0
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-15T03:18:04","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+{"ts":"2026-04-15T03:18:04","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+{"ts":"2026-04-15T03:18:04","level":"WARNING","logger":"hanryxvault","msg":"[pgvector] Schema setup skipped: current transaction is aborted, commands ignored until end of transaction block\n"}
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+[2026-04-15 03:18:04 +0000] [1] [INFO] DB schema initialised successfully
+[2026-04-15 03:18:04 +0000] [1] [INFO] Listening at: http://0.0.0.0:8080 (1)
+[2026-04-15 03:18:04 +0000] [1] [INFO] Using worker: gthread
+[2026-04-15 03:18:04 +0000] [18] [INFO] Booting worker with pid: 18
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 56 products — skipping auto-sync"}
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 56 cards"}
+{"ts":"2026-04-15T03:18:04","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+[2026-04-15 03:18:04 +0000] [24] [INFO] Booting worker with pid: 24
+[2026-04-15 03:18:04 +0000] [1] [INFO] Control socket listening at /root/.gunicorn/gunicorn.ctl
+172.18.0.1 - - [15/Apr/2026:03:19:01 +0000] "GET /admin HTTP/1.1" 200 19939 "-" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:01 +0000] "GET /static/logo.png HTTP/1.1" 304 0 "http://localhost:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:02 +0000] "GET /health HTTP/1.1" 200 233 "http://localhost:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:02 +0000] "GET /favicon.ico HTTP/1.1" 404 207 "http://localhost:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:16 +0000] "GET /admin/scan-ai HTTP/1.1" 200 6033 "http://localhost:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:16 +0000] "GET /static/logo.png HTTP/1.1" 304 0 "http://localhost:8080/admin/scan-ai" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:16 +0000] "GET /health HTTP/1.1" 200 233 "http://localhost:8080/admin/scan-ai" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-15T03:19:17","level":"INFO","logger":"hanryxvault","msg":"[prewarm] starting bulk pricing pre-warm …"}
+{"ts":"2026-04-15T03:19:17","level":"WARNING","logger":"hanryxvault","msg":"[prewarm] could not load inventory: column \"updated_at\" does not exist\nLINE 1: ...ode, card_number, variant FROM inventory ORDER BY updated_at...\n                                                             ^\n"}
+172.18.0.1 - - [15/Apr/2026:03:19:18 +0000] "GET /admin/market HTTP/1.1" 200 14104 "http://localhost:8080/admin/scan-ai" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:18 +0000] "GET /static/logo.png HTTP/1.1" 304 0 "http://localhost:8080/admin/market" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [15/Apr/2026:03:19:18 +0000] "GET /health HTTP/1.1" 200 233 "http://localhost:8080/admin/market" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-15T03:19:20","level":"ERROR","logger":"server","msg":"Exception on /admin [GET]","request_id":"c13f01b94170","method":"GET","path":"/admin","ip":"172.18.0.1","exc":"Traceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/flask/app.py\", line 1511, in wsgi_app\n    response = self.full_dispatch_request()\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/flask/app.py\", line 919, in full_dispatch_request\n    rv = self.handle_user_exception(e)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/flask/app.py\", line 917, in full_dispatch_request\n    rv = self.dispatch_request()\n         ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/flask/app.py\", line 902, in dispatch_request\n    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/server.py\", line 330, in _wrapped\n    return fn(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/app/server.py\", line 10089, in admin_dashboard\n    today_sales = db.execute(\"\"\"\n                  ^^^^^^^^^^^^^^\n  File \"/app/server.py\", line 488, in execute\n    cur.execute(sql.replace(\"?\", \"%s\"), params or ())\n  File \"/opt/venv/lib/python3.11/site-packages/psycopg2/extras.py\", line 146, in execute\n    return super().execute(query, vars)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\npsycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands ignored until end of transaction block\n"}
+172.18.0.1 - - [15/Apr/2026:03:19:20 +0000] "GET /admin HTTP/1.1" 500 265 "http://localhost:8080/admin/market" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[2026-04-15 03:19:54 +0000] [1] [INFO] Starting gunicorn 25.3.0
+{"ts":"2026-04-15T03:19:57","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+{"ts":"2026-04-15T03:19:57","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-15T03:19:57","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+{"ts":"2026-04-15T03:19:57","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+{"ts":"2026-04-15T03:19:57","level":"WARNING","logger":"hanryxvault","msg":"[pgvector] Schema setup skipped: current transaction is aborted, commands ignored until end of transaction block\n"}
+{"ts":"2026-04-15T03:19:57","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+[2026-04-15 03:19:57 +0000] [1] [INFO] DB schema initialised successfully
+[2026-04-15 03:19:57 +0000] [1] [INFO] Listening at: http://0.0.0.0:8080 (1)
+[2026-04-15 03:19:57 +0000] [1] [INFO] Using worker: gthread
+[2026-04-15 03:19:57 +0000] [19] [INFO] Booting worker with pid: 19
+{"ts":"2026-04-15T03:19:57","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 56 products — skipping auto-sync"}
+{"ts":"2026-04-15T03:19:57","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 56 cards"}
+[2026-04-15 03:19:57 +0000] [25] [INFO] Booting worker with pid: 25
+{"ts":"2026-04-15T03:19:58","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+[2026-04-15 03:19:58 +0000] [1] [INFO] Control socket listening at /root/.gunicorn/gunicorn.ctl
+{"ts":"2026-04-15T03:21:21","level":"INFO","logger":"hanryxvault","msg":"[prewarm] starting bulk pricing pre-warm …"}
+{"ts":"2026-04-15T03:21:21","level":"WARNING","logger":"hanryxvault","msg":"[prewarm] could not load inventory: column \"updated_at\" does not exist\nLINE 1: ...ode, card_number, variant FROM inventory ORDER BY updated_at...\n                                                             ^\n"}
