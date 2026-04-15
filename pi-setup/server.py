@@ -10644,7 +10644,7 @@ def admin_dashboard():
       <p style="color:#888;font-size:13px;margin-bottom:12px">Take or upload a clear photo of the front of the card. GPT-4o Vision will identify it and auto-fill the form.</p>
       <div style="display:flex;gap:10px;margin-bottom:14px">
         <button class="btn-gold" onclick="document.getElementById('photo-file-input').click()" style="background:#7c3aed;flex:1">📁 Choose File</button>
-        <button class="btn-gold" onclick="document.getElementById('photo-camera-input').click()" style="background:#6d28d9;flex:1">📸 Take Photo</button>
+        <button class="btn-gold" id="photo-camera-btn" onclick="document.getElementById('photo-camera-input').click()" style="background:#6d28d9;flex:1;opacity:0.3;cursor:not-allowed" disabled>📸 Take Photo</button>
       </div>
       <input id="photo-file-input"   type="file" accept="image/*"          style="display:none" onchange="previewPhotoID(event)">
       <input id="photo-camera-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="previewPhotoID(event)">
@@ -10949,6 +10949,16 @@ async function prefillFromTCG() {{
     statusEl.textContent = 'TCG lookup failed: ' + e.message;
     statusEl.style.color = '#f44336';
   }}
+}}
+
+// ── Camera detection ───────────────────────────────────────────────────────
+if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {{
+  navigator.mediaDevices.enumerateDevices().then(devices => {{
+    if (devices.some(d => d.kind === 'videoinput')) {{
+      const cb = document.getElementById('photo-camera-btn');
+      if (cb) {{ cb.disabled = false; cb.style.opacity = '1'; cb.style.cursor = 'pointer'; }}
+    }}
+  }}).catch(() => {{}});
 }}
 
 // ── Photo ID via GPT-4o Vision ─────────────────────────────────────────────
@@ -14301,6 +14311,20 @@ const ctx2d  = canvas.getContext('2d');
 const dot    = document.getElementById('scan-dot');
 const lbl    = document.getElementById('scan-label');
 
+(function checkCam() {{
+  const sb = document.getElementById('start-btn');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {{
+    sb.disabled = true; sb.style.opacity = '0.3'; sb.textContent = '📷 No camera detected';
+    lbl.textContent = 'No camera detected'; return;
+  }}
+  navigator.mediaDevices.enumerateDevices().then(d => {{
+    if (!d.some(x => x.kind === 'videoinput')) {{
+      sb.disabled = true; sb.style.opacity = '0.3'; sb.textContent = '📷 No camera detected';
+      lbl.textContent = 'No camera detected';
+    }}
+  }}).catch(() => {{}});
+}})();
+
 /* ── Condition selector ──────────────────────────────────────────── */
 function setCond(btn, c) {{
   document.querySelectorAll('.cond-btn').forEach(b => b.classList.remove('active'));
@@ -17334,9 +17358,10 @@ def admin_fake_detector():
   <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-in').click()">
     <div style="font-size:48px">📷</div>
     <div style="color:#888;margin-top:10px">Tap to upload a card photo<br><span style="font-size:12px">or drag & drop · JPG / PNG / WEBP</span></div>
-    <input type="file" id="file-in" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="file-in" accept="image/*" style="display:none">
   </div>
-  <button class="camera-btn" onclick="document.getElementById('file-in').click()">📸 Use Camera</button>
+  <input type="file" id="camera-in" accept="image/*" capture="environment" style="display:none">
+  <button class="camera-btn" id="camera-btn" disabled style="opacity:0.3;cursor:not-allowed" onclick="document.getElementById('camera-in').click()">📸 Use Camera <span id="cam-status" style="font-size:11px;color:#555">(checking…)</span></button>
   <img id="preview-img" alt="Card preview">
   <button id="analyse-btn" class="btn-gold" style="display:none;width:100%;margin-top:14px;padding:14px;font-size:16px" onclick="analyseCard()">
     🔍 Analyse Card
@@ -17356,9 +17381,41 @@ def admin_fake_detector():
 <script>
 const dropZone = document.getElementById('drop-zone');
 const fileIn   = document.getElementById('file-in');
+const cameraIn = document.getElementById('camera-in');
+const cameraBtn = document.getElementById('camera-btn');
+const camStatus = document.getElementById('cam-status');
 const preview  = document.getElementById('preview-img');
 const analyseBtn = document.getElementById('analyse-btn');
 let selectedFile = null;
+
+if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {{
+  navigator.mediaDevices.enumerateDevices().then(devices => {{
+    const hasCamera = devices.some(d => d.kind === 'videoinput');
+    if (hasCamera) {{
+      cameraBtn.disabled = false;
+      cameraBtn.style.opacity = '1';
+      cameraBtn.style.cursor = 'pointer';
+      camStatus.textContent = '';
+    }} else {{
+      camStatus.textContent = '(no camera detected)';
+    }}
+  }}).catch(() => {{
+    camStatus.textContent = '(no camera detected)';
+  }});
+}} else {{
+  camStatus.textContent = '(no camera detected)';
+}}
+
+function handleFile(file) {{
+  if (!file) return;
+  selectedFile = file;
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  analyseBtn.style.display = 'block';
+  document.getElementById('results-panel').style.display = 'none';
+}}
+
+cameraIn.addEventListener('change', e => {{ handleFile(e.target.files[0]); }});
 
 fileIn.addEventListener('change', e => {{
   selectedFile = e.target.files[0];
