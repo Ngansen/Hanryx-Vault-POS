@@ -221,6 +221,8 @@ def _persist_tokens():
         db.commit()
         db.close()
     except Exception as e:
+        try: db.close()
+        except Exception: pass
         log.error("[zettle] Token persist failed: %s", e)
 
 
@@ -239,6 +241,8 @@ def _load_tokens_from_db():
             if _zettle_state.get("access_token"):
                 log.info("[zettle] Restored tokens from DB — no re-auth needed")
     except Exception as e:
+        try: db.close()
+        except Exception: pass
         log.warning("[zettle] Token restore failed (first run?): %s", e)
 
 
@@ -470,6 +474,8 @@ def _audit_write(action: str, resource: str = "", detail: str = ""):
             db.commit()
             db.close()
         except Exception as _e:
+            try: db.close()
+            except Exception: pass
             log.debug("[audit] write failed: %s", _e)
 
     _bg(_do_safe)
@@ -670,6 +676,8 @@ def _queue_unsynced(qr_code: str, change_type: str = "stock", delta: int = 0):
             db.commit()
             db.close()
         except Exception as _e:
+            try: db.close()
+            except Exception: pass
             log.debug("[unsynced] write failed: %s", _e)
     _bg(_write)
 
@@ -1458,6 +1466,8 @@ def _ensure_pokeapi_names():
         age_days   = (_now_ms() - last_fetch) / 86_400_000
         stale      = count < 100 or age_days > _POKEAPI_CACHE_TTL_DAYS
     except Exception:
+        try: db.close()
+        except Exception: pass
         count  = 0
         stale  = True
 
@@ -2273,7 +2283,7 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_inventory_stock_cat   ON inventory(stock, category)"
         )
         db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_inventory_updated_at  ON inventory(last_updated DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_inventory_last_updated ON inventory(last_updated DESC)"
         )
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
@@ -12028,6 +12038,8 @@ def admin_2fa_verify():
             ).fetchone()
             db.close()
         except Exception:
+            try: db.close()
+            except Exception: pass
             row = None
         if row and _PYOTP_AVAILABLE:
             import pyotp as _p
@@ -12536,6 +12548,8 @@ def _run_low_stock_checker():
             db.commit()
             db.close()
         except Exception as _e:
+            try: db.close()
+            except Exception: pass
             log.debug("[low-stock] checker error: %s", _e)
         import time as _t2; _t2.sleep(900)   # 15 min
 
@@ -12679,6 +12693,8 @@ def _translate_with_cache(text: str, target_lang: str) -> str:
         db.close()
         return translated
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         log.debug("[translate] failed for %r → %s: %s", text[:30], target_lang, _e)
         return text
 
@@ -13219,7 +13235,8 @@ def _get_pricing_cache(query: str):
             _rcache_set(rkey, val, ttl=600)
             return val, True
     except Exception:
-        pass
+        try: db.close()
+        except Exception: pass
     return None, False
 
 
@@ -13237,6 +13254,8 @@ def _set_pricing_cache(query: str, pricing: dict):
         db.commit()
         db.close()
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         log.debug("[pricing-cache] write failed: %s", _e)
 
 
@@ -13977,6 +13996,8 @@ def _warmup_smart_scanner():
         db.close()
         log.info("[smart-scan] Index warmed up at startup")
     except Exception as e:
+        try: db.close()
+        except Exception: pass
         log.warning("[smart-scan] Warm-up failed (non-fatal): %s", e)
 
 
@@ -14567,6 +14588,8 @@ def _save_receipt_settings(settings: dict):
         db.commit()
         db.close()
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         log.warning("[receipt-settings] save failed: %s", _e)
 
 
@@ -15009,6 +15032,8 @@ def admin_customer_credit(cid):
         db.close()
         return jsonify(ok=True)
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify(ok=False, error=str(_e)), 500
 
 
@@ -15038,6 +15063,8 @@ def admin_customer_wantlist_add(cid):
         db.close()
         return jsonify(ok=True)
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify(ok=False, error=str(_e)), 500
 
 
@@ -15053,6 +15080,8 @@ def admin_customer_wantlist_fulfill(cid, wid):
         db.close()
         return jsonify(ok=True)
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify(ok=False, error=str(_e)), 500
 
 
@@ -15068,6 +15097,8 @@ def admin_customer_wantlist_remove(cid, wid):
         db.close()
         return jsonify(ok=True)
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify(ok=False, error=str(_e)), 500
 
 
@@ -15076,12 +15107,14 @@ def admin_customer_wantlist_remove(cid, wid):
 def api_customers_search():
     q   = (request.args.get("q") or "").strip()
     db  = _direct_db()
-    rows = db.execute(
-        "SELECT id, name, email, phone, store_credit FROM customers "
-        "WHERE LOWER(name) LIKE %s OR email LIKE %s LIMIT 10",
-        (f"%{q.lower()}%", f"%{q}%"),
-    ).fetchall()
-    db.close()
+    try:
+        rows = db.execute(
+            "SELECT id, name, email, phone, store_credit FROM customers "
+            "WHERE LOWER(name) LIKE %s OR email LIKE %s LIMIT 10",
+            (f"%{q.lower()}%", f"%{q}%"),
+        ).fetchall()
+    finally:
+        db.close()
     return jsonify([dict(r) for r in rows])
 
 
@@ -15110,6 +15143,8 @@ def admin_set_resale_price(qr):
         db.close()
         return jsonify(ok=True, resale_price=price)
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify(ok=False, error=str(_e)), 500
 
 
@@ -15325,6 +15360,8 @@ def _run_bulk_enrich():
                     else:
                         _enrich_state["skipped"] += 1
             except Exception as _ce:
+                try: db.close()
+                except Exception: pass
                 with _enrich_lock:
                     _enrich_state["errors"] += 1
                 _enrich_log(f"Error enriching {qr}: {_ce}")
@@ -15364,11 +15401,14 @@ def _run_price_refresh():
                 db.close()
                 count += 1
             except Exception:
-                pass
+                try: db.close()
+                except Exception: pass
             _time.sleep(1.5)
 
         _enrich_log(f"Price refresh: updated {count}/{len(rows)} cards")
     except Exception as _pre:
+        try: db.close()
+        except Exception: pass
         _enrich_log(f"Price refresh failed: {_pre}")
 
 
@@ -15757,6 +15797,8 @@ def api_v1_enrich_card(qr):
         db.close()
         return jsonify({"ok": True, "enriched": did, "qr_code": qr})
     except Exception as _e:
+        try: db.close()
+        except Exception: pass
         return jsonify({"error": str(_e)}), 500
 
 

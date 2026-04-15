@@ -145,7 +145,7 @@ gpu_mem=256
 # Keep HDMI active even if no display connected at boot
 hdmi_force_hotplug:0=1
 # Disable blanking — screen stays on permanently
-hdmi_blanking=1
+hdmi_blanking=0
 # Quiet boot — remove boot messages from screen
 quiet
 # Remove the rainbow splash square on boot
