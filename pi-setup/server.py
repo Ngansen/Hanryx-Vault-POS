@@ -6732,6 +6732,7 @@ def _admin_nav(active: str = "dashboard") -> str:
     pages = [
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("market",    "/admin/market",      "📈", "Market"),
+        ("ai-insights","/admin/ai-insights",  "🧠", "AI Insights"),
         ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
         ("fake-detector", "/admin/fake-detector", "🔍", "Fake Detect"),
         ("pack-rip",  "/admin/pack-rip",    "🎰", "Pack Rip"),
@@ -9009,6 +9010,607 @@ function renderEbaySection(d) {{
 </body>
 </html>"""
     return html
+
+
+# ---------------------------------------------------------------------------
+# /admin/ai-insights  — AI-powered sales intelligence (fully offline)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/ai-insights/data", methods=["GET"])
+@require_admin
+def admin_ai_insights_data():
+    """Return JSON powering the AI Insights dashboard — pure SQL, no external API."""
+    db = get_db()
+    now_ts = int(time.time() * 1000)
+
+    # ── Morning briefing ──────────────────────────────────────────────────────
+    briefing: dict = {}
+    try:
+        # Yesterday revenue + count
+        row = db.execute(
+            "SELECT COALESCE(SUM(price * quantity),0) as rev, "
+            "       COALESCE(SUM(quantity),0) as units, "
+            "       COUNT(*) as txns "
+            "FROM sale_history "
+            "WHERE sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '1 day')*1000)::BIGINT "
+            "  AND sold_at <  (EXTRACT(EPOCH FROM NOW())*1000)::BIGINT"
+        ).fetchone()
+        briefing["yesterday"] = {
+            "revenue": round(float(row["rev"]), 2) if row else 0,
+            "units":   int(row["units"]) if row else 0,
+            "txns":    int(row["txns"]) if row else 0,
+        }
+        # 7-day revenue
+        row7 = db.execute(
+            "SELECT COALESCE(SUM(price * quantity),0) as rev "
+            "FROM sale_history WHERE sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '7 days')*1000)::BIGINT"
+        ).fetchone()
+        briefing["week_revenue"] = round(float(row7["rev"]), 2) if row7 else 0
+
+        # Top seller yesterday
+        top = db.execute(
+            "SELECT name, SUM(quantity) as q FROM sale_history "
+            "WHERE sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '1 day')*1000)::BIGINT "
+            "GROUP BY name ORDER BY q DESC LIMIT 1"
+        ).fetchone()
+        briefing["top_seller"] = top["name"] if top else None
+
+        # Total inventory value
+        iv = db.execute(
+            "SELECT COALESCE(SUM(price * quantity),0) as v FROM inventory WHERE quantity > 0"
+        ).fetchone()
+        briefing["inventory_value"] = round(float(iv["v"]), 2) if iv else 0
+
+        # Items in stock
+        cnt = db.execute(
+            "SELECT COUNT(*) as c FROM inventory WHERE quantity > 0"
+        ).fetchone()
+        briefing["items_in_stock"] = int(cnt["c"]) if cnt else 0
+
+    except Exception as exc:
+        briefing["error"] = str(exc)
+
+    # ── Hot cards (velocity spike — 7-day vs prior 7-day) ────────────────────
+    hot_cards: list = []
+    try:
+        rows = db.execute(
+            "SELECT name, "
+            "  SUM(CASE WHEN sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '7 days')*1000)::BIGINT THEN quantity ELSE 0 END) AS recent, "
+            "  SUM(CASE WHEN sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '14 days')*1000)::BIGINT "
+            "            AND sold_at <  (EXTRACT(EPOCH FROM NOW()-INTERVAL '7 days')*1000)::BIGINT THEN quantity ELSE 0 END) AS prior, "
+            "  ROUND(AVG(price)::NUMERIC, 2) AS avg_price "
+            "FROM sale_history "
+            "WHERE sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '14 days')*1000)::BIGINT "
+            "GROUP BY name HAVING SUM(CASE WHEN sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '7 days')*1000)::BIGINT THEN quantity ELSE 0 END) >= 2 "
+            "ORDER BY recent DESC LIMIT 12"
+        ).fetchall()
+        for r in rows:
+            prior  = max(float(r["prior"]), 0.5)   # avoid div-by-zero
+            recent = float(r["recent"])
+            velocity = round(recent / prior, 1)
+            hot_cards.append({
+                "name":      r["name"],
+                "recent":    int(recent),
+                "prior":     int(r["prior"]),
+                "velocity":  velocity,
+                "avg_price": float(r["avg_price"]),
+                "trending":  velocity >= 1.5,
+            })
+    except Exception as exc:
+        hot_cards = [{"error": str(exc)}]
+
+    # ── Cold stock (qty > 0, price > $1, zero sales in 30 days) ──────────────
+    cold_stock: list = []
+    try:
+        rows = db.execute(
+            "SELECT i.name, i.quantity, i.price, i.qr_code, "
+            "       ep.median_price "
+            "FROM inventory i "
+            "LEFT JOIN ebay_prices ep ON ep.qr_code = i.qr_code "
+            "WHERE i.quantity > 0 AND i.price > 1 "
+            "  AND NOT EXISTS ( "
+            "    SELECT 1 FROM sale_history sh WHERE sh.name = i.name "
+            "    AND sh.sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '30 days')*1000)::BIGINT "
+            "  ) "
+            "ORDER BY (i.price * i.quantity) DESC LIMIT 15"
+        ).fetchall()
+        for r in rows:
+            ebay = float(r["median_price"]) if r["median_price"] else None
+            cold_stock.append({
+                "name":      r["name"],
+                "quantity":  int(r["quantity"]),
+                "price":     float(r["price"]),
+                "total_val": round(float(r["price"]) * int(r["quantity"]), 2),
+                "ebay_med":  round(ebay, 2) if ebay else None,
+            })
+    except Exception as exc:
+        cold_stock = [{"error": str(exc)}]
+
+    # ── Price anomalies (our price vs eBay median — joined by qr_code) ────────
+    price_anomalies: list = []
+    try:
+        rows = db.execute(
+            "SELECT i.name, i.price, i.quantity, "
+            "       ep.median_price, ep.low_price, ep.high_price "
+            "FROM inventory i "
+            "JOIN ebay_prices ep ON ep.qr_code = i.qr_code "
+            "WHERE i.quantity > 0 AND ep.median_price > 1 AND i.price > 0 AND ep.sample_count >= 3 "
+            "  AND (i.price > ep.median_price * 1.50 OR i.price < ep.median_price * 0.55) "
+            "ORDER BY ABS(i.price - ep.median_price) DESC LIMIT 15"
+        ).fetchall()
+        for r in rows:
+            our     = float(r["price"])
+            med     = float(r["median_price"])
+            diff_pct = round((our - med) / med * 100, 1)
+            price_anomalies.append({
+                "name":      r["name"],
+                "our_price": round(our, 2),
+                "ebay_med":  round(med, 2),
+                "ebay_low":  round(float(r["low_price"]), 2),
+                "ebay_high": round(float(r["high_price"]), 2),
+                "diff_pct":  diff_pct,
+                "direction": "overpriced" if diff_pct > 0 else "underpriced",
+                "quantity":  int(r["quantity"]),
+            })
+    except Exception as exc:
+        price_anomalies = [{"error": str(exc)}]
+
+    # ── Restock radar (high velocity + low stock) ─────────────────────────────
+    restock: list = []
+    try:
+        rows = db.execute(
+            "SELECT sh.name, SUM(sh.quantity) as sold_7d, "
+            "       COALESCE(i.quantity, 0) as stock, "
+            "       COALESCE(ep.median_price, i.price, 0) as ebay_med "
+            "FROM sale_history sh "
+            "LEFT JOIN inventory i ON i.name = sh.name "
+            "LEFT JOIN ebay_prices ep ON ep.qr_code = i.qr_code "
+            "WHERE sh.sold_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '7 days')*1000)::BIGINT "
+            "GROUP BY sh.name, i.quantity, ep.median_price, i.price "
+            "HAVING SUM(sh.quantity) >= 2 AND COALESCE(i.quantity,0) <= 2 "
+            "ORDER BY sold_7d DESC LIMIT 12"
+        ).fetchall()
+        for r in rows:
+            sold7  = int(r["sold_7d"])
+            stock  = int(r["stock"])
+            days_left = round(stock / (sold7 / 7), 1) if sold7 > 0 and stock > 0 else 0
+            restock.append({
+                "name":      r["name"],
+                "sold_7d":   sold7,
+                "stock":     stock,
+                "days_left": days_left,
+                "ebay_med":  round(float(r["ebay_med"]), 2) if r["ebay_med"] else None,
+                "urgent":    stock == 0 or days_left <= 3,
+            })
+    except Exception as exc:
+        restock = [{"error": str(exc)}]
+
+    return jsonify({
+        "briefing":        briefing,
+        "hot_cards":       hot_cards,
+        "cold_stock":      cold_stock,
+        "price_anomalies": price_anomalies,
+        "restock":         restock,
+        "generated_at":    now_ts,
+    })
+
+
+@app.route("/admin/ai-tradein", methods=["POST"])
+@require_admin
+def admin_ai_tradein():
+    """Smart trade-in price suggestion based on eBay data + current stock."""
+    body     = request.get_json(silent=True) or {}
+    card_name = str(body.get("name", "")).strip()
+    condition = str(body.get("condition", "NM")).strip()
+    qty_buying = max(1, _safe_int(body.get("quantity", 1), 1))
+
+    if not card_name:
+        return jsonify({"error": "name required"}), 400
+
+    db = get_db()
+
+    # Match against ebay_prices via inventory name
+    ebay_row = db.execute(
+        "SELECT ep.median_price, ep.low_price, ep.high_price, ep.sample_count, "
+        "       i.quantity as stock_qty, i.price as our_price "
+        "FROM inventory i "
+        "JOIN ebay_prices ep ON ep.qr_code = i.qr_code "
+        "WHERE LOWER(i.name) LIKE %s AND ep.sample_count >= 2 "
+        "ORDER BY ep.sample_count DESC LIMIT 1",
+        (f"%{card_name.lower()}%",),
+    ).fetchone()
+
+    # Fallback: search eBay sold history for recent average
+    fallback_row = db.execute(
+        "SELECT AVG(price) as avg_p, COUNT(*) as cnt "
+        "FROM ebay_sold_history "
+        "WHERE LOWER(title) LIKE %s AND sold_date >= NOW()-INTERVAL '30 days'",
+        (f"%{card_name.lower()}%",),
+    ).fetchone()
+
+    if ebay_row and ebay_row["median_price"]:
+        median      = float(ebay_row["median_price"])
+        low         = float(ebay_row["low_price"])
+        stock_qty   = int(ebay_row["stock_qty"] or 0)
+        our_price   = float(ebay_row["our_price"] or 0)
+        sample_cnt  = int(ebay_row["sample_count"])
+        source      = "live eBay data"
+    elif fallback_row and fallback_row["avg_p"]:
+        median      = float(fallback_row["avg_p"])
+        low         = median * 0.7
+        stock_qty   = 0
+        our_price   = 0
+        sample_cnt  = int(fallback_row["cnt"])
+        source      = "eBay sold history"
+    else:
+        return jsonify({
+            "found":   False,
+            "message": f"No eBay price data for '{card_name}'. Try running eBay enrichment first.",
+        })
+
+    # Condition multipliers
+    cond_mult = {"mint": 1.0, "nm": 0.95, "lp": 0.80, "mp": 0.65, "hp": 0.50, "damaged": 0.35}
+    mult = cond_mult.get(condition.lower(), 0.85)
+
+    # Stock penalty: if we already have 3+ copies, offer less
+    stock_mult = 1.0 if stock_qty == 0 else (0.85 if stock_qty <= 2 else 0.60)
+
+    # Suggest 40–55% of adjusted market value
+    adjusted  = median * mult
+    buy_floor = round(adjusted * 0.40 * stock_mult, 2)
+    buy_ideal = round(adjusted * 0.52 * stock_mult, 2)
+    buy_max   = round(adjusted * 0.60 * stock_mult, 2)   # max to maintain margin
+
+    # Profit projection at our_price (or adjusted median if no own price)
+    sell_at   = our_price if our_price > 0 else round(adjusted * 1.05, 2)
+    margin    = round(sell_at - buy_ideal, 2)
+    margin_pct = round((margin / sell_at * 100) if sell_at > 0 else 0, 1)
+
+    reasoning = []
+    if stock_qty > 2:
+        reasoning.append(f"You already have {stock_qty} in stock — reduced offer")
+    if condition.lower() not in ("nm", "mint"):
+        reasoning.append(f"{condition} condition — {round((1-mult)*100)}% reduction applied")
+    reasoning.append(f"Based on {sample_cnt} recent eBay sales (source: {source})")
+
+    return jsonify({
+        "found":        True,
+        "card_name":    card_name,
+        "condition":    condition,
+        "quantity":     qty_buying,
+        "ebay_median":  round(median, 2),
+        "ebay_low":     round(low, 2),
+        "adjusted":     round(adjusted, 2),
+        "buy_floor":    buy_floor,
+        "buy_ideal":    buy_ideal,
+        "buy_max":      buy_max,
+        "total_offer":  round(buy_ideal * qty_buying, 2),
+        "stock_on_hand":stock_qty,
+        "our_price":    round(sell_at, 2),
+        "margin":       margin,
+        "margin_pct":   margin_pct,
+        "reasoning":    reasoning,
+        "source":       source,
+    })
+
+
+@app.route("/admin/ai-insights", methods=["GET"])
+@require_admin
+def admin_ai_insights():
+    nav = _admin_nav("ai-insights")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — AI Insights</title>
+<style>
+{_ADMIN_BASE_CSS}
+.section-title{{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;
+               color:#555;margin:28px 0 14px;display:flex;align-items:center;gap:10px}}
+.section-title::after{{content:'';flex:1;height:1px;background:#1a1a1a}}
+.brief-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:8px}}
+.brief-card{{background:#1a1a1a;border:1px solid #222;border-radius:10px;padding:16px 18px}}
+.brief-label{{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}}
+.brief-val{{font-size:26px;font-weight:900;color:#facc15;line-height:1}}
+.brief-sub{{font-size:11px;color:#444;margin-top:3px}}
+.insight-table{{width:100%;border-collapse:collapse;font-size:13px}}
+.insight-table th{{color:#444;font-size:10px;text-transform:uppercase;
+                  letter-spacing:1px;padding:8px 10px;text-align:left;
+                  border-bottom:1px solid #1a1a1a}}
+.insight-table td{{padding:10px 10px;border-bottom:1px solid #111;vertical-align:middle}}
+.insight-table tr:hover td{{background:#111}}
+.badge{{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}}
+.badge-hot{{background:#451a03;color:#fdba74}}
+.badge-cold{{background:#0c1a2e;color:#7dd3fc}}
+.badge-over{{background:#2d0a0a;color:#fca5a5}}
+.badge-under{{background:#0a2d13;color:#86efac}}
+.badge-urgent{{background:#450a0a;color:#f87171}}
+.badge-ok{{background:#14532d;color:#4ade80}}
+.fire{{font-size:16px;vertical-align:middle;margin-right:2px}}
+
+/* Trade-in calculator */
+.calc-panel{{background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:24px;
+             display:grid;grid-template-columns:1fr 1fr;gap:24px}}
+@media(max-width:680px){{.calc-panel{{grid-template-columns:1fr}}}}
+.calc-result{{background:#0a1a0a;border:1px solid #1a3a1a;border-radius:10px;padding:20px;
+              display:none}}
+.price-band{{display:flex;justify-content:space-between;align-items:center;
+             padding:10px 0;border-bottom:1px solid #1a1a1a}}
+.price-band:last-child{{border:none}}
+.price-lbl{{font-size:12px;color:#555}}
+.price-val{{font-size:18px;font-weight:700;color:#facc15}}
+.reasoning-list{{margin:12px 0 0;padding:0;list-style:none}}
+.reasoning-list li{{font-size:11px;color:#555;padding:2px 0}}
+.reasoning-list li::before{{content:'›  ';color:#333}}
+</style>
+</head>
+<body>
+{nav}
+<div class="wrap">
+  <h1>🧠 AI Insights</h1>
+  <p class="subtitle">Live sales intelligence — hot movers · dead stock · price anomalies · trade-in calculator</p>
+  <div id="lastRefresh" style="font-size:11px;color:#333;margin-bottom:20px">Loading…</div>
+
+  <!-- Morning briefing -->
+  <div class="section-title">📋 Today's Briefing</div>
+  <div class="brief-grid" id="briefGrid">
+    <div class="brief-card"><div class="brief-label">Yesterday Revenue</div><div class="brief-val" id="bRev">—</div></div>
+    <div class="brief-card"><div class="brief-label">Yesterday Units</div><div class="brief-val" id="bUnits">—</div></div>
+    <div class="brief-card"><div class="brief-label">Yesterday Txns</div><div class="brief-val" id="bTxns">—</div></div>
+    <div class="brief-card"><div class="brief-label">7-Day Revenue</div><div class="brief-val" id="bWeek">—</div></div>
+    <div class="brief-card"><div class="brief-label">Inventory Value</div><div class="brief-val" id="bInvVal">—</div></div>
+    <div class="brief-card"><div class="brief-label">Items In Stock</div><div class="brief-val" id="bStock">—</div></div>
+  </div>
+  <p style="font-size:12px;color:#333;margin:4px 0 0" id="bTopSeller"></p>
+
+  <!-- Hot cards -->
+  <div class="section-title">🔥 Hot Cards <small style="font-size:10px;font-weight:400;color:#555">(velocity spike vs last week)</small></div>
+  <table class="insight-table"><thead>
+    <tr><th>Card</th><th>7-Day Sales</th><th>Prior 7-Day</th><th>Velocity</th><th>Avg Price</th></tr>
+  </thead><tbody id="hotBody"><tr><td colspan="5" style="color:#333;text-align:center;padding:24px">Loading…</td></tr></tbody></table>
+
+  <!-- Restock radar -->
+  <div class="section-title">⚡ Restock Radar <small style="font-size:10px;font-weight:400;color:#555">(fast sellers, low stock)</small></div>
+  <table class="insight-table"><thead>
+    <tr><th>Card</th><th>Sold (7d)</th><th>Stock</th><th>Days Left</th><th>eBay Price</th><th>Status</th></tr>
+  </thead><tbody id="restockBody"><tr><td colspan="6" style="color:#333;text-align:center;padding:24px">Loading…</td></tr></tbody></table>
+
+  <!-- Price anomalies -->
+  <div class="section-title">⚠️ Price Anomalies <small style="font-size:10px;font-weight:400;color:#555">(vs eBay median — needs attention)</small></div>
+  <table class="insight-table"><thead>
+    <tr><th>Card</th><th>Our Price</th><th>eBay Median</th><th>Difference</th><th>Qty</th><th>Action</th></tr>
+  </thead><tbody id="anomalyBody"><tr><td colspan="6" style="color:#333;text-align:center;padding:24px">Loading…</td></tr></tbody></table>
+
+  <!-- Dead stock -->
+  <div class="section-title">🧊 Cold Stock <small style="font-size:10px;font-weight:400;color:#555">(no sales in 30+ days)</small></div>
+  <table class="insight-table"><thead>
+    <tr><th>Card</th><th>Qty</th><th>Our Price</th><th>Total Value</th><th>eBay Median</th></tr>
+  </thead><tbody id="coldBody"><tr><td colspan="5" style="color:#333;text-align:center;padding:24px">Loading…</td></tr></tbody></table>
+
+  <!-- Trade-in calculator -->
+  <div class="section-title">🤝 Smart Trade-In Calculator</div>
+  <div class="calc-panel">
+    <div>
+      <p style="font-size:13px;color:#888;margin-bottom:16px">
+        Enter the card a customer wants to sell — get an instant suggested buy price
+        based on real eBay market data, condition, and your current stock level.
+      </p>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:#555;text-transform:uppercase;
+                      letter-spacing:1px;display:block;margin-bottom:5px">Card Name</label>
+        <input id="tiName" placeholder="e.g. Charizard VMAX" autocomplete="off"
+               style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:7px;
+                      color:#e0e0e0;padding:10px 12px;font-size:14px;outline:none">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <label style="font-size:11px;color:#555;text-transform:uppercase;
+                        letter-spacing:1px;display:block;margin-bottom:5px">Condition</label>
+          <select id="tiCond" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;
+                                     border-radius:7px;color:#e0e0e0;padding:10px 12px;
+                                     font-size:13px;outline:none">
+            <option value="mint">Mint / PSA 10</option>
+            <option value="nm" selected>Near Mint (NM)</option>
+            <option value="lp">Lightly Played (LP)</option>
+            <option value="mp">Moderately Played (MP)</option>
+            <option value="hp">Heavily Played (HP)</option>
+            <option value="damaged">Damaged</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#555;text-transform:uppercase;
+                        letter-spacing:1px;display:block;margin-bottom:5px">Quantity</label>
+          <input id="tiQty" type="number" value="1" min="1"
+                 style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:7px;
+                        color:#e0e0e0;padding:10px 12px;font-size:13px;outline:none">
+        </div>
+      </div>
+      <button onclick="calcTradein()" id="tiBtn"
+              style="background:#facc15;color:#000;border:none;border-radius:8px;
+                     padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer;width:100%">
+        Calculate Offer Price
+      </button>
+    </div>
+    <div id="tiResult" class="calc-result">
+      <div style="font-size:13px;color:#555;margin-bottom:16px">
+        Suggested offer for <strong id="tiCardName" style="color:#fff"></strong>
+        <span id="tiCondLabel" style="color:#facc15"></span>
+      </div>
+      <div class="price-band">
+        <div class="price-lbl">Floor (min offer)</div>
+        <div class="price-val" id="tiFloor">—</div>
+      </div>
+      <div class="price-band" style="background:#1a300a;border-radius:6px;padding:12px 10px">
+        <div class="price-lbl" style="color:#86efac;font-weight:700">💡 Ideal Offer</div>
+        <div class="price-val" id="tiIdeal" style="font-size:24px">—</div>
+      </div>
+      <div class="price-band">
+        <div class="price-lbl">Max (tight margin)</div>
+        <div class="price-val" id="tiMax" style="color:#888">—</div>
+      </div>
+      <div class="price-band" style="margin-top:4px">
+        <div class="price-lbl">Total offer (×qty)</div>
+        <div class="price-val" id="tiTotal">—</div>
+      </div>
+      <div class="price-band">
+        <div class="price-lbl">eBay market median</div>
+        <div class="price-val" id="tiEbay" style="color:#888;font-size:14px">—</div>
+      </div>
+      <div class="price-band">
+        <div class="price-lbl">Your sell price / margin</div>
+        <div class="price-val" id="tiMargin" style="color:#4ade80;font-size:14px">—</div>
+      </div>
+      <div id="tiStock" style="font-size:11px;color:#555;margin-top:8px"></div>
+      <ul class="reasoning-list" id="tiReasoning"></ul>
+    </div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+function toast(msg, err=false) {{
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=err?'err':'';
+  t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
+}}
+function fmt(v, prefix='$') {{ return v !== null && v !== undefined ? prefix+parseFloat(v).toFixed(2) : '—'; }}
+
+async function loadInsights() {{
+  try {{
+    const r = await fetch('/admin/ai-insights/data');
+    const d = await r.json();
+
+    // Briefing
+    const b = d.briefing || {{}};
+    document.getElementById('bRev').textContent    = fmt(b.yesterday?.revenue);
+    document.getElementById('bUnits').textContent  = b.yesterday?.units ?? '—';
+    document.getElementById('bTxns').textContent   = b.yesterday?.txns ?? '—';
+    document.getElementById('bWeek').textContent   = fmt(b.week_revenue);
+    document.getElementById('bInvVal').textContent = fmt(b.inventory_value);
+    document.getElementById('bStock').textContent  = b.items_in_stock ?? '—';
+    if (b.top_seller) {{
+      document.getElementById('bTopSeller').textContent =
+        '🏆 Top seller yesterday: ' + b.top_seller;
+    }}
+
+    // Hot cards
+    const hb = document.getElementById('hotBody');
+    if (!d.hot_cards?.length || d.hot_cards[0]?.error) {{
+      hb.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:16px">No velocity data yet — needs 2+ weeks of sales history.</td></tr>';
+    }} else {{
+      hb.innerHTML = d.hot_cards.map(c => `
+        <tr>
+          <td><span class="fire">${{c.trending ? '🔥' : '📈'}}</span>${{c.name}}</td>
+          <td><strong style="color:#facc15">${{c.recent}}</strong></td>
+          <td style="color:#555">${{c.prior}}</td>
+          <td><span class="badge ${{c.trending ? 'badge-hot' : ''}}">${{c.velocity}}×</span></td>
+          <td>${{fmt(c.avg_price)}}</td>
+        </tr>`).join('');
+    }}
+
+    // Restock
+    const rb = document.getElementById('restockBody');
+    if (!d.restock?.length || d.restock[0]?.error) {{
+      rb.innerHTML = '<tr><td colspan="6" style="color:#333;text-align:center;padding:16px">No restock alerts — everything is well stocked.</td></tr>';
+    }} else {{
+      rb.innerHTML = d.restock.map(c => `
+        <tr>
+          <td>${{c.name}}</td>
+          <td>${{c.sold_7d}}</td>
+          <td>${{c.stock === 0 ? '<span style="color:#f87171;font-weight:700">0 — OUT</span>' : c.stock}}</td>
+          <td>${{c.days_left > 0 ? c.days_left + 'd' : '<span style="color:#f87171">—</span>'}}</td>
+          <td>${{fmt(c.ebay_med)}}</td>
+          <td><span class="badge ${{c.urgent ? 'badge-urgent' : 'badge-ok'}}">${{c.urgent ? '🚨 Reorder now' : '⚠️ Low'}}</span></td>
+        </tr>`).join('');
+    }}
+
+    // Price anomalies
+    const ab = document.getElementById('anomalyBody');
+    if (!d.price_anomalies?.length || d.price_anomalies[0]?.error) {{
+      ab.innerHTML = '<tr><td colspan="6" style="color:#333;text-align:center;padding:16px">No price anomalies — all prices look reasonable.</td></tr>';
+    }} else {{
+      ab.innerHTML = d.price_anomalies.map(c => `
+        <tr>
+          <td>${{c.name}}</td>
+          <td><strong>${{fmt(c.our_price)}}</strong></td>
+          <td style="color:#888">${{fmt(c.ebay_med)}}</td>
+          <td><span class="badge ${{c.direction==='overpriced'?'badge-over':'badge-under'}}">${{c.diff_pct > 0 ? '+' : ''}}${{c.diff_pct}}%</span></td>
+          <td>${{c.quantity}}</td>
+          <td style="font-size:11px;color:#555">${{c.direction==='overpriced' ? 'Consider lowering to ≤$'+c.ebay_med : 'Room to raise to ≤$'+c.ebay_high}}</td>
+        </tr>`).join('');
+    }}
+
+    // Cold stock
+    const cb = document.getElementById('coldBody');
+    if (!d.cold_stock?.length || d.cold_stock[0]?.error) {{
+      cb.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:16px">No cold stock — great turnover!</td></tr>';
+    }} else {{
+      cb.innerHTML = d.cold_stock.map(c => `
+        <tr>
+          <td><span class="badge badge-cold" style="margin-right:6px">30d+</span>${{c.name}}</td>
+          <td>${{c.quantity}}</td>
+          <td>${{fmt(c.price)}}</td>
+          <td style="color:#facc15">${{fmt(c.total_val)}}</td>
+          <td style="color:#555">${{c.ebay_med ? fmt(c.ebay_med) : '—'}}</td>
+        </tr>`).join('');
+    }}
+
+    document.getElementById('lastRefresh').textContent =
+      'Last updated: ' + new Date(d.generated_at).toLocaleTimeString() + ' · auto-refreshes every 90 s';
+
+  }} catch(e) {{
+    document.getElementById('lastRefresh').textContent = 'Error loading insights: ' + e.message;
+  }}
+}}
+
+async function calcTradein() {{
+  const btn  = document.getElementById('tiBtn');
+  const name = document.getElementById('tiName').value.trim();
+  const cond = document.getElementById('tiCond').value;
+  const qty  = parseInt(document.getElementById('tiQty').value) || 1;
+  if (!name) {{ toast('Enter a card name first', true); return; }}
+
+  btn.disabled = true; btn.textContent = 'Looking up…';
+  try {{
+    const r = await fetch('/admin/ai-tradein', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{ name, condition: cond, quantity: qty }})
+    }});
+    const d = await r.json();
+    if (!d.found) {{
+      toast(d.message || 'No eBay data found for this card', true);
+    }} else {{
+      const res = document.getElementById('tiResult');
+      res.style.display = 'block';
+      document.getElementById('tiCardName').textContent   = d.card_name;
+      document.getElementById('tiCondLabel').textContent  = ' · ' + d.condition.toUpperCase();
+      document.getElementById('tiFloor').textContent      = '$' + d.buy_floor.toFixed(2);
+      document.getElementById('tiIdeal').textContent      = '$' + d.buy_ideal.toFixed(2);
+      document.getElementById('tiMax').textContent        = '$' + d.buy_max.toFixed(2);
+      document.getElementById('tiTotal').textContent      = '$' + d.total_offer.toFixed(2) + (qty>1?' ('+qty+' cards)':'');
+      document.getElementById('tiEbay').textContent       = '$' + d.ebay_median.toFixed(2);
+      document.getElementById('tiMargin').textContent     = fmt(d.our_price) + ' sell · $' + d.margin.toFixed(2) + ' margin (' + d.margin_pct + '%)';
+      document.getElementById('tiStock').textContent      = 'Stock on hand: ' + d.stock_on_hand;
+      document.getElementById('tiReasoning').innerHTML   =
+        d.reasoning.map(r => '<li>' + r + '</li>').join('');
+    }}
+  }} catch(e) {{ toast('Error: ' + e.message, true); }}
+  btn.disabled = false; btn.textContent = 'Calculate Offer Price';
+}}
+
+// Allow Enter key on card name field
+document.getElementById('tiName').addEventListener('keydown', e => {{
+  if (e.key === 'Enter') calcTradein();
+}});
+
+loadInsights();
+setInterval(loadInsights, 90000);
+</script>
+</body>
+</html>"""
 
 
 # ---------------------------------------------------------------------------
