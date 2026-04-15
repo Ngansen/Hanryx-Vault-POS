@@ -2215,6 +2215,10 @@ def init_db():
         db.commit()
         log.info("[DB] Backfilled card_number column")
     except Exception as _be:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         log.warning("[DB] card_number backfill skipped: %s", _be)
 
     # Backfill release_year from set_code for existing rows
@@ -2239,6 +2243,10 @@ def init_db():
         db.commit()
         log.info("[DB] Backfilled release_year column")
     except Exception as _rye:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         log.warning("[DB] release_year backfill skipped: %s", _rye)
 
     # Add indexes for fast number/year/rarity searches
@@ -2259,7 +2267,7 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_inventory_stock_cat   ON inventory(stock, category)"
         )
         db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_inventory_updated_at  ON inventory(updated_at DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_inventory_updated_at  ON inventory(last_updated DESC)"
         )
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_inventory_card_number ON inventory(card_number)"
@@ -2271,8 +2279,12 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_inventory_rarity ON inventory(rarity)"
         )
         db.commit()
-    except Exception:
-        pass
+    except Exception as _idx_err:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("[DB] Index creation skipped: %s", _idx_err)
 
     # pgvector: add card_vector column + HNSW index (only when extension is loaded)
     if _PGVECTOR_AVAILABLE:
@@ -2291,6 +2303,10 @@ def init_db():
             db.commit()
             log.info("[pgvector] HNSW index ready")
         except Exception as _ve:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             log.warning("[pgvector] Schema setup skipped: %s", _ve)
 
     db.close()
@@ -13345,11 +13361,15 @@ def _prewarm_all_pricing_bg() -> None:
         db   = _direct_db()
         rows = db.execute(
             "SELECT qr_code, name, set_code, card_number, variant "
-            "FROM inventory ORDER BY updated_at DESC NULLS LAST"
+            "FROM inventory ORDER BY last_updated DESC NULLS LAST"
         ).fetchall()
         db.close()
     except Exception as _e:
         log.warning("[prewarm] could not load inventory: %s", _e)
+        try:
+            db.close()
+        except Exception:
+            pass
         return
 
     total   = len(rows)
@@ -13415,11 +13435,15 @@ def _prewarm_lang_all_bg() -> None:
         rows = db.execute(
             "SELECT name, set_code, card_number, variant "
             "FROM inventory WHERE name IS NOT NULL AND name != '' "
-            "ORDER BY updated_at DESC NULLS LAST"
+            "ORDER BY last_updated DESC NULLS LAST"
         ).fetchall()
         db.close()
     except Exception as _e:
         log.warning("[lang-prewarm] could not load inventory: %s", _e)
+        try:
+            db.close()
+        except Exception:
+            pass
         return
 
     total = len(rows)
