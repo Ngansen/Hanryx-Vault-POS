@@ -1,30 +1,34 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Pi 5 Dual-Monitor Kiosk Boot Setup  (v4 + mDNS)
+# HanryxVault — Satellite Pi 5 Dual-Monitor Kiosk Boot Setup  (v5 + Tailscale)
+#
+# Network topology:
+#   Main Pi   (home)  — Flask POS server, Docker stack, database, Tailscale
+#   Satellite Pi (shop) — THIS Pi: dual-monitor kiosk + nginx proxy for tablet
+#   Tablet    (shop)  — Expo POS app, connects to satellite Pi on local LAN
 #
 # What this configures:
-#   Monitor 1 (HDMI-0) → /admin   — staff admin portal
-#   Monitor 2 (HDMI-1) → /kiosk   — customer-facing display (Pokémon + POS)
-#
-# The satellite Pi does NOT run Docker — it just points Chromium at
-# the main Pi's POS server over the local network.
+#   Monitor 1 (HDMI-0) → /admin   — staff admin portal (via Tailscale)
+#   Monitor 2 (HDMI-1) → /kiosk   — customer-facing display (via Tailscale)
+#   nginx on port 8080 → proxies tablet API calls over Tailscale to Main Pi
 #
 # Features:
-#   • Asks for main Pi's IP or hostname during setup
-#   • Auto-discovers main Pi via mDNS (hanryxvault.local) — IP changes don't break anything
-#   • Branded "Connecting…" splash screen shown while main Pi boots up
-#   • Splash auto-redirects to admin/kiosk once server is ready (no timeout crash)
+#   • Installs Tailscale — satellite Pi joins the same network as the Main Pi
+#   • Asks for Main Pi's Tailscale hostname during setup
+#   • nginx reverse proxy — tablet hits satellite Pi locally, routed to Main Pi
+#   • Satellite Pi advertised as hanryxvault.local for tablet discovery
+#   • Branded "Connecting…" splash screen checks Tailscale reachability
 #   • Detects Wayland (Pi 5 Bookworm default) vs X11 automatically
 #   • Hardware-accelerated video decode for smooth Pokémon playback
 #   • GPU memory bump to 256 MB for dual 1080p + video
 #   • Chromium watchdog — auto-restarts both windows if they crash
 #   • Persistent Chromium profiles (survive crashes, keep login sessions)
 #   • Logs everything to /var/log/hanryx-kiosk.log for easy debugging
-#   • Disables USB autosuspend (keeps barcode scanners & receipt printers alive)
+#   • Disables USB autosuspend (keeps scanners & receipt printers alive)
 #   • Removes boot rainbow splash & quietens console output
 #   • Increases swap to 512 MB for smoother multi-tab performance
 #   • Handles both labwc (Wayland) and LXDE (X11) autostart paths
-#   • SSH stays accessible for remote management at a show
+#   • SSH stays accessible for remote management
 #
 # Run ONCE on the satellite Pi:
 #   sudo bash ~/hanryx-vault-pos/pi-setup/setup-satellite-kiosk-boot.sh
@@ -51,51 +55,44 @@ echo -e "${BOLD}  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)${NC}"
 echo "  ============================================================"
 echo ""
 
-# ── Ask for main Pi's IP ─────────────────────────────────────────────────────
-DEFAULT_IP="192.168.86.45"
+# ── Ask for Main Pi's Tailscale hostname ─────────────────────────────────────
+DEFAULT_TS_HOST="hanryxvault"
 if [ -f "$CONFIG_FILE" ]; then
-    SAVED_IP=$(grep "^MAIN_PI_IP=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
-    DEFAULT_IP="${SAVED_IP:-$DEFAULT_IP}"
+    SAVED_TS=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    DEFAULT_TS_HOST="${SAVED_TS:-$DEFAULT_TS_HOST}"
 fi
 
-echo -e "${CYAN}  The satellite Pi connects to the main Pi's POS server.${NC}"
-echo -e "${CYAN}  The main Pi runs Docker and serves the admin + kiosk pages.${NC}"
-echo -e "${CYAN}  If the main Pi has run its setup, it is also reachable as${NC}"
-echo -e "${CYAN}  ${BOLD}hanryxvault.local${NC}${CYAN} via mDNS — enter that instead of an IP${NC}"
-echo -e "${CYAN}  to survive any DHCP address changes.${NC}"
+echo -e "${CYAN}  Network layout:${NC}"
+echo -e "${CYAN}    Main Pi (home)   = Docker stack + POS server, connected via Tailscale${NC}"
+echo -e "${CYAN}    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet${NC}"
+echo -e "${CYAN}    Tablet (shop)    = connects to THIS Pi locally — routed over Tailscale${NC}"
 echo ""
-read -rp "  Enter the main Pi's IP or hostname [$DEFAULT_IP]: " MAIN_PI_IP
-MAIN_PI_IP="${MAIN_PI_IP:-$DEFAULT_IP}"
+echo -e "${CYAN}  Enter the Main Pi's Tailscale hostname (shown in the Tailscale admin${NC}"
+echo -e "${CYAN}  panel as the device name, e.g. ${BOLD}hanryxvault${NC}${CYAN}).${NC}"
+echo -e "${CYAN}  You can also enter a Tailscale IP (100.x.x.x) if MagicDNS is off.${NC}"
+echo ""
+read -rp "  Main Pi Tailscale hostname or IP [$DEFAULT_TS_HOST]: " MAIN_PI_TS_HOST
+MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_TS_HOST}"
 
-# Auto-detect via mDNS if user left blank or typed "auto"
-if [[ "${MAIN_PI_IP,,}" == "auto" || "${MAIN_PI_IP,,}" == "discover" ]]; then
-    note "Trying mDNS discovery for hanryxvault.local …"
-    RESOLVED=$(avahi-resolve-host-name hanryxvault.local 2>/dev/null | awk '{print $2}')
-    if [ -n "$RESOLVED" ]; then
-        MAIN_PI_IP="hanryxvault.local"
-        ok "Discovered main Pi via mDNS: $RESOLVED"
-    else
-        warn "mDNS discovery failed — using default $DEFAULT_IP"
-        MAIN_PI_IP="$DEFAULT_IP"
-    fi
-fi
-
-ADMIN_URL="http://${MAIN_PI_IP}:8080/admin"
-KIOSK_URL="http://${MAIN_PI_IP}:8080/kiosk"
-HEALTH_URL="http://${MAIN_PI_IP}:8080/health"
+ADMIN_URL="http://${MAIN_PI_TS_HOST}:8080/admin"
+KIOSK_URL="http://${MAIN_PI_TS_HOST}:8080/kiosk"
+HEALTH_URL="http://${MAIN_PI_TS_HOST}:8080/health"
+# Tablet hits satellite Pi on local LAN — nginx proxies to Main Pi via Tailscale
+TABLET_PROXY_URL="http://localhost:8080"
 
 echo ""
-echo "  User     : $CURRENT_USER"
-echo "  Main Pi  : $MAIN_PI_IP"
-echo "  Monitor 1: $ADMIN_URL  (staff admin)"
-echo "  Monitor 2: $KIOSK_URL  (customer kiosk)"
-echo "  Logs     : $LOG_FILE"
+echo "  User          : $CURRENT_USER"
+echo "  Main Pi (TS)  : $MAIN_PI_TS_HOST"
+echo "  Monitor 1     : $ADMIN_URL  (staff admin)"
+echo "  Monitor 2     : $KIOSK_URL  (customer kiosk)"
+echo "  Tablet proxy  : port 8080 → $MAIN_PI_TS_HOST:8080 via Tailscale"
+echo "  Logs          : $LOG_FILE"
 echo ""
 
 # Save config for future re-runs
 mkdir -p "$HOME_DIR/.hanryx"
 cat > "$CONFIG_FILE" << EOF
-MAIN_PI_IP=$MAIN_PI_IP
+MAIN_PI_TS_HOST=$MAIN_PI_TS_HOST
 ADMIN_URL=$ADMIN_URL
 KIOSK_URL=$KIOSK_URL
 HEALTH_URL=$HEALTH_URL
@@ -112,27 +109,99 @@ ok "Boot to desktop auto-login set"
 info "Installing required packages…"
 apt-get update -qq
 apt-get install -y -qq \
-  chromium-browser \
-  unclutter \
-  curl \
-  avahi-daemon \
-  avahi-utils \
-  libnss-mdns \
-  2>/dev/null || \
-apt-get install -y -qq \
-  chromium \
-  unclutter \
+  nginx \
   curl \
   avahi-daemon \
   avahi-utils \
   libnss-mdns \
   2>/dev/null || true
-ok "Packages ready (chromium, unclutter, curl, avahi)"
+# Chromium: try both package names
+apt-get install -y -qq chromium-browser unclutter 2>/dev/null || \
+apt-get install -y -qq chromium         unclutter 2>/dev/null || true
+ok "Packages ready (nginx, chromium, unclutter, curl, avahi)"
 
-# Enable avahi so the satellite can resolve hanryxvault.local
+# ── Tailscale ────────────────────────────────────────────────────────────────
+info "Installing Tailscale…"
+if ! command -v tailscale &>/dev/null; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+    ok "Tailscale installed"
+else
+    ok "Tailscale already installed ($(tailscale version | head -1))"
+fi
+
+echo ""
+echo -e "${CYAN}  ── Tailscale authentication ─────────────────────────────${NC}"
+echo -e "${CYAN}  You need to connect this satellite Pi to your Tailscale network.${NC}"
+echo -e "${CYAN}  Options:${NC}"
+echo -e "${CYAN}    A) Auth key (recommended — paste from Tailscale admin panel)${NC}"
+echo -e "${CYAN}    B) Interactive — browser link printed for you to approve${NC}"
+echo ""
+read -rp "  Paste your Tailscale auth key (or press Enter to authenticate interactively): " TS_AUTH_KEY
+
+if [ -n "$TS_AUTH_KEY" ]; then
+    tailscale up --authkey="$TS_AUTH_KEY" --hostname="hanryxvault-sat" 2>/dev/null || \
+    tailscale up --authkey="$TS_AUTH_KEY" 2>/dev/null || true
+    ok "Tailscale connected with auth key"
+else
+    tailscale up --hostname="hanryxvault-sat" 2>/dev/null &
+    TS_PID=$!
+    echo ""
+    note "Follow the link above to authorise this Pi in the Tailscale admin panel."
+    read -rp "  Press Enter once you've approved the device in Tailscale… "
+    wait $TS_PID 2>/dev/null || true
+fi
+
+TS_IP=$(tailscale ip -4 2>/dev/null || echo "not connected yet")
+ok "Tailscale IP: $TS_IP"
+systemctl enable tailscaled 2>/dev/null || true
+
+# ── nginx proxy — tablet LAN → Tailscale → Main Pi ──────────────────────────
+info "Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…"
+cat > /etc/nginx/sites-available/hanryxvault-proxy << NGINX
+# HanryxVault satellite nginx proxy
+# Tablet hits http://hanryxvault.local:8080/ → forwarded to Main Pi via Tailscale
+server {
+    listen 8080;
+    server_name _;
+
+    # Long timeout for SSE (Server-Sent Events) streams
+    proxy_read_timeout    300s;
+    proxy_send_timeout    300s;
+    proxy_connect_timeout  10s;
+
+    location / {
+        proxy_pass         http://${MAIN_PI_TS_HOST}:8080;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade \$http_upgrade;
+        proxy_set_header   Connection '';
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        # Required for SSE — disable buffering so events reach the client instantly
+        proxy_buffering    off;
+        proxy_cache        off;
+        chunked_transfer_encoding on;
+    }
+}
+NGINX
+
+# Activate site
+ln -sf /etc/nginx/sites-available/hanryxvault-proxy \
+       /etc/nginx/sites-enabled/hanryxvault-proxy 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+nginx -t && systemctl enable nginx && systemctl restart nginx
+ok "nginx proxy active — tablet → port 8080 → ${MAIN_PI_TS_HOST}:8080 via Tailscale"
+
+# ── avahi — advertise this satellite Pi as hanryxvault.local on the shop LAN ─
+info "Configuring avahi mDNS (satellite Pi = hanryxvault.local on shop LAN)…"
+hostnamectl set-hostname hanryxvault 2>/dev/null || \
+    echo "hanryxvault" > /etc/hostname
+# Update /etc/hosts to match
+sed -i '/127\.0\.1\.1/d' /etc/hosts
+echo "127.0.1.1  hanryxvault hanryxvault.local" >> /etc/hosts
 systemctl enable avahi-daemon 2>/dev/null || true
 systemctl restart avahi-daemon 2>/dev/null || true
-ok "mDNS (avahi) running — hanryxvault.local resolution enabled"
+ok "Satellite Pi is now hanryxvault.local on the shop LAN (tablet can find it automatically)"
 
 # ── 3. Increase swap to 512 MB (smoother dual-monitor + video performance) ──
 info "Setting swap to 512 MB…"
@@ -236,33 +305,35 @@ log "============================================"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 else
-    ADMIN_URL="http://192.168.86.45:8080/admin"
-    KIOSK_URL="http://192.168.86.45:8080/kiosk"
-    HEALTH_URL="http://192.168.86.45:8080/health"
+    MAIN_PI_TS_HOST="hanryxvault"
+    ADMIN_URL="http://hanryxvault:8080/admin"
+    KIOSK_URL="http://hanryxvault:8080/kiosk"
+    HEALTH_URL="http://hanryxvault:8080/health"
 fi
-# Derive HEALTH_URL from KIOSK_URL if not saved (backward compat)
 HEALTH_URL="${HEALTH_URL:-${KIOSK_URL%/kiosk}/health}"
+log "Main Pi (Tailscale): $MAIN_PI_TS_HOST"
 log "Admin URL:  $ADMIN_URL"
 log "Kiosk URL:  $KIOSK_URL"
 log "Health URL: $HEALTH_URL"
 
-# ── mDNS: try hanryxvault.local if IP unreachable ────────────────────────────
-MAIN_PI_IP="${MAIN_PI_IP:-192.168.86.45}"
-if ! curl -sf --max-time 1 "$HEALTH_URL" > /dev/null 2>&1; then
-    MDNS_IP=$(avahi-resolve-host-name hanryxvault.local 2>/dev/null | awk '{print $2}')
-    if [ -n "$MDNS_IP" ] && [ "$MDNS_IP" != "$MAIN_PI_IP" ]; then
-        log "mDNS: hanryxvault.local resolved to $MDNS_IP (was $MAIN_PI_IP) — updating URLs"
-        MAIN_PI_IP="$MDNS_IP"
-        ADMIN_URL="http://${MDNS_IP}:8080/admin"
-        KIOSK_URL="http://${MDNS_IP}:8080/kiosk"
-        HEALTH_URL="http://${MDNS_IP}:8080/health"
-        # Persist updated IP for next boot
-        sed -i "s|^MAIN_PI_IP=.*|MAIN_PI_IP=$MDNS_IP|" "$CONFIG_FILE" 2>/dev/null || true
-        sed -i "s|^ADMIN_URL=.*|ADMIN_URL=$ADMIN_URL|" "$CONFIG_FILE" 2>/dev/null || true
-        sed -i "s|^KIOSK_URL=.*|KIOSK_URL=$KIOSK_URL|" "$CONFIG_FILE" 2>/dev/null || true
-        sed -i "s|^HEALTH_URL=.*|HEALTH_URL=$HEALTH_URL|" "$CONFIG_FILE" 2>/dev/null || true
+# ── Wait for Tailscale to connect before doing anything ──────────────────────
+log "Waiting for Tailscale connection to Main Pi (${MAIN_PI_TS_HOST})…"
+TS_WAIT=0
+until curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; do
+    TS_WAIT=$((TS_WAIT + 1))
+    if [ "$TS_WAIT" -eq 1 ]; then
+        log "Main Pi not reachable yet — waiting for Tailscale tunnel…"
     fi
-fi
+    if [ "$TS_WAIT" -ge 5 ]; then
+        # Try to restart tailscaled in case it hasn't connected yet
+        systemctl restart tailscaled 2>/dev/null || true
+        sleep 5
+        TS_WAIT=0
+        log "Restarted tailscaled — retrying…"
+    fi
+    sleep 3
+done
+log "Main Pi reachable via Tailscale — launching kiosk"
 
 # ── Detect display server (Wayland vs X11) ───────────────────────────────────
 if [ "$XDG_SESSION_TYPE" = "wayland" ] || pgrep -x labwc > /dev/null 2>&1; then
@@ -445,24 +516,28 @@ sleep 4
 launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
     "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" &
 
-log "Both windows launched — watchdog + mDNS fallback active"
+log "Both windows launched — Tailscale tunnel active"
 
 # ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
 OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
 (
   while true; do
     UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
     CHROMIUM_OK=$(pgrep -x chromium-browser > /dev/null 2>&1 \
                   || pgrep -x chromium > /dev/null 2>&1; echo $?)
     CHROMIUM_OK=$([[ "$CHROMIUM_OK" -eq 0 ]] && echo true || echo false)
-    curl -sf --max-time 3 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
+    TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
+        "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
+        2>/dev/null || echo "unknown")
+    curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
          -H "Content-Type: application/json" \
-         -d "{\"ip\":\"$OWN_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"version\":\"v4\"}" \
+         -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v5\"}" \
          > /dev/null 2>&1 || true
     sleep 60
   done
 ) &
-log "Heartbeat loop started — pinging $HEALTH_URL every 60 s"
+log "Heartbeat loop started — pinging main Pi via Tailscale every 60 s"
 
 wait
 LAUNCH
@@ -541,7 +616,7 @@ ExecStart=/bin/bash -c '\\
   FAIL=0; \\
   while true; do \\
     source "\$CONF" 2>/dev/null || true; \\
-    HURL="\${HEALTH_URL:-http://192.168.86.45:8080/health}"; \\
+    HURL="\${HEALTH_URL:-http://hanryxvault:8080/health}"; \\
     if curl -sf --max-time 3 "\$HURL" > /dev/null 2>&1; then \\
       if [ "\$FAIL" -ge 3 ]; then \\
         echo "[watchdog] Server back online — restarting Chromium" | tee -a "\$LOG"; \\
@@ -577,29 +652,37 @@ echo ""
 echo -e "${BOLD}  ============================================================${NC}"
 echo -e "${GREEN}  All done — reboot to activate.${NC}"
 echo ""
+echo "  Network layout after reboot:"
+echo "    Main Pi (home)   → Tailscale host: $MAIN_PI_TS_HOST  (port 8080)"
+echo "    Satellite (here) → hanryxvault.local on shop LAN, Tailscale: hanryxvault-sat"
+echo "    Tablet           → connect to http://hanryxvault.local:8080/ (auto-proxied)"
+echo ""
 echo "  On every boot the satellite Pi will:"
-echo "    1.  Show a branded 'Connecting…' splash on both screens immediately"
-echo "    2.  Resolve the main Pi via mDNS (hanryxvault.local) if IP changed"
-echo "    3.  Splash auto-redirects once /health responds — no timeout crash"
-echo "    4.  Monitor 1 (HDMI-0) → /admin   — staff admin"
-echo "    5.  Monitor 2 (HDMI-1) → /kiosk   — customer screen"
-echo "    6.  Auto-restart both windows if they crash (goes direct on restart)"
+echo "    1.  Wait for Tailscale tunnel to Main Pi before launching Chromium"
+echo "    2.  Show branded 'Connecting…' splash on both screens while waiting"
+echo "    3.  Monitor 1 (HDMI-0) → /admin  (directly via Tailscale)"
+echo "    4.  Monitor 2 (HDMI-1) → /kiosk  (directly via Tailscale)"
+echo "    5.  nginx on port 8080 proxies all tablet traffic to Main Pi via Tailscale"
+echo "    6.  Auto-restart both Chromium windows if they crash"
 echo "    7.  Never sleep or blank either screen"
-echo "    8.  Send heartbeat to main Pi every 60 s (visible on System page)"
-echo "    9.  Network watchdog re-triggers Chromium if server recovers from outage"
+echo "    8.  Send heartbeat to Main Pi every 60 s (visible on System page)"
+echo "    9.  Network watchdog re-triggers Chromium if Tailscale recovers from outage"
 echo "   10.  Admin session restored after Chromium crash (stays logged in)"
 echo ""
-echo -e "${CYAN}  Main Pi IP:${NC} $MAIN_PI_IP"
-echo -e "${CYAN}  To change later:${NC} edit $CONFIG_FILE and reboot"
+echo -e "${CYAN}  Main Pi Tailscale hostname:${NC} $MAIN_PI_TS_HOST"
+echo -e "${CYAN}  To change later:${NC} edit $CONFIG_FILE then: sudo systemctl restart nginx && reboot"
 echo ""
 echo -e "${CYAN}  Tips:${NC}"
+echo "    • Check Tailscale connection:   tailscale status"
+echo "    • Check nginx proxy:            curl http://localhost:8080/health"
+echo "    • Tablet finds this Pi as:      http://hanryxvault.local:8080/"
+echo "    • View live logs:               tail -f $LOG_FILE"
+echo "    • SSH from your laptop:         ssh $CURRENT_USER@hanryxvault-sat"
 echo "    • Swap HDMI cables if the screens are the wrong way round"
-echo "    • View live logs:  tail -f $LOG_FILE"
-echo "    • SSH from your laptop: ssh $CURRENT_USER@<satellite-ip>"
-echo "    • Run the launcher manually to test:"
-echo "        bash $LAUNCH_SCRIPT"
+echo "    • Run the launcher manually:    bash $LAUNCH_SCRIPT"
 echo ""
 warn "GPU memory bumped to 256 MB in config.txt — required for smooth video."
 echo ""
+echo "  If Tailscale isn't connected yet, run:  tailscale up"
 echo "  To reboot now:  sudo reboot"
 echo ""

@@ -9974,19 +9974,21 @@ async function refreshSatellite() {{
       satEl.textContent  = '✓ Online';
       satEl.style.color  = '#4caf50';
       const ago = d.age_s < 60 ? d.age_s + 's ago' : Math.round(d.age_s/60) + 'm ago';
-      subEl.textContent  = 'Seen ' + ago + (d.uptime ? ' · ' + d.uptime : '');
-      ipEl.textContent   = d.ip || '';
+      const tsLabel = d.tailscale === 'connected'
+        ? ' · 🟢 Tailscale' : (d.tailscale ? ' · ⚠️ TS:' + d.tailscale : '');
+      subEl.textContent  = 'Seen ' + ago + (d.uptime ? ' · ' + d.uptime : '') + tsLabel;
+      ipEl.textContent   = (d.ts_ip ? 'TS: ' + d.ts_ip + '  ' : '') + (d.ip ? 'LAN: ' + d.ip : '');
     }} else if (d.ip === null && d.age_s === null) {{
       satEl.textContent  = '— Not seen';
       satEl.style.color  = '#555';
-      subEl.textContent  = 'Waiting for heartbeat';
+      subEl.textContent  = 'Waiting for first heartbeat via Tailscale';
       ipEl.textContent   = '';
     }} else {{
       satEl.textContent  = '✗ Offline';
       satEl.style.color  = '#f44336';
       const ago = d.age_s ? Math.round(d.age_s/60) + 'm ago' : '?';
-      subEl.textContent  = 'Last seen ' + ago;
-      ipEl.textContent   = d.ip || '';
+      subEl.textContent  = 'Last seen ' + ago + ' — check Tailscale connection';
+      ipEl.textContent   = (d.ts_ip ? 'TS: ' + d.ts_ip + '  ' : '') + (d.ip ? 'LAN: ' + d.ip : '');
     }}
   }} catch(e) {{}}
 }}
@@ -10567,16 +10569,19 @@ _SAT_HB_PATH = "/data/satellite_heartbeat.json"
 
 @app.route("/satellite/heartbeat", methods=["POST"])
 def satellite_heartbeat():
-    """Called by the satellite Pi launcher (no auth needed — LAN only)."""
+    """Called by the satellite Pi launcher (no auth needed — Tailscale only)."""
     try:
         body = request.get_json(silent=True) or {}
         data = {
             "ip":          body.get("ip") or request.remote_addr,
+            "ts_ip":       str(body.get("ts_ip", "")),
             "uptime":      str(body.get("uptime", "")),
             "chromium_ok": bool(body.get("chromium_ok", True)),
+            "tailscale":   str(body.get("tailscale", "unknown")),
             "last_seen":   time.time(),
-            "version":     str(body.get("version", "v4")),
+            "version":     str(body.get("version", "v5")),
         }
+        os.makedirs(os.path.dirname(_SAT_HB_PATH), exist_ok=True)
         with open(_SAT_HB_PATH, "w") as fh:
             json.dump(data, fh)
         return jsonify({"ok": True})

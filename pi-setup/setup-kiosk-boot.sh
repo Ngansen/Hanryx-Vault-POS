@@ -119,23 +119,55 @@ apt-get install -y -qq \
   2>/dev/null || true
 ok "Packages ready (chromium, unclutter, curl, git, avahi)"
 
-# ── 5b. mDNS — advertise this Pi as hanryxvault.local ─────────────────────
-info "Configuring mDNS hostname (hanryxvault.local)…"
-# Set the hostname
+# ── 5b. mDNS hostname — used only on home LAN ──────────────────────────────
+info "Configuring hostname (hanryxvault)…"
 hostnamectl set-hostname hanryxvault 2>/dev/null || hostname hanryxvault 2>/dev/null || true
-# Persist hostname
 echo "hanryxvault" > /etc/hostname 2>/dev/null || true
-# Set avahi hostname to match
 AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
 if [ -f "$AVAHI_CONF" ]; then
     sed -i 's/^#\?host-name=.*/host-name=hanryxvault/' "$AVAHI_CONF" 2>/dev/null || true
 fi
-# Enable and start avahi
 systemctl enable avahi-daemon 2>/dev/null || true
 systemctl restart avahi-daemon 2>/dev/null || true
-ok "mDNS ready — this Pi is now reachable as hanryxvault.local"
+ok "Hostname set: hanryxvault (reachable as hanryxvault.local on home LAN)"
 
-# ── 5c. Static IP guard (optional — prevents DHCP from changing IP) ────────
+# ── 5c. Tailscale — remote access from satellite Pi & tablet at the shop ────
+info "Installing Tailscale (satellite Pi + tablet reach this Pi from the shop)…"
+if ! command -v tailscale &>/dev/null; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+    ok "Tailscale installed"
+else
+    ok "Tailscale already installed ($(tailscale version | head -1))"
+fi
+
+echo ""
+echo -e "${CYAN}  ── Tailscale authentication ─────────────────────────────${NC}"
+echo -e "${CYAN}  The Main Pi must join the same Tailscale network as the satellite Pi.${NC}"
+echo -e "${CYAN}  Get an auth key from: https://login.tailscale.com/admin/settings/keys${NC}"
+echo ""
+read -rp "  Paste your Tailscale auth key (or press Enter to authenticate interactively): " TS_AUTH_KEY
+
+if [ -n "$TS_AUTH_KEY" ]; then
+    tailscale up --authkey="$TS_AUTH_KEY" --hostname="hanryxvault" 2>/dev/null || \
+    tailscale up --authkey="$TS_AUTH_KEY" 2>/dev/null || true
+    ok "Tailscale connected with auth key"
+else
+    tailscale up --hostname="hanryxvault" 2>/dev/null &
+    TS_PID=$!
+    echo ""
+    note "Follow the link above to approve this device in the Tailscale admin panel."
+    read -rp "  Press Enter once approved… "
+    wait $TS_PID 2>/dev/null || true
+fi
+
+TS_IP=$(tailscale ip -4 2>/dev/null || echo "not connected yet")
+systemctl enable tailscaled 2>/dev/null || true
+ok "Tailscale active — Main Pi Tailscale IP: $TS_IP"
+echo ""
+note "Satellite Pi should connect as hostname 'hanryxvault-sat' in Tailscale."
+note "The satellite Pi's nginx will proxy the tablet to this Pi via Tailscale."
+
+# ── 5d. Static IP guard (optional — prevents DHCP from changing IP) ────────
 info "Checking current IP address…"
 CURRENT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 note "Current IP: ${CURRENT_IP:-unknown}"

@@ -74,8 +74,9 @@ services:
         max-file: "3"
 
   # ── Flask POS server ──────────────────────────────────────────────────────────
-  # Handles: tablet POS, admin dashboard, scan queue, Zettle, BT receipt printer
-  # Accessible: LAN (port 8080) + Tailscale VPN hostname
+  # Handles: tablet POS (proxied via satellite Pi), admin dashboard, scan queue
+  # Network: Main Pi (home) ← Tailscale ← Satellite Pi (shop) ← LAN ← Tablet
+  # Accessible on Tailscale as 'hanryxvault' at port 8080
   pos:
     build: .
     restart: unless-stopped
