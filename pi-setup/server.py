@@ -15978,7 +15978,7 @@ async function enrichOne(qr) {{
 _KIOSK_SETTINGS_PATH = "/data/kiosk_settings.json"
 
 _KIOSK_DEFAULT: dict = {
-    "enabled":      False,
+    "enabled":      True,
     "store_name":   "HanryxVault",
     "tagline":      "Trading Card Shop",
     "idle_message": "Welcome! Ask us about today's specials.",
