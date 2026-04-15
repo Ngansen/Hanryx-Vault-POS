@@ -325,6 +325,20 @@ def _is_lan(ip: str) -> bool:
         return False
 
 
+def _safe_int(val, default: int = 0) -> int:
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Global error handlers — catch unhandled exceptions and return clean JSON/HTML
 # ---------------------------------------------------------------------------
@@ -3849,7 +3863,7 @@ def card_lookup():
     set_code = request.args.get("set",   "").strip().upper()
     card_num = request.args.get("num",   "").strip().lstrip("0")
     try:
-        limit = min(int(request.args.get("limit", 10)), 50)
+        limit = min(_safe_int(request.args.get("limit", 10), 10), 50)
     except (ValueError, TypeError):
         limit = 10
 
@@ -4267,7 +4281,7 @@ def admin_qr_image(qr_code: str):
     Returns a QR code PNG for the given qr_code string.
     No login required so <img> tags in the print sheet load without auth cookies.
     """
-    size = min(max(int(request.args.get("size", 6)), 2), 15)
+    size = min(max(_safe_int(request.args.get("size", 6), 6), 2), 15)
     try:
         png = _make_qr_png(qr_code, box_size=size)
     except Exception as e:
@@ -4295,7 +4309,7 @@ def admin_qr_sheet():
     cat  = request.args.get("cat", "").strip().lower()
     zero = request.args.get("zero", "0") == "1"
     try:
-        cols = min(max(int(request.args.get("cols", 4)), 2), 5)
+        cols = min(max(_safe_int(request.args.get("cols", 4), 4), 2), 5)
     except ValueError:
         cols = 4
 
@@ -4609,7 +4623,7 @@ def record_sale_history():
     """
     data    = request.get_json(force=True, silent=True) or {}
     items   = data.get("items", [])
-    sold_at = int(data.get("sold_at") or _now_ms())
+    sold_at = _safe_int(data.get("sold_at") or _now_ms(), _now_ms())
 
     # ── Idempotency check ────────────────────────────────────────────────────
     idem_key = (
@@ -4671,7 +4685,7 @@ def get_sale_history_public():
     APK-facing read endpoint — returns the last 500 sale line items as JSON.
     Optional ?limit=N and ?name=... query params.
     """
-    limit  = min(int(request.args.get("limit", 500)), 1000)
+    limit  = min(_safe_int(request.args.get("limit", 500), 500), 1000)
     name_q = request.args.get("name", "").strip().lower()
     db     = get_db()
     if name_q:
@@ -4890,6 +4904,9 @@ def push_inventory():
     errors   = 0
 
     for item in items:
+        if not isinstance(item, dict):
+            errors += 1
+            continue
         qr_code = item.get("qrCode") or item.get("qr_code") or item.get("barcode") or item.get("id")
         name    = item.get("name") or item.get("title") or item.get("productName")
         if not qr_code or not name:
@@ -6787,7 +6804,7 @@ def system_stats():
 @require_admin
 def system_logs():
     svc  = request.args.get("service", "hanryxvault")
-    n    = min(int(request.args.get("lines", 120)), 500)
+    n    = min(_safe_int(request.args.get("lines", 120), 120), 500)
     path = _SYS_LOG_SOURCES.get(svc)
     if path and os.path.exists(path):
         out = _sys_run(f"tail -n {n} {path!r}")
@@ -9582,7 +9599,7 @@ def admin_export_inventory():
 def admin_scan_log():
     """Return recent scan history for the Logs page Scan History tab."""
     try:
-        limit = min(int(request.args.get("limit", 200)), 1000)
+        limit = min(_safe_int(request.args.get("limit", 200), 200), 1000)
     except (ValueError, TypeError):
         limit = 200
     db   = get_db()
@@ -9766,7 +9783,7 @@ _ADMIN_LOGIN_HTML = """<!DOCTYPE html>
 def admin_price_calc():
     """Return suggested sell price given base market price + card attributes."""
     try:
-        base      = float(request.args.get("base", 0))
+        base      = _safe_float(request.args.get("base", 0), 0.0)
         language  = request.args.get("lang", "English")
         item_type = request.args.get("type", "Single")
         grade     = request.args.get("grade", "")
@@ -9985,7 +10002,7 @@ function filter(){{
 @require_admin
 def admin_price_alerts():
     """Return cards whose market price moved >15% between first and latest reading."""
-    threshold = float(request.args.get("threshold", 15))
+    threshold = _safe_float(request.args.get("threshold", 15), 15.0)
     db = get_db()
     # Get min/max price per card_id from price_history
     rows = db.execute("""
@@ -11627,8 +11644,8 @@ def admin_sale_history():
       name   — optional substring filter on card name
     """
     try:
-        limit = min(int(request.args.get("limit", 100)), 500)
-        days  = max(int(request.args.get("days",   30)),  1)
+        limit = min(_safe_int(request.args.get("limit", 100), 100), 500)
+        days  = max(_safe_int(request.args.get("days",   30),  30),  1)
         name  = request.args.get("name", "").strip()
     except ValueError:
         return jsonify({"error": "Invalid query param"}), 400
@@ -11923,7 +11940,7 @@ def api_issue_token():
         return jsonify({"error": "PyJWT not installed"}), 501
     body   = request.get_json(silent=True) or {}
     label  = (body.get("label") or "unnamed").strip()[:80]
-    ttl_h  = min(int(body.get("ttl_hours") or _JWT_TTL_H), 8760)   # cap 1 year
+    ttl_h  = min(_safe_int(body.get("ttl_hours") or _JWT_TTL_H, _JWT_TTL_H), 8760)   # cap 1 year
     scopes = (body.get("scopes") or "scan,sales").strip()
     exp    = int(_time.time()) + ttl_h * 3600
     payload = {
@@ -12113,7 +12130,7 @@ def admin_2fa_disable():
 @app.route("/api/v1/audit-log", methods=["GET"])
 @require_admin
 def api_audit_log():
-    limit  = min(int(request.args.get("limit", 200)), 1000)
+    limit  = min(_safe_int(request.args.get("limit", 200), 200), 1000)
     action = request.args.get("action", "").strip()
     actor  = request.args.get("actor", "").strip()
     db     = get_db()
@@ -12301,7 +12318,7 @@ def api_z_report_pdf():
 @app.route("/api/v1/returns", methods=["GET"])
 @require_admin
 def api_list_returns():
-    limit = min(int(request.args.get("limit", 50)), 500)
+    limit = min(_safe_int(request.args.get("limit", 50), 50), 500)
     db    = get_db()
     rows  = db.execute(
         "SELECT r.*, array_agg(row_to_json(ri)) AS items "
@@ -12506,7 +12523,7 @@ def api_set_stock_alert():
     """
     body      = request.get_json(silent=True) or {}
     qr_code   = (body.get("qr_code") or "").strip()
-    threshold = max(1, int(body.get("threshold") or 1))
+    threshold = max(1, _safe_int(body.get("threshold") or 1, 1))
     if not qr_code:
         return jsonify({"error": "qr_code required"}), 400
 
@@ -13927,7 +13944,7 @@ def api_pokeapi_normalize():
         inventory_item }
     """
     q         = (request.args.get("q") or "").strip()
-    threshold = int(request.args.get("threshold", 70))
+    threshold = _safe_int(request.args.get("threshold", 70), 70)
     if not q:
         return jsonify({"error": "q is required"}), 400
 
@@ -13999,7 +14016,7 @@ def api_sync_pending():
     Returns unsynced stock/price changes for the storefront to pull.
     Optional ?limit=N (default 100, max 500).
     """
-    limit = min(int(request.args.get("limit", 100)), 500)
+    limit = min(_safe_int(request.args.get("limit", 100), 100), 500)
     db    = get_db()
     rows  = db.execute(
         "SELECT id, qr_code, change_type, delta, created_at "
@@ -15492,8 +15509,8 @@ def api_v1_inventory():
     if request.method == "OPTIONS":
         return "", 204
 
-    page     = max(1, int(request.args.get("page", 1)))
-    per_page = min(200, max(1, int(request.args.get("per_page", 50))))
+    page     = max(1, _safe_int(request.args.get("page", 1), 1))
+    per_page = min(200, max(1, _safe_int(request.args.get("per_page", 50), 50)))
     offset   = (page - 1) * per_page
 
     where_clauses = []
@@ -15669,7 +15686,7 @@ def api_v1_inventory_search():
         return "", 204
 
     q     = request.args.get("q", "").strip()
-    limit = min(100, max(1, int(request.args.get("limit", 20))))
+    limit = min(100, max(1, _safe_int(request.args.get("limit", 20), 20)))
 
     if not q:
         return jsonify({"cards": [], "method": "none"})
