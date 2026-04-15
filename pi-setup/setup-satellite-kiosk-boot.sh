@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Pi 5 Dual-Monitor Kiosk Boot Setup  (v3)
+# HanryxVault — Satellite Pi 5 Dual-Monitor Kiosk Boot Setup  (v4 + mDNS)
 #
 # What this configures:
 #   Monitor 1 (HDMI-0) → /admin   — staff admin portal
@@ -11,6 +11,9 @@
 #
 # Features:
 #   • Asks for main Pi's IP or hostname during setup
+#   • Auto-discovers main Pi via mDNS (hanryxvault.local) — IP changes don't break anything
+#   • Branded "Connecting…" splash screen shown while main Pi boots up
+#   • Splash auto-redirects to admin/kiosk once server is ready (no timeout crash)
 #   • Detects Wayland (Pi 5 Bookworm default) vs X11 automatically
 #   • Hardware-accelerated video decode for smooth Pokémon playback
 #   • GPU memory bump to 256 MB for dual 1080p + video
@@ -57,12 +60,29 @@ fi
 
 echo -e "${CYAN}  The satellite Pi connects to the main Pi's POS server.${NC}"
 echo -e "${CYAN}  The main Pi runs Docker and serves the admin + kiosk pages.${NC}"
+echo -e "${CYAN}  If the main Pi has run its setup, it is also reachable as${NC}"
+echo -e "${CYAN}  ${BOLD}hanryxvault.local${NC}${CYAN} via mDNS — enter that instead of an IP${NC}"
+echo -e "${CYAN}  to survive any DHCP address changes.${NC}"
 echo ""
-read -rp "  Enter the main Pi's IP address [$DEFAULT_IP]: " MAIN_PI_IP
+read -rp "  Enter the main Pi's IP or hostname [$DEFAULT_IP]: " MAIN_PI_IP
 MAIN_PI_IP="${MAIN_PI_IP:-$DEFAULT_IP}"
+
+# Auto-detect via mDNS if user left blank or typed "auto"
+if [[ "${MAIN_PI_IP,,}" == "auto" || "${MAIN_PI_IP,,}" == "discover" ]]; then
+    note "Trying mDNS discovery for hanryxvault.local …"
+    RESOLVED=$(avahi-resolve-host-name hanryxvault.local 2>/dev/null | awk '{print $2}')
+    if [ -n "$RESOLVED" ]; then
+        MAIN_PI_IP="hanryxvault.local"
+        ok "Discovered main Pi via mDNS: $RESOLVED"
+    else
+        warn "mDNS discovery failed — using default $DEFAULT_IP"
+        MAIN_PI_IP="$DEFAULT_IP"
+    fi
+fi
 
 ADMIN_URL="http://${MAIN_PI_IP}:8080/admin"
 KIOSK_URL="http://${MAIN_PI_IP}:8080/kiosk"
+HEALTH_URL="http://${MAIN_PI_IP}:8080/health"
 
 echo ""
 echo "  User     : $CURRENT_USER"
@@ -78,6 +98,7 @@ cat > "$CONFIG_FILE" << EOF
 MAIN_PI_IP=$MAIN_PI_IP
 ADMIN_URL=$ADMIN_URL
 KIOSK_URL=$KIOSK_URL
+HEALTH_URL=$HEALTH_URL
 EOF
 chown "$CURRENT_USER:$CURRENT_USER" "$CONFIG_FILE"
 ok "Config saved → $CONFIG_FILE"
@@ -94,13 +115,24 @@ apt-get install -y -qq \
   chromium-browser \
   unclutter \
   curl \
+  avahi-daemon \
+  avahi-utils \
+  libnss-mdns \
   2>/dev/null || \
 apt-get install -y -qq \
   chromium \
   unclutter \
   curl \
+  avahi-daemon \
+  avahi-utils \
+  libnss-mdns \
   2>/dev/null || true
-ok "Packages ready (chromium, unclutter, curl)"
+ok "Packages ready (chromium, unclutter, curl, avahi)"
+
+# Enable avahi so the satellite can resolve hanryxvault.local
+systemctl enable avahi-daemon 2>/dev/null || true
+systemctl restart avahi-daemon 2>/dev/null || true
+ok "mDNS (avahi) running — hanryxvault.local resolution enabled"
 
 # ── 3. Increase swap to 512 MB (smoother dual-monitor + video performance) ──
 info "Setting swap to 512 MB…"
@@ -183,7 +215,7 @@ info "Writing dual-monitor launcher…"
 cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Dual-Monitor Kiosk Launcher
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v4 + mDNS + splash)
 # Connects to the main Pi's POS server — no Docker needed on this Pi.
 # =============================================================================
 
@@ -191,6 +223,8 @@ LOG_FILE="/var/log/hanryx-kiosk.log"
 CONFIG_FILE="$HOME/.hanryx/satellite.conf"
 PROFILE_ADMIN="$HOME/.hanryx/admin-profile"
 PROFILE_KIOSK="$HOME/.hanryx/kiosk-profile"
+SPLASH_KIOSK="/tmp/hvault-splash-kiosk.html"
+SPLASH_ADMIN="/tmp/hvault-splash-admin.html"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
@@ -204,9 +238,31 @@ if [ -f "$CONFIG_FILE" ]; then
 else
     ADMIN_URL="http://192.168.86.45:8080/admin"
     KIOSK_URL="http://192.168.86.45:8080/kiosk"
+    HEALTH_URL="http://192.168.86.45:8080/health"
 fi
-log "Admin URL: $ADMIN_URL"
-log "Kiosk URL: $KIOSK_URL"
+# Derive HEALTH_URL from KIOSK_URL if not saved (backward compat)
+HEALTH_URL="${HEALTH_URL:-${KIOSK_URL%/kiosk}/health}"
+log "Admin URL:  $ADMIN_URL"
+log "Kiosk URL:  $KIOSK_URL"
+log "Health URL: $HEALTH_URL"
+
+# ── mDNS: try hanryxvault.local if IP unreachable ────────────────────────────
+MAIN_PI_IP="${MAIN_PI_IP:-192.168.86.45}"
+if ! curl -sf --max-time 1 "$HEALTH_URL" > /dev/null 2>&1; then
+    MDNS_IP=$(avahi-resolve-host-name hanryxvault.local 2>/dev/null | awk '{print $2}')
+    if [ -n "$MDNS_IP" ] && [ "$MDNS_IP" != "$MAIN_PI_IP" ]; then
+        log "mDNS: hanryxvault.local resolved to $MDNS_IP (was $MAIN_PI_IP) — updating URLs"
+        MAIN_PI_IP="$MDNS_IP"
+        ADMIN_URL="http://${MDNS_IP}:8080/admin"
+        KIOSK_URL="http://${MDNS_IP}:8080/kiosk"
+        HEALTH_URL="http://${MDNS_IP}:8080/health"
+        # Persist updated IP for next boot
+        sed -i "s|^MAIN_PI_IP=.*|MAIN_PI_IP=$MDNS_IP|" "$CONFIG_FILE" 2>/dev/null || true
+        sed -i "s|^ADMIN_URL=.*|ADMIN_URL=$ADMIN_URL|" "$CONFIG_FILE" 2>/dev/null || true
+        sed -i "s|^KIOSK_URL=.*|KIOSK_URL=$KIOSK_URL|" "$CONFIG_FILE" 2>/dev/null || true
+        sed -i "s|^HEALTH_URL=.*|HEALTH_URL=$HEALTH_URL|" "$CONFIG_FILE" 2>/dev/null || true
+    fi
+fi
 
 # ── Detect display server (Wayland vs X11) ───────────────────────────────────
 if [ "$XDG_SESSION_TYPE" = "wayland" ] || pgrep -x labwc > /dev/null 2>&1; then
@@ -225,25 +281,71 @@ if [ "$DISPLAY_SERVER" = "x11" ]; then
     xset s noblank 2>/dev/null || true
 fi
 
-# ── Hide mouse cursor (unclutter works on both X11 and XWayland) ─────────────
+# ── Hide mouse cursor ─────────────────────────────────────────────────────────
 unclutter -idle 3 -root 2>/dev/null &
 
-# ── Wait for the main Pi's POS server to respond (up to 120 s) ──────────────
-log "Waiting for POS server at $ADMIN_URL …"
-READY=0
-for i in $(seq 1 60); do
-    if curl -sf --max-time 2 "$ADMIN_URL" > /dev/null 2>&1; then
-        READY=1
-        break
-    fi
-    sleep 2
-done
+# ── Write branded splash pages ───────────────────────────────────────────────
+# Each splash polls /health and auto-navigates to the real URL when ready.
+write_splash() {
+    local target_url="$1"
+    local label="$2"
+    local out_file="$3"
+    cat > "$out_file" << HTMLEOF
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Connecting…</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0a;color:#fff;font-family:'Segoe UI',sans-serif;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       height:100vh;overflow:hidden}
+  .logo{font-size:72px;margin-bottom:28px;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}
+  h1{font-size:36px;font-weight:900;color:#facc15;letter-spacing:2px;margin-bottom:8px}
+  .sub{font-size:15px;color:#555;margin-bottom:48px;letter-spacing:1px}
+  .dot-wrap{display:flex;gap:12px;margin-bottom:36px}
+  .dot{width:12px;height:12px;border-radius:50%;background:#facc15;
+       animation:bounce 1.4s ease-in-out infinite}
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+  .status{font-size:13px;color:#333;min-height:20px;letter-spacing:.5px}
+  .label{position:fixed;bottom:20px;right:24px;font-size:11px;color:#222;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="logo">🃏</div>
+<h1>HanryxVault</h1>
+<p class="sub">Trading Card Shop</p>
+<div class="dot-wrap"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+<p class="status" id="st">Connecting to POS server…</p>
+<div class="label">${label}</div>
+<script>
+var TARGET = "${target_url}";
+var HEALTH = "${HEALTH_URL}";
+var attempts = 0;
+function check() {
+  attempts++;
+  document.getElementById('st').textContent =
+    'Connecting to POS server… (attempt ' + attempts + ')';
+  fetch(HEALTH, {cache:'no-store', signal: AbortSignal.timeout(2000)})
+    .then(function(r){ if(r.ok){ window.location.replace(TARGET); } else { retry(); } })
+    .catch(function(){ retry(); });
+}
+function retry() { setTimeout(check, 2000); }
+check();
+</script>
+</body>
+</html>
+HTMLEOF
+}
 
-if [ "$READY" -eq 0 ]; then
-    log "WARNING: POS server not responding after 120 s — launching anyway"
-else
-    log "POS server is ready"
-fi
+write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
+write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
+log "Splash pages written"
 
 # ── Detect monitor layout ─────────────────────────────────────────────────────
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
@@ -277,6 +379,9 @@ COMMON_FLAGS=(
     --disable-extensions
     --disable-plugins
     --process-per-site
+    # Allow file:// to fetch http:// (for splash page health polling)
+    --allow-file-access-from-files
+    --disable-web-security
 )
 
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
@@ -289,23 +394,35 @@ CHROMIUM_BIN=$(command -v chromium-browser 2>/dev/null \
                || echo "chromium-browser")
 
 # ── Launch function with watchdog ────────────────────────────────────────────
+# On first launch: open the splash page (which auto-redirects to real URL).
+# On restart (crash recovery): go straight to real URL (server already up).
 launch_with_watchdog() {
     local name="$1"
-    local url="$2"
-    local profile="$3"
-    local pos_x="$4"
+    local real_url="$2"
+    local splash_file="$3"
+    local profile="$4"
+    local pos_x="$5"
+    local first_run=1
 
     mkdir -p "$profile"
-
-    log "Launching $name at $url (position $pos_x,0)"
+    log "Launching $name (position ${pos_x},0)"
 
     while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash_file}"
+            first_run=0
+        else
+            # After a crash, server is likely still running — go direct
+            START_URL="$real_url"
+        fi
+
+        log "$name → $START_URL"
         "$CHROMIUM_BIN" \
             --kiosk \
             --window-position="${pos_x},0" \
             --user-data-dir="$profile" \
             "${COMMON_FLAGS[@]}" \
-            "$url" \
+            "$START_URL" \
             >> "$LOG_FILE" 2>&1
 
         EXIT_CODE=$?
@@ -316,16 +433,16 @@ launch_with_watchdog() {
 
 # ── Start Monitor 1: staff admin ─────────────────────────────────────────────
 launch_with_watchdog "Admin (Monitor 1)" "$ADMIN_URL" \
-    "$PROFILE_ADMIN" 0 &
+    "$SPLASH_ADMIN" "$PROFILE_ADMIN" 0 &
 
 # Small delay so Monitor 1 claims focus first
 sleep 4
 
 # ── Start Monitor 2: customer kiosk ─────────────────────────────────────────
 launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
-    "$PROFILE_KIOSK" "$MONITOR2_X" &
+    "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" &
 
-log "Both windows launched — watchdog running"
+log "Both windows launched — watchdog + mDNS fallback active"
 wait
 LAUNCH
 
@@ -392,11 +509,13 @@ echo -e "${BOLD}  ============================================================${
 echo -e "${GREEN}  All done — reboot to activate.${NC}"
 echo ""
 echo "  On every boot the satellite Pi will:"
-echo "    1.  Wait for the main Pi's POS server to be ready"
-echo "    2.  Monitor 1 (HDMI-0) → /admin   — staff admin"
-echo "    3.  Monitor 2 (HDMI-1) → /kiosk   — customer screen"
-echo "    4.  Auto-restart both windows if they ever crash"
-echo "    5.  Never sleep or blank either screen"
+echo "    1.  Show a branded 'Connecting…' splash on both screens immediately"
+echo "    2.  Resolve the main Pi via mDNS (hanryxvault.local) if IP changed"
+echo "    3.  Splash auto-redirects once /health responds — no timeout crash"
+echo "    4.  Monitor 1 (HDMI-0) → /admin   — staff admin"
+echo "    5.  Monitor 2 (HDMI-1) → /kiosk   — customer screen"
+echo "    6.  Auto-restart both windows if they crash (goes direct on restart)"
+echo "    7.  Never sleep or blank either screen"
 echo ""
 echo -e "${CYAN}  Main Pi IP:${NC} $MAIN_PI_IP"
 echo -e "${CYAN}  To change later:${NC} edit $CONFIG_FILE and reboot"

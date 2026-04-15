@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Main Pi Kiosk Boot Setup  (v2 — fully offline-safe)
+# HanryxVault — Main Pi Kiosk Boot Setup  (v3 — offline-safe + mDNS)
 #
 # Configures the Pi to:
 #   1. Auto-start Docker Compose (POS server) on every boot — works offline
@@ -12,6 +12,8 @@
 #   7. Network timeout guard — never hangs waiting for internet
 #   8. Persistent Chromium profile (survives crashes, keeps login session)
 #   9. Logs everything to /var/log/hanryx-kiosk.log
+#  10. mDNS via avahi — reachable as hanryxvault.local on the LAN
+#  11. Optional static IP guard — prevents DHCP IP changes
 #
 # Run once on the main Pi:
 #   sudo bash ~/hanryx-vault-pos/pi-setup/setup-kiosk-boot.sh
@@ -102,14 +104,63 @@ apt-get install -y -qq \
   unclutter \
   curl \
   git \
+  avahi-daemon \
+  avahi-utils \
+  libnss-mdns \
   2>/dev/null || \
 apt-get install -y -qq \
   chromium \
   unclutter \
   curl \
   git \
+  avahi-daemon \
+  avahi-utils \
+  libnss-mdns \
   2>/dev/null || true
-ok "Packages ready (chromium, unclutter, curl, git)"
+ok "Packages ready (chromium, unclutter, curl, git, avahi)"
+
+# ── 5b. mDNS — advertise this Pi as hanryxvault.local ─────────────────────
+info "Configuring mDNS hostname (hanryxvault.local)…"
+# Set the hostname
+hostnamectl set-hostname hanryxvault 2>/dev/null || hostname hanryxvault 2>/dev/null || true
+# Persist hostname
+echo "hanryxvault" > /etc/hostname 2>/dev/null || true
+# Set avahi hostname to match
+AVAHI_CONF="/etc/avahi/avahi-daemon.conf"
+if [ -f "$AVAHI_CONF" ]; then
+    sed -i 's/^#\?host-name=.*/host-name=hanryxvault/' "$AVAHI_CONF" 2>/dev/null || true
+fi
+# Enable and start avahi
+systemctl enable avahi-daemon 2>/dev/null || true
+systemctl restart avahi-daemon 2>/dev/null || true
+ok "mDNS ready — this Pi is now reachable as hanryxvault.local"
+
+# ── 5c. Static IP guard (optional — prevents DHCP from changing IP) ────────
+info "Checking current IP address…"
+CURRENT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+note "Current IP: ${CURRENT_IP:-unknown}"
+echo ""
+read -rp "  Lock this IP as static via dhcpcd? [y/N]: " LOCK_IP
+if [[ "${LOCK_IP,,}" == "y" ]]; then
+    IFACE=$(ip route show default 2>/dev/null | awk '/default/ {print $5}' | head -1)
+    GATEWAY=$(ip route show default 2>/dev/null | awk '/default/ {print $3}' | head -1)
+    DHCPCD="/etc/dhcpcd.conf"
+    if grep -q "HanryxVault static IP" "$DHCPCD" 2>/dev/null; then
+        note "Static IP already configured in dhcpcd.conf — skipping"
+    else
+        cat >> "$DHCPCD" << EOF
+
+# ── HanryxVault static IP ─────────────────────────────────────────
+interface ${IFACE:-eth0}
+static ip_address=${CURRENT_IP}/24
+static routers=${GATEWAY:-192.168.86.1}
+static domain_name_servers=8.8.8.8 8.8.4.4
+EOF
+        ok "Static IP ${CURRENT_IP} locked for interface ${IFACE} in dhcpcd.conf"
+    fi
+else
+    note "Skipping static IP — using mDNS (hanryxvault.local) for satellite discovery"
+fi
 
 # ── 6. Increase swap to 512 MB (smoother video + multi-tab) ──────────────
 info "Setting swap to 512 MB…"
@@ -237,21 +288,22 @@ else
     log "Skipping git pull (offline)"
 fi
 
-# ── Wait for the POS server to respond (up to 90 s) ──────────────────────
-log "Waiting for POS server…"
+# ── Wait for the POS server to respond via /health (up to 90 s) ──────────
+HEALTH_URL="http://localhost:8080/health"
+log "Waiting for POS server at $HEALTH_URL …"
 READY=0
 for i in $(seq 1 45); do
-    if curl -sf --max-time 2 "$KIOSK_URL" > /dev/null 2>&1; then
+    if curl -sf --max-time 2 "$HEALTH_URL" > /dev/null 2>&1; then
         READY=1
+        log "POS server is ready (attempt $i)"
         break
     fi
+    [ $((i % 5)) -eq 0 ] && log "Still waiting… attempt $i/45"
     sleep 2
 done
 
 if [ "$READY" -eq 0 ]; then
     log "WARNING: POS server not responding after 90 s — launching anyway"
-else
-    log "POS server is ready"
 fi
 
 # ── Chromium flags — Pi 5 hardware acceleration + kiosk hardening ────────

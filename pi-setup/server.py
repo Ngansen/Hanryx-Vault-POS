@@ -17453,11 +17453,70 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     renderCart(s);
   }}
 
-  var es=new EventSource("/kiosk/stream");
-  es.onmessage=function(e){{
-    try{{ onData(JSON.parse(e.data)); }}catch(err){{ console.warn("[kiosk]",err); }}
-  }};
-  es.onerror=function(){{ console.log("[kiosk] SSE reconnecting…"); }};
+/* ── SSE connection with visible reconnect overlay ───────────────────────── */
+  var _sse = null;
+  var _sseBackoff = 2000;   // start at 2 s, doubles to 30 s max
+  var _sseLostAt  = 0;
+  var _sseOverlay = null;
+
+  function _sseGetOverlay(){{
+    if(!_sseOverlay){{
+      var o=document.createElement("div");
+      o.id="sse-reconnect-overlay";
+      o.style.cssText=[
+        "position:fixed","top:0","left:0","width:100%","height:100%",
+        "background:rgba(0,0,0,0.82)","display:none","z-index:9999",
+        "flex-direction:column","align-items:center","justify-content:center",
+        "font-family:sans-serif"
+      ].join(";");
+      o.innerHTML=[
+        '<div style="font-size:48px;margin-bottom:20px;animation:pulse 1.8s ease-in-out infinite">⚡</div>',
+        '<div style="font-size:22px;font-weight:700;color:#facc15;margin-bottom:8px">Reconnecting to POS…</div>',
+        '<div id="sse-rc-status" style="font-size:13px;color:#555">Please wait</div>',
+        '<style>@keyframes pulse{{0%,100%{{opacity:.5;transform:scale(1)}}50%{{opacity:1;transform:scale(1.1)}}}}</style>'
+      ].join("");
+      document.body.appendChild(o);
+      _sseOverlay=o;
+    }}
+    return _sseOverlay;
+  }}
+
+  function _sseShowOverlay(msg){{
+    var o=_sseGetOverlay();
+    o.style.display="flex";
+    var st=document.getElementById("sse-rc-status");
+    if(st) st.textContent=msg||"Reconnecting…";
+  }}
+
+  function _sseHideOverlay(){{
+    if(_sseOverlay) _sseOverlay.style.display="none";
+  }}
+
+  function _sseConnect(){{
+    if(_sse){{ try{{_sse.close();}}catch(e){{}} }}
+    _sse=new EventSource("/kiosk/stream");
+    _sse.onmessage=function(e){{
+      _sseBackoff=2000;
+      _sseLostAt=0;
+      _sseHideOverlay();
+      try{{ onData(JSON.parse(e.data)); }}catch(err){{ console.warn("[kiosk]",err); }}
+    }};
+    _sse.onerror=function(){{
+      if(!_sseLostAt) _sseLostAt=Date.now();
+      var lostSec=Math.round((Date.now()-_sseLostAt)/1000);
+      if(lostSec>=5){{
+        // Show overlay only after 5 s of silence (avoids flicker on brief drops)
+        _sseShowOverlay("Lost connection "+lostSec+"s ago — retrying in "+(_sseBackoff/1000)+"s…");
+      }}
+      try{{_sse.close();}}catch(e){{}}
+      setTimeout(function(){{
+        _sseBackoff=Math.min(_sseBackoff*2, 30000);
+        _sseConnect();
+      }}, _sseBackoff);
+    }};
+  }}
+
+  _sseConnect();
 }})();
 
 /* ══════════════════════════════════════════════════════════════════════
