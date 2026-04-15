@@ -348,7 +348,13 @@ def _handle_500(e):
         f'display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column">'
         f'<h1 style="color:#f59e0b;font-size:48px">500</h1>'
         f'<p>Something went wrong — the error has been logged.</p>'
-        f'<a href="/admin" style="color:#f59e0b;margin-top:16px">Back to Admin</a>'
+        f'<div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;justify-content:center">'
+        f'<a href="/admin" style="color:#f59e0b">Dashboard</a>'
+        f'<a href="/admin/market" style="color:#f59e0b">Market</a>'
+        f'<a href="/admin/system" style="color:#f59e0b">System</a>'
+        f'<a href="/admin/logs" style="color:#f59e0b">Logs</a>'
+        f'</div>'
+        f'<p style="color:#555;font-size:12px;margin-top:20px">If all links fail, press F11 to exit fullscreen</p>'
         f'</body></html>'
     ), 500
 
