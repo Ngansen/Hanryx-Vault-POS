@@ -100,6 +100,9 @@ services:
       # SMTP_USER:         you@gmail.com
       # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
       # NOTIFY_EMAIL:      alerts@example.com
+    volumes:
+      - pos-data:/data
+      - card-images:/app/card-images
     depends_on:
       db:
         condition: service_healthy
@@ -157,3 +160,5 @@ services:
 
 volumes:
   pgdata:
+  pos-data:
+  card-images:
