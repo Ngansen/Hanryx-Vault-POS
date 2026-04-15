@@ -2136,6 +2136,32 @@ def init_db():
             updated   BIGINT  NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
 
+        # ── Digital receipts — QR-scannable receipts shown on kiosk after sale ─
+        f"""CREATE TABLE IF NOT EXISTS digital_receipts (
+            token       TEXT PRIMARY KEY,
+            items_json  TEXT NOT NULL DEFAULT '[]',
+            subtotal    DOUBLE PRECISION NOT NULL DEFAULT 0,
+            tax         DOUBLE PRECISION NOT NULL DEFAULT 0,
+            total       DOUBLE PRECISION NOT NULL DEFAULT 0,
+            payment_method TEXT NOT NULL DEFAULT '',
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            expires_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_receipt_expires ON digital_receipts(expires_at)",
+
+        # ── Offline sale queue — sales queued locally while server is unavailable ─
+        f"""CREATE TABLE IF NOT EXISTS offline_sale_queue (
+            id          BIGSERIAL PRIMARY KEY,
+            client_id   TEXT NOT NULL DEFAULT '',
+            items_json  TEXT NOT NULL DEFAULT '[]',
+            total       DOUBLE PRECISION NOT NULL DEFAULT 0,
+            payment_method TEXT NOT NULL DEFAULT 'unknown',
+            queued_at   BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            synced      INTEGER NOT NULL DEFAULT 0,
+            synced_at   BIGINT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_offline_queue_pending ON offline_sale_queue(synced) WHERE synced = 0",
+
         # ── Storefront sync queue — tracks unsynchronised stock/price changes ──
         f"""CREATE TABLE IF NOT EXISTS unsynced_changes (
             id          BIGSERIAL PRIMARY KEY,
@@ -16132,18 +16158,20 @@ async function enrichOne(qr) {{
 _KIOSK_SETTINGS_PATH = "/data/kiosk_settings.json"
 
 _KIOSK_DEFAULT: dict = {
-    "enabled":      True,
-    "store_name":   "HanryxVault",
-    "tagline":      "Trading Card Shop",
-    "idle_message": "Welcome! Ask us about today's specials.",
-    "show_social":  True,
-    "instagram":    "@hanryxvault",
-    "website":      "hanryxvault.cards",
-    "bg_color":     "#0a0a0a",
-    "accent_color": "#facc15",
-    "show_tax":     True,
-    "video_mode":   False,
-    "video_url":    "",
+    "enabled":           True,
+    "store_name":        "HanryxVault",
+    "tagline":           "Trading Card Shop",
+    "idle_message":      "Welcome! Ask us about today's specials.",
+    "show_social":       True,
+    "instagram":         "@hanryxvault",
+    "website":           "hanryxvault.cards",
+    "bg_color":          "#0a0a0a",
+    "accent_color":      "#facc15",
+    "show_tax":          True,
+    "video_mode":        False,
+    "video_url":         "",
+    "show_receipt_qr":   True,   # show QR receipt screen after sale
+    "price_confirm_ms":  2200,   # ms to show per-item price confirm flash
 }
 
 
@@ -16243,6 +16271,227 @@ def kiosk_payment_processing():
     return jsonify(ok=True)
 
 
+@app.route("/kiosk/sale-complete", methods=["POST"])
+def kiosk_sale_complete():
+    """
+    Call this after a sale is finalised (Zettle confirm, cash received, etc.).
+    Generates a digital receipt token, broadcasts it to the kiosk display as a
+    scannable QR so the customer can grab their receipt.
+    Body: { items:[{name,price,qty}], subtotal, tax, total, payment_method }
+    Returns: { token, receipt_url }
+    """
+    data    = request.get_json(silent=True) or {}
+    items   = data.get("items", [])
+    sub     = float(data.get("subtotal") or data.get("total") or 0)
+    tax     = float(data.get("tax") or 0)
+    total   = float(data.get("total") or sub)
+    method  = (data.get("payment_method") or "").strip()
+    import secrets as _sec
+    token   = _sec.token_urlsafe(10)   # ~80-bit, URL-safe
+    expires = _now_ms() + 24 * 3_600_000        # valid 24 h
+
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO digital_receipts "
+            "(token, items_json, subtotal, tax, total, payment_method, expires_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (token, json.dumps(items), sub, tax, total, method, expires),
+        )
+        db.commit()
+    except Exception:
+        log.exception("[kiosk/sale-complete] Could not save receipt")
+        token = _sec.token_urlsafe(10)  # still return a token; page won't load
+
+    receipt_url = f"/receipt/{token}"
+    # Broadcast to kiosk: paid=True + receipt info so the display can show QR
+    with _kiosk_cart_lock:
+        _kiosk_cart.update({
+            "paid":            True,
+            "receipt_token":   token,
+            "receipt_url":     receipt_url,
+            "payment_method":  method,
+            "items":           items,
+            "subtotal":        sub,
+            "tax":             tax,
+            "total":           total,
+        })
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    return jsonify(ok=True, token=token, receipt_url=receipt_url)
+
+
+@app.route("/receipt/<token>")
+def receipt_view(token):
+    """Public receipt page — customer scans QR on kiosk to see their receipt."""
+    try:
+        db  = get_db()
+        row = db.execute(
+            "SELECT * FROM digital_receipts WHERE token=%s AND expires_at > %s",
+            (token, _now_ms()),
+        ).fetchone()
+    except Exception:
+        row = None
+
+    if not row:
+        return (
+            '<html><body style="background:#0d0d0d;color:#e0e0e0;font-family:sans-serif;'
+            'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">'
+            '<div style="text-align:center"><div style="font-size:48px">🔗</div>'
+            '<h2 style="color:#facc15;margin:16px 0">Receipt not found</h2>'
+            '<p style="color:#555">This receipt may have expired or the link is invalid.</p></div>'
+            '</body></html>'
+        ), 404
+
+    try:
+        items = json.loads(row["items_json"])
+    except Exception:
+        items = []
+
+    accent = "#facc15"
+    rows_html = "".join(
+        f'<tr><td style="padding:10px 16px;color:#e0e0e0;border-bottom:1px solid #1a1a1a">'
+        f'{_html.escape(str(it.get("name","")))} '
+        f'<span style="color:#555;font-size:12px">x{it.get("qty",1)}</span></td>'
+        f'<td style="padding:10px 16px;text-align:right;color:{accent};font-weight:700;border-bottom:1px solid #1a1a1a">'
+        f'£{float(it.get("price",0)):.2f}</td></tr>'
+        for it in items
+    )
+    tax_row = (
+        f'<tr><td style="padding:8px 16px;color:#555">Tax</td>'
+        f'<td style="padding:8px 16px;text-align:right;color:#555">£{float(row["tax"]):.2f}</td></tr>'
+        if float(row["tax"]) > 0 else ""
+    )
+    method_badge = (
+        f'<span style="background:#1a1a1a;border:1px solid #222;border-radius:6px;'
+        f'padding:3px 10px;font-size:12px;color:#888">Paid by {_html.escape(row["payment_method"])}</span>'
+        if row["payment_method"] else ""
+    )
+    import datetime as _dt
+    ts = _dt.datetime.fromtimestamp(row["created_at"] / 1000).strftime("%d %b %Y, %H:%M")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your Receipt — HanryxVault</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0d0d0d;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  min-height:100vh;padding:24px 16px;display:flex;justify-content:center;align-items:flex-start}}
+.card{{background:#111;border:1px solid #1a1a1a;border-radius:18px;max-width:440px;
+  width:100%;padding:0;overflow:hidden;box-shadow:0 0 40px {accent}11}}
+.header{{background:linear-gradient(135deg,#111 0%,#0d0d0d 100%);
+  border-bottom:1px solid #1a1a1a;padding:28px 24px;text-align:center}}
+.logo{{font-size:32px;margin-bottom:8px}}
+.store-name{{font-size:22px;font-weight:900;color:{accent};letter-spacing:1px}}
+.date{{font-size:12px;color:#444;margin-top:4px}}
+table{{width:100%;border-collapse:collapse}}
+.total-row{{background:#0d0d0d}}
+.total-row td{{padding:16px;font-size:20px;font-weight:900;color:{accent};border-top:2px solid {accent}}}
+.footer{{padding:20px 24px;text-align:center;border-top:1px solid #1a1a1a}}
+.thanks{{font-size:16px;color:#555;margin-bottom:12px}}
+.tagline{{font-size:12px;color:#333;margin-top:8px}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div class="logo">🃏</div>
+    <div class="store-name">HanryxVault</div>
+    <div class="date">{ts} {method_badge}</div>
+  </div>
+  <table>
+    <tbody>{rows_html}</tbody>
+    {tax_row}
+    <tr class="total-row">
+      <td>Total</td>
+      <td style="text-align:right">£{float(row["total"]):.2f}</td>
+    </tr>
+  </table>
+  <div class="footer">
+    <div class="thanks">Thank you for supporting my small business! 🙏</div>
+    <div class="tagline">HanryxVault · Pokémon TCG · Card Singles · Sealed Product</div>
+  </div>
+</div>
+</body></html>"""
+
+
+@app.route("/sales/queue", methods=["POST"])
+def sales_queue_submit():
+    """
+    Offline-queue drain endpoint.
+    Tablet/browser calls this with locally-queued sales when connectivity returns.
+    Body: { client_id, sales: [{items, total, payment_method, queued_at}] }
+    """
+    data     = request.get_json(force=True, silent=True) or {}
+    client   = (data.get("client_id") or "").strip()[:64]
+    sales    = data.get("sales", [])
+    if not isinstance(sales, list):
+        return jsonify({"error": "sales must be array"}), 400
+
+    db = get_db()
+    saved = 0
+    for s in sales:
+        if not isinstance(s, dict):
+            continue
+        try:
+            db.execute(
+                "INSERT INTO offline_sale_queue "
+                "(client_id, items_json, total, payment_method, queued_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (
+                    client,
+                    json.dumps(s.get("items", [])),
+                    float(s.get("total") or 0),
+                    str(s.get("payment_method") or "offline"),
+                    _safe_int(s.get("queued_at") or _now_ms(), _now_ms()),
+                ),
+            )
+            saved += 1
+        except Exception:
+            log.exception("[sales/queue] Failed to save queued sale")
+
+    if saved:
+        # Also write to sale_history so stats update correctly
+        try:
+            for s in sales:
+                if not isinstance(s, dict):
+                    continue
+                for it in (s.get("items") or []):
+                    if not isinstance(it, dict):
+                        continue
+                    name  = (it.get("name") or "").strip()
+                    price = float(it.get("price") or 0)
+                    qty   = _safe_int(it.get("qty") or it.get("quantity") or 1, 1)
+                    ts_ms = _safe_int(s.get("queued_at") or _now_ms(), _now_ms())
+                    if name and price > 0:
+                        db.execute(
+                            "INSERT INTO sale_history (name, price, quantity, sold_at) "
+                            "VALUES (%s, %s, %s, %s)",
+                            (name, price, qty, ts_ms),
+                        )
+        except Exception:
+            log.exception("[sales/queue] Failed to write sale_history")
+
+    db.commit()
+    _audit_write("sales.queue.drain", f"client={client}", f"saved={saved}")
+    return jsonify({"ok": True, "saved": saved})
+
+
+@app.route("/sales/queue/pending", methods=["GET"])
+@require_admin
+def sales_queue_pending():
+    """Admin view of unsynced offline sales."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, client_id, total, payment_method, queued_at, synced "
+        "FROM offline_sale_queue ORDER BY queued_at DESC LIMIT 100"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/kiosk/stream")
 def kiosk_sse_stream():
     """SSE stream — kiosk display subscribes here for live cart updates."""
@@ -16272,17 +16521,19 @@ def kiosk_sse_stream():
 @app.route("/kiosk")
 def kiosk_display():
     """Customer-facing kiosk display — one screen, four modes: idle / cart / trade / thankyou."""
-    ks       = _load_kiosk_settings()
-    bg       = ks["bg_color"]
-    accent   = ks["accent_color"]
-    name     = ks["store_name"]
-    tagline  = ks["tagline"]
-    idle_msg = ks["idle_message"]
-    ig       = ks["instagram"] if ks.get("show_social") else ""
-    web      = ks["website"]   if ks.get("show_social") else ""
-    enabled  = ks["enabled"]
-    vid_mode = ks.get("video_mode", False)
-    vid_url  = ks.get("video_url", "")
+    ks              = _load_kiosk_settings()
+    bg              = ks["bg_color"]
+    accent          = ks["accent_color"]
+    name            = ks["store_name"]
+    tagline         = ks["tagline"]
+    idle_msg        = ks["idle_message"]
+    ig              = ks["instagram"] if ks.get("show_social") else ""
+    web             = ks["website"]   if ks.get("show_social") else ""
+    enabled         = ks["enabled"]
+    vid_mode        = ks.get("video_mode", False)
+    vid_url         = ks.get("video_url", "")
+    show_receipt_qr = "true" if ks.get("show_receipt_qr", True) else "false"
+    price_confirm_ms = int(ks.get("price_confirm_ms", 2200))
 
     # Parse YouTube URL
     yt_vid, yt_pid = _parse_youtube_id(vid_url)
@@ -16351,6 +16602,10 @@ function toggleMute(btn) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name}</title>
+<!-- QRCode.js — tiny library for generating QR codes client-side -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+        integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSAX0tiW3oBn88Z5YDwuP3V34FIzAFJd5cSA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 {_yt_api_tag}
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
@@ -16457,6 +16712,43 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 #ty h2{{font-size:clamp(42px,8vw,110px);font-weight:900;color:{accent}}}
 #ty p{{font-size:clamp(18px,3vw,42px);color:#ccc;font-weight:300}}
 #ty-method{{font-size:clamp(14px,1.8vw,26px);color:#555;margin-top:6px}}
+
+/* ── PRICE CONFIRM (per-item flash, no backend) ── */
+#price-confirm{{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:18px;text-align:center;padding:60px;
+  background:radial-gradient(circle at 50% 42%,{accent}09 0%,transparent 60%)}}
+#pc-label{{font-size:clamp(13px,1.6vw,20px);color:#555;text-transform:uppercase;
+  letter-spacing:2px}}
+#pc-name{{font-size:clamp(22px,4vw,56px);font-weight:700;color:#fff;line-height:1.25;
+  max-width:75vw}}
+#pc-price{{font-size:clamp(52px,10vw,130px);font-weight:900;color:{accent};
+  letter-spacing:2px;line-height:1;
+  text-shadow:0 0 32px {accent}44;
+  animation:pc-price-pop .45s cubic-bezier(.36,1.1,.46,1.3) both}}
+@keyframes pc-price-pop{{
+  0%{{transform:scale(0.4);opacity:0;filter:brightness(2)}}
+  60%{{transform:scale(1.08);opacity:1}}
+  100%{{transform:scale(1);opacity:1}}
+}}
+#pc-cond{{font-size:clamp(13px,1.4vw,18px);padding:4px 14px;border-radius:8px;
+  background:#1a1a1a;color:#888;border:1px solid #222}}
+#pc-add-more{{font-size:clamp(11px,1.3vw,17px);color:#333;margin-top:8px}}
+
+/* ── RECEIPT QR (shown after sale) ──────────────── */
+#receipt-qr{{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:20px;text-align:center;padding:40px}}
+#rq-icon{{font-size:clamp(42px,7vw,88px)}}
+#rq-msg{{font-size:clamp(20px,3.5vw,48px);font-weight:700;color:#fff}}
+#rq-sub{{font-size:clamp(13px,1.8vw,24px);color:#555;margin-top:-8px}}
+#rq-qr{{background:#fff;border-radius:16px;padding:16px;
+  box-shadow:0 0 40px {accent}33;
+  animation:qr-appear .6s cubic-bezier(.36,1.1,.46,1.3) .15s both}}
+@keyframes qr-appear{{
+  0%{{transform:scale(0.3) rotate(-6deg);opacity:0}}
+  60%{{transform:scale(1.06) rotate(1deg);opacity:1}}
+  100%{{transform:scale(1) rotate(0);opacity:1}}
+}}
+#rq-url{{font-size:clamp(10px,1.1vw,14px);color:#333;margin-top:-4px;word-break:break-all}}
 
 /* ── Disabled ──────────────────────────────────── */
 #dis-overlay{{position:fixed;inset:0;background:{bg};display:flex;align-items:center;
@@ -16805,6 +17097,24 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       <div id="ty-method"></div>
     </div>
 
+    <!-- PRICE CONFIRM (flashes full-screen when an item is added) -->
+    <div id="price-confirm">
+      <div id="pc-label">Item added</div>
+      <div id="pc-name"></div>
+      <div id="pc-price"></div>
+      <div id="pc-cond" style="display:none"></div>
+      <div id="pc-add-more">Scan another card or proceed to payment</div>
+    </div>
+
+    <!-- RECEIPT QR (shown after sale completes) -->
+    <div id="receipt-qr">
+      <div id="rq-icon">🧾</div>
+      <div id="rq-msg">Scan for your receipt</div>
+      <div id="rq-sub">Point your phone camera at the QR code</div>
+      <div id="rq-qr"></div>
+      <div id="rq-url"></div>
+    </div>
+
   </div>
 </div>
 
@@ -16817,6 +17127,8 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   var elTy    = document.getElementById("ty");
   var elCP    = document.getElementById("card-processing");
   var elBP    = document.getElementById("brand-pulse");
+  var elPC    = document.getElementById("price-confirm");
+  var elRQ    = document.getElementById("receipt-qr");
   var elBadge = document.getElementById("mode-badge");
 
   /* clock */
@@ -16945,7 +17257,9 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }}
 
   function showOnly(el, badge){{
-    [elIdle,elCart,elTrade,elTDone,elTy,elCP,elBP].forEach(function(e){{ e.style.display="none"; }});
+    [elIdle,elCart,elTrade,elTDone,elTy,elCP,elBP,elPC,elRQ].forEach(function(e){{
+      if(e) e.style.display="none";
+    }});
     el.style.display="flex";
     if(elBadge) elBadge.textContent = badge||"";
     if(el !== elIdle){{
@@ -16955,60 +17269,152 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }}
 
   function goIdle(){{
+    _prevItemCount = 0;
+    _pendingConfirm = null;
     showOnly(elIdle,"Ready");
     ytPlay();
     if(elUnmute) elUnmute.style.display="flex";
   }}
 
-  /* ── CART mode ── */
+  /* ══════════════════════════════════════════════════
+     PRICE CONFIRM — full-screen item flash
+     Shows when an item is added to the cart.
+     After _PC_DURATION ms, slides back to full cart.
+  ══════════════════════════════════════════════════ */
+  var _PC_DURATION     = {price_confirm_ms};   // ms to show price-confirm (from admin settings)
+  var _SHOW_RECEIPT_QR = {show_receipt_qr};    // show QR receipt after sale (from admin settings)
+  var _pendingConfirm = null;
+  var _pcTimer = null;
+
+  function showPriceConfirm(item, cartState){{
+    if(!item) return;
+    var elName  = document.getElementById("pc-name");
+    var elPrice = document.getElementById("pc-price");
+    var elCond  = document.getElementById("pc-cond");
+    var elLabel = document.getElementById("pc-label");
+    if(elName)  elName.textContent  = item.name  || "";
+    if(elPrice){{ elPrice.textContent = f(item.price);
+                  elPrice.style.animation="none"; void elPrice.offsetWidth; elPrice.style.animation=""; }}
+    if(elCond){{
+      var c = item.condition||"";
+      elCond.textContent = c; elCond.style.display = c ? "" : "none";
+    }}
+    if(elLabel) elLabel.textContent = "Item added — " + f(item.price);
+    spawnSparkles(elPrice);
+    showOnly(elPC, "Item added");
+    clearTimeout(_pcTimer);
+    _pcTimer = setTimeout(function(){{
+      if(_pendingConfirm){{ renderCartView(_pendingConfirm); _pendingConfirm=null; }}
+    }}, _PC_DURATION);
+  }}
+
+  /* ══════════════════════════════════════════════════
+     RECEIPT QR — shown after sale, customer scans QR
+  ══════════════════════════════════════════════════ */
+  var _qrGenerated = "";
+
+  function showReceiptQR(s){{
+    var url = s.receipt_url ? (window.location.origin + s.receipt_url) : "";
+    if(!url) {{ goIdle(); return; }}
+    showOnly(elRQ, "Receipt");
+    var box = document.getElementById("rq-qr");
+    var urlEl = document.getElementById("rq-url");
+    if(urlEl) urlEl.textContent = "";
+    if(box){{
+      if(_qrGenerated !== url){{
+        box.innerHTML = "";
+        try{{
+          new QRCode(box, {{
+            text: url,
+            width:  Math.min(280, window.innerWidth * 0.38),
+            height: Math.min(280, window.innerWidth * 0.38),
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+          }});
+          _qrGenerated = url;
+        }} catch(e){{
+          box.innerHTML = "<span style='color:#555;font-size:12px'>QR unavailable</span>";
+        }}
+      }}
+    }}
+    // Auto-dismiss after 12 s → thank you → idle
+    setTimeout(function(){{
+      showOnly(elTy,"Thank you");
+      var m=document.getElementById("ty-method");
+      if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
+      fireConfetti();
+      setTimeout(function(){{ spawnSparkles(document.querySelector("#ty h2")); }},300);
+      setTimeout(goIdle,6000);
+    }}, 12000);
+  }}
+
+  /* ── CART rendering (inner) ── */
+  function renderCartView(s){{
+    showOnly(elCart,"Checkout");
+    var ci=document.getElementById("cart-items");
+    ci.innerHTML=s.items.map(function(it,idx){{
+      var cond=it.condition?" <span class='ci-cond'>"+esc(it.condition)+"</span>":"";
+      return "<div class='ci' style='animation-delay:"+(idx*0.06)+"s'>"
+        +"<div class='ci-name'>"+esc(it.name||"")+cond+"</div>"
+        +"<div class='ci-qty'>x"+(it.qty||1)+"</div>"
+        +"<div class='ci-price'>"+f(it.price)+"</div></div>";
+    }}).join("");
+    var sub=s.subtotal||0,tax=s.tax||0,tot=s.total||0;
+    var rows="<div class='tr'><span>Subtotal</span><span class='tv'>"+f(sub)+"</span></div>";
+    if(tax>0) rows+="<div class='tr'><span>Tax</span><span class='tv'>"+f(tax)+"</span></div>";
+    rows+="<div class='tr grand'><span>TOTAL</span><span class='tv'>"+f(tot)+"</span></div>";
+    document.getElementById("cart-totals").innerHTML=rows;
+    spawnSparkles(document.querySelector(".tr.grand .tv"));
+  }}
+
+  /* ── CART mode (SSE dispatcher entry) ── */
   var _prevItemCount = 0;
   function renderCart(s){{
     if(s.paid){{
+      _prevItemCount = 0;
+      clearTimeout(_pcTimer); _pendingConfirm = null;
       showOnly(elBP,"Sale complete");
-      var bpLogo = document.getElementById("bp-logo");
+      var bpLogo=document.getElementById("bp-logo");
       if(bpLogo){{ bpLogo.style.animation="none"; void bpLogo.offsetWidth; bpLogo.style.animation=""; }}
-      var bpText = document.getElementById("bp-text");
+      var bpText=document.getElementById("bp-text");
       if(bpText){{ bpText.style.animation="none"; void bpText.offsetWidth; bpText.style.animation=""; }}
-      var bpRO = document.getElementById("bp-ring-outer");
+      var bpRO=document.getElementById("bp-ring-outer");
       if(bpRO){{ bpRO.style.animation="none"; void bpRO.offsetWidth; bpRO.style.animation=""; }}
-      var bpRI = document.getElementById("bp-ring-inner");
+      var bpRI=document.getElementById("bp-ring-inner");
       if(bpRI){{ bpRI.style.animation="none"; void bpRI.offsetWidth; bpRI.style.animation=""; }}
       setTimeout(function(){{
-        showOnly(elTy,"Thank you");
-        var m=document.getElementById("ty-method");
-        if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
-        fireConfetti();
-        setTimeout(function(){{ spawnSparkles(document.querySelector("#ty h2")); }}, 300);
-        setTimeout(goIdle,6000);
+        if(_SHOW_RECEIPT_QR && s.receipt_url){{
+          _qrGenerated = "";   // force re-render each time
+          showReceiptQR(s);
+        }} else {{
+          showOnly(elTy,"Thank you");
+          var m=document.getElementById("ty-method");
+          if(m) m.textContent=s.payment_method ? "Paid by "+s.payment_method : "";
+          fireConfetti();
+          setTimeout(function(){{ spawnSparkles(document.querySelector("#ty h2")); }},300);
+          setTimeout(goIdle,6000);
+        }}
       }}, 2800);
       return;
     }}
     if(s.payment_processing){{
       showOnly(elCP,"Processing payment");
       var cpTot=document.getElementById("cp-total");
-      if(cpTot) cpTot.textContent = s.total ? "£"+parseFloat(s.total).toFixed(2) : "";
+      if(cpTot) cpTot.textContent=s.total ? "£"+parseFloat(s.total).toFixed(2) : "";
       return;
     }}
     if(!s.active||!s.items||!s.items.length){{ _prevItemCount=0; goIdle(); return; }}
-    showOnly(elCart,"Checkout");
-    var ci=document.getElementById("cart-items");
-    var newCount = s.items.length;
-    ci.innerHTML=s.items.map(function(it,idx){{
-      var cond=it.condition?" <span class='ci-cond'>"+esc(it.condition)+"</span>":"";
-      var isNew = idx >= _prevItemCount ? " ci-new" : "";
-      return "<div class='ci"+isNew+"' style='animation-delay:"+(idx*0.06)+"s'><div class='ci-name'>"+esc(it.name)+cond+"</div>"
-        +"<div class='ci-qty'>x"+(it.qty||1)+"</div>"
-        +"<div class='ci-price'>"+f(it.price)+"</div></div>";
-    }}).join("");
-    if(newCount > _prevItemCount && _prevItemCount > 0){{
-      setTimeout(function(){{ spawnSparkles(ci.lastElementChild); }}, 200);
-    }}
+    var newCount=s.items.length;
+    var newItem = (newCount > _prevItemCount) ? s.items[s.items.length-1] : null;
     _prevItemCount = newCount;
-    var sub=s.subtotal||0,tax=s.tax||0,tot=s.total||0;
-    var rows="<div class='tr'><span>Subtotal</span><span class='tv'>"+f(sub)+"</span></div>";
-    if(tax>0) rows+="<div class='tr'><span>Tax</span><span class='tv'>"+f(tax)+"</span></div>";
-    rows+="<div class='tr grand'><span>TOTAL</span><span class='tv'>"+f(tot)+"</span></div>";
-    document.getElementById("cart-totals").innerHTML=rows;
+    if(newItem && newCount > 1){{
+      // Flash price-confirm for the newly added item, then show full cart
+      _pendingConfirm = s;
+      showPriceConfirm(newItem, s);
+    }} else {{
+      renderCartView(s);
+    }}
   }}
 
   /* ── TRADE mode ── */
@@ -17053,6 +17459,120 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }};
   es.onerror=function(){{ console.log("[kiosk] SSE reconnecting…"); }};
 }})();
+
+/* ══════════════════════════════════════════════════════════════════════
+   OFFLINE SALE QUEUE
+   When the tablet/browser can't reach the server, sales are stored in
+   localStorage under key "hvault_offline_queue" as a JSON array.
+   On reconnect, they are automatically drained to /sales/queue.
+   ══════════════════════════════════════════════════════════════════════ */
+(function(){{
+  var QUEUE_KEY    = "hvault_offline_queue";
+  var CLIENT_KEY   = "hvault_client_id";
+  var DRAIN_URL    = "/sales/queue";
+  var HEALTH_URL   = "/health";
+  var _draining    = false;
+  var _serverOnline = true;
+
+  /* Stable per-device client ID stored in localStorage */
+  function getClientId(){{
+    var id = localStorage.getItem(CLIENT_KEY);
+    if(!id){{
+      id = "kiosk-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+      localStorage.setItem(CLIENT_KEY, id);
+    }}
+    return id;
+  }}
+
+  /* Get pending queue */
+  function getQueue(){{
+    try{{ return JSON.parse(localStorage.getItem(QUEUE_KEY)||"[]"); }}
+    catch(e){{ return []; }}
+  }}
+
+  /* Add a sale to the queue */
+  window.hvaultQueueSale = function(items, total, paymentMethod){{
+    var q = getQueue();
+    q.push({{
+      items:          items||[],
+      total:          parseFloat(total)||0,
+      payment_method: paymentMethod||"offline",
+      queued_at:      Date.now()
+    }});
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+    console.log("[offline-queue] Queued sale. Queue length:", q.length);
+    updateOfflineBadge();
+  }};
+
+  /* Drain the queue to the server */
+  function drainQueue(){{
+    if(_draining) return;
+    var q = getQueue();
+    if(!q.length) return;
+    _draining = true;
+    fetch(DRAIN_URL, {{
+      method: "POST",
+      headers: {{"Content-Type":"application/json"}},
+      body: JSON.stringify({{client_id: getClientId(), sales: q}})
+    }})
+    .then(function(r){{ return r.json(); }})
+    .then(function(d){{
+      if(d.ok){{
+        localStorage.removeItem(QUEUE_KEY);
+        console.log("[offline-queue] Drained", d.saved, "sale(s)");
+        updateOfflineBadge();
+      }}
+    }})
+    .catch(function(e){{
+      console.warn("[offline-queue] Drain failed, will retry:", e);
+    }})
+    .finally(function(){{ _draining=false; }});
+  }}
+
+  /* Poll server health; drain queue when it comes back */
+  function pollServer(){{
+    fetch(HEALTH_URL, {{method:"GET",cache:"no-store"}})
+      .then(function(r){{
+        if(r.ok){{
+          if(!_serverOnline){{
+            _serverOnline = true;
+            console.log("[offline-queue] Server back online — draining queue");
+            drainQueue();
+          }}
+          _serverOnline = true;
+        }}
+      }})
+      .catch(function(){{
+        _serverOnline = false;
+        updateOfflineBadge();
+      }});
+  }}
+
+  /* Update the net-badge to also reflect queued sales */
+  function updateOfflineBadge(){{
+    var q = getQueue();
+    if(!q.length) return;
+    var badge = document.getElementById("net-badge");
+    if(badge){{
+      badge.textContent = "⚠️ " + q.length + " sale"+(q.length>1?"s":"")+" queued";
+      badge.className = "offline";
+      badge.title = q.length + " sale(s) queued offline — will sync automatically when server reconnects";
+    }}
+  }}
+
+  /* Listen for browser online event */
+  window.addEventListener("online", function(){{
+    console.log("[offline-queue] Browser online event");
+    drainQueue();
+  }});
+
+  /* Try to drain any leftover queue on page load */
+  drainQueue();
+  /* Check server every 60 s */
+  setInterval(pollServer, 60000);
+  updateOfflineBadge();
+}})();
+
 
 {_yt_init_js}
 {_yt_mute_js}
@@ -17170,6 +17690,28 @@ def admin_kiosk_page():
             (tap 🔊 on the kiosk to unmute).
           </p>
         </div>
+        <hr style="border-color:#1a1a1a;margin:20px 0">
+        <h3 style="color:#facc15;margin-bottom:12px">🧾 Receipt &amp; Confirmation</h3>
+        <p style="color:#555;font-size:12px;margin-bottom:14px">
+          After each sale, a QR code receipt is displayed on the kiosk so the customer
+          can scan it with their phone. The price-confirm flash shows each item's price
+          full-screen as it's scanned in.
+        </p>
+        <div style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+            <input type="checkbox" name="show_receipt_qr" value="1"
+                   {'checked' if ks.get('show_receipt_qr', True) else ''}
+                   style="width:18px;height:18px;accent-color:#facc15">
+            <span style="color:#ccc;font-size:14px">Show QR receipt after each sale</span>
+          </label>
+          <label class="form-label">Price confirm duration (ms)</label>
+          <input class="form-input" type="number" name="price_confirm_ms"
+                 value="{ks.get('price_confirm_ms', 2200)}" min="500" max="8000" step="100"
+                 style="margin-bottom:4px">
+          <p style="color:#444;font-size:11px">
+            How long to flash each item's price full-screen when added (500–8000 ms). Default 2200.
+          </p>
+        </div>
         <div style="display:flex;gap:12px;margin-top:20px">
           <button type="submit" class="btn btn-primary">💾 Save Settings</button>
           <a href="/kiosk" target="_blank" class="btn btn-secondary">🖥️ Open Display</a>
@@ -17254,13 +17796,32 @@ Content-Type: application/json
 POST /kiosk/payment-processing
 {{"total": 69.28}}
 
-# Mark sale as paid (clears card screen → thank-you screen):
+# Mark sale as paid (clears card screen → QR receipt or thank-you):
 POST /kiosk/cart
 {{"paid": true, "payment_method": "Card", "payment_processing": false}}</pre>
         <p style="color:#555;font-size:11px;margin-top:8px">
           Set <code style="color:#facc15">paid: true</code> + <code style="color:#facc15">payment_method</code>
-          to trigger the thank-you screen.
+          to trigger the QR receipt / thank-you screen.
         </p>
+        <h3 style="color:#facc15;margin:14px 0 8px">🧾 Receipt &amp; Offline Queue</h3>
+        <pre style="background:#111;border-radius:6px;padding:12px;font-size:11px;
+                    color:#86efac;overflow-x:auto;line-height:1.6"># Generate a digital receipt and broadcast to kiosk:
+POST /kiosk/sale-complete
+{{"items": [{{"name":"Pikachu V","qty":1,"price":12.99}}],
+  "total": 12.99, "tax": 1.30, "payment_method": "Card"}}
+→ {{"receipt_url": "/receipt/abc123token"}}
+
+# Customer views receipt on phone:
+GET /receipt/&lt;token&gt;   (valid 24 h)
+
+# Drain offline sale queue (tablet calls this when back online):
+POST /sales/queue
+{{"sales": [{{"items":[...],"total":12.99,"payment_method":"Cash",
+             "queued_at":1713000000000}}]}}
+→ {{"saved": 1}}
+
+# Admin view of pending offline sales:
+GET /sales/queue/pending</pre>
       </div>
     </div>
   </div>
@@ -17272,18 +17833,20 @@ POST /kiosk/cart
 @require_admin
 def admin_kiosk_save():
     settings = {
-        "enabled":      bool(request.form.get("enabled")),
-        "store_name":   request.form.get("store_name",   "HanryxVault").strip(),
-        "tagline":      request.form.get("tagline",      "Trading Card Shop").strip(),
-        "idle_message": request.form.get("idle_message", "Welcome!").strip(),
-        "show_social":  bool(request.form.get("show_social")),
-        "instagram":    request.form.get("instagram",    "").strip(),
-        "website":      request.form.get("website",      "").strip(),
-        "bg_color":     request.form.get("bg_color",     "#0a0a0a").strip(),
-        "accent_color": request.form.get("accent_color", "#facc15").strip(),
-        "show_tax":     True,
-        "video_mode":   bool(request.form.get("video_mode")),
-        "video_url":    request.form.get("video_url",    "").strip(),
+        "enabled":          bool(request.form.get("enabled")),
+        "store_name":       request.form.get("store_name",   "HanryxVault").strip(),
+        "tagline":          request.form.get("tagline",      "Trading Card Shop").strip(),
+        "idle_message":     request.form.get("idle_message", "Welcome!").strip(),
+        "show_social":      bool(request.form.get("show_social")),
+        "instagram":        request.form.get("instagram",    "").strip(),
+        "website":          request.form.get("website",      "").strip(),
+        "bg_color":         request.form.get("bg_color",     "#0a0a0a").strip(),
+        "accent_color":     request.form.get("accent_color", "#facc15").strip(),
+        "show_tax":         True,
+        "video_mode":       bool(request.form.get("video_mode")),
+        "video_url":        request.form.get("video_url",    "").strip(),
+        "show_receipt_qr":  bool(request.form.get("show_receipt_qr")),
+        "price_confirm_ms": max(500, min(8000, _safe_int(request.form.get("price_confirm_ms", 2200), 2200))),
     }
     _save_kiosk_settings(settings)
     return redirect("/admin/kiosk?saved=1")
