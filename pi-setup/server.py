@@ -9746,6 +9746,57 @@ Waiting to start…</pre>
       <div class="stat-sub" id="sSatSub">Last seen: —</div>
       <div class="stat-sub" id="sSatIp" style="color:#333"></div>
     </div>
+    <div class="stat-card" id="queueCard" style="cursor:pointer" onclick="document.getElementById('queuePanel').scrollIntoView({{behavior:'smooth'}})">
+      <div class="stat-label">Offline Queue</div>
+      <div class="stat-value" id="sQueue" style="font-size:18px;padding-top:8px">—</div>
+      <div class="stat-sub" id="sQueueSub">pending sales</div>
+      <div class="stat-sub" id="sQueueVal" style="color:#facc15"></div>
+    </div>
+  </div>
+
+  <!-- Offline sale queue management -->
+  <div class="panel" id="queuePanel">
+    <div class="panel-title" style="display:flex;align-items:center;gap:12px">
+      Offline Sale Queue
+      <span id="queueBadge" style="display:none;background:#f59e0b;color:#000;
+            font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px">
+        PENDING
+      </span>
+      <button onclick="flushQueue()" id="flushBtn"
+              style="margin-left:auto;background:#facc15;color:#000;border:none;
+                     border-radius:7px;padding:8px 20px;font-size:13px;
+                     font-weight:700;cursor:pointer">
+        ⚡ Process All Pending
+      </button>
+    </div>
+    <p style="font-size:12px;color:#444;margin-bottom:14px">
+      Sales saved by the tablet when offline. Each row is processed automatically
+      on arrival — this button handles any that failed to process (e.g. after a server restart).
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr>
+          <th style="text-align:left;color:#444;font-size:10px;text-transform:uppercase;
+                     letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a1a">
+            Time</th>
+          <th style="text-align:left;color:#444;font-size:10px;text-transform:uppercase;
+                     letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a1a">
+            Client</th>
+          <th style="text-align:left;color:#444;font-size:10px;text-transform:uppercase;
+                     letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a1a">
+            Items</th>
+          <th style="text-align:right;color:#444;font-size:10px;text-transform:uppercase;
+                     letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a1a">
+            Total</th>
+          <th style="text-align:left;color:#444;font-size:10px;text-transform:uppercase;
+                     letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a1a">
+            Status</th>
+        </tr>
+      </thead>
+      <tbody id="queueBody">
+        <tr><td colspan="5" style="color:#333;text-align:center;padding:20px">Loading…</td></tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="panel">
@@ -9994,6 +10045,69 @@ async function refreshSatellite() {{
 }}
 setInterval(refreshSatellite, 15000);
 refreshSatellite();
+
+/* ── Offline queue stats + table ─────────────────────────────────────────── */
+async function refreshQueue() {{
+  try {{
+    const s = await fetch('/sales/queue/stats');
+    const d = await s.json();
+    const cnt  = d.pending_count || 0;
+    const val  = d.pending_value || 0;
+    const qEl  = document.getElementById('sQueue');
+    const subEl = document.getElementById('sQueueSub');
+    const valEl = document.getElementById('sQueueVal');
+    const badge = document.getElementById('queueBadge');
+    const card  = document.getElementById('queueCard');
+    qEl.textContent = cnt;
+    subEl.textContent = cnt === 1 ? 'pending sale' : 'pending sales';
+    valEl.textContent = cnt > 0 ? '$' + val.toFixed(2) + ' unsynced' : (d.synced_today ? d.synced_today + ' synced today' : '');
+    qEl.style.color = cnt > 0 ? '#f59e0b' : '#4caf50';
+    badge.style.display = cnt > 0 ? '' : 'none';
+    card.style.borderColor = cnt > 0 ? '#f59e0b44' : '#2a2a2a';
+  }} catch(e) {{}}
+
+  try {{
+    const r = await fetch('/sales/queue/pending?status=all');
+    const rows = await r.json();
+    const tb = document.getElementById('queueBody');
+    if (!rows.length) {{
+      tb.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:20px">No queued sales — everything is synced.</td></tr>';
+      return;
+    }}
+    tb.innerHTML = rows.map(r => {{
+      const dt  = r.queued_at ? new Date(r.queued_at).toLocaleString() : '—';
+      const items = (r.items || []).map(i => (i.name||'?') + (i.qty||i.quantity ? ' ×'+(i.qty||i.quantity) : '')).join(', ') || '—';
+      const status = r.synced
+        ? '<span style="color:#4caf50;font-size:11px">✓ synced</span>'
+        : '<span style="color:#f59e0b;font-weight:700;font-size:11px">⏳ pending</span>';
+      return `<tr style="border-bottom:1px solid #111">
+        <td style="padding:10px;font-size:12px;color:#555">${{dt}}</td>
+        <td style="padding:10px;font-size:12px;color:#888">${{r.client_id||'—'}}</td>
+        <td style="padding:10px;font-size:12px;color:#aaa;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{items}}">${{items}}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:#facc15">$${{(r.total||0).toFixed(2)}}</td>
+        <td style="padding:10px">${{status}}</td>
+      </tr>`;
+    }}).join('');
+  }} catch(e) {{}}
+}}
+
+async function flushQueue() {{
+  const btn = document.getElementById('flushBtn');
+  btn.disabled = true; btn.textContent = 'Processing…';
+  try {{
+    const r = await fetch('/sales/queue/flush', {{method:'POST'}});
+    const d = await r.json();
+    btn.textContent = '✓ Done — ' + d.processed + ' processed' + (d.failed ? ', ' + d.failed + ' failed' : '');
+    setTimeout(() => {{ btn.disabled=false; btn.textContent='⚡ Process All Pending'; }}, 4000);
+    refreshQueue();
+  }} catch(e) {{
+    btn.textContent = 'Error — try again';
+    btn.disabled = false;
+  }}
+}}
+
+setInterval(refreshQueue, 30000);
+refreshQueue();
 
 async function refreshWgPeers() {{
   try {{
@@ -17264,78 +17378,234 @@ table{{width:100%;border-collapse:collapse}}
 </body></html>"""
 
 
+# ---------------------------------------------------------------------------
+# Offline sale queue — helpers
+# ---------------------------------------------------------------------------
+
+def _process_one_queued_sale(db, row_id: int, client_id: str,
+                              items: list, queued_at: int,
+                              payment_method: str) -> tuple[bool, str]:
+    """
+    Fully process a single offline-queued sale:
+      1. Deduct inventory for each line item (floor at 0, match by name)
+      2. Write to sale_history — skip if already present (dedup by name+sold_at)
+      3. Mark the queue row synced=1
+    Returns (success, error_message).
+    """
+    try:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name  = (item.get("name") or "").strip()
+            price = float(item.get("price") or 0)
+            qty   = max(1, _safe_int(
+                item.get("qty") or item.get("quantity") or 1, 1))
+            if not name or price <= 0:
+                continue
+
+            # Deduct stock (by name — best match without qr_code)
+            db.execute(
+                "UPDATE inventory "
+                "SET quantity = GREATEST(0, quantity - %s), "
+                "    last_updated = %s "
+                "WHERE LOWER(name) = LOWER(%s) AND quantity > 0",
+                (qty, _now_ms(), name),
+            )
+
+            # Write sale_history — skip exact duplicate (same name + timestamp)
+            exists = db.execute(
+                "SELECT 1 FROM sale_history "
+                "WHERE name = %s AND sold_at = %s LIMIT 1",
+                (name, queued_at),
+            ).fetchone()
+            if not exists:
+                db.execute(
+                    "INSERT INTO sale_history "
+                    "(name, price, quantity, sold_at) VALUES (%s,%s,%s,%s)",
+                    (name, price, qty, queued_at),
+                )
+
+        # Mark synced
+        db.execute(
+            "UPDATE offline_sale_queue "
+            "SET synced = 1, synced_at = %s WHERE id = %s",
+            (_now_ms(), row_id),
+        )
+        return True, ""
+    except Exception as exc:
+        log.exception(f"[sales/queue] Failed to process row id={row_id}")
+        return False, str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Offline sale queue — endpoints
+# ---------------------------------------------------------------------------
+
 @app.route("/sales/queue", methods=["POST"])
 def sales_queue_submit():
     """
     Offline-queue drain endpoint.
-    Tablet/browser calls this with locally-queued sales when connectivity returns.
+    Tablet calls this with locally-queued sales when connectivity returns.
     Body: { client_id, sales: [{items, total, payment_method, queued_at}] }
+    Each sale is saved to the queue then immediately processed (inventory
+    deduction + sale_history). Duplicate sales (same client_id + queued_at)
+    are silently skipped.
     """
-    data     = request.get_json(force=True, silent=True) or {}
-    client   = (data.get("client_id") or "").strip()[:64]
-    sales    = data.get("sales", [])
+    data   = request.get_json(force=True, silent=True) or {}
+    client = (data.get("client_id") or "").strip()[:64]
+    sales  = data.get("sales", [])
     if not isinstance(sales, list):
         return jsonify({"error": "sales must be array"}), 400
 
     db = get_db()
-    saved = 0
+    saved = processed = skipped = errors = 0
+
     for s in sales:
         if not isinstance(s, dict):
             continue
+        queued_at = _safe_int(s.get("queued_at") or _now_ms(), _now_ms())
+        total     = float(s.get("total") or 0)
+        method    = str(s.get("payment_method") or "offline")[:32]
+        items     = s.get("items") or []
+
+        # Dedup: skip if same client already submitted this exact timestamp
+        already = db.execute(
+            "SELECT id FROM offline_sale_queue "
+            "WHERE client_id = %s AND queued_at = %s LIMIT 1",
+            (client, queued_at),
+        ).fetchone()
+        if already:
+            skipped += 1
+            continue
+
         try:
-            db.execute(
+            cur = db.execute(
                 "INSERT INTO offline_sale_queue "
                 "(client_id, items_json, total, payment_method, queued_at) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (
-                    client,
-                    json.dumps(s.get("items", [])),
-                    float(s.get("total") or 0),
-                    str(s.get("payment_method") or "offline"),
-                    _safe_int(s.get("queued_at") or _now_ms(), _now_ms()),
-                ),
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (client, json.dumps(items), total, method, queued_at),
             )
+            row_id = cur.fetchone()[0]
             saved += 1
         except Exception:
-            log.exception("[sales/queue] Failed to save queued sale")
+            log.exception("[sales/queue] INSERT failed")
+            errors += 1
+            continue
 
-    if saved:
-        # Also write to sale_history so stats update correctly
-        try:
-            for s in sales:
-                if not isinstance(s, dict):
-                    continue
-                for it in (s.get("items") or []):
-                    if not isinstance(it, dict):
-                        continue
-                    name  = (it.get("name") or "").strip()
-                    price = float(it.get("price") or 0)
-                    qty   = _safe_int(it.get("qty") or it.get("quantity") or 1, 1)
-                    ts_ms = _safe_int(s.get("queued_at") or _now_ms(), _now_ms())
-                    if name and price > 0:
-                        db.execute(
-                            "INSERT INTO sale_history (name, price, quantity, sold_at) "
-                            "VALUES (%s, %s, %s, %s)",
-                            (name, price, qty, ts_ms),
-                        )
-        except Exception:
-            log.exception("[sales/queue] Failed to write sale_history")
+        # Immediately process — deduct inventory + write history + mark synced
+        ok, _err = _process_one_queued_sale(
+            db, row_id, client, items, queued_at, method)
+        if ok:
+            processed += 1
+        else:
+            errors += 1
 
     db.commit()
-    _audit_write("sales.queue.drain", f"client={client}", f"saved={saved}")
-    return jsonify({"ok": True, "saved": saved})
+    _audit_write("sales.queue.drain",
+                 f"client={client}",
+                 f"saved={saved} processed={processed} skipped={skipped}")
+    return jsonify({
+        "ok":        True,
+        "saved":     saved,
+        "processed": processed,
+        "skipped":   skipped,
+        "errors":    errors,
+    })
+
+
+@app.route("/sales/queue/stats", methods=["GET"])
+@require_admin
+def sales_queue_stats():
+    """Return a summary of the offline queue for the dashboard."""
+    db = get_db()
+    pending = db.execute(
+        "SELECT COUNT(*) as c, COALESCE(SUM(total),0) as v "
+        "FROM offline_sale_queue WHERE synced = 0"
+    ).fetchone()
+    synced_today = db.execute(
+        "SELECT COUNT(*) as c "
+        "FROM offline_sale_queue "
+        "WHERE synced = 1 "
+        "  AND synced_at >= (EXTRACT(EPOCH FROM NOW()-INTERVAL '1 day')*1000)::BIGINT"
+    ).fetchone()
+    oldest = db.execute(
+        "SELECT queued_at FROM offline_sale_queue "
+        "WHERE synced = 0 ORDER BY queued_at ASC LIMIT 1"
+    ).fetchone()
+    return jsonify({
+        "pending_count":     int(pending["c"]) if pending else 0,
+        "pending_value":     round(float(pending["v"]), 2) if pending else 0,
+        "synced_today":      int(synced_today["c"]) if synced_today else 0,
+        "oldest_pending_ms": oldest["queued_at"] if oldest else None,
+    })
+
+
+@app.route("/sales/queue/flush", methods=["POST"])
+@require_admin
+def sales_queue_flush():
+    """
+    Admin-triggered: process all synced=0 rows right now.
+    Useful after the server recovers from an outage and the tablet
+    has already sent everything but processing failed mid-flight.
+    """
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, client_id, items_json, total, payment_method, queued_at "
+        "FROM offline_sale_queue WHERE synced = 0 ORDER BY queued_at ASC"
+    ).fetchall()
+
+    done = failed = 0
+    for r in rows:
+        try:
+            items = json.loads(r["items_json"] or "[]")
+        except Exception:
+            items = []
+        ok, _err = _process_one_queued_sale(
+            db, r["id"], r["client_id"], items,
+            r["queued_at"], r["payment_method"])
+        if ok:
+            done += 1
+        else:
+            failed += 1
+
+    db.commit()
+    _audit_write("sales.queue.flush", f"processed={done}", f"failed={failed}")
+    return jsonify({"ok": True, "processed": done, "failed": failed})
 
 
 @app.route("/sales/queue/pending", methods=["GET"])
 @require_admin
 def sales_queue_pending():
-    """Admin view of unsynced offline sales."""
-    db = get_db()
+    """Admin view of all queue rows with full item detail."""
+    db  = get_db()
+    status = request.args.get("status", "pending")   # pending | synced | all
+    where  = ("WHERE synced = 0" if status == "pending"
+              else "WHERE synced = 1" if status == "synced"
+              else "")
     rows = db.execute(
-        "SELECT id, client_id, total, payment_method, queued_at, synced "
-        "FROM offline_sale_queue ORDER BY queued_at DESC LIMIT 100"
+        f"SELECT id, client_id, items_json, total, payment_method, "
+        f"       queued_at, synced, synced_at "
+        f"FROM offline_sale_queue {where} "
+        f"ORDER BY queued_at DESC LIMIT 200"
     ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    result = []
+    for r in rows:
+        try:
+            items = json.loads(r["items_json"] or "[]")
+        except Exception:
+            items = []
+        result.append({
+            "id":             r["id"],
+            "client_id":      r["client_id"],
+            "total":          r["total"],
+            "payment_method": r["payment_method"],
+            "queued_at":      r["queued_at"],
+            "synced":         bool(r["synced"]),
+            "synced_at":      r["synced_at"],
+            "item_count":     len(items),
+            "items":          items,
+        })
+    return jsonify(result)
 
 
 @app.route("/kiosk/stream")
@@ -18719,14 +18989,27 @@ POST /kiosk/sale-complete
 # Customer views receipt on phone:
 GET /receipt/&lt;token&gt;   (valid 24 h)
 
-# Drain offline sale queue (tablet calls this when back online):
+# Drain offline sale queue — tablet calls this when back online.
+# Saves + immediately processes (inventory deduction, sale_history).
+# Duplicates (same client_id + queued_at) are silently skipped.
 POST /sales/queue
-{{"sales": [{{"items":[...],"total":12.99,"payment_method":"Cash",
-             "queued_at":1713000000000}}]}}
-→ {{"saved": 1}}
+  body: {{"client_id":"tablet-1","sales":[
+    {{"items":[{{"name":"Charizard","price":12.99,"qty":1}}],
+      "total":12.99,"payment_method":"Cash","queued_at":1713000000000}}
+  ]}}
+  → {{"ok":true,"saved":1,"processed":1,"skipped":0,"errors":0}}
 
-# Admin view of pending offline sales:
-GET /sales/queue/pending</pre>
+# Queue summary for the dashboard stat card:
+GET /sales/queue/stats     (admin)
+  → {{"pending_count":2,"pending_value":25.98,"synced_today":14,"oldest_pending_ms":...}}
+
+# Force-process all pending rows (admin — use after server recovery):
+POST /sales/queue/flush    (admin)
+  → {{"ok":true,"processed":2,"failed":0}}
+
+# Full queue table — ?status=pending|synced|all  (default: pending):
+GET /sales/queue/pending   (admin)
+  → [{{"id":1,"client_id":"tablet-1","total":12.99,"synced":false,"items":[...],...}}]</pre>
       </div>
     </div>
   </div>
