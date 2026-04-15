@@ -402,6 +402,7 @@ launch_with_watchdog() {
     local splash_file="$3"
     local profile="$4"
     local pos_x="$5"
+    local extra_flags=("${@:6}")   # optional extra flags per-window
     local first_run=1
 
     mkdir -p "$profile"
@@ -422,6 +423,7 @@ launch_with_watchdog() {
             --window-position="${pos_x},0" \
             --user-data-dir="$profile" \
             "${COMMON_FLAGS[@]}" \
+            "${extra_flags[@]}" \
             "$START_URL" \
             >> "$LOG_FILE" 2>&1
 
@@ -431,9 +433,10 @@ launch_with_watchdog() {
     done
 }
 
-# ── Start Monitor 1: staff admin ─────────────────────────────────────────────
+# ── Start Monitor 1: staff admin  (restore session on crash so you stay logged in)
 launch_with_watchdog "Admin (Monitor 1)" "$ADMIN_URL" \
-    "$SPLASH_ADMIN" "$PROFILE_ADMIN" 0 &
+    "$SPLASH_ADMIN" "$PROFILE_ADMIN" 0 \
+    "--restore-last-session" "--password-store=basic" &
 
 # Small delay so Monitor 1 claims focus first
 sleep 4
@@ -443,6 +446,24 @@ launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
     "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" &
 
 log "Both windows launched — watchdog + mDNS fallback active"
+
+# ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
+OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+(
+  while true; do
+    UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
+    CHROMIUM_OK=$(pgrep -x chromium-browser > /dev/null 2>&1 \
+                  || pgrep -x chromium > /dev/null 2>&1; echo $?)
+    CHROMIUM_OK=$([[ "$CHROMIUM_OK" -eq 0 ]] && echo true || echo false)
+    curl -sf --max-time 3 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
+         -H "Content-Type: application/json" \
+         -d "{\"ip\":\"$OWN_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"version\":\"v4\"}" \
+         > /dev/null 2>&1 || true
+    sleep 60
+  done
+) &
+log "Heartbeat loop started — pinging $HEALTH_URL every 60 s"
+
 wait
 LAUNCH
 
@@ -503,6 +524,54 @@ info "Ensuring SSH is enabled (remote management at shows)…"
 systemctl enable ssh 2>/dev/null || true
 ok "SSH enabled"
 
+# ── 14. Network watchdog service — restarts Chromium if server goes MIA ──────
+info "Installing network watchdog service…"
+cat > /etc/systemd/system/hanryx-watchdog.service << EOF
+[Unit]
+Description=HanryxVault Satellite Network Watchdog
+After=network-online.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+Environment=HOME=/home/$CURRENT_USER
+ExecStart=/bin/bash -c '\\
+  LOG="/var/log/hanryx-kiosk.log"; \\
+  CONF="$CONFIG_FILE"; \\
+  FAIL=0; \\
+  while true; do \\
+    source "\$CONF" 2>/dev/null || true; \\
+    HURL="\${HEALTH_URL:-http://192.168.86.45:8080/health}"; \\
+    if curl -sf --max-time 3 "\$HURL" > /dev/null 2>&1; then \\
+      if [ "\$FAIL" -ge 3 ]; then \\
+        echo "[watchdog] Server back online — restarting Chromium" | tee -a "\$LOG"; \\
+        pkill -x chromium-browser 2>/dev/null; pkill -x chromium 2>/dev/null; \\
+        sleep 3; \\
+        bash $LAUNCH_SCRIPT & \\
+      fi; \\
+      FAIL=0; \\
+    else \\
+      FAIL=\$((FAIL+1)); \\
+      echo "[watchdog] Health check failed #\$FAIL" | tee -a "\$LOG"; \\
+      if [ "\$FAIL" -eq 3 ]; then \\
+        echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "\$LOG"; \\
+      fi; \\
+    fi; \\
+    sleep 30; \\
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable hanryx-watchdog.service
+ok "Network watchdog service installed and enabled"
+note "Watchdog pings /health every 30 s and reloads Chromium if server comes back after ≥3 failures"
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}  ============================================================${NC}"
@@ -516,6 +585,9 @@ echo "    4.  Monitor 1 (HDMI-0) → /admin   — staff admin"
 echo "    5.  Monitor 2 (HDMI-1) → /kiosk   — customer screen"
 echo "    6.  Auto-restart both windows if they crash (goes direct on restart)"
 echo "    7.  Never sleep or blank either screen"
+echo "    8.  Send heartbeat to main Pi every 60 s (visible on System page)"
+echo "    9.  Network watchdog re-triggers Chromium if server recovers from outage"
+echo "   10.  Admin session restored after Chromium crash (stays logged in)"
 echo ""
 echo -e "${CYAN}  Main Pi IP:${NC} $MAIN_PI_IP"
 echo -e "${CYAN}  To change later:${NC} edit $CONFIG_FILE and reboot"

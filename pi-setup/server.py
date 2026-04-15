@@ -9077,7 +9077,31 @@ def admin_system():
     <button class="qa-btn" onclick="quickAction('sync-inventory')">📦 Sync Inventory</button>
     <button class="qa-btn" onclick="window.open('/admin/logs','_self')">📋 View Logs</button>
     <button class="qa-btn" onclick="window.open('/health')">❤️ Health Check</button>
+    <button class="qa-btn" id="otaBtn" onclick="startOTA()"
+            style="border-color:#facc15;color:#facc15">⬆️ Pull &amp; Update</button>
     <span id="refreshStatus">Last refresh: —</span>
+  </div>
+
+  <!-- OTA Update log modal -->
+  <div id="otaModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+       background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#0d0d0d;border:1px solid #facc15;border-radius:12px;
+                width:min(860px,96vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid #1a1a1a;display:flex;
+                  align-items:center;justify-content:space-between">
+        <span style="color:#facc15;font-weight:700;font-size:15px">⬆️ Pull &amp; Update</span>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span id="otaStatus" style="font-size:12px;color:#555">Idle</span>
+          <button onclick="closeOTA()"
+                  style="background:transparent;border:1px solid #333;color:#aaa;
+                         border-radius:6px;padding:4px 12px;cursor:pointer">✕ Close</button>
+        </div>
+      </div>
+      <pre id="otaLog" style="flex:1;overflow-y:auto;padding:16px 20px;margin:0;
+                               font-size:12px;line-height:1.7;color:#86efac;
+                               background:#0a0a0a;white-space:pre-wrap;word-break:break-all">
+Waiting to start…</pre>
+    </div>
   </div>
 
   <div class="stat-grid">
@@ -9113,6 +9137,12 @@ def admin_system():
       <div class="stat-label">POS Server Ping</div>
       <div class="stat-value" id="sPing" style="font-size:18px;padding-top:8px">—</div>
       <div class="stat-sub" id="sPingSub">127.0.0.1:8080</div>
+    </div>
+    <div class="stat-card" id="satCard">
+      <div class="stat-label">Satellite Pi</div>
+      <div class="stat-value" id="sSat" style="font-size:18px;padding-top:8px">—</div>
+      <div class="stat-sub" id="sSatSub">Last seen: —</div>
+      <div class="stat-sub" id="sSatIp" style="color:#333"></div>
     </div>
   </div>
 
@@ -9269,6 +9299,97 @@ async function quickAction(action) {{
     toast('Done — upserted: ' + (d.upserted||0));
   }}
 }}
+
+/* ── OTA update ──────────────────────────────────────────────────────────── */
+let _otaEs = null;
+function openOTAModal() {{
+  const m = document.getElementById('otaModal');
+  m.style.display = 'flex';
+  document.getElementById('otaLog').textContent = 'Starting…\n';
+  document.getElementById('otaStatus').textContent = 'Running…';
+  document.getElementById('otaStatus').style.color = '#facc15';
+}}
+function closeOTA() {{
+  if (_otaEs) {{ try {{ _otaEs.close(); }} catch(e) {{}} _otaEs = null; }}
+  document.getElementById('otaModal').style.display = 'none';
+}}
+async function startOTA() {{
+  if (!confirm('Pull latest code from GitHub and rebuild Docker containers?\n\nThe POS server will restart — this takes ~1–3 minutes.')) return;
+  const btn = document.getElementById('otaBtn');
+  btn.disabled = true; btn.textContent = '⬆️ Updating…';
+  openOTAModal();
+  try {{
+    const r = await fetch('/admin/ota-update', {{method:'POST'}});
+    const d = await r.json();
+    if (!d.ok) {{
+      document.getElementById('otaLog').textContent += '\nERROR: ' + d.error;
+      document.getElementById('otaStatus').textContent = 'Failed';
+      document.getElementById('otaStatus').style.color = '#f87171';
+      btn.disabled = false; btn.textContent = '⬆️ Pull & Update';
+      return;
+    }}
+  }} catch(e) {{
+    document.getElementById('otaLog').textContent += '\nNetwork error: ' + e.message;
+    btn.disabled = false; btn.textContent = '⬆️ Pull & Update';
+    return;
+  }}
+  /* Stream the output */
+  const logEl = document.getElementById('otaLog');
+  logEl.textContent = '';
+  if (_otaEs) {{ try {{ _otaEs.close(); }} catch(e) {{}} }}
+  _otaEs = new EventSource('/admin/ota-stream');
+  _otaEs.onmessage = function(e) {{
+    try {{
+      const d = JSON.parse(e.data);
+      if (d.line === '__DONE__\n' || d.line === '__DONE__') {{
+        document.getElementById('otaStatus').textContent = 'Done ✓';
+        document.getElementById('otaStatus').style.color = '#4ade80';
+        btn.disabled = false; btn.textContent = '⬆️ Pull & Update';
+        _otaEs.close(); _otaEs = null;
+      }} else {{
+        logEl.textContent += d.line;
+        logEl.scrollTop = logEl.scrollHeight;
+      }}
+    }} catch(ex) {{}}
+  }};
+  _otaEs.onerror = function() {{
+    document.getElementById('otaStatus').textContent = 'Stream ended';
+    document.getElementById('otaStatus').style.color = '#888';
+    btn.disabled = false; btn.textContent = '⬆️ Pull & Update';
+    if (_otaEs) {{ _otaEs.close(); _otaEs = null; }}
+  }};
+}}
+
+/* ── Satellite Pi heartbeat ──────────────────────────────────────────────── */
+async function refreshSatellite() {{
+  try {{
+    const r = await fetch('/satellite/status');
+    const d = await r.json();
+    const satEl  = document.getElementById('sSat');
+    const subEl  = document.getElementById('sSatSub');
+    const ipEl   = document.getElementById('sSatIp');
+    if (d.online) {{
+      satEl.textContent  = '✓ Online';
+      satEl.style.color  = '#4caf50';
+      const ago = d.age_s < 60 ? d.age_s + 's ago' : Math.round(d.age_s/60) + 'm ago';
+      subEl.textContent  = 'Seen ' + ago + (d.uptime ? ' · ' + d.uptime : '');
+      ipEl.textContent   = d.ip || '';
+    }} else if (d.ip === null && d.age_s === null) {{
+      satEl.textContent  = '— Not seen';
+      satEl.style.color  = '#555';
+      subEl.textContent  = 'Waiting for heartbeat';
+      ipEl.textContent   = '';
+    }} else {{
+      satEl.textContent  = '✗ Offline';
+      satEl.style.color  = '#f44336';
+      const ago = d.age_s ? Math.round(d.age_s/60) + 'm ago' : '?';
+      subEl.textContent  = 'Last seen ' + ago;
+      ipEl.textContent   = d.ip || '';
+    }}
+  }} catch(e) {{}}
+}}
+setInterval(refreshSatellite, 15000);
+refreshSatellite();
 
 async function refreshWgPeers() {{
   try {{
@@ -9755,6 +9876,124 @@ def system_backup_db():
         return jsonify({"ok": True, "path": backup, "size_kb": round(size / 1024, 1)})
     except FileNotFoundError:
         return jsonify({"ok": False, "error": "pg_dump not found — install postgresql-client"}), 500
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# /admin/ota-update  — git pull + docker compose rebuild, streamed live
+# ---------------------------------------------------------------------------
+
+_OTA_LOG:    list  = []     # rolling buffer of output lines (max 1000)
+_OTA_LOCK         = threading.Lock()
+_OTA_RUNNING      = False
+
+@app.route("/admin/ota-update", methods=["POST"])
+@require_admin
+def admin_ota_update():
+    global _OTA_RUNNING
+    with _OTA_LOCK:
+        if _OTA_RUNNING:
+            return jsonify({"ok": False, "error": "Update already in progress"}), 409
+        _OTA_RUNNING = True
+        _OTA_LOG.clear()
+
+    def _run() -> None:
+        global _OTA_RUNNING
+        try:
+            env = {**os.environ, "GIT_SSL_NO_VERIFY": "1", "DOCKER_CLI_HINTS": "false"}
+            repo_dir   = os.environ.get("REPO_DIR", "/app")
+            compose    = os.path.join(repo_dir, "pi-setup", "docker-compose.yml")
+            cmds = [
+                ["git", "-C", repo_dir, "pull", "--ff-only", "origin", "main"],
+                ["docker", "compose", "-f", compose, "up", "-d", "--build",
+                 "--remove-orphans"],
+            ]
+            for cmd in cmds:
+                _OTA_LOG.append(f"$ {' '.join(cmd)}\n")
+                try:
+                    proc = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, env=env, bufsize=1,
+                    )
+                    for line in proc.stdout:
+                        _OTA_LOG.append(line)
+                        if len(_OTA_LOG) > 1000:
+                            _OTA_LOG.pop(0)
+                    proc.wait()
+                    _OTA_LOG.append(f"[exit {proc.returncode}]\n")
+                except FileNotFoundError as fe:
+                    _OTA_LOG.append(f"[command not found: {fe}]\n")
+        except Exception as exc:
+            _OTA_LOG.append(f"ERROR: {exc}\n")
+        finally:
+            _OTA_LOG.append("__DONE__\n")
+            _OTA_RUNNING = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True, "message": "Update started — watch the log stream."})
+
+
+@app.route("/admin/ota-stream", methods=["GET"])
+@require_admin
+def admin_ota_stream():
+    """SSE stream that tails _OTA_LOG until __DONE__ is emitted."""
+    def generate():
+        sent = 0
+        while True:
+            while sent < len(_OTA_LOG):
+                line = _OTA_LOG[sent]
+                sent += 1
+                yield f"data: {json.dumps({'line': line})}\n\n"
+                if line.strip() == "__DONE__":
+                    return
+            time.sleep(0.15)
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# /satellite/heartbeat  — satellite Pi registers itself here every 60 s
+# /satellite/status     — admin reads last heartbeat
+# ---------------------------------------------------------------------------
+
+_SAT_HB_PATH = "/data/satellite_heartbeat.json"
+
+
+@app.route("/satellite/heartbeat", methods=["POST"])
+def satellite_heartbeat():
+    """Called by the satellite Pi launcher (no auth needed — LAN only)."""
+    try:
+        body = request.get_json(silent=True) or {}
+        data = {
+            "ip":          body.get("ip") or request.remote_addr,
+            "uptime":      str(body.get("uptime", "")),
+            "chromium_ok": bool(body.get("chromium_ok", True)),
+            "last_seen":   time.time(),
+            "version":     str(body.get("version", "v4")),
+        }
+        with open(_SAT_HB_PATH, "w") as fh:
+            json.dump(data, fh)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/satellite/status", methods=["GET"])
+@require_admin
+def satellite_status():
+    try:
+        with open(_SAT_HB_PATH) as fh:
+            data = json.load(fh)
+        age = time.time() - data.get("last_seen", 0)
+        data["age_s"]  = round(age)
+        data["online"] = age < 90     # heartbeat every 60 s → 90 s grace
+        return jsonify(data)
+    except FileNotFoundError:
+        return jsonify({"online": False, "ip": None, "age_s": None, "uptime": ""})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
