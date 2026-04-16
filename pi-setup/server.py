@@ -3900,6 +3900,9 @@ def card_lookup():
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
 
+    if request.args.get("kiosk") == "1" and results:
+        _kiosk_push_lookup(results[0])
+
     return jsonify({
         "results": results,
         "count":   len(results),
@@ -3916,9 +3919,11 @@ def card_lookup_post():
     POST version of /card/lookup — used by the website camera scanner.
 
     Body (JSON):
-      {"qr": "...", "q": "...", "name": "...", "set": "...", "num": "...", "limit": 10}
+      {"qr": "...", "q": "...", "name": "...", "set": "...", "num": "...",
+       "limit": 10, "kiosk": true}
 
     Same response as GET version.
+    If kiosk=true, the first result is pushed to the kiosk display.
     """
     body     = request.get_json(silent=True) or {}
     qr       = (body.get("qr")   or "").strip()
@@ -3937,7 +3942,25 @@ def card_lookup_post():
     db      = get_db()
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
+
+    if body.get("kiosk") and results:
+        _kiosk_push_lookup(results[0])
+
     return jsonify({"results": results, "count": len(results)})
+
+
+def _kiosk_push_lookup(card: dict):
+    """Push a card lookup result to the kiosk display for the customer to see."""
+    _kiosk_broadcast({
+        "mode":       "lookup",
+        "card_name":  card.get("name", ""),
+        "card_price": float(card.get("price") or 0),
+        "card_image": card.get("imageUrl") or card.get("image_url") or "",
+        "card_rarity": card.get("rarity") or "",
+        "card_set":   card.get("setCode") or card.get("set_code") or "",
+        "card_number": card.get("cardNumber") or card.get("card_number") or "",
+        "stock_qty":  int(card.get("stockQuantity") or card.get("quantity") or 0),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -9273,7 +9296,7 @@ def admin_ai_tradein():
         reasoning.append(f"{condition} condition — {round((1-mult)*100)}% reduction applied")
     reasoning.append(f"Based on {sample_cnt} recent eBay sales (source: {source})")
 
-    return jsonify({
+    result = {
         "found":        True,
         "card_name":    card_name,
         "condition":    condition,
@@ -9291,7 +9314,40 @@ def admin_ai_tradein():
         "margin_pct":   margin_pct,
         "reasoning":    reasoning,
         "source":       source,
+    }
+
+    total_cash   = round(buy_ideal * qty_buying, 2)
+    total_credit = round(total_cash * 1.20, 2)
+    _kiosk_broadcast({
+        "mode":            "trade",
+        "active":          True,
+        "trade_customer":  "Trade-In Assessment",
+        "trade_reference": f"{card_name} ({condition})",
+        "trade_items":     [{
+            "name":      card_name,
+            "condition": condition,
+            "offer":     total_cash,
+            "market":    round(adjusted, 2),
+        }] * qty_buying if qty_buying == 1 else [{
+            "name":      f"{card_name} x{qty_buying}",
+            "condition": condition,
+            "offer":     total_cash,
+            "market":    round(adjusted * qty_buying, 2),
+        }],
+        "trade_cash":      total_cash,
+        "trade_credit":    total_credit,
+        "ai_breakdown": {
+            "ebay_median":  round(median, 2),
+            "buy_floor":    buy_floor,
+            "buy_ideal":    buy_ideal,
+            "buy_max":      buy_max,
+            "reasoning":    reasoning,
+            "source":       source,
+            "quantity":     qty_buying,
+        },
     })
+
+    return jsonify(result)
 
 
 @app.route("/admin/ai-insights", methods=["GET"])
@@ -18161,6 +18217,14 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
         <div id="trade-ref"></div>
       </div>
       <div id="trade-items"></div>
+      <div id="ai-breakdown" style="display:none;padding:12px 20px">
+        <div style="font-size:clamp(11px,1.2vw,15px);color:#facc15;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px">
+          Price Breakdown
+        </div>
+        <div id="ai-range" style="display:flex;gap:14px;margin-bottom:8px"></div>
+        <div id="ai-reasons" style="font-size:clamp(11px,1.3vw,16px);color:#555;line-height:1.6"></div>
+        <div id="ai-source" style="font-size:clamp(9px,1vw,12px);color:#333;margin-top:6px;font-style:italic"></div>
+      </div>
       <div id="trade-totals">
         <div class="tot-card cash">
           <div class="tot-label">Cash Value</div>
@@ -18172,6 +18236,21 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
           <div class="credit-bonus">+20% bonus vs cash</div>
         </div>
       </div>
+    </div>
+
+    <!-- CARD LOOKUP (customer sees the card being looked up) -->
+    <div id="lookup" style="display:none;flex-direction:column;align-items:center;
+         justify-content:center;padding:40px;text-align:center;gap:20px">
+      <div id="lookup-img-wrap" style="position:relative">
+        <img id="lookup-img" src="" alt=""
+             style="max-height:45vh;border-radius:16px;box-shadow:0 0 40px rgba(250,204,21,0.3);
+                    border:2px solid #facc1544">
+      </div>
+      <div id="lookup-name" style="font-size:clamp(22px,3.5vw,48px);font-weight:900;color:#fff"></div>
+      <div id="lookup-meta" style="font-size:clamp(12px,1.5vw,18px);color:#666"></div>
+      <div id="lookup-price" style="font-size:clamp(36px,5vw,72px);font-weight:900;
+           color:#facc15;text-shadow:0 0 30px rgba(250,204,21,0.4)"></div>
+      <div id="lookup-stock" style="font-size:clamp(13px,1.5vw,20px);color:#444"></div>
     </div>
 
     <!-- TRADE DONE -->
@@ -18236,16 +18315,17 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
 <script>
 (function(){{
-  var elIdle  = document.getElementById("idle");
-  var elCart  = document.getElementById("cart");
-  var elTrade = document.getElementById("trade");
-  var elTDone = document.getElementById("trade-done");
-  var elTy    = document.getElementById("ty");
-  var elCP    = document.getElementById("card-processing");
-  var elBP    = document.getElementById("brand-pulse");
-  var elPC    = document.getElementById("price-confirm");
-  var elRQ    = document.getElementById("receipt-qr");
-  var elBadge = document.getElementById("mode-badge");
+  var elIdle   = document.getElementById("idle");
+  var elCart   = document.getElementById("cart");
+  var elTrade  = document.getElementById("trade");
+  var elTDone  = document.getElementById("trade-done");
+  var elLookup = document.getElementById("lookup");
+  var elTy     = document.getElementById("ty");
+  var elCP     = document.getElementById("card-processing");
+  var elBP     = document.getElementById("brand-pulse");
+  var elPC     = document.getElementById("price-confirm");
+  var elRQ     = document.getElementById("receipt-qr");
+  var elBadge  = document.getElementById("mode-badge");
 
   /* clock */
   var clk = document.getElementById("clock");
@@ -18373,7 +18453,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   }}
 
   function showOnly(el, badge){{
-    [elIdle,elCart,elTrade,elTDone,elTy,elCP,elBP,elPC,elRQ].forEach(function(e){{
+    [elIdle,elCart,elTrade,elTDone,elLookup,elTy,elCP,elBP,elPC,elRQ].forEach(function(e){{
       if(e) e.style.display="none";
     }});
     el.style.display="flex";
@@ -18560,11 +18640,60 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     : "<div style='color:#444;padding:20px 0;font-size:clamp(14px,1.8vw,22px)'>Waiting for cards to be assessed…</div>";
     document.getElementById("trade-cash").textContent=f(s.trade_cash||0);
     document.getElementById("trade-credit").textContent=f(s.trade_credit||0);
+
+    /* AI breakdown (from /admin/ai-tradein) */
+    var bd=document.getElementById("ai-breakdown");
+    if(s.ai_breakdown){{
+      var ai=s.ai_breakdown;
+      bd.style.display="block";
+      document.getElementById("ai-range").innerHTML=[
+        "<div style='flex:1;text-align:center;padding:8px;background:#111;border-radius:8px'>"
+          +"<div style='font-size:clamp(9px,1vw,12px);color:#666;text-transform:uppercase'>Min</div>"
+          +"<div style='font-size:clamp(16px,2vw,28px);font-weight:900;color:#888'>"+f(ai.buy_floor)+"</div></div>",
+        "<div style='flex:1;text-align:center;padding:8px;background:#1a1a00;border:1px solid #facc1544;border-radius:8px'>"
+          +"<div style='font-size:clamp(9px,1vw,12px);color:#facc15;text-transform:uppercase;font-weight:700'>Our Offer</div>"
+          +"<div style='font-size:clamp(20px,2.5vw,36px);font-weight:900;color:#facc15'>"+f(ai.buy_ideal)+"</div></div>",
+        "<div style='flex:1;text-align:center;padding:8px;background:#111;border-radius:8px'>"
+          +"<div style='font-size:clamp(9px,1vw,12px);color:#666;text-transform:uppercase'>Max</div>"
+          +"<div style='font-size:clamp(16px,2vw,28px);font-weight:900;color:#888'>"+f(ai.buy_max)+"</div></div>",
+        "<div style='flex:1;text-align:center;padding:8px;background:#111;border-radius:8px'>"
+          +"<div style='font-size:clamp(9px,1vw,12px);color:#22c55e;text-transform:uppercase'>Market</div>"
+          +"<div style='font-size:clamp(16px,2vw,28px);font-weight:900;color:#22c55e'>"+f(ai.ebay_median)+"</div></div>"
+      ].join("");
+      document.getElementById("ai-reasons").innerHTML=(ai.reasoning||[]).map(function(r){{
+        return "<div style='padding:3px 0'>• "+esc(r)+"</div>";
+      }}).join("");
+      document.getElementById("ai-source").textContent="Source: "+(ai.source||"");
+    }} else {{
+      bd.style.display="none";
+    }}
+  }}
+
+  /* ── LOOKUP mode (card lookup mirrored to customer) ── */
+  var elLookup=document.getElementById("lookup");
+  function renderLookup(s){{
+    showOnly(elLookup,"Card Lookup");
+    var img=document.getElementById("lookup-img");
+    if(s.card_image){{
+      img.src=s.card_image; img.style.display="block";
+    }} else {{
+      img.style.display="none";
+    }}
+    document.getElementById("lookup-name").textContent=s.card_name||"";
+    var meta=[];
+    if(s.card_set) meta.push(s.card_set+(s.card_number?" #"+s.card_number:""));
+    if(s.card_rarity) meta.push(s.card_rarity);
+    document.getElementById("lookup-meta").textContent=meta.join(" · ");
+    document.getElementById("lookup-price").textContent=s.card_price>0 ? f(s.card_price) : "";
+    document.getElementById("lookup-stock").textContent=s.stock_qty>0
+      ? s.stock_qty+" in stock" : (s.card_price>0 ? "In stock" : "");
+    setTimeout(goIdle, 30000);
   }}
 
   /* ── SSE dispatcher ── */
   function onData(s){{
     if(s.mode==="trade"){{ renderTrade(s); return; }}
+    if(s.mode==="lookup"){{ renderLookup(s); return; }}
     if(s.mode==="idle"){{ goIdle(); return; }}
     renderCart(s);
   }}
