@@ -602,7 +602,7 @@ class WifiManagerApp(tk.Tk):
         else:
             self._scan_status.config(text="Connection failed", fg=RED)
             messagebox.showerror("Connection Failed",
-                                 f"Could not connect to "{ssid}":\n\n{msg}",
+                                 f'Could not connect to "{ssid}":\n\n{msg}',
                                  parent=self)
 
     def _disconnect(self):
@@ -622,7 +622,7 @@ class WifiManagerApp(tk.Tk):
         ssid = self._selected["ssid"]
         if not messagebox.askyesno(
             "Forget Network",
-            f"Remove saved password for "{ssid}"?\n\nYou will need to enter it again to reconnect.",
+            f'Remove saved password for "{ssid}"?\n\nYou will need to enter it again to reconnect.',
             parent=self,
         ):
             return
