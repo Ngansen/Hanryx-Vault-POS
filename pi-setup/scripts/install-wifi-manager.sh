@@ -15,6 +15,16 @@ step() { echo -e "${CYAN}══ $* ══${NC}"; }
 INSTALL_DIR="/opt/hanryxvault"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── 0. Ensure install directory + user exist ──────────────────────────────────
+step "Preparing install directory"
+if ! id hanryxvault &>/dev/null; then
+    useradd --system --create-home --home-dir "$INSTALL_DIR" \
+            --shell /bin/bash hanryxvault
+    info "Created 'hanryxvault' system user"
+fi
+mkdir -p "$INSTALL_DIR"
+chown hanryxvault:hanryxvault "$INSTALL_DIR"
+
 # ── 1. Copy script ─────────────────────────────────────────────────────────────
 step "Installing wifi_manager.py"
 cp "$SCRIPT_DIR/wifi_manager.py" "$INSTALL_DIR/wifi_manager.py"
@@ -72,7 +82,7 @@ info "Desktop shortcut created for user: ${PRIMARY_USER}"
 
 # ── 4. Ensure tkinter is available ────────────────────────────────────────────
 step "Checking tkinter"
-if ! "$INSTALL_DIR/venv/bin/python3" -c "import tkinter" 2>/dev/null; then
+if ! python3 -c "import tkinter" 2>/dev/null; then
     apt-get install -y --no-install-recommends python3-tk >/dev/null
     info "Installed python3-tk"
 else
