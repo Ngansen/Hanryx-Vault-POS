@@ -55,24 +55,41 @@ echo -e "${BOLD}  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)${NC}"
 echo "  ============================================================"
 echo ""
 
-# ── Ask for Main Pi's Tailscale hostname ─────────────────────────────────────
-DEFAULT_TS_HOST="hanryxvault"
+# ── Ask for Main Pi connection details ────────────────────────────────────────
+DEFAULT_HOST="hanryxvault"
+USE_TAILSCALE="n"
 if [ -f "$CONFIG_FILE" ]; then
-    SAVED_TS=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
-    DEFAULT_TS_HOST="${SAVED_TS:-$DEFAULT_TS_HOST}"
+    SAVED_HOST=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    DEFAULT_HOST="${SAVED_HOST:-$DEFAULT_HOST}"
+    SAVED_TS_MODE=$(grep "^USE_TAILSCALE=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    USE_TAILSCALE="${SAVED_TS_MODE:-n}"
 fi
 
 echo -e "${CYAN}  Network layout:${NC}"
-echo -e "${CYAN}    Main Pi (home)   = Docker stack + POS server, connected via Tailscale${NC}"
+echo -e "${CYAN}    Main Pi (home)   = Docker stack + POS server${NC}"
 echo -e "${CYAN}    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet${NC}"
-echo -e "${CYAN}    Tablet (shop)    = connects to THIS Pi locally — routed over Tailscale${NC}"
+echo -e "${CYAN}    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi${NC}"
 echo ""
-echo -e "${CYAN}  Enter the Main Pi's Tailscale hostname (shown in the Tailscale admin${NC}"
-echo -e "${CYAN}  panel as the device name, e.g. ${BOLD}hanryxvault${NC}${CYAN}).${NC}"
-echo -e "${CYAN}  You can also enter a Tailscale IP (100.x.x.x) if MagicDNS is off.${NC}"
+echo -e "${CYAN}  How does this satellite connect to the Main Pi?${NC}"
+echo -e "${CYAN}    1) Direct LAN IP  — both Pis on the same network (simplest)${NC}"
+echo -e "${CYAN}    2) Tailscale VPN  — Pis on different networks (home ↔ shop)${NC}"
 echo ""
-read -rp "  Main Pi Tailscale hostname or IP [$DEFAULT_TS_HOST]: " MAIN_PI_TS_HOST
-MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_TS_HOST}"
+read -rp "  Choose [1/2] (default: 1 — direct LAN): " CONN_MODE
+CONN_MODE="${CONN_MODE:-1}"
+
+if [ "$CONN_MODE" = "2" ]; then
+    USE_TAILSCALE="y"
+    echo ""
+    echo -e "${CYAN}  Enter the Main Pi's Tailscale hostname or IP (100.x.x.x):${NC}"
+    read -rp "  Main Pi Tailscale hostname [$DEFAULT_HOST]: " MAIN_PI_TS_HOST
+    MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_HOST}"
+else
+    USE_TAILSCALE="n"
+    echo ""
+    echo -e "${CYAN}  Enter the Main Pi's LAN IP address (e.g. 192.168.1.100):${NC}"
+    read -rp "  Main Pi LAN IP [$DEFAULT_HOST]: " MAIN_PI_TS_HOST
+    MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_HOST}"
+fi
 
 ADMIN_URL="http://${MAIN_PI_TS_HOST}:8080/admin"
 KIOSK_URL="http://${MAIN_PI_TS_HOST}:8080/kiosk"
@@ -85,7 +102,8 @@ echo "  User          : $CURRENT_USER"
 echo "  Main Pi (TS)  : $MAIN_PI_TS_HOST"
 echo "  Monitor 1     : $ADMIN_URL  (staff admin)"
 echo "  Monitor 2     : $KIOSK_URL  (customer kiosk)"
-echo "  Tablet proxy  : port 8080 → $MAIN_PI_TS_HOST:8080 via Tailscale"
+echo "  Tablet proxy  : port 8080 → $MAIN_PI_TS_HOST:8080"
+echo "  Connection    : $([ "$USE_TAILSCALE" = "y" ] && echo "Tailscale VPN" || echo "Direct LAN")"
 echo "  Logs          : $LOG_FILE"
 echo ""
 
@@ -96,6 +114,7 @@ MAIN_PI_TS_HOST=$MAIN_PI_TS_HOST
 ADMIN_URL=$ADMIN_URL
 KIOSK_URL=$KIOSK_URL
 HEALTH_URL=$HEALTH_URL
+USE_TAILSCALE=$USE_TAILSCALE
 EOF
 chown "$CURRENT_USER:$CURRENT_USER" "$CONFIG_FILE"
 ok "Config saved → $CONFIG_FILE"
@@ -120,40 +139,44 @@ apt-get install -y -qq chromium-browser unclutter 2>/dev/null || \
 apt-get install -y -qq chromium         unclutter 2>/dev/null || true
 ok "Packages ready (nginx, chromium, unclutter, curl, avahi)"
 
-# ── Tailscale ────────────────────────────────────────────────────────────────
-info "Installing Tailscale…"
-if ! command -v tailscale &>/dev/null; then
-    curl -fsSL https://tailscale.com/install.sh | sh
-    ok "Tailscale installed"
-else
-    ok "Tailscale already installed ($(tailscale version | head -1))"
-fi
+# ── Tailscale (optional) ────────────────────────────────────────────────────
+if [ "$USE_TAILSCALE" = "y" ]; then
+    info "Installing Tailscale…"
+    if ! command -v tailscale &>/dev/null; then
+        curl -fsSL https://tailscale.com/install.sh | sh
+        ok "Tailscale installed"
+    else
+        ok "Tailscale already installed ($(tailscale version | head -1))"
+    fi
 
-echo ""
-echo -e "${CYAN}  ── Tailscale authentication ─────────────────────────────${NC}"
-echo -e "${CYAN}  You need to connect this satellite Pi to your Tailscale network.${NC}"
-echo -e "${CYAN}  Options:${NC}"
-echo -e "${CYAN}    A) Auth key (recommended — paste from Tailscale admin panel)${NC}"
-echo -e "${CYAN}    B) Interactive — browser link printed for you to approve${NC}"
-echo ""
-read -rp "  Paste your Tailscale auth key (or press Enter to authenticate interactively): " TS_AUTH_KEY
-
-if [ -n "$TS_AUTH_KEY" ]; then
-    tailscale up --authkey="$TS_AUTH_KEY" --hostname="hanryxvault-sat" 2>/dev/null || \
-    tailscale up --authkey="$TS_AUTH_KEY" 2>/dev/null || true
-    ok "Tailscale connected with auth key"
-else
-    tailscale up --hostname="hanryxvault-sat" 2>/dev/null &
-    TS_PID=$!
     echo ""
-    note "Follow the link above to authorise this Pi in the Tailscale admin panel."
-    read -rp "  Press Enter once you've approved the device in Tailscale… "
-    wait $TS_PID 2>/dev/null || true
-fi
+    echo -e "${CYAN}  ── Tailscale authentication ─────────────────────────────${NC}"
+    echo -e "${CYAN}  You need to connect this satellite Pi to your Tailscale network.${NC}"
+    echo -e "${CYAN}  Options:${NC}"
+    echo -e "${CYAN}    A) Auth key (recommended — paste from Tailscale admin panel)${NC}"
+    echo -e "${CYAN}    B) Interactive — browser link printed for you to approve${NC}"
+    echo ""
+    read -rp "  Paste your Tailscale auth key (or press Enter to authenticate interactively): " TS_AUTH_KEY
 
-TS_IP=$(tailscale ip -4 2>/dev/null || echo "not connected yet")
-ok "Tailscale IP: $TS_IP"
-systemctl enable tailscaled 2>/dev/null || true
+    if [ -n "$TS_AUTH_KEY" ]; then
+        tailscale up --authkey="$TS_AUTH_KEY" --hostname="hanryxvault-sat" 2>/dev/null || \
+        tailscale up --authkey="$TS_AUTH_KEY" 2>/dev/null || true
+        ok "Tailscale connected with auth key"
+    else
+        tailscale up --hostname="hanryxvault-sat" 2>/dev/null &
+        TS_PID=$!
+        echo ""
+        note "Follow the link above to authorise this Pi in the Tailscale admin panel."
+        read -rp "  Press Enter once you've approved the device in Tailscale… "
+        wait $TS_PID 2>/dev/null || true
+    fi
+
+    TS_IP=$(tailscale ip -4 2>/dev/null || echo "not connected yet")
+    ok "Tailscale IP: $TS_IP"
+    systemctl enable tailscaled 2>/dev/null || true
+else
+    note "Tailscale skipped — using direct LAN connection to $MAIN_PI_TS_HOST"
+fi
 
 # ── nginx proxy — tablet LAN → Tailscale → Main Pi ──────────────────────────
 info "Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…"
@@ -316,24 +339,27 @@ log "Admin URL:  $ADMIN_URL"
 log "Kiosk URL:  $KIOSK_URL"
 log "Health URL: $HEALTH_URL"
 
-# ── Wait for Tailscale to connect before doing anything ──────────────────────
-log "Waiting for Tailscale connection to Main Pi (${MAIN_PI_TS_HOST})…"
-TS_WAIT=0
+# ── Wait for Main Pi to be reachable before doing anything ────────────────────
+log "Waiting for Main Pi (${MAIN_PI_TS_HOST}) to become reachable…"
+WAIT_COUNT=0
 until curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; do
-    TS_WAIT=$((TS_WAIT + 1))
-    if [ "$TS_WAIT" -eq 1 ]; then
-        log "Main Pi not reachable yet — waiting for Tailscale tunnel…"
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ "$WAIT_COUNT" -eq 1 ]; then
+        log "Main Pi not reachable yet — waiting for connection…"
     fi
-    if [ "$TS_WAIT" -ge 5 ]; then
-        # Try to restart tailscaled in case it hasn't connected yet
-        systemctl restart tailscaled 2>/dev/null || true
+    if [ "$WAIT_COUNT" -ge 5 ]; then
+        if [ "${USE_TAILSCALE:-n}" = "y" ]; then
+            systemctl restart tailscaled 2>/dev/null || true
+            log "Restarted tailscaled — retrying…"
+        else
+            log "Still waiting for Main Pi on LAN ($MAIN_PI_TS_HOST)…"
+        fi
         sleep 5
-        TS_WAIT=0
-        log "Restarted tailscaled — retrying…"
+        WAIT_COUNT=0
     fi
     sleep 3
 done
-log "Main Pi reachable via Tailscale — launching kiosk"
+log "Main Pi reachable — launching kiosk"
 
 # ── Detect display server (Wayland vs X11) ───────────────────────────────────
 if [ "$XDG_SESSION_TYPE" = "wayland" ] || pgrep -x labwc > /dev/null 2>&1; then
