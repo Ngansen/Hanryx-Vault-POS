@@ -1,0 +1,153 @@
+sudo: arp-scan: command not found
+ngansen@hanryxvault:~ $ # Install nmap if missing
+sudo apt-get install -y nmap
+
+# Scan the whole network for anything on port 8080 (your Main Pi)
+sudo nmap -sn 192.168.86.0/24
+
+# Or just look for open port 8080 across the network (finds the Main Pi directly)
+sudo nmap -p 8080 --open 192.168.86.0/24
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+The following additional packages will be installed:
+  liblinear4 nmap-common
+Suggested packages:
+  liblinear-tools liblinear-dev ncat ndiff zenmap
+The following NEW packages will be installed:
+  liblinear4 nmap nmap-common
+0 upgraded, 3 newly installed, 0 to remove and 0 not upgraded.
+Need to get 6,299 kB of archives.
+After this operation, 27.5 MB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main arm64 liblinear4 arm64 2.3.0+dfsg-5+b2 [38.0 kB]
+Get:2 http://deb.debian.org/debian trixie/main arm64 nmap-common all 7.95+dfsg-3 [4,392 kB]
+Get:3 http://deb.debian.org/debian trixie/main arm64 nmap arm64 7.95+dfsg-3 [1,869 kB]
+Fetched 6,299 kB in 1s (7,843 kB/s)
+Selecting previously unselected package liblinear4:arm64.
+(Reading database ... 120803 files and directories currently installed.)
+Preparing to unpack .../liblinear4_2.3.0+dfsg-5+b2_arm64.deb ...
+Unpacking liblinear4:arm64 (2.3.0+dfsg-5+b2) ...
+Selecting previously unselected package nmap-common.
+Preparing to unpack .../nmap-common_7.95+dfsg-3_all.deb ...
+Unpacking nmap-common (7.95+dfsg-3) ...
+Selecting previously unselected package nmap.
+Preparing to unpack .../nmap_7.95+dfsg-3_arm64.deb ...
+Unpacking nmap (7.95+dfsg-3) ...
+Setting up liblinear4:arm64 (2.3.0+dfsg-5+b2) ...
+Setting up nmap-common (7.95+dfsg-3) ...
+Setting up nmap (7.95+dfsg-3) ...
+Processing triggers for man-db (2.13.1-1) ...
+Processing triggers for libc-bin (2.41-12+rpt1+deb13u2) ...
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-04-16 22:44 GMT
+Nmap scan report for 192.168.86.1
+Host is up (0.013s latency).
+MAC Address: D8:6C:63:F5:9F:1B (Google)
+Nmap scan report for 15aa01ac32170m70.lan (192.168.86.20)
+Host is up (0.18s latency).
+MAC Address: 18:B4:30:CC:EA:23 (Nest Labs)
+Nmap scan report for ts15.lan (192.168.86.23)
+Host is up (0.50s latency).
+MAC Address: F0:A7:31:94:76:AD (TP-Link Limited)
+Nmap scan report for iphone.lan (192.168.86.25)
+Host is up (0.18s latency).
+MAC Address: 42:95:5C:80:40:DA (Unknown)
+Nmap scan report for lgwebostv.lan (192.168.86.26)
+Host is up (0.18s latency).
+MAC Address: 74:90:BC:85:A4:6E (Arcadyan)
+Nmap scan report for wlan0.lan (192.168.86.32)
+Host is up (0.062s latency).
+MAC Address: 00:1C:C2:98:B1:1C (Part II Research)
+Nmap scan report for nest-cam-indoor.lan (192.168.86.35)
+Host is up (0.013s latency).
+MAC Address: B8:7B:D4:E7:95:CF (Google)
+Nmap scan report for hanryxvault.lan (192.168.86.36)
+Host is up (0.17s latency).
+MAC Address: 88:A2:9E:BD:9D:39 (Unknown)
+Nmap scan report for hs200.lan (192.168.86.37)
+Host is up (0.57s latency).
+MAC Address: 50:91:E3:0F:78:AE (TP-Link Limited)
+Nmap scan report for 192.168.86.42
+Host is up (0.0034s latency).
+MAC Address: 9C:4F:5F:6C:C6:08 (Google)
+Nmap scan report for 192.168.86.47
+Host is up (0.011s latency).
+MAC Address: 9C:4F:5F:8E:85:12 (Google)
+Nmap scan report for ts15.lan (192.168.86.50)
+Host is up (0.018s latency).
+MAC Address: F0:A7:31:94:74:D4 (TP-Link Limited)
+Nmap scan report for ts15.lan (192.168.86.51)
+Host is up (0.020s latency).
+MAC Address: F0:A7:31:94:7F:05 (TP-Link Limited)
+Nmap scan report for hs200.lan (192.168.86.59)
+Host is up (0.97s latency).
+MAC Address: 50:91:E3:0F:68:64 (TP-Link Limited)
+Nmap scan report for ts25.lan (192.168.86.60)
+Host is up (0.97s latency).
+MAC Address: 5C:62:8B:12:57:35 (TP-Link Limited)
+Nmap scan report for myq-d4e.lan (192.168.86.62)
+Host is up (0.86s latency).
+MAC Address: CA:6A:10:13:78:5A (Unknown)
+Nmap scan report for myq-386.lan (192.168.86.63)
+Host is up (0.95s latency).
+MAC Address: CA:6A:10:10:42:B0 (Unknown)
+Nmap scan report for 192.168.86.64
+Host is up (0.0042s latency).
+MAC Address: B8:7B:D4:E3:27:61 (Google)
+Nmap scan report for hs200.lan (192.168.86.77)
+Host is up (0.82s latency).
+MAC Address: 50:91:E3:0F:77:83 (TP-Link Limited)
+Nmap scan report for google-home-mini.lan (192.168.86.187)
+Host is up (0.59s latency).
+MAC Address: 7C:2E:BD:E1:0B:69 (Google)
+Nmap scan report for 192.168.86.229
+Host is up (0.026s latency).
+MAC Address: DC:E5:5B:5E:A8:DE (Google)
+Nmap scan report for hs210.lan (192.168.86.239)
+Host is up (0.39s latency).
+MAC Address: 40:ED:00:44:3A:BF (TP-Link Limited)
+Nmap scan report for nest-cam-indoor.lan (192.168.86.248)
+Host is up (0.034s latency).
+MAC Address: 3C:31:74:BD:82:62 (Google)
+Nmap scan report for samsung-dishwasher.lan (192.168.86.249)
+Host is up (0.44s latency).
+MAC Address: 34:FC:99:A8:38:D2 (Unknown)
+Nmap scan report for hanryxvault.lan (192.168.86.22)
+Host is up.
+Nmap done: 256 IP addresses (25 hosts up) scanned in 17.51 seconds
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-04-16 22:45 GMT
+RTTVAR has grown to over 2.3 seconds, decreasing to 2.0
+Nmap scan report for 192.168.86.1
+Host is up (0.0075s latency).
+
+PORT     STATE SERVICE
+8080/tcp open  http-proxy
+MAC Address: D8:6C:63:F5:9F:1B (Google)
+
+Nmap scan report for hanryxvault.lan (192.168.86.36)
+Host is up (0.035s latency).
+
+PORT     STATE SERVICE
+8080/tcp open  http-proxy
+MAC Address: 88:A2:9E:BD:9D:39 (Unknown)
+
+Nmap scan report for 192.168.86.42
+Host is up (0.0051s latency).
+
+PORT     STATE SERVICE
+8080/tcp open  http-proxy
+MAC Address: 9C:4F:5F:6C:C6:08 (Google)
+
+Nmap scan report for 192.168.86.47
+Host is up (0.014s latency).
+
+PORT     STATE SERVICE
+8080/tcp open  http-proxy
+MAC Address: 9C:4F:5F:8E:85:12 (Google)
+
+Nmap scan report for hanryxvault.lan (192.168.86.22)
+Host is up (0.000041s latency).
+
+PORT     STATE SERVICE
+8080/tcp open  http-proxy
+
+Nmap done: 256 IP addresses (25 hosts up) scanned in 20.04 seconds
