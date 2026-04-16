@@ -213,7 +213,8 @@ ln -sf /etc/nginx/sites-available/hanryxvault-proxy \
        /etc/nginx/sites-enabled/hanryxvault-proxy 2>/dev/null || true
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 nginx -t && systemctl enable nginx && systemctl restart nginx
-ok "nginx proxy active — tablet → port 8080 → ${MAIN_PI_TS_HOST}:8080 via Tailscale"
+CONNECTION_MODE=$([ "$USE_TAILSCALE" = "y" ] && echo "Tailscale VPN" || echo "Direct LAN")
+ok "nginx proxy active — tablet → port 8080 → ${MAIN_PI_TS_HOST}:8080 via ${CONNECTION_MODE}"
 
 # ── avahi — advertise this satellite Pi as hanryxvault.local on the shop LAN ─
 info "Configuring avahi mDNS (satellite Pi = hanryxvault.local on shop LAN)…"
@@ -542,28 +543,37 @@ sleep 4
 launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
     "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" &
 
-log "Both windows launched — Tailscale tunnel active"
+CONNECTION_MODE=\$([ -n "\$USE_TAILSCALE" ] && [ "\$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
+log "Both windows launched — \$CONNECTION_MODE tunnel active"
 
 # ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
-OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
+# Kill any existing heartbeat from a previous launcher run to prevent duplicates
+HEARTBEAT_PID_FILE="/tmp/hanryx-heartbeat.pid"
+if [ -f "\$HEARTBEAT_PID_FILE" ]; then
+  OLD_PID=\$(cat "\$HEARTBEAT_PID_FILE" 2>/dev/null)
+  kill "\$OLD_PID" 2>/dev/null || true
+  log "Killed previous heartbeat (PID \$OLD_PID)"
+fi
+OWN_IP=\$(hostname -I 2>/dev/null | awk '{print \$1}')
+OWN_TS_IP=\$(tailscale ip -4 2>/dev/null || echo "unknown")
 (
   while true; do
-    UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
-    CHROMIUM_OK=$(pgrep -x chromium-browser > /dev/null 2>&1 \
-                  || pgrep -x chromium > /dev/null 2>&1; echo $?)
-    CHROMIUM_OK=$([[ "$CHROMIUM_OK" -eq 0 ]] && echo true || echo false)
-    TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
+    UPTIME=\$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
+    CHROMIUM_OK=\$(pgrep -x chromium-browser > /dev/null 2>&1 \
+                  || pgrep -x chromium > /dev/null 2>&1; echo \$?)
+    CHROMIUM_OK=\$([[ "\$CHROMIUM_OK" -eq 0 ]] && echo true || echo false)
+    TS_STATUS=\$(tailscale status --json 2>/dev/null | python3 -c \
         "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
         2>/dev/null || echo "unknown")
-    curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
+    curl -sf --max-time 5 -X POST "\${HEALTH_URL%/health}/satellite/heartbeat" \
          -H "Content-Type: application/json" \
-         -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v5\"}" \
+         -d "{\"ip\":\"\$OWN_IP\",\"ts_ip\":\"\$OWN_TS_IP\",\"uptime\":\"\$UPTIME\",\"chromium_ok\":\$CHROMIUM_OK,\"tailscale\":\"\$TS_STATUS\",\"version\":\"v5\"}" \
          > /dev/null 2>&1 || true
     sleep 60
   done
 ) &
-log "Heartbeat loop started — pinging main Pi via Tailscale every 60 s"
+echo \$! > "\$HEARTBEAT_PID_FILE"
+log "Heartbeat loop started (PID \$!) — pinging main Pi every 60 s"
 
 wait
 LAUNCH
