@@ -17195,7 +17195,7 @@ _KIOSK_DEFAULT: dict = {
     "enabled":           True,
     "store_name":        "HanryxVault",
     "tagline":           "Trading Card Shop",
-    "idle_message":      "Welcome! Ask us about today's specials.",
+    "idle_message":      "Welcome to the Vault",
     "show_social":       True,
     "instagram":         "@hanryxvault",
     "website":           "hanryxvault.cards",
