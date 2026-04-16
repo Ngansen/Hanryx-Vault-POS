@@ -59,9 +59,9 @@ echo ""
 DEFAULT_HOST="hanryxvault"
 USE_TAILSCALE="n"
 if [ -f "$CONFIG_FILE" ]; then
-    SAVED_HOST=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    SAVED_HOST=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
     DEFAULT_HOST="${SAVED_HOST:-$DEFAULT_HOST}"
-    SAVED_TS_MODE=$(grep "^USE_TAILSCALE=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    SAVED_TS_MODE=$(grep "^USE_TAILSCALE=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
     USE_TAILSCALE="${SAVED_TS_MODE:-n}"
 fi
 
