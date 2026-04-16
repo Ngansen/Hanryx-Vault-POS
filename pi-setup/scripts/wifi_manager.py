@@ -576,7 +576,7 @@ class WifiManagerApp(tk.Tk):
         if net["security"]:
             pwd = simpledialog.askstring(
                 "WiFi Password",
-                f"Enter password for "{ssid}":  ",
+                f'Enter password for "{ssid}":  ',
                 show="•",
                 parent=self,
             )
