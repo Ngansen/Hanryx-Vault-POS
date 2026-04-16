@@ -3413,11 +3413,20 @@ def health():
     if cached:
         return jsonify(cached)
     db = get_db()
-    inv_count     = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
-    sale_count    = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
-    pending_scans = db.execute(
-        "SELECT COUNT(*) FROM scan_queue WHERE processed=0"
-    ).fetchone()[0]
+    try:
+        inv_count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    except Exception:
+        inv_count = 0
+    try:
+        sale_count = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+    except Exception:
+        sale_count = 0
+    try:
+        pending_scans = db.execute(
+            "SELECT COUNT(*) FROM scan_queue WHERE processed=0"
+        ).fetchone()[0]
+    except Exception:
+        pending_scans = 0
 
     # Satellite sales (from trade-show Pi) vs local sales
     sat_sales = 0
@@ -4006,21 +4015,28 @@ def card_scan_fast():
 
     # Exact DB lookup (primary key — extremely fast)
     db  = get_db()
-    row = db.execute(
-        "SELECT qr_code, name, price, category, rarity, set_code, description, "
-        "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
-        (qr,)
-    ).fetchone()
+    try:
+        row = db.execute(
+            "SELECT qr_code, name, price, category, rarity, set_code, description, "
+            "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
+            (qr,)
+        ).fetchone()
+    except Exception as _db_err:
+        log.error("[card/scan] DB lookup failed: %s", _db_err)
+        return jsonify({"found": False, "code": qr, "error": "Database error"}), 500
 
     if not row:
         # Try once with normalised QR
         norm = _normalize_qr(qr)
         if norm != qr:
-            row = db.execute(
-                "SELECT qr_code, name, price, category, rarity, set_code, description, "
-                "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
-                (norm,)
-            ).fetchone()
+            try:
+                row = db.execute(
+                    "SELECT qr_code, name, price, category, rarity, set_code, description, "
+                    "stock, image_url, tcg_id FROM inventory WHERE qr_code = %s LIMIT 1",
+                    (norm,)
+                ).fetchone()
+            except Exception:
+                pass
 
     # ── Smart scan fallback — rapidfuzz fuzzy match when exact DB lookup fails ──
     smart_result = None
@@ -4698,8 +4714,8 @@ def record_sale_history():
     rows = []
     for item in items:
         name  = (item.get("name") or "").strip()
-        price = float(item.get("price") or 0)
-        qty   = int(item.get("quantity") or 1)
+        price = _safe_float(item.get("price"), 0)
+        qty   = _safe_int(item.get("quantity"), 1)
         if not name or price <= 0:
             continue
         rows.append((name, price, qty, sold_at))
@@ -4776,9 +4792,9 @@ def inventory_deduct():
     for item in data:
         qr_code    = item.get("qrCode", "")
         name       = item.get("name", "Unknown")
-        quantity   = int(item.get("quantity", 1))
-        unit_price = float(item.get("unitPrice", 0.0))
-        line_total = float(item.get("lineTotal", unit_price * quantity))
+        quantity   = _safe_int(item.get("quantity", 1), 1)
+        unit_price = _safe_float(item.get("unitPrice", 0.0), 0.0)
+        line_total = _safe_float(item.get("lineTotal", unit_price * quantity), unit_price * quantity)
 
         db.execute("""
             INSERT INTO stock_deductions (qr_code, name, quantity, unit_price, line_total)
@@ -4846,7 +4862,7 @@ def inventory_decrement():
 
     for item in data:
         qr  = (item.get("qrCode") or item.get("qr_code") or "").strip()
-        qty = int(item.get("quantity") or 1)
+        qty = _safe_int(item.get("quantity") or 1, 1)
         if not qr or qty <= 0:
             continue
         try:
@@ -5489,6 +5505,8 @@ def admin_trade_in_create():
         (ref, customer, notes)
     ).fetchone()
     db.commit()
+    if not row:
+        return jsonify({"error": "Failed to create trade-in"}), 500
     new_id = row["id"]
     _kiosk_broadcast({
         "mode": "trade", "active": True, "trade_complete": False,
@@ -5563,8 +5581,8 @@ def admin_trade_in_add_item(ti_id):
     qr_code       = (data.get("qr_code") or "").strip()
     name          = (data.get("name") or "").strip()
     condition     = (data.get("condition") or "NM").strip()
-    offered_price = float(data.get("offered_price") or 0)
-    market_price  = float(data.get("market_price") or 0)
+    offered_price = _safe_float(data.get("offered_price"), 0)
+    market_price  = _safe_float(data.get("market_price"), 0)
     if not qr_code or not name:
         return jsonify({"error": "qr_code and name required"}), 400
     db.execute(
@@ -17281,7 +17299,7 @@ def kiosk_payment_processing():
         _kiosk_cart["payment_processing"] = True
         _kiosk_cart["paid"] = False
         if "total" in data:
-            _kiosk_cart["total"] = float(data["total"])
+            _kiosk_cart["total"] = _safe_float(data["total"], 0)
         snapshot = dict(_kiosk_cart)
     _kiosk_broadcast(snapshot)
     return jsonify(ok=True)
@@ -17298,9 +17316,9 @@ def kiosk_sale_complete():
     """
     data    = request.get_json(silent=True) or {}
     items   = data.get("items", [])
-    sub     = float(data.get("subtotal") or data.get("total") or 0)
-    tax     = float(data.get("tax") or 0)
-    total   = float(data.get("total") or sub)
+    sub     = _safe_float(data.get("subtotal") or data.get("total"), 0)
+    tax     = _safe_float(data.get("tax"), 0)
+    total   = _safe_float(data.get("total") or sub, 0)
     method  = (data.get("payment_method") or "").strip()
     import secrets as _sec
     token   = _sec.token_urlsafe(10)   # ~80-bit, URL-safe
@@ -17370,13 +17388,13 @@ def receipt_view(token):
         f'{_html.escape(str(it.get("name","")))} '
         f'<span style="color:#555;font-size:12px">x{it.get("qty",1)}</span></td>'
         f'<td style="padding:10px 16px;text-align:right;color:{accent};font-weight:700;border-bottom:1px solid #1a1a1a">'
-        f'£{float(it.get("price",0)):.2f}</td></tr>'
+        f'£{_safe_float(it.get("price",0), 0):.2f}</td></tr>'
         for it in items
     )
     tax_row = (
         f'<tr><td style="padding:8px 16px;color:#555">Tax</td>'
-        f'<td style="padding:8px 16px;text-align:right;color:#555">£{float(row["tax"]):.2f}</td></tr>'
-        if float(row["tax"]) > 0 else ""
+        f'<td style="padding:8px 16px;text-align:right;color:#555">£{_safe_float(row["tax"], 0):.2f}</td></tr>'
+        if _safe_float(row["tax"], 0) > 0 else ""
     )
     method_badge = (
         f'<span style="background:#1a1a1a;border:1px solid #222;border-radius:6px;'
@@ -17423,7 +17441,7 @@ table{{width:100%;border-collapse:collapse}}
     {tax_row}
     <tr class="total-row">
       <td>Total</td>
-      <td style="text-align:right">£{float(row["total"]):.2f}</td>
+      <td style="text-align:right">£{_safe_float(row["total"], 0):.2f}</td>
     </tr>
   </table>
   <div class="footer">
@@ -17453,7 +17471,7 @@ def _process_one_queued_sale(db, row_id: int, client_id: str,
             if not isinstance(item, dict):
                 continue
             name  = (item.get("name") or "").strip()
-            price = float(item.get("price") or 0)
+            price = _safe_float(item.get("price"), 0)
             qty   = max(1, _safe_int(
                 item.get("qty") or item.get("quantity") or 1, 1))
             if not name or price <= 0:
@@ -17520,7 +17538,7 @@ def sales_queue_submit():
         if not isinstance(s, dict):
             continue
         queued_at = _safe_int(s.get("queued_at") or _now_ms(), _now_ms())
-        total     = float(s.get("total") or 0)
+        total     = _safe_float(s.get("total"), 0)
         method    = str(s.get("payment_method") or "offline")[:32]
         items     = s.get("items") or []
 

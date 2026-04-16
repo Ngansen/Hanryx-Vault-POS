@@ -447,14 +447,19 @@ log "Splash pages written"
 
 # ── Detect monitor layout ─────────────────────────────────────────────────────
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
+    MONITOR_COUNT=$(wlr-randr 2>/dev/null | grep -c '^[A-Z]' || echo 0)
     MONITOR1_W=$(wlr-randr 2>/dev/null | grep -oP '\d+x\d+' | head -1 | cut -dx -f1)
 else
+    MONITOR_COUNT=$(xrandr 2>/dev/null | grep -c ' connected ' || echo 0)
     MONITOR1_W=$(xrandr 2>/dev/null | grep -oP '(?<=connected )\d+x\d+' \
                    | head -1 | cut -dx -f1)
 fi
 MONITOR1_W=${MONITOR1_W:-1920}
 MONITOR2_X=$MONITOR1_W
-log "Monitor layout: Monitor1 width=${MONITOR1_W}px, Monitor2 x-offset=${MONITOR2_X}px"
+log "Monitor layout: ${MONITOR_COUNT} monitor(s) detected, Monitor1 width=${MONITOR1_W}px, Monitor2 x-offset=${MONITOR2_X}px"
+if [ "${MONITOR_COUNT:-0}" -lt 2 ]; then
+    log "WARNING: Only ${MONITOR_COUNT} monitor(s) detected — kiosk window will be off-screen. Check HDMI connections."
+fi
 
 # ── Build Chromium flags ──────────────────────────────────────────────────────
 COMMON_FLAGS=(
