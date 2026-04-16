@@ -183,24 +183,50 @@ info "Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…"
 cat > /etc/nginx/sites-available/hanryxvault-proxy << NGINX
 # HanryxVault satellite nginx proxy
 # Tablet hits http://hanryxvault.local:8080/ → forwarded to Main Pi via Tailscale
+upstream mainpi {
+    server ${MAIN_PI_TS_HOST}:8080;
+    keepalive 8;
+}
+
 server {
     listen 8080;
     server_name _;
 
+    # Gzip — compress JSON/HTML/CSS/JS on the fly (huge win over LAN)
+    gzip             on;
+    gzip_types       text/plain text/css application/json application/javascript text/xml;
+    gzip_min_length  256;
+    gzip_vary        on;
+
     # Long timeout for SSE (Server-Sent Events) streams
-    proxy_read_timeout    300s;
+    proxy_read_timeout    600s;
     proxy_send_timeout    300s;
     proxy_connect_timeout  10s;
 
+    # SSE streams — no buffering so events arrive instantly
+    location ~ ^/(kiosk/stream|scan/stream) {
+        proxy_pass         http://mainpi;
+        proxy_http_version 1.1;
+        proxy_set_header   Connection '';
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_buffering    off;
+        proxy_cache        off;
+        chunked_transfer_encoding on;
+        # Disable nginx response timeout for long-lived SSE connections
+        proxy_read_timeout 86400s;
+    }
+
+    # All other routes — with keepalive and sensible buffering
     location / {
-        proxy_pass         http://${MAIN_PI_TS_HOST}:8080;
+        proxy_pass         http://mainpi;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade \$http_upgrade;
         proxy_set_header   Connection '';
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
         proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
-        # Required for SSE — disable buffering so events reach the client instantly
         proxy_buffering    off;
         proxy_cache        off;
         chunked_transfer_encoding on;
@@ -227,15 +253,31 @@ systemctl enable avahi-daemon 2>/dev/null || true
 systemctl restart avahi-daemon 2>/dev/null || true
 ok "Satellite Pi is now hanryxvault.local on the shop LAN (tablet can find it automatically)"
 
-# ── 3. Increase swap to 512 MB (smoother dual-monitor + video performance) ──
-info "Setting swap to 512 MB…"
+# ── 3. Increase swap to 1024 MB (smoother dual-monitor + video + Chromium) ──
+info "Setting swap to 1024 MB…"
 if [ -f /etc/dphys-swapfile ]; then
-    sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=512/' /etc/dphys-swapfile
+    sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
     dphys-swapfile setup 2>/dev/null || true
-    ok "Swap set to 512 MB"
+    ok "Swap set to 1024 MB"
 else
     note "dphys-swapfile not found — skipping swap change"
 fi
+
+# ── 3b. Enable zram for compressed swap (Pi 5 — fast RAM swap) ───────────
+info "Enabling zram compressed swap…"
+if ! lsmod | grep -q zram 2>/dev/null; then
+    modprobe zram num_devices=1 2>/dev/null || true
+fi
+if [ -b /dev/zram0 ] && ! swapon --show | grep -q zram 2>/dev/null; then
+    echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    echo 512M > /sys/block/zram0/disksize 2>/dev/null || true
+    mkswap /dev/zram0 2>/dev/null && swapon -p 5 /dev/zram0 2>/dev/null || true
+fi
+# Persist across reboots
+if ! grep -q "zram" /etc/modules 2>/dev/null; then
+    echo "zram" >> /etc/modules 2>/dev/null || true
+fi
+ok "zram compressed swap enabled (512 MB, lz4)"
 
 # ── 4. Disable USB autosuspend (keeps scanners & receipt printers alive) ────
 info "Disabling USB autosuspend…"
@@ -256,17 +298,24 @@ if ! grep -q "HanryxVault" "$CONFIG_TXT" 2>/dev/null; then
     cat >> "$CONFIG_TXT" << 'CFG'
 
 # ── HanryxVault satellite Pi 5 ──────────────────────────────────
-# 256 MB GPU memory for smooth dual-4K/1080p + hardware video decode
+# 256 MB GPU memory for smooth dual-1080p + hardware video decode
 gpu_mem=256
 # Keep both HDMI ports active even if no display connected at boot
 hdmi_force_hotplug:0=1
 hdmi_force_hotplug:1=1
 # Disable blanking — both screens stay on permanently
 hdmi_blanking=0
+# Force 1080p on both HDMI ports (prevents resolution detection delays)
+hdmi_group:0=1
+hdmi_mode:0=16
+hdmi_group:1=1
+hdmi_mode:1=16
 # Quiet boot — remove boot messages from screen
 quiet
 # Remove the rainbow splash square on boot
 disable_splash=1
+# GPU overclock for smoother YouTube + dual-screen rendering
+arm_boost=1
 CFG
     ok "config.txt updated"
 else
@@ -335,10 +384,13 @@ else
     HEALTH_URL="http://hanryxvault:8080/health"
 fi
 HEALTH_URL="${HEALTH_URL:-${KIOSK_URL%/kiosk}/health}"
-log "Main Pi (Tailscale): $MAIN_PI_TS_HOST"
+log "Main Pi: $MAIN_PI_TS_HOST"
 log "Admin URL:  $ADMIN_URL"
 log "Kiosk URL:  $KIOSK_URL"
 log "Health URL: $HEALTH_URL"
+
+# ── Pre-warm DNS so first connection is faster ──────────────────────────────
+getent hosts "$MAIN_PI_TS_HOST" > /dev/null 2>&1 && log "DNS resolved $MAIN_PI_TS_HOST" || true
 
 # ── Wait for Main Pi to be reachable before doing anything ────────────────────
 log "Waiting for Main Pi (${MAIN_PI_TS_HOST}) to become reachable…"
@@ -471,16 +523,28 @@ COMMON_FLAGS=(
     --disable-features=TranslateUI
     --check-for-update-interval=31536000
     --autoplay-policy=no-user-gesture-required
+    # GPU acceleration — critical for smooth dual-monitor + YouTube
     --enable-gpu-rasterization
     --enable-zero-copy
     --ignore-gpu-blocklist
     --use-gl=egl
     --enable-accelerated-video-decode
-    --enable-features=VaapiVideoDecoder,VaapiVideoEncoder
+    --enable-features=VaapiVideoDecoder,VaapiVideoEncoder,CanvasOopRasterization
+    # Memory & rendering optimisation
+    --disable-backing-store-limit
+    --renderer-process-limit=4
+    --disk-cache-size=104857600
+    --media-cache-size=52428800
+    --disable-dev-shm-usage
+    --disable-gpu-vsync
+    # Disable unnecessary Chromium services
     --disable-background-networking
     --disable-default-apps
     --disable-extensions
     --disable-plugins
+    --disable-sync
+    --disable-breakpad
+    --disable-component-update
     --process-per-site
     # Allow file:// to fetch http:// (for splash page health polling)
     --allow-file-access-from-files

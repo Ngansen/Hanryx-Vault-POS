@@ -17796,6 +17796,9 @@ function toggleMute(btn) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
         integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSAX0tiW3oBn88Z5YDwuP3V34FIzAFJd5cSA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<link rel="preconnect" href="https://www.youtube.com">
+<link rel="preconnect" href="https://i.ytimg.com">
+<link rel="dns-prefetch" href="https://www.youtube.com">
 {_yt_api_tag}
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
