@@ -1,0 +1,52 @@
+SyntaxError: invalid syntax. Perhaps you forgot a comma?
+ngansen@hanryxvault:~/hanryx-vault-pos $ sudo python3 -c "
+import re
+p = '/opt/hanryxvault/wifi_manager.py'
+s = open(p).read()
+s = s.replace('f\"Enter password for \"{ssid}\":  \",', 'f\\'Enter password for \"{ssid}\":  \\',')
+s = s.replace('f\"Could not connect to \"{ssid}\":\\\\n\\\\n{msg}\",', 'f\\'Could not connect to \"{ssid}\":\\\\n\\\\n{msg}\\',')
+s = s.replace('f\"Remove saved password for \"{ssid}\"?\\\\n\\\\nYou will need to enter it again to reconnect.\",', 'f\\'Remove saved password for \"{ssid}\"?\\\\n\\\\nYou will need to enter it again to reconnect.\\',')
+open(p,'w').write(s)
+print('patched')
+"
+hanryxvault-wifi
+patched
+Exception in thread Thread-6 (_do):
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/usr/lib/python3.13/threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hanryxvault/wifi_manager.py", line 644, in _do
+    result = subprocess.run(
+        [SYNC_BIN, SYNC_SCR],
+        capture_output=True, text=True, timeout=60
+    )
+  File "/usr/lib/python3.13/subprocess.py", line 554, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1857, in _execute_child
+    self._posix_spawn(args, executable, env, restore_signals, close_fds,
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      p2cread, p2cwrite,
+                      ^^^^^^^^^^^^^^^^^^
+                      c2pread, c2pwrite,
+                      ^^^^^^^^^^^^^^^^^^
+                      errread, errwrite)
+                      ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1801, in _posix_spawn
+    self.pid = os.posix_spawn(executable, args, env, **kwargs)
+               ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/opt/hanryxvault/venv/bin/python3'

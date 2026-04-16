@@ -641,14 +641,32 @@ class WifiManagerApp(tk.Tk):
         self._sync_now_btn.config(state=tk.DISABLED, text="Syncing...")
 
         def _do():
-            result = subprocess.run(
-                [SYNC_BIN, SYNC_SCR],
-                capture_output=True, text=True, timeout=60
-            )
-            ok = result.returncode == 0
+            ok = False
+            # Gracefully handle missing sync infrastructure (satellite-only Pi)
+            if not os.path.exists(SYNC_BIN) or not os.path.exists(SYNC_SCR):
+                self.after(0, self._on_sync_missing)
+                return
+            try:
+                result = subprocess.run(
+                    [SYNC_BIN, SYNC_SCR],
+                    capture_output=True, text=True, timeout=60
+                )
+                ok = result.returncode == 0
+            except Exception:
+                ok = False
             self.after(0, self._on_sync_done, ok)
 
         threading.Thread(target=_do, daemon=True).start()
+
+    def _on_sync_missing(self):
+        self._syncing = False
+        self._sync_now_btn.config(state=tk.NORMAL, text="Sync Now")
+        messagebox.showinfo(
+            "Sync unavailable",
+            "Sync script not installed on this device.\n\n"
+            "This Pi is WiFi-only — sales sync runs on the Home Pi.",
+            parent=self,
+        )
 
     def _on_sync_done(self, ok):
         self._syncing = False
