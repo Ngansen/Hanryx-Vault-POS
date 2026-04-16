@@ -43,14 +43,33 @@ echo -e "${NC}"
 step "Installing NetworkManager and USB tethering support"
 
 apt-get update -qq
+
+# Core packages (always installed)
 apt-get install -y --no-install-recommends \
     network-manager \
     usb-modeswitch \
     usb-modeswitch-data \
-    libimobiledevice6 \
-    ipheth-utils \
     usbutils \
     >/dev/null
+
+# Optional: iPhone tethering support — package names vary across Pi OS releases.
+# Try modern name first (Bookworm+), fall back to legacy, then skip gracefully.
+IPHONE_PKGS_OK=0
+for IPHONE_SET in \
+    "libimobiledevice-1.0-6 ipheth-utils" \
+    "libimobiledevice6 ipheth-utils" \
+    "libimobiledevice-1.0-6" \
+    "libimobiledevice6"
+do
+    if apt-get install -y --no-install-recommends $IPHONE_SET >/dev/null 2>&1; then
+        info "Installed iPhone tethering support: $IPHONE_SET"
+        IPHONE_PKGS_OK=1
+        break
+    fi
+done
+if [[ $IPHONE_PKGS_OK -eq 0 ]]; then
+    warn "iPhone tethering packages not available — Android USB tethering will still work"
+fi
 
 info "Packages installed"
 
