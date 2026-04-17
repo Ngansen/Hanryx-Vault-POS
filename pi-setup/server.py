@@ -17353,8 +17353,35 @@ _kiosk_sse_lock        = threading.Lock()
 _kiosk_sse_subscribers: list = []
 
 
+_KIOSK_CART_REDIS_KEY = "hv:kiosk:cart"
+
+
+def _kiosk_cart_save_redis(data: dict):
+    """Persist cart snapshot to Redis so it survives gunicorn restarts."""
+    try:
+        r = _redis()
+        if r:
+            r.set(_KIOSK_CART_REDIS_KEY, json.dumps(data), ex=86400)  # 24 h TTL
+    except Exception:
+        pass
+
+
+def _kiosk_cart_load_redis() -> dict | None:
+    """Restore cart snapshot from Redis (returns None if unavailable/empty)."""
+    try:
+        r = _redis()
+        if r:
+            raw = r.get(_KIOSK_CART_REDIS_KEY)
+            if raw:
+                return json.loads(raw)
+    except Exception:
+        pass
+    return None
+
+
 def _kiosk_broadcast(data: dict):
-    """Push cart state to all connected kiosk SSE clients."""
+    """Push cart state to all connected kiosk SSE clients and persist to Redis."""
+    _kiosk_cart_save_redis(data)
     msg = f"data: {json.dumps(data)}\n\n"
     with _kiosk_sse_lock:
         dead = []
@@ -17365,6 +17392,17 @@ def _kiosk_broadcast(data: dict):
                 dead.append(_q)
         for _q in dead:
             _kiosk_sse_subscribers.remove(_q)
+
+
+@app.route("/kiosk/state")
+def kiosk_state():
+    """GET current kiosk cart state as JSON — polling fallback for the kiosk display."""
+    # Try Redis first (survives restarts), fall back to in-memory
+    state = _kiosk_cart_load_redis()
+    if state is None:
+        with _kiosk_cart_lock:
+            state = dict(_kiosk_cart)
+    return jsonify(state)
 
 
 @app.route("/kiosk/cart", methods=["POST"])
@@ -17790,9 +17828,12 @@ def kiosk_sse_stream():
 
         def _generate():
             try:
-                # Send current state immediately on connect
-                with _kiosk_cart_lock:
-                    snapshot = dict(_kiosk_cart)
+                # Send current state immediately on connect.
+                # Prefer Redis (survives restarts) over in-memory.
+                snapshot = _kiosk_cart_load_redis()
+                if snapshot is None:
+                    with _kiosk_cart_lock:
+                        snapshot = dict(_kiosk_cart)
                 yield f"data: {json.dumps(snapshot)}\n\n"
                 while True:
                     try:
@@ -18917,7 +18958,40 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     }};
   }}
 
+  /* Show idle screen immediately on page load — don't wait for SSE */
+  goIdle();
+
   _sseConnect();
+
+  /* ── Polling fallback ──────────────────────────────────────────────────────
+     If SSE is silent for >20 s (broken connection, nginx buffering, etc.),
+     poll /kiosk/state every 8 s so the screen still switches correctly.
+  ── */
+  var _lastSseMsg = Date.now();
+  var _origOnMessage = null;
+  (function patchSseTimestamp(){{
+    var origConnect = _sseConnect;
+    _sseConnect = function(){{
+      origConnect();
+      if(_sse){{
+        var _origMsg = _sse.onmessage;
+        _sse.onmessage = function(e){{
+          _lastSseMsg = Date.now();
+          if(_origMsg) _origMsg.call(this, e);
+        }};
+      }}
+    }};
+  }})();
+
+  setInterval(function(){{
+    var stale = (Date.now() - _lastSseMsg) > 20000;
+    if(!stale) return;
+    fetch("/kiosk/state", {{cache:"no-store"}})
+      .then(function(r){{ return r.json(); }})
+      .then(function(s){{ _lastSseMsg = Date.now(); onData(s); }})
+      .catch(function(){{}});
+  }}, 8000);
+
 }})();
 
 /* ══════════════════════════════════════════════════════════════════════
