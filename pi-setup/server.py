@@ -17253,6 +17253,7 @@ _KIOSK_DEFAULT: dict = {
     "video_url":         "",
     "show_receipt_qr":   True,   # show QR receipt screen after sale
     "price_confirm_ms":  2200,   # ms to show per-item price confirm flash
+    "satellite_host":    "192.168.86.22",  # Satellite Pi IP for display blanking
 }
 
 
@@ -17430,6 +17431,49 @@ def kiosk_mode():
         _kiosk_cart["mode"] = data.get("mode", "cart")
         snapshot = dict(_kiosk_cart)
     _kiosk_broadcast(snapshot)
+    return jsonify(ok=True)
+
+
+def _satellite_ssh(host: str, cmd: str):
+    """Fire-and-forget SSH command to the Satellite Pi (non-blocking)."""
+    if not host:
+        return
+    try:
+        import subprocess as _sp
+        _sp.Popen(
+            ["ssh", "-o", "StrictHostKeyChecking=no",
+             "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+             f"pi@{host}", cmd],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+        )
+    except Exception as _e:
+        app.logger.warning("satellite SSH failed (%s): %s", host, _e)
+
+
+@app.route("/kiosk/standby", methods=["POST"])
+@require_admin
+def kiosk_standby():
+    """Put the kiosk into standby: black screen + optional display blank on Satellite Pi."""
+    ks = _load_kiosk_settings()
+    with _kiosk_cart_lock:
+        _kiosk_cart["mode"] = "standby"
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    _satellite_ssh(ks.get("satellite_host", ""), "DISPLAY=:0 xset dpms force off")
+    return jsonify(ok=True)
+
+
+@app.route("/kiosk/wake", methods=["POST"])
+@require_admin
+def kiosk_wake():
+    """Wake the kiosk from standby: idle screen + display on at Satellite Pi."""
+    ks = _load_kiosk_settings()
+    with _kiosk_cart_lock:
+        _kiosk_cart["mode"] = "idle"
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    _satellite_ssh(ks.get("satellite_host", ""),
+                   "DISPLAY=:0 xset dpms force on && xset -dpms")
     return jsonify(ok=True)
 
 
@@ -18713,6 +18757,16 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     if(elUnmute) elUnmute.style.display="flex";
   }}
 
+  function goStandby(){{
+    // Hide every panel and pause the video — pure black screen
+    [elIdle,elCart,elTrade,elTDone,elLookup,elTy,elCP,elBP,elPC,elRQ].forEach(function(e){{
+      if(e) e.style.display="none";
+    }});
+    ytPause();
+    if(elUnmute) elUnmute.style.display="none";
+    if(elBadge)  elBadge.textContent = "";
+  }}
+
   /* ══════════════════════════════════════════════════
      PRICE CONFIRM — full-screen item flash
      Shows when an item is added to the cart.
@@ -18933,6 +18987,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   /* ── SSE dispatcher ── */
   function onData(s){{
+    if(s.mode==="standby"){{ goStandby(); return; }}
     if(s.mode==="trade"){{ renderTrade(s); return; }}
     if(s.mode==="lookup"){{ renderLookup(s); return; }}
     if(s.mode==="idle"){{ goIdle(); return; }}
@@ -19225,6 +19280,63 @@ def admin_kiosk_page():
     <span style="font-size:22px">{'🟢' if ks['enabled'] else '🔴'}</span>
     <span style="color:#ccc;font-size:14px">{enabled_badge}</span>
   </div>
+
+  <!-- ── Standby / Wake ── -->
+  <div class="admin-card" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <h3 style="margin:0 0 4px;color:#facc15">⏸ Display Standby</h3>
+        <p style="margin:0;color:#666;font-size:13px">
+          Black out the customer screen and blank the Satellite Pi display hardware.
+          Wake restores the idle screen and turns the monitors back on.
+        </p>
+      </div>
+      <div style="display:flex;gap:10px;flex-shrink:0">
+        <button id="btn-standby" onclick="kioskStandby()"
+          style="padding:10px 22px;background:#1a1a1a;border:1px solid #facc15;color:#facc15;
+                 border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+          ⏸ Standby
+        </button>
+        <button id="btn-wake" onclick="kioskWake()"
+          style="padding:10px 22px;background:#facc15;border:none;color:#0a0a0a;
+                 border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+          ▶ Wake
+        </button>
+      </div>
+    </div>
+    <div id="standby-msg" style="margin-top:10px;font-size:13px;color:#4ade80;display:none"></div>
+  </div>
+  <script>
+  function kioskStandby(){{
+    document.getElementById('btn-standby').textContent='Sending…';
+    fetch('/kiosk/standby',{{method:'POST',headers:{{'Content-Type':'application/json'}}}})
+      .then(function(r){{return r.json();}})
+      .then(function(){{
+        var m=document.getElementById('standby-msg');
+        m.textContent='✅ Kiosk is in standby — display blanked.';
+        m.style.display='block';
+        document.getElementById('btn-standby').textContent='⏸ Standby';
+      }}).catch(function(){{
+        document.getElementById('btn-standby').textContent='⏸ Standby';
+        alert('Standby command failed — check server logs.');
+      }});
+  }}
+  function kioskWake(){{
+    document.getElementById('btn-wake').textContent='Sending…';
+    fetch('/kiosk/wake',{{method:'POST',headers:{{'Content-Type':'application/json'}}}})
+      .then(function(r){{return r.json();}})
+      .then(function(){{
+        var m=document.getElementById('standby-msg');
+        m.textContent='✅ Kiosk is awake — idle screen restored.';
+        m.style.display='block';
+        document.getElementById('btn-wake').textContent='▶ Wake';
+      }}).catch(function(){{
+        document.getElementById('btn-wake').textContent='▶ Wake';
+        alert('Wake command failed — check server logs.');
+      }});
+  }}
+  </script>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
     <!-- LEFT: settings form -->
     <div class="admin-card">
@@ -19322,6 +19434,16 @@ def admin_kiosk_page():
                  style="margin-bottom:4px">
           <p style="color:#444;font-size:11px">
             How long to flash each item's price full-screen when added (500–8000 ms). Default 2200.
+          </p>
+        </div>
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid #1a1a1a">
+          <label class="form-label">Satellite Pi IP / Hostname</label>
+          <input class="form-input" name="satellite_host"
+                 value="{ks.get('satellite_host','192.168.86.22')}"
+                 placeholder="192.168.86.22">
+          <p style="color:#444;font-size:11px">
+            Used by Standby / Wake to blank the physical display over SSH.
+            Leave empty to skip the SSH step (software standby still works).
           </p>
         </div>
         <div style="display:flex;gap:12px;margin-top:20px">
@@ -19472,6 +19594,7 @@ def admin_kiosk_save():
         "video_url":        request.form.get("video_url",    "").strip(),
         "show_receipt_qr":  bool(request.form.get("show_receipt_qr")),
         "price_confirm_ms": max(500, min(8000, _safe_int(request.form.get("price_confirm_ms", 2200), 2200))),
+        "satellite_host":   request.form.get("satellite_host", "192.168.86.22").strip(),
     }
     try:
         _save_kiosk_settings(settings)
