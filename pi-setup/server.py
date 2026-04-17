@@ -17763,31 +17763,29 @@ def kiosk_display():
     # Build embed params
     yt_embed_id = yt_vid or (yt_pid or "")
     if vid_mode and yt_embed_id:
-        _yt_player_vars = f"""{{
-          autoplay: 1, mute: 1, controls: 0, rel: 0,
-          modestbranding: 1, playsinline: 1,
-          {"loop: 1, playlist: '" + yt_vid + "'" if yt_vid and not yt_pid else ""},
-          {"list: '" + yt_pid + "', listType: 'playlist'" if yt_pid else ""}
-        }}"""
+        # Pre-compute optional playerVars fragments to avoid quote conflicts in f-strings
+        _loop_param    = ("loop:1,playlist:'" + yt_vid + "'") if (yt_vid and not yt_pid) else ""
+        _list_param    = ("list:'" + yt_pid + "',listType:'playlist'") if yt_pid else ""
+        _loop_comma    = (_loop_param + ",") if _loop_param else ""
+        _list_comma    = (_list_param + ",") if _list_param else ""
+        _video_id_safe = yt_vid or ""
+
         _yt_api_tag = '<script src="https://www.youtube.com/iframe_api"></script>'
-        _yt_init_js = f"""
-var ytPlayer = null;
-function onYouTubeIframeAPIReady() {{
-  ytPlayer = new YT.Player('yt-frame', {{
-    videoId: '{yt_vid or ""}',
-    playerVars: {{autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,
-      cc_load_policy:1,cc_lang_pref:'en',
-      {"loop:1,playlist:'" + yt_vid + "'" if yt_vid and not yt_pid else ""},
-      {"list:'" + yt_pid + "',listType:'playlist'" if yt_pid else ""}
-    }},
-    events: {{
-      onReady: function(e) {{ e.target.playVideo(); }}
-    }}
-  }});
-}}
-function ytPlay()  {{ if(ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo();  }}
-function ytPause() {{ if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }}
-"""
+        _yt_init_js = (
+            "var ytPlayer = null;\n"
+            "function onYouTubeIframeAPIReady() {\n"
+            "  ytPlayer = new YT.Player('yt-frame', {\n"
+            "    videoId: '" + _video_id_safe + "',\n"
+            "    playerVars: {autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,\n"
+            "      cc_load_policy:1,cc_lang_pref:'en'," + _loop_comma + _list_comma + "},\n"
+            "    events: {\n"
+            "      onReady: function(e) { e.target.playVideo(); }\n"
+            "    }\n"
+            "  });\n"
+            "}\n"
+            "function ytPlay()  { if(ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo();  }\n"
+            "function ytPause() { if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }\n"
+        )
         _yt_idle_html = """
 <div id="yt-wrap" style="position:fixed;inset:0;z-index:1">
   <div id="yt-frame" style="width:100%;height:100%"></div>
