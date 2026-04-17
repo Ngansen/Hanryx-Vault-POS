@@ -313,33 +313,34 @@ info "Applying Pi 5 performance settings to config.txt…"
 CONFIG_TXT="/boot/firmware/config.txt"
 [ -f "$CONFIG_TXT" ] || CONFIG_TXT="/boot/config.txt"
 
-if ! grep -q "HanryxVault" "$CONFIG_TXT" 2>/dev/null; then
-    cat >> "$CONFIG_TXT" << 'CFG'
+# Remove any previous HanryxVault block so re-running setup actually updates it
+if grep -q "HanryxVault satellite" "$CONFIG_TXT" 2>/dev/null; then
+    info "Removing previous HanryxVault config.txt block…"
+    # Delete from the HanryxVault marker through the end-marker (or EOF if no end-marker)
+    sed -i '/# ── HanryxVault satellite/,/# ── HanryxVault end ──/d' "$CONFIG_TXT"
+fi
+
+cat >> "$CONFIG_TXT" << 'CFG'
 
 # ── HanryxVault satellite Pi 5 ──────────────────────────────────
-# 256 MB GPU memory for smooth dual-1080p + hardware video decode
+# 256 MB GPU memory for smooth dual-display + hardware video decode
 gpu_mem=256
 # Keep both HDMI ports active even if no display connected at boot
 hdmi_force_hotplug:0=1
 hdmi_force_hotplug:1=1
 # Disable blanking — both screens stay on permanently
 hdmi_blanking=0
-# Force 1080p on both HDMI ports (prevents resolution detection delays)
-hdmi_group:0=1
-hdmi_mode:0=16
-hdmi_group:1=1
-hdmi_mode:1=16
+# IMPORTANT: do NOT force a resolution here.
+# Each screen negotiates its native resolution via EDID — required for small
+# (5", 7") displays that cannot accept 1080p. Forcing a mode causes the screen
+# to flash on briefly then go black if the panel cannot handle that mode.
 # Quiet boot — remove boot messages from screen
 quiet
-# Remove the rainbow splash square on boot
 disable_splash=1
-# GPU overclock for smoother YouTube + dual-screen rendering
 arm_boost=1
+# ── HanryxVault end ──
 CFG
-    ok "config.txt updated"
-else
-    note "config.txt already has HanryxVault block — skipping"
-fi
+ok "config.txt updated (resolution auto-negotiated per screen)"
 
 # Quiet console boot (remove boot text from screens)
 for CMDLINE in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
