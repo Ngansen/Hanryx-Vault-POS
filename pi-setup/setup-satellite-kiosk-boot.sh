@@ -98,10 +98,28 @@ HEALTH_URL="http://${MAIN_PI_TS_HOST}:8080/health"
 TABLET_PROXY_URL="http://localhost:8080"
 
 echo ""
+
+# ── Ask which physical HDMI port should show which screen ────────────────────
+SAVED_SWAP=$(grep "^SWAP_SCREENS=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
+SWAP_SCREENS="${SAVED_SWAP:-n}"
+echo -e "${CYAN}  Which monitor should show the CUSTOMER KIOSK screen?${NC}"
+echo -e "${CYAN}    1) Right monitor / HDMI port 2  (default)${NC}"
+echo -e "${CYAN}    2) Left  monitor / HDMI port 1  (swap)${NC}"
+echo ""
+read -rp "  Choose [1/2] (current: $([ "$SWAP_SCREENS" = "y" ] && echo "2 — swapped" || echo "1 — normal")): " SCR_MODE
+SCR_MODE="${SCR_MODE:-}"
+if [ "$SCR_MODE" = "2" ]; then
+    SWAP_SCREENS="y"
+elif [ "$SCR_MODE" = "1" ]; then
+    SWAP_SCREENS="n"
+fi
+
+echo ""
 echo "  User          : $CURRENT_USER"
 echo "  Main Pi (TS)  : $MAIN_PI_TS_HOST"
 echo "  Monitor 1     : $ADMIN_URL  (staff admin)"
 echo "  Monitor 2     : $KIOSK_URL  (customer kiosk)"
+echo "  Screen swap   : $SWAP_SCREENS  (y = kiosk on left/HDMI-1)"
 echo "  Tablet proxy  : port 8080 → $MAIN_PI_TS_HOST:8080"
 echo "  Connection    : $([ "$USE_TAILSCALE" = "y" ] && echo "Tailscale VPN" || echo "Direct LAN")"
 echo "  Logs          : $LOG_FILE"
@@ -115,6 +133,7 @@ ADMIN_URL=$ADMIN_URL
 KIOSK_URL=$KIOSK_URL
 HEALTH_URL=$HEALTH_URL
 USE_TAILSCALE=$USE_TAILSCALE
+SWAP_SCREENS=$SWAP_SCREENS
 EOF
 chown "$CURRENT_USER:$CURRENT_USER" "$CONFIG_FILE"
 ok "Config saved → $CONFIG_FILE"
@@ -431,6 +450,61 @@ if [ "$DISPLAY_SERVER" = "x11" ]; then
     xset s noblank 2>/dev/null || true
 fi
 
+# ── Configure dual-monitor layout ────────────────────────────────────────────
+# Explicitly position and enable both displays so the Pi boots into a proper
+# extended desktop regardless of EDID detection order.
+MONITOR1_W=1920
+MONITOR2_X=1920
+if [ "$DISPLAY_SERVER" = "x11" ]; then
+    sleep 2   # give X11 time to enumerate outputs after startup
+
+    # Detect connected output names (Pi5: typically HDMI-1 and HDMI-2)
+    mapfile -t OUTPUTS < <(xrandr 2>/dev/null | awk '/ connected/{print $1}')
+    log "xrandr connected outputs: ${OUTPUTS[*]:-none}"
+
+    if [ "${#OUTPUTS[@]}" -ge 2 ]; then
+        # Respect SWAP_SCREENS from satellite.conf
+        if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+            OUT_ADMIN="${OUTPUTS[1]}"
+            OUT_KIOSK="${OUTPUTS[0]}"
+        else
+            OUT_ADMIN="${OUTPUTS[0]}"
+            OUT_KIOSK="${OUTPUTS[1]}"
+        fi
+        log "Assigning: Admin → $OUT_ADMIN (left)   Kiosk → $OUT_KIOSK (right)"
+
+        # Set the layout — admin is primary, kiosk extends to the right
+        if xrandr \
+              --output "$OUT_ADMIN" --auto --primary --pos 0x0 \
+              --output "$OUT_KIOSK" --auto --right-of "$OUT_ADMIN" \
+              2>/dev/null; then
+            log "xrandr layout applied successfully"
+        else
+            log "WARNING: xrandr layout command failed — falling back to --auto"
+            xrandr --auto 2>/dev/null || true
+        fi
+
+        # Re-read actual width of the first monitor after layout is set
+        sleep 1
+        _W=$(xrandr 2>/dev/null \
+             | awk -v o="$OUT_ADMIN" 'index($0,o)==1 && / connected /{
+                 match($0,/([0-9]+)x[0-9]+\+/,a); print a[1]; exit}')
+        MONITOR1_W=${_W:-1920}
+
+    elif [ "${#OUTPUTS[@]}" -eq 1 ]; then
+        log "WARNING: Only 1 monitor detected (${OUTPUTS[0]}). Check HDMI cable — kiosk window will be off-screen."
+        xrandr --output "${OUTPUTS[0]}" --auto --primary 2>/dev/null || true
+        OUT_ADMIN="${OUTPUTS[0]}"
+        OUT_KIOSK=""
+    else
+        log "WARNING: No outputs detected by xrandr — check HDMI cables and /boot/firmware/config.txt."
+        xrandr --auto 2>/dev/null || true
+    fi
+
+    MONITOR2_X=$MONITOR1_W
+    log "Window positions — Monitor1 x=0  Monitor2 x=${MONITOR2_X}px"
+fi
+
 # ── Hide mouse cursor ─────────────────────────────────────────────────────────
 unclutter -idle 3 -root 2>/dev/null &
 
@@ -497,20 +571,16 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Detect monitor layout ─────────────────────────────────────────────────────
+# ── Wayland monitor layout (X11 already handled above) ───────────────────────
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
     MONITOR_COUNT=$(wlr-randr 2>/dev/null | grep -c '^[A-Z]' || echo 0)
     MONITOR1_W=$(wlr-randr 2>/dev/null | grep -oP '\d+x\d+' | head -1 | cut -dx -f1)
-else
-    MONITOR_COUNT=$(xrandr 2>/dev/null | grep -c ' connected ' || echo 0)
-    MONITOR1_W=$(xrandr 2>/dev/null | grep -oP '(?<=connected )\d+x\d+' \
-                   | head -1 | cut -dx -f1)
-fi
-MONITOR1_W=${MONITOR1_W:-1920}
-MONITOR2_X=$MONITOR1_W
-log "Monitor layout: ${MONITOR_COUNT} monitor(s) detected, Monitor1 width=${MONITOR1_W}px, Monitor2 x-offset=${MONITOR2_X}px"
-if [ "${MONITOR_COUNT:-0}" -lt 2 ]; then
-    log "WARNING: Only ${MONITOR_COUNT} monitor(s) detected — kiosk window will be off-screen. Check HDMI connections."
+    MONITOR1_W=${MONITOR1_W:-1920}
+    MONITOR2_X=$MONITOR1_W
+    log "Wayland monitor layout: ${MONITOR_COUNT} monitor(s), Monitor1=${MONITOR1_W}px, Monitor2 x-offset=${MONITOR2_X}px"
+    if [ "${MONITOR_COUNT:-0}" -lt 2 ]; then
+        log "WARNING: Only ${MONITOR_COUNT} monitor(s) detected on Wayland — check HDMI connections."
+    fi
 fi
 
 # ── Build Chromium flags ──────────────────────────────────────────────────────
