@@ -1,0 +1,276 @@
+
+ngansen@hanryxvault:~ $ # Does nginx now properly reach the Main Pi?
+curl http://192.168.86.22:8080/health
+
+# Does the kiosk endpoint work?
+curl http://192.168.86.22:8080/kiosk
+
+# Does the SSE stream connect?
+curl -N http://192.168.86.22:8080/kiosk/stream --max-time 5
+{"db_size_mb":10.26,"inventory":56,"local_sales":0,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","time_ms":1776390082654,"total_sales":0,"uptime_s":164709,"version":"2.0","wal_size_mb":0.0}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif}
+
+/* ── Layout shell ──────────────────────────────── */
+#shell{display:flex;flex-direction:column;height:100vh}
+#topbar{display:flex;justify-content:space-between;align-items:center;
+  padding:18px 40px;border-bottom:1px solid #1a1a1a;flex-shrink:0}
+#store-name{font-size:clamp(18px,2.8vw,36px);font-weight:900;color:#facc15;letter-spacing:1px}
+#store-tag{font-size:clamp(11px,1.4vw,18px);color:#555;margin-top:2px}
+#topbar-right{text-align:right}
+#clock{font-size:clamp(22px,3.5vw,48px);font-weight:200;color:#facc15;letter-spacing:3px}
+#mode-badge{font-size:clamp(10px,1.2vw,15px);color:#444;text-transform:uppercase;
+  letter-spacing:1.5px;margin-top:4px}
+#main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── IDLE ─────────────────────────────────────── */
+#idle{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:18px;text-align:center;padding:40px}
+#idle-msg{font-size:clamp(20px,3.5vw,52px);color:#ddd;font-weight:300;line-height:1.4;max-width:860px}
+.social-item{font-size:clamp(13px,1.6vw,22px);color:#555;margin:0 16px}
+
+/* ── CART ─────────────────────────────────────── */
+#cart{flex:1;display:none;flex-direction:column;padding:0 40px 30px}
+#cart-header{font-size:clamp(13px,1.4vw,18px);color:#555;text-transform:uppercase;
+  letter-spacing:1.5px;padding:20px 0 14px;border-bottom:1px solid #1a1a1a}
+#cart-items{flex:1;overflow:hidden}
+.ci{display:flex;align-items:baseline;padding:14px 0;border-bottom:1px solid #161616;gap:14px}
+.ci-name{flex:1;font-size:clamp(15px,2.2vw,32px);font-weight:600;color:#f0f0f0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-cond{font-size:clamp(11px,1.2vw,16px);color:#555;margin-left:6px;font-weight:400}
+.ci-qty{font-size:clamp(13px,1.6vw,22px);color:#666;min-width:44px;text-align:right}
+.ci-price{font-size:clamp(15px,2.2vw,32px);font-weight:700;color:#facc15;
+  min-width:90px;text-align:right}
+#cart-totals{border-top:2px solid #facc15;padding-top:18px;margin-top:8px}
+.tr{display:flex;justify-content:space-between;padding:5px 0;
+  font-size:clamp(14px,1.8vw,26px);color:#888}
+.tr.grand{color:#fff;font-size:clamp(24px,3.8vw,52px);font-weight:900;
+  padding-top:14px;margin-top:6px;border-top:1px solid #222}
+.tv{color:#facc15}
+
+/* ── TRADE ─────────────────────────────────────── */
+#trade{flex:1;display:none;flex-direction:column;padding:0 40px 30px}
+#trade-header{padding:20px 0 14px;border-bottom:1px solid #1a1a1a}
+#trade-customer{font-size:clamp(20px,3vw,44px);font-weight:900;color:#fff}
+#trade-ref{font-size:clamp(11px,1.3vw,17px);color:#555;margin-top:4px;letter-spacing:1px}
+#trade-items{flex:1;overflow:hidden}
+.ti{display:flex;align-items:baseline;padding:12px 0;border-bottom:1px solid #161616;gap:14px}
+.ti-name{flex:1;font-size:clamp(14px,2vw,28px);font-weight:600;color:#f0f0f0}
+.ti-cond{font-size:clamp(11px,1.2vw,16px);padding:2px 8px;border-radius:4px;
+  background:#1a1a1a;color:#888;margin-left:6px}
+.ti-market{font-size:clamp(12px,1.4vw,19px);color:#444;min-width:70px;text-align:right}
+.ti-offer{font-size:clamp(15px,2vw,28px);font-weight:700;color:#facc15;min-width:80px;text-align:right}
+#trade-totals{border-top:2px solid #333;padding-top:18px;margin-top:8px;
+  display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.tot-card{background:#111;border:1px solid #222;border-radius:12px;padding:16px 20px;text-align:center}
+.tot-label{font-size:clamp(11px,1.3vw,17px);color:#555;text-transform:uppercase;
+  letter-spacing:1px;margin-bottom:8px}
+.tot-value{font-size:clamp(28px,4.5vw,62px);font-weight:900}
+.tot-card.cash .tot-value{color:#22c55e}
+.tot-card.credit .tot-value{color:#facc15}
+.credit-bonus{font-size:clamp(10px,1.1vw,14px);color:#555;margin-top:4px}
+
+/* ── TRADE COMPLETE ────────────────────────────── */
+#trade-done{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:24px;text-align:center;padding:40px}
+#td-name{font-size:clamp(22px,3.5vw,50px);color:#fff;font-weight:300}
+#td-totals{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+.td-card{background:#111;border:1px solid #222;border-radius:14px;padding:24px 40px;min-width:200px}
+.td-lbl{font-size:clamp(12px,1.4vw,18px);color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.td-amt{font-size:clamp(36px,5.5vw,80px);font-weight:900}
+
+/* ── THANK YOU ─────────────────────────────────── */
+#ty{flex:1;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px;text-align:center;padding:40px}
+#ty h2{font-size:clamp(42px,8vw,110px);font-weight:900;color:#facc15}
+#ty p{font-size:clamp(18px,3vw,42px);color:#ccc;font-weight:300}
+#ty-method{font-size:clamp(14px,1.8vw,26px);color:#555;margin-top:6px}
+
+/* ── Disabled ──────────────────────────────────── */
+#dis-overlay{position:fixed;inset:0;background:#0a0a0a;display:flex;align-items:center;
+  justify-content:center;font-size:clamp(16px,2vw,28px);color:#333;z-index:9999;
+  text-align:center;padding:40px}
+</style>
+</head>
+<body>
+
+<div id="shell">
+
+  <!-- Top bar — always visible -->
+  <div id="topbar">
+    <div style="display:flex;align-items:center;gap:16px">
+      <img src="/static/logo.png" alt="HanryxVault"
+           style="height:52px;width:52px;object-fit:cover;border-radius:50%;
+                  border:2px solid #facc15;flex-shrink:0">
+      <div>
+        <div id="store-name">HanryxVault</div>
+        <div id="store-tag">Trading Card Shop</div>
+      </div>
+    </div>
+    <div id="topbar-right">
+      <div id="clock"></div>
+      <div id="mode-badge">Ready</div>
+    </div>
+  </div>
+
+  <div id="main">
+
+    <!-- IDLE -->
+    <div id="idle">
+      <div id="idle-msg">Welcome! Ask us about today's specials.</div>
+      <div style="margin-top:8px"><span class="social-item">📸 @hanryxvault</span><span class="social-item">🌐 hanryxvault.cards</span></div>
+    </div>
+
+    <!-- CART (checkout) -->
+    <div id="cart">
+      <div id="cart-header">Your order</div>
+      <div id="cart-items"></div>
+      <div id="cart-totals"></div>
+    </div>
+
+    <!-- TRADE (trade-in calculator) -->
+    <div id="trade">
+      <div id="trade-header">
+        <div id="trade-customer"></div>
+        <div id="trade-ref"></div>
+      </div>
+      <div id="trade-items"></div>
+      <div id="trade-totals">
+        <div class="tot-card cash">
+          <div class="tot-label">Cash Value</div>
+          <div class="tot-value" id="trade-cash">£0.00</div>
+        </div>
+        <div class="tot-card credit">
+          <div class="tot-label">Store Credit</div>
+          <div class="tot-value" id="trade-credit">£0.00</div>
+          <div class="credit-bonus">+20% bonus vs cash</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRADE DONE -->
+    <div id="trade-done">
+      <div style="font-size:clamp(48px,8vw,96px)">🎉</div>
+      <div id="td-name"></div>
+      <div id="td-totals">
+        <div class="td-card"><div class="td-lbl">Cash Value</div><div class="td-amt" style="color:#22c55e" id="td-cash"></div></div>
+        <div class="td-card"><div class="td-lbl">Store Credit</div><div class="td-amt" style="color:#facc15" id="td-credit"></div></div>
+      </div>
+      <div style="font-size:clamp(16px,2vw,28px);color:#555;margin-top:8px">Thank you for trading with us!</div>
+    </div>
+
+    <!-- THANK YOU (after sale) -->
+    <div id="ty">
+      <h2>Thank You!</h2>
+      <p>See you next time</p>
+      <div id="ty-method"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  var elIdle  = document.getElementById("idle");
+  var elCart  = document.getElementById("cart");
+  var elTrade = document.getElementById("trade");
+  var elTDone = document.getElementById("trade-done");
+  var elTy    = document.getElementById("ty");
+  var elBadge = document.getElementById("mode-badge");
+
+  /* clock */
+  var clk = document.getElementById("clock");
+  function tick(){ clk.textContent = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); }
+  tick(); setInterval(tick,1000);
+
+  function f(n){ return "£"+parseFloat(n||0).toFixed(2); }
+  function esc(s){ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+
+  function showOnly(el, badge){
+    [elIdle,elCart,elTrade,elTDone,elTy].forEach(function(e){ e.style.display="none"; });
+    el.style.display="flex";
+    if(elBadge) elBadge.textContent = badge||"";
+  }
+
+  function goIdle(){ showOnly(elIdle,"Ready"); }
+
+  /* ── CART mode ── */
+  function renderCart(s){
+    if(s.paid){
+      showOnly(elTy,"Sale complete");
+      var m=document.getElementById("ty-method");
+      if(m) m.textContent = s.payment_method ? "Paid by "+s.payment_method : "";
+      setTimeout(goIdle,6000);
+      return;
+    }
+    if(!s.active||!s.items||!s.items.length){ goIdle(); return; }
+    showOnly(elCart,"Checkout");
+    var ci=document.getElementById("cart-items");
+    ci.innerHTML=s.items.map(function(it){
+      var cond=it.condition?" <span class='ci-cond'>"+esc(it.condition)+"</span>":"";
+      return "<div class='ci'><div class='ci-name'>"+esc(it.name)+cond+"</div>"
+        +"<div class='ci-qty'>x"+(it.qty||1)+"</div>"
+        +"<div class='ci-price'>"+f(it.price)+"</div></div>";
+    }).join("");
+    var sub=s.subtotal||0,tax=s.tax||0,tot=s.total||0;
+    var rows="<div class='tr'><span>Subtotal</span><span class='tv'>"+f(sub)+"</span></div>";
+    if(tax>0) rows+="<div class='tr'><span>Tax</span><span class='tv'>"+f(tax)+"</span></div>";
+    rows+="<div class='tr grand'><span>TOTAL</span><span class='tv'>"+f(tot)+"</span></div>";
+    document.getElementById("cart-totals").innerHTML=rows;
+  }
+
+  /* ── TRADE mode ── */
+  function renderTrade(s){
+    if(s.trade_complete){
+      showOnly(elTDone,"Trade complete");
+      document.getElementById("td-name").textContent="Thank you, "+(s.trade_customer||"")+"!";
+      document.getElementById("td-cash").textContent=f(s.trade_cash||0);
+      document.getElementById("td-credit").textContent=f(s.trade_credit||0);
+      setTimeout(goIdle,10000);
+      return;
+    }
+    showOnly(elTrade,"Trade-In");
+    document.getElementById("trade-customer").textContent="Trade-In — "+(s.trade_customer||"");
+    document.getElementById("trade-ref").textContent=s.trade_reference||"";
+    var items=s.trade_items||[];
+    var ti=document.getElementById("trade-items");
+    ti.innerHTML=items.length ? items.map(function(it){
+      return "<div class='ti'>"
+        +"<div class='ti-name'>"+esc(it.name)+"<span class='ti-cond'>"+esc(it.condition||"")+"</span></div>"
+        +"<div class='ti-market'>"+f(it.market)+" market</div>"
+        +"<div class='ti-offer'>"+f(it.offer)+"</div>"
+        +"</div>";
+    }).join("")
+    : "<div style='color:#444;padding:20px 0;font-size:clamp(14px,1.8vw,22px)'>Waiting for cards to be assessed…</div>";
+    document.getElementById("trade-cash").textContent=f(s.trade_cash||0);
+    document.getElementById("trade-credit").textContent=f(s.trade_credit||0);
+  }
+
+  /* ── SSE dispatcher ── */
+  function onData(s){
+    if(s.mode==="trade"){ renderTrade(s); return; }
+    if(s.mode==="idle"){ goIdle(); return; }
+    renderCart(s);
+  }
+
+  var es=new EventSource("/kiosk/stream");
+  es.onmessage=function(e){
+    try{ onData(JSON.parse(e.data)); }catch(err){ console.warn("[kiosk]",err); }
+  };
+  es.onerror=function(){ console.log("[kiosk] SSE reconnecting…"); };
+})();
+</script>
+</body>
+</html><!doctype html>
+<html lang=en>
+<title>500 Internal Server Error</title>
+<h1>Internal Server Error</h1>
+<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>
