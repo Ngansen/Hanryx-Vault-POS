@@ -17812,28 +17812,49 @@ def kiosk_display():
         _yt_api_tag = '<script src="https://www.youtube.com/iframe_api"></script>'
         _yt_init_js = (
             "var ytPlayer = null;\n"
+            "function _ytShow() {\n"
+            "  var w=document.getElementById('yt-wrap');\n"
+            "  var b=document.getElementById('unmute-btn');\n"
+            "  var t=document.getElementById('idle-text');\n"
+            "  if(w){w.style.opacity='1';w.style.pointerEvents='auto';}\n"
+            "  if(b){b.style.display='flex';}\n"
+            "  if(t){t.style.display='none';}\n"
+            "}\n"
+            "function _ytHide() {\n"
+            "  var w=document.getElementById('yt-wrap');\n"
+            "  var b=document.getElementById('unmute-btn');\n"
+            "  var t=document.getElementById('idle-text');\n"
+            "  if(w){w.style.opacity='0';w.style.pointerEvents='none';}\n"
+            "  if(b){b.style.display='none';}\n"
+            "  if(t){t.style.display='flex';}\n"
+            "}\n"
             "function onYouTubeIframeAPIReady() {\n"
             "  ytPlayer = new YT.Player('yt-frame', {\n"
             "    videoId: '" + _video_id_safe + "',\n"
             "    playerVars: {autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,\n"
             "      cc_load_policy:1,cc_lang_pref:'en'," + _loop_comma + _list_comma + "},\n"
             "    events: {\n"
-            "      onReady: function(e) { e.target.playVideo(); }\n"
+            "      onReady: function(e) { e.target.playVideo(); },\n"
+            "      onStateChange: function(e) {\n"
+            "        if(e.data===YT.PlayerState.PLAYING) _ytShow();\n"
+            "        else if(e.data===YT.PlayerState.ENDED||e.data===-1) _ytHide();\n"
+            "      },\n"
+            "      onError: function() { _ytHide(); }\n"
             "    }\n"
             "  });\n"
             "}\n"
-            "function ytPlay()  { if(ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo();  }\n"
-            "function ytPause() { if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }\n"
+            "function ytPlay()  { if(ytPlayer && ytPlayer.playVideo)  { ytPlayer.playVideo();  _ytShow(); } }\n"
+            "function ytPause() { if(ytPlayer && ytPlayer.pauseVideo) { ytPlayer.pauseVideo(); _ytHide(); } }\n"
         )
         _yt_idle_html = """
-<div id="yt-wrap" style="position:fixed;inset:0;z-index:1">
+<div id="yt-wrap" style="position:fixed;inset:0;z-index:1;opacity:0;pointer-events:none;transition:opacity 1s">
   <div id="yt-frame" style="width:100%;height:100%"></div>
 </div>
 <button id="unmute-btn" onclick="toggleMute(this)"
   style="position:fixed;bottom:20px;right:20px;z-index:30;
          background:#0009;border:1px solid #f59e0b55;border-radius:50%;
          width:52px;height:52px;font-size:22px;cursor:pointer;
-         display:flex;align-items:center;justify-content:center;color:#fff">
+         display:none;align-items:center;justify-content:center;color:#fff">
   🔇
 </button>"""
         _yt_mute_js = """
@@ -17897,7 +17918,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 /* ── IDLE ─────────────────────────────────────── */
 #idle{{flex:1;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:18px;text-align:center;padding:40px;position:relative;overflow:hidden}}
-#idle-text{{position:relative;z-index:5;display:{'none' if vid_mode and yt_embed_id else 'flex'};
+#idle-text{{position:relative;z-index:5;display:flex;
   flex-direction:column;align-items:center;gap:18px}}
 #idle-msg{{font-size:clamp(20px,3.5vw,52px);color:#ddd;font-weight:300;line-height:1.4;max-width:860px}}
 .social-item{{font-size:clamp(13px,1.6vw,22px);color:#555;margin:0 16px}}
