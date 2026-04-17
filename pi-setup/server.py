@@ -17369,8 +17369,8 @@ def _kiosk_cart_save_redis(data: dict):
         r = _redis()
         if r:
             r.set(_KIOSK_CART_REDIS_KEY, json.dumps(data), ex=86400)  # 24 h TTL
-    except Exception:
-        pass
+    except Exception as _re:
+        app.logger.debug("kiosk Redis save failed (cart won't survive restart): %s", _re)
 
 
 def _kiosk_cart_load_redis() -> dict | None:
@@ -17381,8 +17381,8 @@ def _kiosk_cart_load_redis() -> dict | None:
             raw = r.get(_KIOSK_CART_REDIS_KEY)
             if raw:
                 return json.loads(raw)
-    except Exception:
-        pass
+    except Exception as _re:
+        app.logger.debug("kiosk Redis load failed (falling back to in-memory): %s", _re)
     return None
 
 
@@ -17524,7 +17524,8 @@ def receipt_view(token):
             "SELECT * FROM digital_receipts WHERE token=%s AND expires_at > %s",
             (token, _now_ms()),
         ).fetchone()
-    except Exception:
+    except Exception as _dbe:
+        app.logger.error("receipt_view DB query failed for token=%s: %s", token, _dbe)
         row = None
 
     if not row:
