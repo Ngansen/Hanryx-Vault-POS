@@ -411,27 +411,19 @@ log "Health URL: $HEALTH_URL"
 # ── Pre-warm DNS so first connection is faster ──────────────────────────────
 getent hosts "$MAIN_PI_TS_HOST" > /dev/null 2>&1 && log "DNS resolved $MAIN_PI_TS_HOST" || true
 
-# ── Wait for Main Pi to be reachable before doing anything ────────────────────
-log "Waiting for Main Pi (${MAIN_PI_TS_HOST}) to become reachable…"
-WAIT_COUNT=0
-until curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; do
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ "$WAIT_COUNT" -eq 1 ]; then
-        log "Main Pi not reachable yet — waiting for connection…"
+# ── Quick non-blocking connectivity check ────────────────────────────────────
+# We do NOT block here — the splash page already shows "Connecting…" and polls
+# the server with JavaScript, then auto-redirects when it's ready.
+# Blocking here just leaves both screens showing the raw desktop while we wait.
+if curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; then
+    log "Main Pi reachable immediately — launching kiosk"
+else
+    log "Main Pi not yet reachable — launching splash (it will retry automatically)"
+    # Kick off a background Tailscale restart if needed; splash handles the wait
+    if [ "${USE_TAILSCALE:-n}" = "y" ]; then
+        systemctl restart tailscaled 2>/dev/null &
     fi
-    if [ "$WAIT_COUNT" -ge 5 ]; then
-        if [ "${USE_TAILSCALE:-n}" = "y" ]; then
-            systemctl restart tailscaled 2>/dev/null || true
-            log "Restarted tailscaled — retrying…"
-        else
-            log "Still waiting for Main Pi on LAN ($MAIN_PI_TS_HOST)…"
-        fi
-        sleep 5
-        WAIT_COUNT=0
-    fi
-    sleep 3
-done
-log "Main Pi reachable — launching kiosk"
+fi
 
 # ── Detect display server (Wayland vs X11) ───────────────────────────────────
 if [ "$XDG_SESSION_TYPE" = "wayland" ] || pgrep -x labwc > /dev/null 2>&1; then
