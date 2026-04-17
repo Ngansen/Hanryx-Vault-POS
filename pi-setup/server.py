@@ -17259,8 +17259,13 @@ _KIOSK_DEFAULT: dict = {
 def _load_kiosk_settings() -> dict:
     try:
         with open(_KIOSK_SETTINGS_PATH) as _f:
-            return {**_KIOSK_DEFAULT, **json.load(_f)}
-    except Exception:
+            data = json.load(_f)
+        merged = {**_KIOSK_DEFAULT, **data}
+        app.logger.debug("kiosk_settings loaded: video_mode=%s url=%s",
+                         merged.get("video_mode"), merged.get("video_url", "")[:40])
+        return merged
+    except Exception as _e:
+        app.logger.warning("kiosk_settings FALLBACK TO DEFAULT: %s", _e)
         return dict(_KIOSK_DEFAULT)
 
 
@@ -17801,6 +17806,8 @@ def kiosk_display():
     yt_vid, yt_pid = _parse_youtube_id(vid_url)
     # Build embed params
     yt_embed_id = yt_vid or (yt_pid or "")
+    app.logger.warning("kiosk_display: vid_mode=%s yt_embed_id=%s vid_url=%s",
+                       vid_mode, repr(yt_embed_id), repr(vid_url[:40]))
     if vid_mode and yt_embed_id:
         # Pre-compute optional playerVars fragments to avoid quote conflicts in f-strings
         _loop_param    = ("loop:1,playlist:'" + yt_vid + "'") if (yt_vid and not yt_pid) else ""
