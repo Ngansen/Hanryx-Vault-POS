@@ -413,12 +413,26 @@ def _add_security_headers(resp):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"]        = "SAMEORIGIN"
     resp.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
-    # CSP: restrictive for API, relaxed for admin HTML pages
+    # CSP: restrictive for admin pages, permissive for kiosk display (needs YouTube)
     if resp.content_type and "text/html" in resp.content_type:
-        resp.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
-        )
+        _path = request.path if request else ""
+        if _path.startswith("/kiosk"):
+            # Kiosk display embeds YouTube iframe + loads YT iframe API script
+            resp.headers["Content-Security-Policy"] = (
+                "default-src 'self' https://www.youtube.com https://i.ytimg.com "
+                "https://www.youtube-nocookie.com https://yt3.ggpht.com; "
+                "script-src 'self' 'unsafe-inline' https://www.youtube.com "
+                "https://www.gstatic.com https://cdnjs.cloudflare.com; "
+                "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "connect-src 'self' https://www.youtube.com;"
+            )
+        else:
+            resp.headers["Content-Security-Policy"] = (
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
+            )
     if os.environ.get("HTTPS_ONLY") == "1":
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
