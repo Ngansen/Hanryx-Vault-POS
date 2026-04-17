@@ -17338,6 +17338,7 @@ def _parse_youtube_id(url: str) -> tuple[str, str]:
 # In-memory kiosk cart state (updated by POS via POST /kiosk/cart)
 _kiosk_cart_lock = threading.Lock()
 _kiosk_cart: dict = {
+    "mode":                "idle",  # idle | cart | trade | lookup
     "active":              False,
     "items":               [],      # [{name, qty, price}]
     "subtotal":            0.0,
@@ -17394,15 +17395,36 @@ def _kiosk_broadcast(data: dict):
             _kiosk_sse_subscribers.remove(_q)
 
 
-@app.route("/kiosk/state")
-def kiosk_state():
-    """GET current kiosk cart state as JSON — polling fallback for the kiosk display."""
-    # Try Redis first (survives restarts), fall back to in-memory
+def _kiosk_get_state() -> dict:
+    """Return current kiosk state — Redis-first so restarts don't lose state."""
     state = _kiosk_cart_load_redis()
     if state is None:
         with _kiosk_cart_lock:
             state = dict(_kiosk_cart)
-    return jsonify(state)
+    return state
+
+
+@app.route("/kiosk/state")
+def kiosk_state():
+    """GET current kiosk cart state as JSON — polling fallback for the kiosk display."""
+    return jsonify(_kiosk_get_state())
+
+
+@app.route("/kiosk/state.json")
+def kiosk_state_json():
+    """Alias for /kiosk/state used by the Expo tablet app."""
+    return jsonify(_kiosk_get_state())
+
+
+@app.route("/kiosk/mode", methods=["POST"])
+def kiosk_mode():
+    """Lightweight endpoint — update the screen mode without touching cart items."""
+    data = request.get_json(force=True, silent=True) or {}
+    with _kiosk_cart_lock:
+        _kiosk_cart["mode"] = data.get("mode", "cart")
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    return jsonify(ok=True)
 
 
 @app.route("/kiosk/cart", methods=["POST"])
@@ -17410,6 +17432,9 @@ def kiosk_cart_update():
     """POS pushes cart state here so the kiosk display updates live."""
     data = request.get_json(silent=True) or {}
     with _kiosk_cart_lock:
+        # Preserve the current mode if the tablet doesn't send one
+        if "mode" not in data:
+            data["mode"] = _kiosk_cart.get("mode", "idle")
         _kiosk_cart.update(data)
         snapshot = dict(_kiosk_cart)
     _kiosk_broadcast(snapshot)
