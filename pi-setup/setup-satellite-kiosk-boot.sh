@@ -451,29 +451,59 @@ if [ "$DISPLAY_SERVER" = "x11" ]; then
 fi
 
 # ── Configure dual-monitor layout ────────────────────────────────────────────
-# Explicitly position and enable both displays so the Pi boots into a proper
-# extended desktop regardless of EDID detection order.
+# Detects physical screen size from xrandr (mm) and always assigns the smaller
+# screen (5") to kiosk and the larger screen (10.1") to admin.
+# Falls back to SWAP_SCREENS if both screens report the same/unknown size.
 MONITOR1_W=1920
 MONITOR2_X=1920
+OUT_ADMIN=""
+OUT_KIOSK=""
 if [ "$DISPLAY_SERVER" = "x11" ]; then
     sleep 2   # give X11 time to enumerate outputs after startup
 
-    # Detect connected output names (Pi5: typically HDMI-1 and HDMI-2)
-    mapfile -t OUTPUTS < <(xrandr 2>/dev/null | awk '/ connected/{print $1}')
-    log "xrandr connected outputs: ${OUTPUTS[*]:-none}"
-
-    if [ "${#OUTPUTS[@]}" -ge 2 ]; then
-        # Respect SWAP_SCREENS from satellite.conf
-        if [ "${SWAP_SCREENS:-n}" = "y" ]; then
-            OUT_ADMIN="${OUTPUTS[1]}"
-            OUT_KIOSK="${OUTPUTS[0]}"
-        else
-            OUT_ADMIN="${OUTPUTS[0]}"
-            OUT_KIOSK="${OUTPUTS[1]}"
+    # Parse connected outputs and their physical widths (mm) from xrandr.
+    # Example line: "HDMI-1 connected primary 1920x1080+0+0 (...) 476mm x 268mm"
+    declare -A _OUT_MM
+    _CUR=""
+    while IFS= read -r _line; do
+        if [[ "$_line" =~ ^([A-Za-z0-9_-]+)[[:space:]]connected ]]; then
+            _CUR="${BASH_REMATCH[1]}"
+        elif [[ -n "$_CUR" && "$_line" =~ ([0-9]+)mm[[:space:]]x[[:space:]]([0-9]+)mm ]]; then
+            _OUT_MM[$_CUR]="${BASH_REMATCH[1]}"   # physical width in mm
+            _CUR=""
         fi
-        log "Assigning: Admin → $OUT_ADMIN (left)   Kiosk → $OUT_KIOSK (right)"
+    done < <(xrandr 2>/dev/null)
 
-        # Set the layout — admin is primary, kiosk extends to the right
+    for _o in "${!_OUT_MM[@]}"; do
+        log "Detected output: $_o  (${_OUT_MM[$_o]}mm wide physically)"
+    done
+
+    if [ "${#_OUT_MM[@]}" -ge 2 ]; then
+        # Find smallest and largest by physical width
+        _MIN=99999; _MAX=0; _KIOSK_CAND=""; _ADMIN_CAND=""
+        for _o in "${!_OUT_MM[@]}"; do
+            _mm="${_OUT_MM[$_o]:-0}"
+            if [ "$_mm" -lt "$_MIN" ]; then _MIN="$_mm"; _KIOSK_CAND="$_o"; fi
+            if [ "$_mm" -gt "$_MAX" ]; then _MAX="$_mm"; _ADMIN_CAND="$_o"; fi
+        done
+
+        if [ "$_MIN" -ne "$_MAX" ] && [ "$_MIN" -gt 0 ]; then
+            # Screens differ in size — auto-assign: small = kiosk, large = admin
+            OUT_KIOSK="$_KIOSK_CAND"
+            OUT_ADMIN="$_ADMIN_CAND"
+            log "Auto-assigned by size: Admin(${_MAX}mm)=$OUT_ADMIN  Kiosk(${_MIN}mm)=$OUT_KIOSK"
+        else
+            # Sizes equal or unreported — fall back to SWAP_SCREENS setting
+            mapfile -t _OUTS < <(printf '%s\n' "${!_OUT_MM[@]}" | sort)
+            if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+                OUT_ADMIN="${_OUTS[1]}"; OUT_KIOSK="${_OUTS[0]}"
+            else
+                OUT_ADMIN="${_OUTS[0]}"; OUT_KIOSK="${_OUTS[1]}"
+            fi
+            log "Sizes equal/unknown — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
+        fi
+
+        # Apply layout: admin primary at 0,0 — kiosk extends to the right
         if xrandr \
               --output "$OUT_ADMIN" --auto --primary --pos 0x0 \
               --output "$OUT_KIOSK" --auto --right-of "$OUT_ADMIN" \
@@ -484,25 +514,24 @@ if [ "$DISPLAY_SERVER" = "x11" ]; then
             xrandr --auto 2>/dev/null || true
         fi
 
-        # Re-read actual width of the first monitor after layout is set
+        # Re-read admin monitor's actual pixel width after layout is applied
         sleep 1
         _W=$(xrandr 2>/dev/null \
              | awk -v o="$OUT_ADMIN" 'index($0,o)==1 && / connected /{
                  match($0,/([0-9]+)x[0-9]+\+/,a); print a[1]; exit}')
         MONITOR1_W=${_W:-1920}
 
-    elif [ "${#OUTPUTS[@]}" -eq 1 ]; then
-        log "WARNING: Only 1 monitor detected (${OUTPUTS[0]}). Check HDMI cable — kiosk window will be off-screen."
-        xrandr --output "${OUTPUTS[0]}" --auto --primary 2>/dev/null || true
-        OUT_ADMIN="${OUTPUTS[0]}"
-        OUT_KIOSK=""
+    elif [ "${#_OUT_MM[@]}" -eq 1 ]; then
+        _ONLY="${!_OUT_MM[*]}"
+        log "WARNING: Only 1 monitor detected ($_ONLY). Check the HDMI cable on the second port."
+        xrandr --output "$_ONLY" --auto --primary 2>/dev/null || true
     else
-        log "WARNING: No outputs detected by xrandr — check HDMI cables and /boot/firmware/config.txt."
+        log "WARNING: No outputs found by xrandr — check HDMI cables and /boot/firmware/config.txt."
         xrandr --auto 2>/dev/null || true
     fi
 
     MONITOR2_X=$MONITOR1_W
-    log "Window positions — Monitor1 x=0  Monitor2 x=${MONITOR2_X}px"
+    log "Window positions — Admin x=0px  Kiosk x=${MONITOR2_X}px"
 fi
 
 # ── Hide mouse cursor ─────────────────────────────────────────────────────────
