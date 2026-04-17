@@ -19186,7 +19186,14 @@ def admin_kiosk_save():
         "show_receipt_qr":  bool(request.form.get("show_receipt_qr")),
         "price_confirm_ms": max(500, min(8000, _safe_int(request.form.get("price_confirm_ms", 2200), 2200))),
     }
-    _save_kiosk_settings(settings)
+    try:
+        _save_kiosk_settings(settings)
+    except Exception as _e:
+        app.logger.error("kiosk save failed: %s", _e)
+        return (f"<h2>Save failed: {_e}</h2>"
+                "<p>Fix: run <code>docker compose exec -u root pos "
+                "chown -R hanryx:hanryx /data</code> on Main Pi</p>"
+                '<a href="/admin/kiosk">Back</a>'), 500
     return redirect("/admin/kiosk?saved=1")
 
 

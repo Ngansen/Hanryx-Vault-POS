@@ -36,14 +36,16 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 COPY . .
 
-RUN mkdir -p /app/card-images /app/data && chown -R hanryx:hanryx /app
+RUN mkdir -p /app/card-images /app/data /data && \
+    chown -R hanryx:hanryx /app /data
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-USER hanryx
-
 EXPOSE 8080
 
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "server:app"]
+ENTRYPOINT ["/entrypoint.sh"]
