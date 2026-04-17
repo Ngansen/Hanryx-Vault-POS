@@ -1,12 +1,12 @@
 import threading
 
-workers      = 2
-worker_class = "gthread"
-threads      = 4
+workers             = 1      # single worker so SSE subscribers share memory with cart updates
+worker_class        = "gevent"
+worker_connections  = 500   # gevent handles hundreds of concurrent SSE + API connections
 
 bind      = "0.0.0.0:8080"
 
-timeout          = 120
+timeout          = 300   # longer timeout for SSE streams
 keepalive        = 65
 
 max_requests       = 2000
