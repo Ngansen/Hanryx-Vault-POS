@@ -472,28 +472,36 @@ if [ "$DISPLAY_SERVER" = "x11" ]; then
     done
 
     if [ "${#_OUT_MM[@]}" -ge 2 ]; then
-        # Find smallest and largest by physical width
-        _MIN=99999; _MAX=0; _KIOSK_CAND=""; _ADMIN_CAND=""
-        for _o in "${!_OUT_MM[@]}"; do
-            _mm="${_OUT_MM[$_o]:-0}"
-            if [ "$_mm" -lt "$_MIN" ]; then _MIN="$_mm"; _KIOSK_CAND="$_o"; fi
-            if [ "$_mm" -gt "$_MAX" ]; then _MAX="$_mm"; _ADMIN_CAND="$_o"; fi
-        done
-
-        if [ "$_MIN" -ne "$_MAX" ] && [ "$_MIN" -gt 0 ]; then
-            # Screens differ in size — auto-assign: small = kiosk, large = admin
-            OUT_KIOSK="$_KIOSK_CAND"
-            OUT_ADMIN="$_ADMIN_CAND"
-            log "Auto-assigned by size: Admin(${_MAX}mm)=$OUT_ADMIN  Kiosk(${_MIN}mm)=$OUT_KIOSK"
+        # ── PRIORITY 1: explicit output names from satellite.conf ────────────
+        # If KIOSK_OUTPUT and ADMIN_OUTPUT are set, use them verbatim.
+        if [ -n "${KIOSK_OUTPUT:-}" ] && [ -n "${ADMIN_OUTPUT:-}" ] \
+           && [ -n "${_OUT_MM[$KIOSK_OUTPUT]:-}" ] \
+           && [ -n "${_OUT_MM[$ADMIN_OUTPUT]:-}" ]; then
+            OUT_KIOSK="$KIOSK_OUTPUT"
+            OUT_ADMIN="$ADMIN_OUTPUT"
+            log "Manual override from satellite.conf: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
         else
-            # Sizes equal or unreported — fall back to SWAP_SCREENS setting
-            mapfile -t _OUTS < <(printf '%s\n' "${!_OUT_MM[@]}" | sort)
-            if [ "${SWAP_SCREENS:-n}" = "y" ]; then
-                OUT_ADMIN="${_OUTS[1]}"; OUT_KIOSK="${_OUTS[0]}"
+            # ── PRIORITY 2: auto-detect by physical width ────────────────────
+            _MIN=99999; _MAX=0; _KIOSK_CAND=""; _ADMIN_CAND=""
+            for _o in "${!_OUT_MM[@]}"; do
+                _mm="${_OUT_MM[$_o]:-0}"
+                if [ "$_mm" -lt "$_MIN" ]; then _MIN="$_mm"; _KIOSK_CAND="$_o"; fi
+                if [ "$_mm" -gt "$_MAX" ]; then _MAX="$_mm"; _ADMIN_CAND="$_o"; fi
+            done
+            if [ "$_MIN" -ne "$_MAX" ] && [ "$_MIN" -gt 0 ]; then
+                OUT_KIOSK="$_KIOSK_CAND"
+                OUT_ADMIN="$_ADMIN_CAND"
+                log "Auto-assigned by size: Admin(${_MAX}mm)=$OUT_ADMIN  Kiosk(${_MIN}mm)=$OUT_KIOSK"
             else
-                OUT_ADMIN="${_OUTS[0]}"; OUT_KIOSK="${_OUTS[1]}"
+                # ── PRIORITY 3: SWAP_SCREENS y/n fallback ────────────────────
+                mapfile -t _OUTS < <(printf '%s\n' "${!_OUT_MM[@]}" | sort)
+                if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+                    OUT_ADMIN="${_OUTS[1]}"; OUT_KIOSK="${_OUTS[0]}"
+                else
+                    OUT_ADMIN="${_OUTS[0]}"; OUT_KIOSK="${_OUTS[1]}"
+                fi
+                log "Sizes equal/unknown — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
             fi
-            log "Sizes equal/unknown — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
         fi
 
         # Apply layout: admin primary at 0,0 — kiosk extends to the right
