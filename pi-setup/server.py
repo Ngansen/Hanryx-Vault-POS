@@ -17257,16 +17257,61 @@ _KIOSK_DEFAULT: dict = {
 
 
 def _load_kiosk_settings() -> dict:
+    """Load kiosk settings from DB (server_state table), migrating from file on first use."""
+    try:
+        db = _direct_db()
+        row = db.execute(
+            "SELECT value FROM server_state WHERE key = 'kiosk_settings'"
+        ).fetchone()
+        db.close()
+        if row:
+            data = json.loads(row[0])
+            return {**_KIOSK_DEFAULT, **data}
+    except Exception as _e:
+        app.logger.warning("kiosk_settings DB read failed: %s", _e)
+
+    # DB had no row — try migrating from the legacy JSON file once
     try:
         with open(_KIOSK_SETTINGS_PATH) as _f:
             data = json.load(_f)
         merged = {**_KIOSK_DEFAULT, **data}
-        app.logger.debug("kiosk_settings loaded: video_mode=%s url=%s",
-                         merged.get("video_mode"), merged.get("video_url", "")[:40])
+        # Persist to DB so we never hit the file again
+        try:
+            db = _direct_db()
+            db.execute(
+                "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
+                " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (json.dumps(merged),)
+            )
+            db.commit()
+            db.close()
+            app.logger.info("kiosk_settings migrated from file to DB")
+        except Exception as _dbe:
+            app.logger.warning("kiosk_settings DB migration write failed: %s", _dbe)
         return merged
-    except Exception as _e:
-        app.logger.warning("kiosk_settings FALLBACK TO DEFAULT: %s", _e)
-        return dict(_KIOSK_DEFAULT)
+    except Exception:
+        pass
+
+    return dict(_KIOSK_DEFAULT)
+
+
+def _save_kiosk_settings(s: dict):
+    """Save kiosk settings to DB (server_state) and also write the legacy JSON file."""
+    db = _direct_db()
+    db.execute(
+        "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
+        " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (json.dumps(s),)
+    )
+    db.commit()
+    db.close()
+    # Best-effort write to legacy file (non-fatal if /data volume is unavailable)
+    try:
+        os.makedirs(os.path.dirname(_KIOSK_SETTINGS_PATH), exist_ok=True)
+        with open(_KIOSK_SETTINGS_PATH, "w") as _f:
+            json.dump(s, _f, indent=2)
+    except Exception as _fe:
+        app.logger.warning("kiosk_settings file write failed (DB saved OK): %s", _fe)
 
 
 def _parse_youtube_id(url: str) -> tuple[str, str]:
@@ -17288,12 +17333,6 @@ def _parse_youtube_id(url: str) -> tuple[str, str]:
         if not vid and p.path.startswith("/embed/"):
             vid = p.path.split("/embed/")[1].split("?")[0]
     return vid, pid
-
-
-def _save_kiosk_settings(s: dict):
-    os.makedirs(os.path.dirname(_KIOSK_SETTINGS_PATH), exist_ok=True)
-    with open(_KIOSK_SETTINGS_PATH, "w") as _f:
-        json.dump(s, _f, indent=2)
 
 
 # In-memory kiosk cart state (updated by POS via POST /kiosk/cart)
@@ -17806,8 +17845,6 @@ def kiosk_display():
     yt_vid, yt_pid = _parse_youtube_id(vid_url)
     # Build embed params
     yt_embed_id = yt_vid or (yt_pid or "")
-    app.logger.warning("kiosk_display: vid_mode=%s yt_embed_id=%s vid_url=%s",
-                       vid_mode, repr(yt_embed_id), repr(vid_url[:40]))
     if vid_mode and yt_embed_id:
         # Pre-compute optional playerVars fragments to avoid quote conflicts in f-strings
         _loop_param    = ("loop:1,playlist:'" + yt_vid + "'") if (yt_vid and not yt_pid) else ""
