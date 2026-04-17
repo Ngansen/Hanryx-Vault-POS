@@ -10021,9 +10021,19 @@ async function quickAction(action) {{
     }} catch(e) {{ toast('Error: '+e.message, true); }}
   }} else if (action === 'sync-inventory') {{
     toast('Syncing from cloud…');
-    const r = await fetch('/admin/sync-from-cloud?force=0', {{method:'POST'}});
-    const d = await r.json();
-    toast('Done — upserted: ' + (d.upserted||0));
+    try {{
+      const r = await fetch('/admin/sync-from-cloud?force=0', {{method:'POST'}});
+      const d = await r.json();
+      if (d.skipped) {{
+        toast(`Skipped — already have ${{d.existing}} products`);
+      }} else if (d.upserted > 0) {{
+        toast(`Done — ${{d.upserted}} product(s) synced`);
+      }} else {{
+        const sources = d.sources || {{}};
+        const failed = Object.entries(sources).filter(([,v])=>!v.ok).map(([k,v])=>v.error||k);
+        toast(failed.length ? '❌ Sync failed: ' + failed.join('; ') : '⚠ Synced 0 products — check sources', true);
+      }}
+    }} catch(e) {{ toast('❌ Sync error: '+e.message, true); }}
   }}
 }}
 
@@ -12207,12 +12217,35 @@ async function deleteProduct(qr) {{
 }}
 
 async function syncCloud(force) {{
-  document.getElementById('sync-result').textContent = 'Syncing…';
-  const r = await fetch('/admin/sync-from-cloud?force=' + (force?'1':'0'), {{method:'POST'}});
-  const d = await r.json();
-  document.getElementById('sync-result').textContent =
-    d.skipped ? `Skipped — already have ${{d.existing}} products (use Force Re-Sync)` :
-    `Done — upserted: ${{d.upserted}}, skipped rows: ${{d.skipped}}`;
+  const el = document.getElementById('sync-result');
+  el.style.color = '#aaa';
+  el.textContent = '⏳ Syncing from cloud…';
+  try {{
+    const r = await fetch('/admin/sync-from-cloud?force=' + (force?'1':'0'), {{method:'POST'}});
+    const d = await r.json();
+    if (d.skipped) {{
+      el.style.color = '#facc15';
+      el.textContent = `⏭ Skipped — already have ${{d.existing}} products. Use Force Re-Sync to refresh.`;
+    }} else {{
+      const sources = d.sources || {{}};
+      const failed  = Object.entries(sources).filter(([,v]) => !v.ok).map(([k,v]) => `${{k}}: ${{v.error}}`);
+      if (d.upserted > 0) {{
+        el.style.color = '#4ade80';
+        el.textContent  = `✅ Done — ${{d.upserted}} product(s) imported/updated.`;
+        if (failed.length) el.textContent += ' (' + failed.join('; ') + ')';
+        setTimeout(() => location.reload(), 1500);
+      }} else if (failed.length) {{
+        el.style.color = '#f87171';
+        el.textContent = '❌ All sources failed: ' + failed.join(' | ');
+      }} else {{
+        el.style.color = '#facc15';
+        el.textContent = `⚠ Done — 0 products imported (no inventory data found in sources).`;
+      }}
+    }}
+  }} catch(e) {{
+    el.style.color = '#f87171';
+    el.textContent = '❌ Request failed: ' + e;
+  }}
 }}
 
 async function syncScanner(force) {{

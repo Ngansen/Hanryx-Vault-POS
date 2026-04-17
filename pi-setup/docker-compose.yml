@@ -91,7 +91,18 @@ services:
       SESSION_SECRET:   ${SESSION_SECRET:-change-me-on-the-pi}
       ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-hanryxvault}
 
-      CLOUD_INVENTORY_SOURCES: http://storefront:3000/api/products
+      # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
+      GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
+
+      # Storefront cloud sync — remove if you don't run the storefront service
+      CLOUD_INVENTORY_SOURCES: ${CLOUD_INVENTORY_SOURCES:-}
+
+      # Inventory-Scanner live API (fastest sync — set to your deployed scanner URL)
+      # INVENTORY_SCANNER_URL: https://your-scanner.replit.app/api/inventory
+
+      # GitHub inventory repo (fallback if INVENTORY_SCANNER_URL not set)
+      GITHUB_INVENTORY_REPO:   ${GITHUB_INVENTORY_REPO:-Ngansen/Inventory-Scanner}
+      GITHUB_INVENTORY_BRANCH: ${GITHUB_INVENTORY_BRANCH:-main}
 
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
