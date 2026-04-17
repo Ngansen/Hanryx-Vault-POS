@@ -17718,27 +17718,52 @@ def sales_queue_pending():
 @app.route("/kiosk/stream")
 def kiosk_sse_stream():
     """SSE stream — kiosk display subscribes here for live cart updates."""
-    import queue as _q_mod
-    _q = _q_mod.Queue(maxsize=20)
-    with _kiosk_sse_lock:
-        _kiosk_sse_subscribers.append(_q)
+    try:
+        # Use gevent-compatible queue when available, fall back to stdlib
+        try:
+            from gevent.queue import Queue as _GQueue
+            _q = _GQueue(maxsize=20)
+        except ImportError:
+            import queue as _q_mod
+            _q = _q_mod.Queue(maxsize=20)
 
-    def _generate():
-        # Send current state immediately on connect
-        with _kiosk_cart_lock:
-            snapshot = dict(_kiosk_cart)
-        yield f"data: {json.dumps(snapshot)}\n\n"
-        while True:
+        with _kiosk_sse_lock:
+            _kiosk_sse_subscribers.append(_q)
+
+        def _generate():
             try:
-                yield _q.get(timeout=25)
-            except Exception:
-                yield ":\n\n"   # keepalive ping
+                # Send current state immediately on connect
+                with _kiosk_cart_lock:
+                    snapshot = dict(_kiosk_cart)
+                yield f"data: {json.dumps(snapshot)}\n\n"
+                while True:
+                    try:
+                        msg = _q.get(timeout=25)
+                        yield msg
+                    except Exception:
+                        yield ":\n\n"   # keepalive ping
+            finally:
+                # Clean up subscriber on disconnect
+                with _kiosk_sse_lock:
+                    try:
+                        _kiosk_sse_subscribers.remove(_q)
+                    except ValueError:
+                        pass
 
-    return Response(
-        stream_with_context(_generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+        # Do NOT use stream_with_context — generator needs no Flask request context
+        return Response(
+            _generate(),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                     "Connection": "keep-alive"},
+        )
+    except Exception as _sse_err:
+        app.logger.error("kiosk_sse_stream setup failed: %s", _sse_err)
+        return Response(
+            f"data: {json.dumps({'error': str(_sse_err)})}\n\n",
+            mimetype="text/event-stream",
+            status=500,
+        )
 
 
 @app.route("/kiosk")
