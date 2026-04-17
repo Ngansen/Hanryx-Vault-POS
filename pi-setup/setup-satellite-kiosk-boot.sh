@@ -427,14 +427,14 @@ else
 fi
 
 # ── Detect display server (Wayland vs X11) ───────────────────────────────────
-if [ "$XDG_SESSION_TYPE" = "wayland" ] || pgrep -x labwc > /dev/null 2>&1; then
-    DISPLAY_SERVER="wayland"
-    log "Display server: Wayland (labwc)"
-else
-    DISPLAY_SERVER="x11"
-    export DISPLAY="${DISPLAY:-:0}"
-    log "Display server: X11 (DISPLAY=$DISPLAY)"
-fi
+# labwc (Wayland compositor on Pi 5) runs XWayland, which exposes a full X11
+# server at DISPLAY=:0. We always use X11/XWayland so that:
+#   • --window-position works for dual-monitor placement
+#   • xrandr correctly reports both outputs and their pixel widths
+#   • Chromium launches reliably regardless of WAYLAND_DISPLAY being set
+export DISPLAY="${DISPLAY:-:0}"
+DISPLAY_SERVER="x11"
+log "Display server: X11/XWayland (DISPLAY=$DISPLAY)"
 
 # ── Disable screen blanking ───────────────────────────────────────────────────
 if [ "$DISPLAY_SERVER" = "x11" ]; then
@@ -601,11 +601,8 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Wayland monitor layout ───────────────────────────────────────────────────
-# On Wayland (labwc), --window-position is ignored by the compositor.
-# Instead we write labwc rc.xml window rules that move each Chromium window
-# (identified by --app-id) to the correct output at open time.
-if [ "$DISPLAY_SERVER" = "wayland" ]; then
+# ── Wayland monitor layout (skipped — always using X11/XWayland) ─────────────
+if [ "$DISPLAY_SERVER" = "wayland_DISABLED" ]; then
     export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
     export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     log "Wayland env: WAYLAND_DISPLAY=$WAYLAND_DISPLAY  XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
@@ -738,9 +735,7 @@ COMMON_FLAGS=(
     --no-process-singleton
 )
 
-if [ "$DISPLAY_SERVER" = "wayland" ]; then
-    COMMON_FLAGS+=(--ozone-platform=wayland)
-fi
+# Always using X11/XWayland — no ozone-wayland flag needed
 
 # ── Helper: find chromium binary ─────────────────────────────────────────────
 CHROMIUM_BIN=$(command -v chromium-browser 2>/dev/null \
