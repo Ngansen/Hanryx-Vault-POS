@@ -1,0 +1,77 @@
+
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull
+sudo bash pi-setup/setup-satellite-kiosk-boot.sh
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (1/1), done.
+remote: Total 4 (delta 3), reused 4 (delta 3), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.18 KiB | 605.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   6d89ca4..5115015  main       -> origin/main
+Updating 6d89ca4..5115015
+Fast-forward
+ pi-setup/setup-satellite-kiosk-boot.sh | 46 ++++++++++++++++++++--------------
+ 1 file changed, 27 insertions(+), 19 deletions(-)
+
+  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)
+  ============================================================
+
+  Network layout:
+    Main Pi (home)   = Docker stack + POS server
+    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet
+    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi
+
+  How does this satellite connect to the Main Pi?
+    1) Direct LAN IP  — both Pis on the same network (simplest)
+    2) Tailscale VPN  — Pis on different networks (home ↔ shop)
+
+  Choose [1/2] (default: 1 — direct LAN): 1
+
+  Enter the Main Pi's LAN IP address (e.g. 192.168.1.100):
+  Main Pi LAN IP [hanryxvault]: 192.168.86.36
+
+  Which monitor should show the CUSTOMER KIOSK screen?
+    1) Right monitor / HDMI port 2  (default)
+    2) Left  monitor / HDMI port 1  (swap)
+
+  Choose [1/2] (current: 1 — normal):
+
+  User          : ngansen
+  Main Pi (TS)  : 192.168.86.36
+  Monitor 1     : http://192.168.86.36:8080/admin  (staff admin)
+  Monitor 2     : http://192.168.86.36:8080/kiosk  (customer kiosk)
+  Screen swap   : n  (y = kiosk on left/HDMI-1)
+  Tablet proxy  : port 8080 → 192.168.86.36:8080
+  Connection    : Direct LAN
+  Logs          : /var/log/hanryx-kiosk.log
+
+[✓] Config saved → /home/ngansen/.hanryx/satellite.conf
+[→] Setting Pi to boot to desktop with auto-login…
+[✓] Boot to desktop auto-login set
+[→] Installing required packages…
+Preconfiguring packages ...
+Selecting previously unselected package avahi-utils.
+(Reading database ... 142329 files and directories currently installed.)
+Preparing to unpack .../avahi-utils_0.8-16_arm64.deb ...
+Unpacking avahi-utils (0.8-16) ...
+Selecting previously unselected package nginx-common.
+Preparing to unpack .../nginx-common_1.26.3-3+deb13u2_all.deb ...
+Unpacking nginx-common (1.26.3-3+deb13u2) ...
+Selecting previously unselected package nginx.
+Preparing to unpack .../nginx_1.26.3-3+deb13u2_arm64.deb ...
+Unpacking nginx (1.26.3-3+deb13u2) ...
+Setting up avahi-utils (0.8-16) ...
+Setting up nginx-common (1.26.3-3+deb13u2) ...
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+Setting up nginx (1.26.3-3+deb13u2) ...
+Upgrading binary: nginx.
+Processing triggers for man-db (2.13.1-1) ...
+[✓] Packages ready (nginx, chromium, unclutter, curl, avahi)
+[i] Tailscale skipped — using direct LAN connection to 192.168.86.36
+[→] Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+Synchronizing state of nginx.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+Executing: /usr/lib/systemd/systemd-sysv-install enable nginx
+Job for nginx.service failed because the control process exited with error code.
+See "systemctl status nginx.service" and "journalctl -xeu nginx.service" for details.
