@@ -17260,10 +17260,12 @@ def _load_kiosk_settings() -> dict:
     """Load kiosk settings from DB (server_state table), migrating from file on first use."""
     try:
         db = _direct_db()
-        row = db.execute(
-            "SELECT value FROM server_state WHERE key = 'kiosk_settings'"
-        ).fetchone()
-        db.close()
+        try:
+            row = db.execute(
+                "SELECT value FROM server_state WHERE key = 'kiosk_settings'"
+            ).fetchone()
+        finally:
+            db.close()
         if row:
             data = json.loads(row[0])
             return {**_KIOSK_DEFAULT, **data}
@@ -17278,13 +17280,15 @@ def _load_kiosk_settings() -> dict:
         # Persist to DB so we never hit the file again
         try:
             db = _direct_db()
-            db.execute(
-                "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
-                " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-                (json.dumps(merged),)
-            )
-            db.commit()
-            db.close()
+            try:
+                db.execute(
+                    "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
+                    " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    (json.dumps(merged),)
+                )
+                db.commit()
+            finally:
+                db.close()
             app.logger.info("kiosk_settings migrated from file to DB")
         except Exception as _dbe:
             app.logger.warning("kiosk_settings DB migration write failed: %s", _dbe)
@@ -17298,13 +17302,15 @@ def _load_kiosk_settings() -> dict:
 def _save_kiosk_settings(s: dict):
     """Save kiosk settings to DB (server_state) and also write the legacy JSON file."""
     db = _direct_db()
-    db.execute(
-        "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
-        " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-        (json.dumps(s),)
-    )
-    db.commit()
-    db.close()
+    try:
+        db.execute(
+            "INSERT INTO server_state (key, value) VALUES ('kiosk_settings', %s)"
+            " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (json.dumps(s),)
+        )
+        db.commit()
+    finally:
+        db.close()
     # Best-effort write to legacy file (non-fatal if /data volume is unavailable)
     try:
         os.makedirs(os.path.dirname(_KIOSK_SETTINGS_PATH), exist_ok=True)
@@ -18959,10 +18965,18 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     if(_sseOverlay) _sseOverlay.style.display="none";
   }}
 
+  /* ── SSE connection with polling fallback ────────────────────────────────
+     _lastSseMsg tracks the last time an SSE message arrived.
+     If silent for >20 s (broken pipe, nginx buffer, Tailscale blip),
+     the setInterval polls /kiosk/state every 8 s as a safety net.
+  ── */
+  var _lastSseMsg = Date.now();
+
   function _sseConnect(){{
     if(_sse){{ try{{_sse.close();}}catch(e){{}} }}
     _sse=new EventSource("/kiosk/stream");
     _sse.onmessage=function(e){{
+      _lastSseMsg = Date.now();          // ← timestamp every message
       _sseBackoff=2000;
       _sseLostAt=0;
       _sseHideOverlay();
@@ -18988,29 +19002,8 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   _sseConnect();
 
-  /* ── Polling fallback ──────────────────────────────────────────────────────
-     If SSE is silent for >20 s (broken connection, nginx buffering, etc.),
-     poll /kiosk/state every 8 s so the screen still switches correctly.
-  ── */
-  var _lastSseMsg = Date.now();
-  var _origOnMessage = null;
-  (function patchSseTimestamp(){{
-    var origConnect = _sseConnect;
-    _sseConnect = function(){{
-      origConnect();
-      if(_sse){{
-        var _origMsg = _sse.onmessage;
-        _sse.onmessage = function(e){{
-          _lastSseMsg = Date.now();
-          if(_origMsg) _origMsg.call(this, e);
-        }};
-      }}
-    }};
-  }})();
-
   setInterval(function(){{
-    var stale = (Date.now() - _lastSseMsg) > 20000;
-    if(!stale) return;
+    if((Date.now() - _lastSseMsg) <= 20000) return;  // SSE is healthy — skip
     fetch("/kiosk/state", {{cache:"no-store"}})
       .then(function(r){{ return r.json(); }})
       .then(function(s){{ _lastSseMsg = Date.now(); onData(s); }})
