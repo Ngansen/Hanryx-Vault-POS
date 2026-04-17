@@ -17914,6 +17914,18 @@ def kiosk_display():
     show_receipt_qr = "true" if ks.get("show_receipt_qr", True) else "false"
     price_confirm_ms = int(ks.get("price_confirm_ms", 2200))
 
+    # Compute initial kiosk state signature — baked into the page so the
+    # 500 ms sig-poll knows what state was rendered.  Changes → reload.
+    _st = _kiosk_get_state()
+    _kiosk_sig_init = (
+        (_st.get("mode") or "idle")
+        + ("1" if _st.get("active") else "0")
+        + ("1" if _st.get("paid") else "0")
+        + ("1" if _st.get("payment_processing") else "0")
+        + str(len(_st.get("items") or []))
+        + str(round((_st.get("total") or 0) * 100))
+    )
+
     # Parse YouTube URL
     yt_vid, yt_pid = _parse_youtube_id(vid_url)
     # Build embed params
@@ -18966,10 +18978,27 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     if(_sseOverlay) _sseOverlay.style.display="none";
   }}
 
+  /* ── Kiosk state signature ───────────────────────────────────────────────
+     Baked in by the server on page render.  The 500 ms sig-poll below
+     compares against this value; a change means the server state has moved
+     on without SSE delivering it, so we reload to get a fresh render.
+     SSE onmessage keeps _kiosk_sig in sync so working SSE never reloads.
+  ── */
+  var _kiosk_sig = "{_kiosk_sig_init}";
+
+  function _computeKioskSig(d){{
+    return (d.mode||'idle')
+      + (d.active?'1':'0')
+      + (d.paid?'1':'0')
+      + ((d.payment_processing||d.checkout)?'1':'0')
+      + (d.items ? d.items.length : 0)
+      + Math.round((d.total||0)*100);
+  }}
+
   /* ── SSE connection with polling fallback ────────────────────────────────
      _lastSseMsg tracks the last time an SSE message arrived.
      If silent for >20 s (broken pipe, nginx buffer, Tailscale blip),
-     the setInterval polls /kiosk/state every 8 s as a safety net.
+     the sig-poll below reloads the page instead of calling onData in-place.
   ── */
   var _lastSseMsg = Date.now();
 
@@ -18981,7 +19010,11 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       _sseBackoff=2000;
       _sseLostAt=0;
       _sseHideOverlay();
-      try{{ onData(JSON.parse(e.data)); }}catch(err){{ console.warn("[kiosk]",err); }}
+      try{{
+        var _d = JSON.parse(e.data);
+        _kiosk_sig = _computeKioskSig(_d);  // keep sig current → no spurious reload
+        onData(_d);
+      }}catch(err){{ console.warn("[kiosk]",err); }}
     }};
     _sse.onerror=function(){{
       if(!_sseLostAt) _sseLostAt=Date.now();
@@ -19003,13 +19036,35 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   _sseConnect();
 
-  setInterval(function(){{
-    if((Date.now() - _lastSseMsg) <= 20000) return;  // SSE is healthy — skip
-    fetch("/kiosk/state", {{cache:"no-store"}})
-      .then(function(r){{ return r.json(); }})
-      .then(function(s){{ _lastSseMsg = Date.now(); onData(s); }})
-      .catch(function(){{}});
-  }}, 8000);
+  /* ── 500 ms signature poll ───────────────────────────────────────────────
+     Polls /kiosk/state.json every 500 ms and compares the sig.
+     · SSE working  → _kiosk_sig is kept current by onmessage → no reload.
+     · SSE broken   → sig drifts after state change → page reloads,
+                       picking up fresh server-rendered state + new sig.
+     The _lastSseMsg update suppresses the SSE lost-connection overlay
+     while the poll is succeeding (proves the server is reachable).
+  ── */
+  (function(){{
+    var _busy = false;
+    function _sigPoll(){{
+      if(_busy) return;
+      _busy = true;
+      fetch("/kiosk/state.json", {{cache:"no-store"}})
+        .then(function(r){{ return r.json(); }})
+        .then(function(d){{
+          _lastSseMsg = Date.now();  // server reachable → suppress overlay
+          var sig = _computeKioskSig(d);
+          if(sig !== _kiosk_sig){{ window.location.reload(); return; }}
+          _busy = false;
+          setTimeout(_sigPoll, 500);
+        }})
+        .catch(function(){{
+          _busy = false;
+          setTimeout(_sigPoll, 1000);  // back off on network error
+        }});
+    }}
+    setTimeout(_sigPoll, 500);
+  }})();
 
 }})();
 
