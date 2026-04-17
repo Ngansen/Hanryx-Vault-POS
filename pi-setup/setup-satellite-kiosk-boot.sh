@@ -433,6 +433,7 @@ fi
 #   • xrandr correctly reports both outputs and their pixel widths
 #   • Chromium launches reliably regardless of WAYLAND_DISPLAY being set
 export DISPLAY="${DISPLAY:-:0}"
+unset WAYLAND_DISPLAY   # prevent Chromium auto-detecting Wayland even in labwc session
 DISPLAY_SERVER="x11"
 log "Display server: X11/XWayland (DISPLAY=$DISPLAY)"
 
@@ -733,9 +734,11 @@ COMMON_FLAGS=(
     --disable-web-security
     # Prevent "Opening in existing browser session" crash-loop
     --no-process-singleton
+    # Force X11 backend (via XWayland) even when WAYLAND_DISPLAY is set.
+    # Without this, Chromium auto-detects Wayland and exits immediately when
+    # launched from a terminal/SSH session where WAYLAND_DISPLAY scope is wrong.
+    --ozone-platform=x11
 )
-
-# Always using X11/XWayland — no ozone-wayland flag needed
 
 # ── Helper: find chromium binary ─────────────────────────────────────────────
 CHROMIUM_BIN=$(command -v chromium-browser 2>/dev/null \

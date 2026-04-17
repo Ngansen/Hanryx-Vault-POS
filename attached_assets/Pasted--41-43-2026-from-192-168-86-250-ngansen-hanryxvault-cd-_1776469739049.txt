@@ -1,0 +1,179 @@
+:41:43 2026 from 192.168.86.250
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull
+sudo bash pi-setup/setup-satellite-kiosk-boot.sh
+remote: Enumerating objects: 18, done.
+remote: Counting objects: 100% (18/18), done.
+remote: Compressing objects: 100% (7/7), done.
+remote: Total 14 (delta 10), reused 11 (delta 7), pack-reused 0 (from 0)
+Unpacking objects: 100% (14/14), 6.73 KiB | 861.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   6d89ca4..3932ca9  main       -> origin/main
+Updating 6d89ca4..3932ca9
+Fast-forward
+ ...AY-0-xrandr-grep-connected-ta_1776468609713.txt |  46 +++++
+ ...nryx-vault-pos-git-pull-sudo-_1776469245269.txt |  77 ++++++++
+ pi-setup/setup-satellite-kiosk-boot.sh             | 195 ++++++++++++++++-----
+ 3 files changed, 272 insertions(+), 46 deletions(-)
+ create mode 100644 attached_assets/Pasted--ngansen-hanryxvault-DISPLAY-0-xrandr-grep-connected-ta_1776468609713.txt
+ create mode 100644 attached_assets/Pasted--ngansen-hanryxvault-cd-hanryx-vault-pos-git-pull-sudo-_1776469245269.txt
+[sudo] password for ngansen:
+
+  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)
+  ============================================================
+
+  Network layout:
+    Main Pi (home)   = Docker stack + POS server
+    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet
+    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi
+
+  How does this satellite connect to the Main Pi?
+    1) Direct LAN IP  — both Pis on the same network (simplest)
+    2) Tailscale VPN  — Pis on different networks (home ↔ shop)
+
+  Choose [1/2] (default: 1 — direct LAN): 1
+
+  Enter the Main Pi's LAN IP address (e.g. 192.168.1.100):
+  Main Pi LAN IP [192.168.86.36]:
+
+  Which monitor should show the CUSTOMER KIOSK screen?
+    1) Right monitor / HDMI port 2  (default)
+    2) Left  monitor / HDMI port 1  (swap)
+
+  Choose [1/2] (current: 2 — swapped):
+
+  User          : ngansen
+  Main Pi (TS)  : 192.168.86.36
+  Monitor 1     : http://192.168.86.36:8080/admin  (staff admin)
+  Monitor 2     : http://192.168.86.36:8080/kiosk  (customer kiosk)
+  Screen swap   : y  (y = kiosk on left/HDMI-1)
+  Tablet proxy  : port 8080 → 192.168.86.36:8080
+  Connection    : Direct LAN
+  Logs          : /var/log/hanryx-kiosk.log
+
+[✓] Config saved → /home/ngansen/.hanryx/satellite.conf
+[→] Setting Pi to boot to desktop with auto-login…
+[✓] Boot to desktop auto-login set
+[→] Installing required packages…
+[✓] Packages ready (nginx, chromium, unclutter, curl, avahi)
+[i] Tailscale skipped — using direct LAN connection to 192.168.86.36
+[→] Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+Synchronizing state of nginx.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+Executing: /usr/lib/systemd/systemd-sysv-install enable nginx
+[✓] nginx proxy active — tablet → port 8080 → 192.168.86.36:8080 via Direct LAN
+[→] Configuring avahi mDNS (satellite Pi = hanryxvault.local on shop LAN)…
+[✓] Satellite Pi is now hanryxvault.local on the shop LAN (tablet can find it automatically)
+[→] Setting swap to 1024 MB…
+[i] dphys-swapfile not found — skipping swap change
+[→] Enabling zram compressed swap…
+[✓] zram compressed swap enabled (512 MB, lz4)
+[→] Disabling USB autosuspend…
+[✓] USB autosuspend disabled
+[→] Applying Pi 5 performance settings to config.txt…
+[→] Removing previous HanryxVault config.txt block…
+[✓] config.txt updated (resolution auto-negotiated per screen)
+[✓] Boot console quietened
+[✓] lightdm screensaver disabled
+[→] Setting network-online timeout to 15 s (prevents offline boot hang)…
+[✓] Network timeout guard set (15 s max)
+[→] Writing dual-monitor launcher…
+[✓] Launcher written → /home/ngansen/.hanryx-dual-monitor.sh
+[→] Creating XDG autostart entry…
+[✓] XDG autostart entry created
+[→] Configuring labwc autostart (Pi 5 Wayland)…
+[✓] labwc autostart configured
+[→] Configuring LXDE autostart (X11 fallback)…
+[✓] LXDE autostart configured
+[✓] Log file ready → /var/log/hanryx-kiosk.log
+[→] Ensuring SSH is enabled (remote management at shows)…
+[✓] SSH enabled
+[→] Installing network watchdog service…
+[✓] Network watchdog service installed and enabled
+[i] Watchdog pings /health every 30 s and reloads Chromium if server comes back after ≥3 failures
+
+  ============================================================
+  All done — reboot to activate.
+
+  Network layout after reboot:
+    Main Pi (home)   → Tailscale host: 192.168.86.36  (port 8080)
+    Satellite (here) → hanryxvault.local on shop LAN, Tailscale: hanryxvault-sat
+    Tablet           → connect to http://hanryxvault.local:8080/ (auto-proxied)
+
+  On every boot the satellite Pi will:
+    1.  Wait for Tailscale tunnel to Main Pi before launching Chromium
+    2.  Show branded 'Connecting…' splash on both screens while waiting
+    3.  Monitor 1 (HDMI-0) → /admin  (directly via Tailscale)
+    4.  Monitor 2 (HDMI-1) → /kiosk  (directly via Tailscale)
+    5.  nginx on port 8080 proxies all tablet traffic to Main Pi via Tailscale
+    6.  Auto-restart both Chromium windows if they crash
+    7.  Never sleep or blank either screen
+    8.  Send heartbeat to Main Pi every 60 s (visible on System page)
+    9.  Network watchdog re-triggers Chromium if Tailscale recovers from outage
+   10.  Admin session restored after Chromium crash (stays logged in)
+
+  Main Pi Tailscale hostname: 192.168.86.36
+  To change later: edit /home/ngansen/.hanryx/satellite.conf then: sudo systemctl restart nginx && reboot
+
+  Tips:
+    • Check Tailscale connection:   tailscale status
+    • Check nginx proxy:            curl http://localhost:8080/health
+    • Tablet finds this Pi as:      http://hanryxvault.local:8080/
+    • View live logs:               tail -f /var/log/hanryx-kiosk.log
+    • SSH from your laptop:         ssh ngansen@hanryxvault-sat
+    • Swap HDMI cables if the screens are the wrong way round
+    • Run the launcher manually:    bash /home/ngansen/.hanryx-dual-monitor.sh
+
+[!] GPU memory bumped to 256 MB in config.txt — required for smooth video.
+
+  If Tailscale isn't connected yet, run:  tailscale up
+  To reboot now:  sudo reboot
+
+ngansen@hanryxvault:~/hanryx-vault-pos $
+
+ngansen@hanryxvault:~/hanryx-vault-pos $
+ngansen@hanryxvault:~/hanryx-vault-pos $ pkill -f chromium; sleep 1
+rm -f ~/.hanryx/admin-profile/SingletonLock ~/.hanryx/kiosk-profile/SingletonLock 2>/dev/null
+bash ~/.hanryx-dual-monitor.sh
+[23:48:02] ============================================
+[23:48:02] HanryxVault satellite kiosk starting…
+[23:48:02] ============================================
+[23:48:02] Main Pi: 192.168.86.36
+[23:48:02] Admin URL:  http://192.168.86.36:8080/admin
+[23:48:02] Kiosk URL:  http://192.168.86.36:8080/kiosk
+[23:48:02] Health URL: http://192.168.86.36:8080/health
+[23:48:02] DNS resolved 192.168.86.36
+[23:48:02] Main Pi reachable immediately — launching kiosk
+[23:48:02] Display server: Wayland (labwc)
+[23:48:02] Splash pages written
+[23:48:02] Wayland env: WAYLAND_DISPLAY=wayland-1  XDG_RUNTIME_DIR=/run/user/1000
+[23:48:02] WARNING: fewer than 2 Wayland outputs detected — check HDMI cables.
+[23:48:03] Launching Admin (Monitor 1) (position 0,0)
+[23:48:03] Admin (Monitor 1) → file:///tmp/hvault-splash-admin.html
+[23:48:03] Admin (Monitor 1) exited (code 1) — restarting in 5 s…
+[23:48:07] Both windows launched — LAN tunnel active
+[23:48:07] Launching Kiosk (Monitor 2) (position 0,0)
+[23:48:07] Kiosk (Monitor 2) → file:///tmp/hvault-splash-kiosk.html
+[23:48:07] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:07] Heartbeat loop started (PID 42231) — pinging main Pi every 60 s
+[23:48:08] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+[23:48:08] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:48:12] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[23:48:12] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:13] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+[23:48:13] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:48:17] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[23:48:17] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:18] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+[23:48:18] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:48:22] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[23:48:22] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:23] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+[23:48:23] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:48:27] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[23:48:27] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:28] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+[23:48:28] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:48:32] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[23:48:32] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:48:33] Admin (Monitor 1) → http://192.168.86.36:8080/admin
