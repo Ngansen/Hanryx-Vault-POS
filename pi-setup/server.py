@@ -19052,9 +19052,13 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       fetch("/kiosk/state.json", {{cache:"no-store"}})
         .then(function(r){{ return r.json(); }})
         .then(function(d){{
-          _lastSseMsg = Date.now();  // server reachable → suppress overlay
           var sig = _computeKioskSig(d);
-          if(sig !== _kiosk_sig){{ window.location.reload(); return; }}
+          // Only reload if BOTH the sig has changed AND SSE has been silent
+          // for >3 s — prevents reloading while SSE is actively delivering
+          // updates (e.g. during price-confirm flash, trade-in, etc.)
+          // NOTE: _lastSseMsg is updated only by SSE onmessage, not here.
+          var sseSilent = (Date.now() - _lastSseMsg) > 3000;
+          if(sig !== _kiosk_sig && sseSilent){{ window.location.reload(); return; }}
           _busy = false;
           setTimeout(_sigPoll, 500);
         }})
