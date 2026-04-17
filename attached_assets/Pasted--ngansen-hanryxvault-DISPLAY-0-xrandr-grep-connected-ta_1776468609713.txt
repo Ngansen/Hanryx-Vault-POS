@@ -1,0 +1,46 @@
+
+ngansen@hanryxvault:~ $ DISPLAY=:0 xrandr | grep ' connected'
+tail -40 /var/log/hanryx-kiosk.log
+HDMI-A-1 connected 1024x600+0+0 (normal left inverted right x axis y axis) 150mm x 90mm
+HDMI-A-2 connected 800x480+1024+0 (normal left inverted right x axis y axis) 150mm x 100mm
+[23:29:30] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:30] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:29:32] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+Opening in existing browser session.
+[23:29:32] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:29:35] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:35] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:29:37] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+Opening in existing browser session.
+[23:29:37] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:29:40] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:41] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:29:42] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+Opening in existing browser session.
+[23:29:42] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:29:46] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:46] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[23:29:47] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+Opening in existing browser session.
+[23:29:47] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:29:51] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:51] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[2002:2002:0417/232951.253963:ERROR:ui/compositor/compositor_animation_observer.cc:65] CompositorAnimationObserver is active for too long (61.2976s) location=BoundsAnimator@ui/views/animation/bounds_animator.cc:24
+[2002:2002:0417/232951.254037:ERROR:ui/compositor/compositor_animation_observer.cc:65] CompositorAnimationObserver is active for too long (61.259s) location=TabIcon@chrome/browser/ui/views/tabs/tab/tab_icon.cc:98
+[23:29:52] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+Opening in existing browser session.
+[23:29:52] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[23:29:56] Admin (Monitor 1) → http://192.168.86.36:8080/admin
+Opening in existing browser session.
+[23:29:56] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[2002:2002:0417/232956.368611:ERROR:ui/compositor/compositor_animation_observer.cc:65] CompositorAnimationObserver is active for too long (61.2832s) location=TabIcon@chrome/browser/ui/views/tabs/tab/tab_icon.cc:98
+[23:29:57] Kiosk (Monitor 2) → http://192.168.86.36:8080/kiosk
+[2002:2107:0417/232957.688630:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Opening in existing browser session.
+[23:29:57] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+ngansen@hanryxvault:~ $

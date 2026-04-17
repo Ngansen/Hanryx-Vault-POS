@@ -601,16 +601,101 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Wayland monitor layout (X11 already handled above) ───────────────────────
+# ── Wayland monitor layout ───────────────────────────────────────────────────
+# On Wayland (labwc), --window-position is ignored by the compositor.
+# Instead we write labwc rc.xml window rules that move each Chromium window
+# (identified by --app-id) to the correct output at open time.
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
-    MONITOR_COUNT=$(wlr-randr 2>/dev/null | grep -c '^[A-Z]' || echo 0)
-    MONITOR1_W=$(wlr-randr 2>/dev/null | grep -oP '\d+x\d+' | head -1 | cut -dx -f1)
-    MONITOR1_W=${MONITOR1_W:-1920}
-    MONITOR2_X=$MONITOR1_W
-    log "Wayland monitor layout: ${MONITOR_COUNT} monitor(s), Monitor1=${MONITOR1_W}px, Monitor2 x-offset=${MONITOR2_X}px"
-    if [ "${MONITOR_COUNT:-0}" -lt 2 ]; then
-        log "WARNING: Only ${MONITOR_COUNT} monitor(s) detected on Wayland — check HDMI connections."
+    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    log "Wayland env: WAYLAND_DISPLAY=$WAYLAND_DISPLAY  XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+
+    # Parse wlr-randr for output names and their current pixel widths
+    declare -A _WL_W
+    _WL_CUR=""
+    while IFS= read -r _line; do
+        # Output header line: "HDMI-A-1 ..." (starts with non-whitespace)
+        if [[ "$_line" =~ ^([A-Za-z][A-Za-z0-9_-]+) ]]; then
+            _WL_CUR="${BASH_REMATCH[1]}"
+        # Resolution line: "  1024x600 px, ..." (indented)
+        elif [[ -n "$_WL_CUR" && "$_line" =~ ^[[:space:]]+([0-9]+)x([0-9]+)[[:space:]]+px ]]; then
+            _WL_W[$_WL_CUR]="${BASH_REMATCH[1]}"
+            _WL_CUR=""
+        fi
+    done < <(wlr-randr 2>/dev/null)
+
+    for _o in "${!_WL_W[@]}"; do
+        log "Wayland output: $_o  (${_WL_W[$_o]}px wide)"
+    done
+
+    # Determine admin and kiosk outputs (same priority logic as X11)
+    WL_ADMIN=""; WL_KIOSK=""
+    if [ "${#_WL_W[@]}" -ge 2 ]; then
+        if [ -n "${KIOSK_OUTPUT:-}" ] && [ -n "${ADMIN_OUTPUT:-}" ]; then
+            WL_KIOSK="$KIOSK_OUTPUT"; WL_ADMIN="$ADMIN_OUTPUT"
+            log "Wayland: manual override — Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
+        else
+            # Assign by pixel width: larger = admin, smaller = kiosk
+            _WL_MAX=0; _WL_MIN=999999
+            for _o in "${!_WL_W[@]}"; do
+                _w="${_WL_W[$_o]:-0}"
+                if [ "$_w" -gt "$_WL_MAX" ]; then _WL_MAX="$_w"; WL_ADMIN="$_o"; fi
+                if [ "$_w" -lt "$_WL_MIN" ]; then _WL_MIN="$_w"; WL_KIOSK="$_o"; fi
+            done
+            if [ "$_WL_MAX" -eq "$_WL_MIN" ]; then
+                mapfile -t _WL_OUTS < <(printf '%s\n' "${!_WL_W[@]}" | sort)
+                if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+                    WL_ADMIN="${_WL_OUTS[1]}"; WL_KIOSK="${_WL_OUTS[0]}"
+                else
+                    WL_ADMIN="${_WL_OUTS[0]}"; WL_KIOSK="${_WL_OUTS[1]}"
+                fi
+            fi
+            log "Wayland: auto-assigned — Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
+        fi
+
+        # Write labwc rc.xml window rules so each app-id opens on the right output
+        LABWC_RC="$HOME/.config/labwc/rc.xml"
+        mkdir -p "$HOME/.config/labwc"
+        if [ ! -f "$LABWC_RC" ]; then
+            cat > "$LABWC_RC" << 'RCEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+</labwc_config>
+RCEOF
+        fi
+        # Remove any previous HanryxVault window rules then re-inject
+        sed -i '/<\!-- HanryxVault -->/,/<\!-- \/HanryxVault -->/d' "$LABWC_RC" 2>/dev/null || true
+        # Insert before closing tag
+        RULE_BLOCK="  <!-- HanryxVault -->
+  <windowRules>
+    <windowRule identifier=\"hvault-admin\" type=\"app_id\" matchType=\"exact\">
+      <action name=\"MoveToOutput\"><output>${WL_ADMIN}</output></action>
+      <action name=\"ToggleMaximize\"/>
+    </windowRule>
+    <windowRule identifier=\"hvault-kiosk\" type=\"app_id\" matchType=\"exact\">
+      <action name=\"MoveToOutput\"><output>${WL_KIOSK}</output></action>
+      <action name=\"ToggleMaximize\"/>
+    </windowRule>
+  </windowRules>
+  <!-- /HanryxVault -->"
+        # Append before the last closing tag (</labwc_config>)
+        python3 - "$LABWC_RC" "$RULE_BLOCK" << 'PYEOF'
+import sys, re
+path, rules = sys.argv[1], sys.argv[2]
+txt = open(path).read()
+txt = re.sub(r'(</labwc_config>)', rules + '\n\\1', txt)
+open(path, 'w').write(txt)
+PYEOF
+        log "labwc rc.xml updated — Admin→$WL_ADMIN  Kiosk→$WL_KIOSK"
+
+        # Tell labwc to reload its config if it's running
+        labwcctl --reconfigure 2>/dev/null || killall -USR1 labwc 2>/dev/null || true
+    else
+        log "WARNING: fewer than 2 Wayland outputs detected — check HDMI cables."
     fi
+
+    # Fall-through: MONITOR2_X is not used on Wayland (window rules handle placement)
+    MONITOR2_X=0
 fi
 
 # ── Build Chromium flags ──────────────────────────────────────────────────────
@@ -649,6 +734,8 @@ COMMON_FLAGS=(
     # Allow file:// to fetch http:// (for splash page health polling)
     --allow-file-access-from-files
     --disable-web-security
+    # Prevent "Opening in existing browser session" crash-loop
+    --no-process-singleton
 )
 
 if [ "$DISPLAY_SERVER" = "wayland" ]; then
@@ -700,49 +787,57 @@ launch_with_watchdog() {
     done
 }
 
+# ── Kill any stale Chromium / lock files before launching ────────────────────
+pkill -f 'chromium.*hvault' 2>/dev/null || true
+pkill -f 'chromium-browser' 2>/dev/null || true
+pkill -f 'chromium' 2>/dev/null || true
+sleep 1
+# Remove stale SingletonLock files that cause "existing browser session" errors
+rm -f "$PROFILE_ADMIN/SingletonLock" "$PROFILE_ADMIN/SingletonCookie" \
+      "$PROFILE_KIOSK/SingletonLock"  "$PROFILE_KIOSK/SingletonCookie"  2>/dev/null || true
+
 # ── Start Monitor 1: staff admin  (restore session on crash so you stay logged in)
 launch_with_watchdog "Admin (Monitor 1)" "$ADMIN_URL" \
     "$SPLASH_ADMIN" "$PROFILE_ADMIN" 0 \
-    "--restore-last-session" "--password-store=basic" &
+    "--app-id=hvault-admin" "--restore-last-session" "--password-store=basic" &
 
 # Small delay so Monitor 1 claims focus first
 sleep 4
 
 # ── Start Monitor 2: customer kiosk ─────────────────────────────────────────
 launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
-    "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" &
+    "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" \
+    "--app-id=hvault-kiosk" &
 
-CONNECTION_MODE=\$([ -n "\$USE_TAILSCALE" ] && [ "\$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
-log "Both windows launched — \$CONNECTION_MODE tunnel active"
+CONNECTION_MODE=$([ -n "$USE_TAILSCALE" ] && [ "$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
+log "Both windows launched — $CONNECTION_MODE tunnel active"
 
 # ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
 # Kill any existing heartbeat from a previous launcher run to prevent duplicates
 HEARTBEAT_PID_FILE="/tmp/hanryx-heartbeat.pid"
-if [ -f "\$HEARTBEAT_PID_FILE" ]; then
-  OLD_PID=\$(cat "\$HEARTBEAT_PID_FILE" 2>/dev/null)
-  kill "\$OLD_PID" 2>/dev/null || true
-  log "Killed previous heartbeat (PID \$OLD_PID)"
+if [ -f "$HEARTBEAT_PID_FILE" ]; then
+  OLD_PID=$(cat "$HEARTBEAT_PID_FILE" 2>/dev/null)
+  kill "$OLD_PID" 2>/dev/null || true
+  log "Killed previous heartbeat (PID $OLD_PID)"
 fi
-OWN_IP=\$(hostname -I 2>/dev/null | awk '{print \$1}')
-OWN_TS_IP=\$(tailscale ip -4 2>/dev/null || echo "unknown")
+OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
 (
   while true; do
-    UPTIME=\$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
-    CHROMIUM_OK=\$(pgrep -x chromium-browser > /dev/null 2>&1 \
-                  || pgrep -x chromium > /dev/null 2>&1; echo \$?)
-    CHROMIUM_OK=\$([[ "\$CHROMIUM_OK" -eq 0 ]] && echo true || echo false)
-    TS_STATUS=\$(tailscale status --json 2>/dev/null | python3 -c \
+    UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
+    CHROMIUM_OK=$(pgrep -f 'chromium.*hvault' > /dev/null 2>&1 && echo true || echo false)
+    TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
         "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
         2>/dev/null || echo "unknown")
-    curl -sf --max-time 5 -X POST "\${HEALTH_URL%/health}/satellite/heartbeat" \
+    curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
          -H "Content-Type: application/json" \
-         -d "{\"ip\":\"\$OWN_IP\",\"ts_ip\":\"\$OWN_TS_IP\",\"uptime\":\"\$UPTIME\",\"chromium_ok\":\$CHROMIUM_OK,\"tailscale\":\"\$TS_STATUS\",\"version\":\"v5\"}" \
+         -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v5\"}" \
          > /dev/null 2>&1 || true
     sleep 60
   done
 ) &
-echo \$! > "\$HEARTBEAT_PID_FILE"
-log "Heartbeat loop started (PID \$!) — pinging main Pi every 60 s"
+echo $! > "$HEARTBEAT_PID_FILE"
+log "Heartbeat loop started (PID $!) — pinging main Pi every 60 s"
 
 wait
 LAUNCH
