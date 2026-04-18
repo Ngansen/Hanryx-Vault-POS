@@ -1,0 +1,22 @@
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs pi-setup-pos-1 2>&1 | grep -E 'bg\]|prewarm|TIMEOUT' | head -20"
+ngansen@192.168.86.36's password:
+{"ts":"2026-04-18T19:29:57","level":"INFO","logger":"hanryxvault","msg":"[prewarm] starting bulk pricing pre-warm …"}
+{"ts":"2026-04-18T19:29:57","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [1/58] fetching 'Battle Region Battle Region pokemon' …"}
+{"ts":"2026-04-18T19:29:59","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [2/58] fetching 'Cynithia's Roserade Destined Rivals pokemon' …"}
+{"ts":"2026-04-18T19:30:02","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [3/58] fetching 'Blaine's Growlithe Gym Heroes pokemon' …"}
+{"ts":"2026-04-18T19:30:04","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [4/58] fetching 'Dragonite V 76 Evolving Skies pokemon' …"}
+{"ts":"2026-04-18T19:30:07","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [5/58] fetching 'Mew pokemon' …"}
+{"ts":"2026-04-18T19:30:09","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [6/58] fetching 'mew pokemon' …"}
+{"ts":"2026-04-18T19:30:12","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [7/58] fetching 'Galarian Articuno V TG16 VStar Universe pokemon' …"}
+{"ts":"2026-04-18T19:30:14","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [8/58] fetching 'Mew EX 232 Lost Origin pokemon' …"}
+{"ts":"2026-04-18T19:30:17","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [9/58] fetching 'Mega Venusaur Ex 177 Mega Evolution pokemon' …"}
+{"ts":"2026-04-18T19:30:19","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [10/58] fetching 'Oricorio EX 110 Pham Flames pokemon' …"}
+{"ts":"2026-04-18T19:30:22","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [11/58] fetching 'Lugia VSTAR Secret Rare 211 Silver Tempest pokemon' …"}
+{"ts":"2026-04-18T19:30:24","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [12/58] fetching 'Falinks 88 Astral Rad pokemon' …"}
+{"ts":"2026-04-18T19:30:27","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [13/58] fetching 'Vaporeon EX 149 Pop Series 3 pokemon' …"}
+{"ts":"2026-04-18T19:30:29","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [14/58] fetching 'Houndour 37 Obsidian Flames pokemon' …"}
+{"ts":"2026-04-18T19:30:32","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [15/58] fetching 'Parasol Lady 255 Paradox Rift pokemon' …"}
+{"ts":"2026-04-18T19:30:34","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [16/58] fetching 'Plusle 193 Paradox Rift pokemon' …"}
+{"ts":"2026-04-18T19:30:37","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [17/58] fetching 'Paldean Wooper 102 Paldea Evolved pokemon' …"}
+{"ts":"2026-04-18T19:30:39","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [18/58] fetching 'Flying Pikachu V 6 Celebrations pokemon' …"}
+{"ts":"2026-04-18T19:30:42","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [19/58] fetching 'Foongus 95 Rebel Clash pokemon' …"}
