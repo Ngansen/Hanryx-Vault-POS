@@ -1,0 +1,80 @@
+C:\Users\USER>ssh -t ngansen@192.168.86.36 "echo c2V0IC1lCmNkIH4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cAoKIyAxLiBQYXRjaCBndW5pY29ybi5jb25mLnB5IOKAlCB3cmFwIGVhY2ggdGhyZWFkIGluIGVudi12YXIgdG9nZ2xlCnB5dGhvbjMgLSA8PCAnUFlfRU9GJwppbXBvcnQgcmUKcCA9ICJndW5pY29ybi5jb25mLnB5IgpzcmMgPSBvcGVuKHApLnJlYWQoKQppZiAiRElTQUJMRV9CR18iIGluIHNyYzoKICAgIHByaW50KCI9IGd1bmljb3JuLmNvbmYucHkgYWxyZWFkeSBoYXMgZW52IHRvZ2dsZXMiKQplbHNlOgogICAgbmV3X2Jsb2NrID0gJycnZGVmIHBvc3RfZm9yayhzZXJ2ZXIsIHdvcmtlcik6CiAgICAiIiJTdGFydCBiYWNrZ3JvdW5kIHRocmVhZHMgYWZ0ZXIgZm9yay4iIiIKICAgIGltcG9ydCBvcwogICAgaWYgd29ya2VyLmFnZSA9PSAxOgogICAgICAgIHRyeToKICAgICAgICAgICAgZnJvbSBzZXJ2ZXIgaW1wb3J0ICgKICAgICAgICAgICAgICAgIHN5bmNfaW52ZW50b3J5X2Zyb21fY2xvdWQsCiAgICAgICAgICAgICAgICBfd2FybXVwX3NtYXJ0X3NjYW5uZXIsCiAgICAgICAgICAgICAgICBfcnVuX2xvd19zdG9ja19jaGVja2VyLAogICAgICAgICAgICAgICAgX3ByZXdhcm1fYWxsX3ByaWNpbmdfYmcsCiAgICAgICAgICAgICAgICBfcHJld2FybV9sYW5nX2FsbF9iZywKICAgICAgICAgICAgKQogICAgICAgICAgICBkZWYgX21heWJlKG5hbWUsIGZuLCB0aHJlYWRfbmFtZSk6CiAgICAgICAgICAgICAgICBpZiBvcy5lbnZpcm9uLmdldChmIkRJU0FCTEVfQkdfe25hbWV9IikgPT0gIjEiOgogICAgICAgICAgICAgICAgICAgIHNlcnZlci5sb2cuaW5mbygiW2JnXSAlcyBkaXNhYmxlZCB2aWEgZW52IiwgdGhyZWFkX25hbWUpCiAgICAgICAgICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgICAgICAgICB0aHJlYWRpbmcuVGhyZWFkKHRhcmdldD1mbiwgZGFlbW9uPVRydWUsIG5hbWU9dGhyZWFkX25hbWUpLnN0YXJ0KCkKICAgICAgICAgICAgX21heWJlKCJDTE9VRF9TWU5DIiwgICAgICBzeW5jX2ludmVudG9yeV9mcm9tX2Nsb3VkLCAgImNsb3VkLXN5bmMiKQogICAgICAgICAgICBfbWF5YmUoIlNNQVJUX1NDQU5fV0FSTSIsIF93YXJtdXBfc21hcnRfc2Nhbm5lciwgICAgICAic21hcnQtc2Nhbi13YXJtIikKICAgICAgICAgICAgX21heWJlKCJMT1dfU1RPQ0siLCAgICAgICBfcnVuX2xvd19zdG9ja19jaGVja2VyLCAgICAgImxvdy1zdG9jayIpCiAgICAgICAgICAgIF9tYXliZSgiUFJJQ0lOR19QUkVXQVJNIiwgX3ByZXdhcm1fYWxsX3ByaWNpbmdfYmcsICAgICJwcmljaW5nLXByZXdhcm0iKQogICAgICAgICAgICBfbWF5YmUoIkxBTkdfUFJFV0FSTSIsICAgIF9wcmV3YXJtX2xhbmdfYWxsX2JnLCAgICAgICAibGFuZy1wcmV3YXJtIikKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIF9lOgogICAgICAgICAgICBzZXJ2ZXIubG9nLndhcm5pbmcoInBvc3RfZm9yayBzdGFydHVwIHRocmVhZCBlcnJvcjogJXMiLCBfZSkKJycnCiAgICBuZXcgPSByZS5zdWIocidkZWYgcG9zdF9mb3JrXChzZXJ2ZXIsIHdvcmtlclwpOi4qPyg/PVxafFxuZGVmICknLCBuZXdfYmxvY2ssIHNyYywgY291bnQ9MSwgZmxhZ3M9cmUuUykKICAgIG9wZW4ocCwgInciKS53cml0ZShuZXcpCiAgICBwcmludCgiKyBndW5pY29ybi5jb25mLnB5IHBhdGNoZWQgd2l0aCBlbnYgdG9nZ2xlcyIpClBZX0VPRgoKIyAyLiBQYXRjaCBkb2NrZXItY29tcG9zZS55bWwg4oCUIGFkZCBESVNBQkxFX0JHXyogZW52IHZhcnMgdW5kZXIgcG9zIHNlcnZpY2UKaWYgZ3JlcCAtcSAnRElTQUJMRV9CR19QUklDSU5HX1BSRVdBUk0nIGRvY2tlci1jb21wb3NlLnltbDsgdGhlbgogICAgZWNobyAiPSBkb2NrZXItY29tcG9zZS55bWwgYWxyZWFkeSBoYXMgRElTQUJMRV9CRyB2YXJzIgplbHNlCiAgICBzZWQgLWkgJy9HSVRIVUJfVE9LRU46ICAgICBcJHtHSVRIVUJfVE9LRU46LX0vYVwKXAogICAgICAjIERpc2FibGUgYmcgdGhyZWFkcyB0aGF0IGJsb2NrIGdldmVudCBodWIgYW5kIGNhdXNlIFdPUktFUiBUSU1FT1VUXAogICAgICBESVNBQkxFX0JHX1BSSUNJTkdfUFJFV0FSTTogIjEiXAogICAgICBESVNBQkxFX0JHX0xBTkdfUFJFV0FSTTogICAgIjEiJyBkb2NrZXItY29tcG9zZS55bWwKICAgIGVjaG8gIisgZG9ja2VyLWNvbXBvc2UueW1sIHBhdGNoZWQiCmZpCgplY2hvICItLS0gZ3VuaWNvcm4uY29uZi5weSBwb3N0X2ZvcmsgLS0tIgpncmVwIC1BIDI1ICdkZWYgcG9zdF9mb3JrJyBndW5pY29ybi5jb25mLnB5CmVjaG8gIi0tLSBjb21wb3NlIHBvcyBlbnYgKERJU0FCTEUpIC0tLSIKZ3JlcCAtQSAxIERJU0FCTEVfQkcgZG9ja2VyLWNvbXBvc2UueW1sCgojIDMuIFJlY3JlYXRlIHBvcyB3aXRoIG5ldyBlbnYgKG5vIHJlYnVpbGQgbmVlZGVkIOKAlCBjb2RlL2NvbmZpZyBvbmx5KQplY2hvICItLS0gcmVjcmVhdGluZyBwb3MgY29udGFpbmVyIC0tLSIKZG9ja2VyIGNvbXBvc2UgdXAgLWQgLS1uby1idWlsZCBwb3MKc2xlZXAgMTIKZWNobyAiLS0tIHN0YXR1cyAtLS0iCmRvY2tlciBwcyAtLWZpbHRlciBuYW1lPXBvcyAtLWZvcm1hdCAndGFibGUge3suTmFtZXN9fVx0e3suU3RhdHVzfX0nCmN1cmwgLXNTIC1tIDUgLW8gL2Rldi9udWxsIC13ICdoZWFsdGg9JXtodHRwX2NvZGV9XG4nIGh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9oZWFsdGgKZWNobyAiLS0tIGxvZyAobG9va2luZyBmb3IgW2JnXSBkaXNhYmxlZCBtc2dzKSAtLS0iCmRvY2tlciBsb2dzIC0tdGFpbD00MCBwaS1zZXR1cC1wb3MtMSAyPiYxIHwgZ3JlcCAtRSAnYmdcXXxUSU1FT1VUfEJvb3Rpbmd8V09SS0VSJyB8IHRhaWwgLTE1CmVjaG8gRE9ORQo= | base64 -d | bash"
+ngansen@192.168.86.36's password:
++ gunicorn.conf.py patched with env toggles
++ docker-compose.yml patched
+--- gunicorn.conf.py post_fork ---
+def post_fork(server, worker):
+    """Start background threads after fork."""
+    import os
+    if worker.age == 1:
+        try:
+            from server import (
+                sync_inventory_from_cloud,
+                _warmup_smart_scanner,
+                _run_low_stock_checker,
+                _prewarm_all_pricing_bg,
+                _prewarm_lang_all_bg,
+            )
+            def _maybe(name, fn, thread_name):
+                if os.environ.get(f"DISABLE_BG_{name}") == "1":
+                    server.log.info("[bg] %s disabled via env", thread_name)
+                    return
+                threading.Thread(target=fn, daemon=True, name=thread_name).start()
+            _maybe("CLOUD_SYNC",      sync_inventory_from_cloud,  "cloud-sync")
+            _maybe("SMART_SCAN_WARM", _warmup_smart_scanner,      "smart-scan-warm")
+            _maybe("LOW_STOCK",       _run_low_stock_checker,     "low-stock")
+            _maybe("PRICING_PREWARM", _prewarm_all_pricing_bg,    "pricing-prewarm")
+            _maybe("LANG_PREWARM",    _prewarm_lang_all_bg,       "lang-prewarm")
+        except Exception as _e:
+            server.log.warning("post_fork startup thread error: %s", _e)
+--- compose pos env (DISABLE) ---
+      DISABLE_BG_PRICING_PREWARM: "1"
+      DISABLE_BG_LANG_PREWARM:    "1"
+
+--- recreating pos container ---
+[+] up 3/4
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 3/4... Running                                                                                               0.0s
+[+] up 2/4... Running                                                                                               0.0s
+[+] up 2/4... Waiting                                                                                               2.7s
+[+] up 2/4... Waiting                                                                                               2.8s
+[+] up 2/4... Waiting                                                                                               2.9s
+[+] up 2/4... Waiting                                                                                               3.0s
+[+] up 3/4... Waiting                                                                                               3.1s
+[+] up 3/4... Healthy                                                                                               3.2s
+[+] up 3/4... Healthy                                                                                               3.2s
+[+] up 4/4... Healthy                                                                                               3.2s
+ ✔ Contain... Healthy                                                                                               3.2s
+ ✔ Contain... Healthy                                                                                               3.2s
+ ✔ Contain... Started                                                                                               3.4s
+ ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+--- status ---
+NAMES            STATUS
+pi-setup-pos-1   Up 12 seconds (healthy)
+health=200
+--- log (looking for [bg] disabled msgs) ---
+DONE
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>
