@@ -1,0 +1,121 @@
+ngansen@hanryxvault:~/hanryx-vault-pos $ sudo TAILSCALE_AUTH_KEY="tskey-auth-kYwAdYvM4321CNTRL-oUBrxon6MhbTZ1QRDtUShbN8rECK5M7R" \
+>   -E bash pi-setup/setup-satellite-kiosk-boot.sh
+
+  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)
+  ============================================================
+
+  Network layout:
+    Main Pi (home)   = Docker stack + POS server
+    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet
+    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi
+
+  How does this satellite connect to the Main Pi?
+    1) Tailscale VPN  — works anywhere, home ↔ shop  [DEFAULT]
+    2) Direct LAN IP  — both Pis must be on the same network
+
+  Choose [1/2] (default: 1 — Tailscale):
+
+  Enter the Main Pi's Tailscale IP (100.x.x.x) or hostname:
+  Main Pi Tailscale IP [192.168.86.36]: 100.125.5.34
+
+  Which monitor should show the CUSTOMER KIOSK screen?
+    1) Right monitor / HDMI port 2  (default)
+    2) Left  monitor / HDMI port 1  (swap)
+
+  Choose [1/2] (current: 2 — swapped):
+
+  User          : ngansen
+  Main Pi (TS)  : 100.125.5.34
+  Monitor 1     : http://100.125.5.34:8080/admin  (staff admin)
+  Monitor 2     : http://100.125.5.34:8080/kiosk  (customer kiosk)
+  Screen swap   : y  (y = kiosk on left/HDMI-1)
+  Tablet proxy  : port 8080 → 100.125.5.34:8080
+  Connection    : Tailscale VPN
+  Logs          : /var/log/hanryx-kiosk.log
+
+[✓] Config saved → /home/ngansen/.hanryx/satellite.conf
+[→] Setting Pi to boot to desktop with auto-login…
+[✓] Boot to desktop auto-login set
+[→] Installing required packages…
+[✓] Packages ready (nginx, chromium, unclutter, curl, avahi)
+[→] Installing Tailscale…
+[✓] Tailscale already installed (1.96.4)
+
+  ── Tailscale authentication ─────────────────────────────
+[✓] Using Tailscale auth key from environment (TAILSCALE_AUTH_KEY)
+[✓] Tailscale connected with auth key
+[✓] Tailscale IP: 100.85.79.40
+[→] Configuring nginx proxy (tablet traffic → Main Pi via Tailscale)…
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+Synchronizing state of nginx.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+Executing: /usr/lib/systemd/systemd-sysv-install enable nginx
+[✓] nginx proxy active — tablet → port 8080 → 100.125.5.34:8080 via Tailscale VPN
+[→] Configuring avahi mDNS (satellite Pi = hanryxvault.local on shop LAN)…
+[✓] Satellite Pi is now hanryxvault.local on the shop LAN (tablet can find it automatically)
+[→] Setting swap to 1024 MB…
+[i] dphys-swapfile not found — skipping swap change
+[→] Enabling zram compressed swap…
+[✓] zram compressed swap enabled (512 MB, lz4)
+[→] Disabling USB autosuspend…
+[✓] USB autosuspend disabled
+[→] Applying Pi 5 performance settings to config.txt…
+[→] Removing previous HanryxVault config.txt block…
+[✓] config.txt updated (resolution auto-negotiated per screen)
+[✓] Boot console quietened
+[✓] lightdm screensaver disabled
+[→] Setting network-online timeout to 15 s (prevents offline boot hang)…
+[✓] Network timeout guard set (15 s max)
+[→] Writing dual-monitor launcher…
+[✓] Launcher written → /home/ngansen/.hanryx-dual-monitor.sh
+[→] Creating XDG autostart entry…
+[✓] XDG autostart entry created
+[→] Configuring labwc autostart (Pi 5 Wayland)…
+[✓] labwc autostart configured
+[→] Configuring LXDE autostart (X11 fallback)…
+[✓] LXDE autostart configured
+[✓] Log file ready → /var/log/hanryx-kiosk.log
+[→] Ensuring SSH is enabled (remote management at shows)…
+[✓] SSH enabled
+[→] Installing network watchdog service…
+[✓] Network watchdog service installed and enabled
+[i] Watchdog pings /health every 30 s and reloads Chromium if server comes back after ≥3 failures
+
+  ============================================================
+  All done — reboot to activate.
+
+  Network layout after reboot:
+    Main Pi (home)   → Tailscale host: 100.125.5.34  (port 8080)
+    Satellite (here) → hanryxvault.local on shop LAN, Tailscale: hanryxvault-sat
+    Tablet           → connect to http://hanryxvault.local:8080/ (auto-proxied)
+
+  On every boot the satellite Pi will:
+    1.  Wait for Tailscale tunnel to Main Pi before launching Chromium
+    2.  Show branded 'Connecting…' splash on both screens while waiting
+    3.  Monitor 1 (HDMI-0) → /admin  (directly via Tailscale)
+    4.  Monitor 2 (HDMI-1) → /kiosk  (directly via Tailscale)
+    5.  nginx on port 8080 proxies all tablet traffic to Main Pi via Tailscale
+    6.  Auto-restart both Chromium windows if they crash
+    7.  Never sleep or blank either screen
+    8.  Send heartbeat to Main Pi every 60 s (visible on System page)
+    9.  Network watchdog re-triggers Chromium if Tailscale recovers from outage
+   10.  Admin session restored after Chromium crash (stays logged in)
+
+  Main Pi Tailscale hostname: 100.125.5.34
+  To change later: edit /home/ngansen/.hanryx/satellite.conf then: sudo systemctl restart nginx && reboot
+
+  Tips:
+    • Check Tailscale connection:   tailscale status
+    • Check nginx proxy:            curl http://localhost:8080/health
+    • Tablet finds this Pi as:      http://hanryxvault.local:8080/
+    • View live logs:               tail -f /var/log/hanryx-kiosk.log
+    • SSH from your laptop:         ssh ngansen@hanryxvault-sat
+    • Swap HDMI cables if the screens are the wrong way round
+    • Run the launcher manually:    bash /home/ngansen/.hanryx-dual-monitor.sh
+
+[!] GPU memory bumped to 256 MB in config.txt — required for smooth video.
+
+  If Tailscale isn't connected yet, run:  tailscale up
+  To reboot now:  sudo reboot
+
+ngansen@hanryxvault:~/hanryx-vault-pos $
