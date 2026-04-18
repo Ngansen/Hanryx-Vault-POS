@@ -1,0 +1,68 @@
+ngansen@hanryxvault:~ $ echo '---LABWC FULL ENV---'; LABWC_PID=$(pgrep -x labwc | head -1); echo "labwc PID: $LABWC_PID"; sudo cat /proc/$LABWC_PID/environ 2>/dev/null | tr '\0' '\n' | sort; echo '---LABWC AUTOSTART USER---'; cat ~/.config/labwc/autostart 2>/dev/null; echo '---LABWC AUTOSTART SYSTEM---'; cat /etc/xdg/labwc/autostart 2>/dev/null; echo '---LAUNCHER PROCS---'; pgrep -af "hanryx-dual-monitor"; echo '---WHO STARTED THE WATCHDOG---'; ps -o pid,ppid,user,cmd -p $(pgrep -f "hanryx-kiosk.log" | head -1) 2>/dev/null; echo '---SYSTEMD UNITS---'; systemctl --user list-units --type=service 2>&1 | grep -i hanryx; sudo systemctl list-units --type=service 2>&1 | grep -i hanryx; echo '---LIGHTDM AUTOLOGIN STATUS---'; sudo grep -nE "autologin|^\[" /etc/lightdm/lightdm.conf | grep -v "^#"; groups ngansen
+---LABWC FULL ENV---
+labwc PID: 2653
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+DESKTOP_SESSION=rpd-labwc
+GDMSESSION=rpd-labwc
+GPG_AGENT_INFO=/run/user/1000/gnupg/S.gpg-agent:0:1
+HOME=/home/ngansen
+LANG=en_GB.UTF-8
+LOGNAME=ngansen
+NO_AT_BRIDGE=1
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games
+PWD=/home/ngansen
+QT_QPA_PLATFORMTHEME=qt5ct
+SAL_USE_VCLPLUGIN=gtk3
+SHELL=/bin/bash
+SSH_AGENT_PID=2701
+SSH_AUTH_SOCK=/tmp/ssh-2adPIZipzQkX/agent.2653
+TEXTDOMAIN=pam_chksshpwd
+USER=ngansen
+XDG_DATA_DIRS=~/.local/share:/usr/local/share:/usr/share/raspi-ui-overrides:/usr/share:/usr/share/gdm:/var/lib/menu-xdg
+XDG_GREETER_DATA_DIR=/var/lib/lightdm/data/ngansen
+XDG_MENU_PREFIX=rpd-
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SEAT_PATH=/org/freedesktop/DisplayManager/Seat0
+XDG_SEAT=seat0
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=rpd-labwc
+XDG_SESSION_ID=5
+XDG_SESSION_PATH=/org/freedesktop/DisplayManager/Session1
+XDG_SESSION_TYPE=wayland
+XDG_VTNR=7
+---LABWC AUTOSTART USER---
+sleep 5 && /home/ngansen/.hanryx-dual-monitor.sh &
+---LABWC AUTOSTART SYSTEM---
+/usr/bin/lwrespawn /usr/bin/pcmanfm-pi &
+/usr/bin/lwrespawn /usr/bin/wf-panel-pi &
+/usr/bin/kanshi &
+/usr/bin/lxsession-xdg-autostart
+---LAUNCHER PROCS---
+1484 bash /home/ngansen/.hanryx-dual-monitor.sh
+2350 bash /home/ngansen/.hanryx-dual-monitor.sh
+2424 bash /home/ngansen/.hanryx-dual-monitor.sh
+2490 bash /home/ngansen/.hanryx-dual-monitor.sh
+---WHO STARTED THE WATCHDOG---
+    PID    PPID USER     CMD
+   2577       1 ngansen  /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CON
+---SYSTEMD UNITS---
+  hanryx-watchdog.service                                     loaded active running HanryxVault Satellite Network Watchdog
+---LIGHTDM AUTOLOGIN STATUS---
+21:[LightDM]
+49:# pam-autologin-service = PAM service to use for autologin
+79:# autologin-guest = True to log in as guest by default
+80:# autologin-user = User to log in with by default (overrides autologin-guest)
+81:# autologin-user-timeout = Number of seconds to wait before loading default user
+82:# autologin-session = Session to load for automatic login (overrides user-session)
+83:# autologin-in-background = True if autologin session should not be immediately activated
+86:[Seat:*]
+89:#pam-autologin-service=lightdm-autologin
+119:#autologin-guest=false
+120:autologin-user=ngansen
+121:autologin-user-timeout=0
+122:#autologin-in-background=false
+123:autologin-session=rpd-labwc
+138:[XDMCPServer]
+156:[VNCServer]
+ngansen : ngansen adm dialout cdrom sudo audio video plugdev games users input render netdev spi i2c gpio autologin
+ngansen@hanryxvault:~ $
