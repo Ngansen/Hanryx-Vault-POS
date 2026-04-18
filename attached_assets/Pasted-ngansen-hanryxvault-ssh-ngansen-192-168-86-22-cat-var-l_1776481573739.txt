@@ -1,0 +1,143 @@
+ngansen@hanryxvault:~ $ ssh ngansen@192.168.86.22 "cat /var/log/hanryx-kiosk.log | tail -120; echo '---PROCESSES---'; ps -ef | grep -E 'chromium|hanryx-dual|labwc|wayfire' | grep -v grep; echo '---SOCKETS---'; ls /run/user/1000/wayland-* /tmp/.X11-unix/ 2>/dev/null; echo '---SESSION TYPE---'; loginctl show-user 1000 -p Display 2>/dev/null; cat /proc/\$(pgrep -x labwc 2>/dev/null | head -1)/environ 2>/dev/null | tr '\0' '\n' | grep -E 'WAYLAND|DISPLAY|XDG_SESSION'"
+ngansen@192.168.86.22's password:
+Opening in existing browser session.
+[02:30:22] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:22] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:23] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:23] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:23] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:24] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:30:28] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:30:28] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:30:28] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:29] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:29] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:29] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:30] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:30:30] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:34] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:30:34] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:30:35] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:35] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:36] Kiosk (Monitor 2) exited (code 0, 2s) — restarting in 5 s…
+[02:30:36] Kiosk (Monitor 2) exited (code 0, 2s) — restarting in 5 s…
+[02:30:36] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:36] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:41] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:30:41] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:30:41] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:41] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:42] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:42] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:43] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:30:43] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:30:47] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:30:47] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:30:48] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:48] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:48] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:48] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:30:49] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:49] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:53] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:30:53] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:30:54] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:54] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:30:55] Kiosk (Monitor 2) exited (code 0, 2s) — restarting in 5 s…
+[02:30:55] Kiosk (Monitor 2) exited (code 0, 2s) — restarting in 5 s…
+[02:30:55] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:30:55] Admin (Monitor 1) exited (code 0, 1s) — restarting in 5 s…
+[02:31:00] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:31:00] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:31:00] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:31:00] Admin (Monitor 1) → http://100.125.5.34:8080/admin  (flags: fallback --disable-gpu)
+[02:31:01] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:31:01] Kiosk (Monitor 2) exited (code 0, 1s) — restarting in 5 s…
+[02:31:02] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:31:02] Admin (Monitor 1) exited (code 0, 2s) — restarting in 5 s…
+[02:31:06] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+[02:31:06] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk  (flags: fallback --disable-gpu)
+Opening in existing browser session.
+[02:32:11] Another launcher instance is already running — exiting.
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #2
+[watchdog] Health check failed #2
+[watchdog] Health check failed #3
+[watchdog] Health check failed #3
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[watchdog] Health check failed #4
+[watchdog] Health check failed #4
+[watchdog] Health check failed #5
+[watchdog] Health check failed #5
+[watchdog] Health check failed #6
+[watchdog] Health check failed #6
+[watchdog] Health check failed #7
+[watchdog] Health check failed #7
+[watchdog] Health check failed #8
+[watchdog] Health check failed #8
+[watchdog] Health check failed #9
+[watchdog] Health check failed #9
+[watchdog] Health check failed #10
+[watchdog] Health check failed #10
+[watchdog] Health check failed #11
+[watchdog] Health check failed #11
+[watchdog] Health check failed #12
+[watchdog] Health check failed #12
+[watchdog] Health check failed #13
+[watchdog] Health check failed #13
+[watchdog] Health check failed #14
+[watchdog] Health check failed #14
+[watchdog] Health check failed #15
+[watchdog] Health check failed #15
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #2
+[watchdog] Health check failed #2
+[watchdog] Health check failed #3
+[watchdog] Health check failed #3
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[watchdog] Server back online — restarting Chromium
+[watchdog] Server back online — restarting Chromium
+[02:44:40] Another launcher instance is already running — exiting.
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[02:46:34] Another launcher instance is already running — exiting.
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[03:03:04] Another launcher instance is already running — exiting.
+---PROCESSES---
+ngansen     1320    1285  0 03:02 ?        00:00:00 /usr/bin/labwc -m
+ngansen     1411    1320  0 03:02 ?        00:00:00 /usr/bin/ssh-agent /usr/bin/labwc-pi
+ngansen     1483       1  0 03:02 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     1996    1483  0 03:03 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     2018    1483  0 03:03 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     2045    1483  0 03:03 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     2086       1  0 03:03 ?        00:00:00 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — restarting Chromium" | tee -a "$LOG";          pkill -x chromium-browser 2>/dev/null; pkill -x chromium 2>/dev/null;          sleep 3;          bash /home/ngansen/.hanryx-dual-monitor.sh &        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+---SOCKETS---
+/run/user/1000/wayland-0
+/run/user/1000/wayland-0.lock
+
+/tmp/.X11-unix/:
+X0
+---SESSION TYPE---
+Display=2
+XDG_SESSION_TYPE=wayland
+XDG_SESSION_CLASS=user
+XDG_SESSION_ID=2
+XDG_SESSION_PATH=/org/freedesktop/DisplayManager/Session0
+XDG_SESSION_DESKTOP=rpd-labwc
