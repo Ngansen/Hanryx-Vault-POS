@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~ $ echo '---LABWC NOW---'; LABWC_PID=$(pgrep -x labwc | head -1); echo "labwc PID: $LABWC_PID"; sudo cat /proc/$LABWC_PID/environ 2>/dev/null | tr '\0' '\n' | grep -E "AUTH|DISPLAY|WAYLAND|XDG_RUNTIME|^USER"; echo '---LOG---'; tail -25 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af "chromium|Xwayland" | head -8
+---LABWC NOW---
+labwc PID: 2653
+[sudo] password for ngansen:
+Sorry, try again.
+[sudo] password for ngansen:
+USER=ngansen
+XDG_RUNTIME_DIR=/run/user/1000
+SSH_AUTH_SOCK=/tmp/ssh-2adPIZipzQkX/agent.2653
+---LOG---
+[13:57:05] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:57:09] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[15405:15405:0418/135709.410722:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15405:15405:0418/135709.410794:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:10] [Admin] exited code=1 after 0s — restarting in 5s
+[13:57:10] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[15459:15459:0418/135710.632497:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15459:15459:0418/135710.632569:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:11] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:57:15] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[15513:15513:0418/135715.544090:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15513:15513:0418/135715.544158:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:16] [Admin] exited code=1 after 0s — restarting in 5s
+[13:57:16] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[15567:15567:0418/135716.758631:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15567:15567:0418/135716.758698:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:17] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:57:21] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[15623:15623:0418/135721.687361:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15623:15623:0418/135721.687428:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:22] [Admin] exited code=1 after 0s — restarting in 5s
+[13:57:22] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[15677:15677:0418/135722.903290:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[15677:15677:0418/135722.903355:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:57:23] [Kiosk] exited code=1 after 0s — restarting in 5s
+---PROCS---
+2577 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+ngansen@hanryxvault:~ $
