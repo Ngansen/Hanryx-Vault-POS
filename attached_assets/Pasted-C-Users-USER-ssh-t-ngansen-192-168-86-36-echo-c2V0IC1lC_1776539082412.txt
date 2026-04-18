@@ -1,0 +1,298 @@
+C:\Users\USER>ssh -t ngansen@192.168.86.36 "echo c2V0IC1lCmNkIH4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cAoKIyAxLiBQYXRjaCByZXF1aXJlbWVudHMudHh0IChpZGVtcG90ZW50IOKAlCBvbmx5IGFkZHMgaWYgbm90IGFscmVhZHkgdGhlcmUpCmlmICEgZ3JlcCAtcSAnXnBzeWNvZ3JlZW4nIHJlcXVpcmVtZW50cy50eHQ7IHRoZW4KICAgIHNlZCAtaSAnL15wc3ljb3BnMi1iaW5hcnkvYSAjIE1ha2UgcHN5Y29wZzIgY29vcGVyYXRpdmUgd2l0aCBnZXZlbnRcbnBzeWNvZ3JlZW4+PTEuMScgcmVxdWlyZW1lbnRzLnR4dAogICAgZWNobyAiKyBwc3ljb2dyZWVuIGFkZGVkIHRvIHJlcXVpcmVtZW50cy50eHQiCmVsc2UKICAgIGVjaG8gIj0gcHN5Y29ncmVlbiBhbHJlYWR5IGluIHJlcXVpcmVtZW50cy50eHQiCmZpCgojIDIuIFBhdGNoIGd1bmljb3JuLmNvbmYucHkgKGlkZW1wb3RlbnQpCmlmICEgZ3JlcCAtcSAncGF0Y2hfcHN5Y29wZycgZ3VuaWNvcm4uY29uZi5weTsgdGhlbgogICAgcHl0aG9uMyAtIDw8ICdQWV9FT0YnCmltcG9ydCByZQpwID0gImd1bmljb3JuLmNvbmYucHkiCnNyYyA9IG9wZW4ocCkucmVhZCgpCnBhdGNoID0gKAogICAgImltcG9ydCB0aHJlYWRpbmdcblxuIgogICAgIiMgTWFrZSBwc3ljb3BnMiBjb29wZXJhdGl2ZSB3aXRoIGdldmVudCDigJQgZWxpbWluYXRlcyB3b3JrZXIgdGltZW91dHMuXG4iCiAgICAidHJ5OlxuIgogICAgIiAgICBmcm9tIHBzeWNvZ3JlZW4uZ2V2ZW50IGltcG9ydCBwYXRjaF9wc3ljb3BnXG4iCiAgICAiICAgIHBhdGNoX3BzeWNvcGcoKVxuIgogICAgImV4Y2VwdCBJbXBvcnRFcnJvcjpcbiIKICAgICIgICAgcGFzc1xuIgopCm5ldyA9IHJlLnN1YihyJ15pbXBvcnQgdGhyZWFkaW5nXHMqXG4nLCBwYXRjaCwgc3JjLCBjb3VudD0xLCBmbGFncz1yZS5NKQpvcGVuKHAsICJ3Iikud3JpdGUobmV3KQpwcmludCgiKyBndW5pY29ybi5jb25mLnB5IHBhdGNoZWQiKQpQWV9FT0YKZWxzZQogICAgZWNobyAiPSBndW5pY29ybi5jb25mLnB5IGFscmVhZHkgcGF0Y2hlZCIKZmkKCiMgMy4gU2hvdyB0aGUgY2hhbmdlcyBmb3IgY29uZmlybWF0aW9uCmVjaG8gIi0tLSByZXF1aXJlbWVudHMudHh0IChwc3ljbyBsaW5lcykgLS0tIgpncmVwIC1uRSAncHN5Y28nIHJlcXVpcmVtZW50cy50eHQKZWNobyAiLS0tIGd1bmljb3JuLmNvbmYucHkgKHRvcCAxMiBsaW5lcykgLS0tIgpoZWFkIC0xMiBndW5pY29ybi5jb25mLnB5CgojIDQuIFJlYnVpbGQgKyByZXN0YXJ0IHBvcwplY2hvICItLS0gcmVidWlsZGluZyBwb3MgY29udGFpbmVyICh0aGlzIHRha2VzIH42MHMpIC0tLSIKZG9ja2VyIGNvbXBvc2UgYnVpbGQgcG9zCmRvY2tlciBjb21wb3NlIHVwIC1kIHBvcwoKIyA1LiBXYWl0IGZvciBoZWFsdGh5ICsgdmVyaWZ5CnNsZWVwIDE1CmVjaG8gIi0tLSBjb250YWluZXIgc3RhdHVzIC0tLSIKZG9ja2VyIHBzIC0tZmlsdGVyIG5hbWU9cG9zIC0tZm9ybWF0ICd0YWJsZSB7ey5OYW1lc319XHR7ey5TdGF0dXN9fScKZWNobyAiLS0tIGhlYWx0aCAtLS0iCmN1cmwgLXNTIC1tIDUgLW8gL2Rldi9udWxsIC13ICdoZWFsdGg9JXtodHRwX2NvZGV9XG4nIGh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9oZWFsdGgKZWNobyAiLS0tIHJlY2VudCBsb2cgLS0tIgpkb2NrZXIgbG9ncyAtLXRhaWw9MzAgcGktc2V0dXAtcG9zLTEgMj4mMSB8IGdyZXAgLWlFICdwc3ljb3xnZXZlbnR8d29ya2VyfHRpbWVvdXQnIHwgdGFpbCAtMTAKZWNobyBET05FCg== | base64 -d | bash"
+ngansen@192.168.86.36's password:
++ psycogreen added to requirements.txt
++ gunicorn.conf.py patched
+--- requirements.txt (psyco lines) ---
+5:psycopg2-binary>=2.9.9
+6:# Make psycopg2 cooperative with gevent
+7:psycogreen>=1.1
+--- gunicorn.conf.py (top 12 lines) ---
+import threading
+
+# Make psycopg2 cooperative with gevent — eliminates worker timeouts.
+try:
+    from psycogreen.gevent import patch_psycopg
+    patch_psycopg()
+except ImportError:
+    pass
+workers             = 1      # single worker so SSE subscribers share memory with cart updates
+worker_class        = "gevent"
+worker_connections  = 500   # gevent handles hundreds of concurrent SSE + API connections
+
+--- rebuilding pos container (this takes ~60s) ---
+[+] Building 21.6s (11/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.6s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 19.54kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f320acec894  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                                                              0.0s
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential      0.0s
+ => [builder 4/6] COPY requirements.txt .                                                                          0.1s
+ => [builder 5/6] RUN python -m venv /opt/venv                                                                     6.9s
+ => ERROR [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt                                        13.4s
+------
+ > [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt:
+0.753 Collecting clip@ git+https://github.com/openai/CLIP.git (from -r requirements.txt (line 62))
+0.753   Cloning https://github.com/openai/CLIP.git to /tmp/pip-install-is120bzw/clip_6093bdf3fd424e3abc24c33cbd704675
+0.787   Running command git clone --filter=blob:none --quiet https://github.com/openai/CLIP.git /tmp/pip-install-is120bzw/clip_6093bdf3fd424e3abc24c33cbd704675
+4.562   Resolved https://github.com/openai/CLIP.git to commit d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
+4.567   Installing build dependencies: started
+7.200   Installing build dependencies: finished with status 'done'
+7.201   Getting requirements to build wheel: started
+7.449   Getting requirements to build wheel: finished with status 'done'
+7.450   Preparing metadata (pyproject.toml): started
+7.665   Preparing metadata (pyproject.toml): finished with status 'done'
+7.865 Collecting flask>=3.0.0 (from -r requirements.txt (line 1))
+8.409   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+8.465 Collecting flask-compress>=1.14 (from -r requirements.txt (line 2))
+8.488   Downloading flask_compress-1.24-py3-none-any.whl.metadata (11 kB)
+8.554 Collecting gunicorn>=21.2.0 (from -r requirements.txt (line 3))
+8.581   Downloading gunicorn-25.3.0-py3-none-any.whl.metadata (5.5 kB)
+8.806 Collecting gevent>=24.2.1 (from -r requirements.txt (line 4))
+8.827   Downloading gevent-26.4.0-cp311-cp311-manylinux_2_28_aarch64.whl.metadata (14 kB)
+8.951 Collecting psycopg2-binary>=2.9.9 (from -r requirements.txt (line 5))
+8.973   Downloading psycopg2_binary-2.9.11-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl.metadata (4.9 kB)
+9.039 ERROR: Could not find a version that satisfies the requirement psycogreen>=1.1 (from versions: 0.0.1, 1.0, 1.0.1, 1.0.2)
+9.039 ERROR: No matching distribution found for psycogreen>=1.1
+9.408
+9.408 [notice] A new release of pip is available: 24.0 -> 26.0.1
+9.408 [notice] To update, run: pip install --upgrade pip
+------
+[+] build 0/1
+ ⠙ Image pi-setup-pos Building                                                                                     21.7s
+Dockerfile:18
+
+--------------------
+
+[+] Building 655.2s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 17.43kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f320acec894  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                                                              0.0st
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential      0.0s
+ => [builder 4/6] COPY requirements.txt .                                                                          0.2s
+ => [builder 5/6] RUN python -m venv /opt/venv                                                                     6.6s
+ => [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt                                             647.8s
+ => => #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 4.7 MB/s eta 0:00:00                                   N
+ => => # Downloading nvidia_cufft-12.0.0.61-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl (214.1 MB)       1
+ => => #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 214.1/214.1 MB 3.8 MB/s eta 0:00:00                               A
+ => => # Downloading nvidia_cufile-1.15.1.6-py3-none-manylinux_2_27_aarch64.whl (1.1 MB)                               V
+ => => #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.1/1.1 MB 5.0 MB/s eta 0:00:00                                   N
+ => => # Downloading nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_aarch64.whl (62.0 MB)                             -
+d | bash"
+ngansen@192.168.86.36's password:
+--- pinned ---
+psycogreen>=1.0
+--- rebuilding ---
+[+] Building 304.8s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 17.43kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f320acec894  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                                                              0.0s
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential      0.0s
+ => [builder 4/6] COPY requirements.txt .                                                                          0.2s
+ => [builder 5/6] RUN python -m venv /opt/venv                                                                     6.6s
+ => [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt                                             297.4s
+ => => # Downloading pytesseract-0.3.13-py3-none-any.whl (14 kB)
+ => => # Downloading pgvector-0.4.2-py3-none-any.whl (27 kB)
+ => => # Downloading torch-2.11.0-cp311-cp311-manylinux_2_28_aarch64.whl (419.7 MB)
+ => => #    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 419.7/419.7 MB 7.9 MB/s eta 0:00:00
+[+] Building 305.0s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+[+] Building 569.5s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 17.43kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+[+] Building 572.8s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+[+] Building 573.0s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+[+] Building 573.1s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+[+] Building 675.1s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+[+] Building 676.3s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+[+] Building 710.4s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+[+] Building 719.2s (10/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+[+] Building 1539.8s (20/20) FINISHED
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.4s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 17.43kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f320acec894  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                                                              0.0s
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential      0.0s
+ => [builder 4/6] COPY requirements.txt .                                                                          0.2s
+ => [builder 5/6] RUN python -m venv /opt/venv                                                                     6.6s
+ => [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt                                             923.3s
+ => CACHED [stage-1 3/9] RUN apt-get update && apt-get install -y --no-install-recommends     libpq5     postgres  0.0s
+ => CACHED [stage-1 4/9] RUN groupadd -r hanryx && useradd -r -g hanryx -d /app -s /sbin/nologin hanryx            0.1s
+ => [stage-1 5/9] COPY --from=builder /opt/venv /opt/venv                                                        157.2s
+ => [stage-1 6/9] COPY . .                                                                                         1.4s
+ => [stage-1 7/9] RUN mkdir -p /app/card-images /app/data /data &&     chown -R hanryx:hanryx /app /data           3.3s
+ => [stage-1 8/9] COPY entrypoint.sh /entrypoint.sh                                                                0.2s
+ => [stage-1 9/9] RUN chmod +x /entrypoint.sh                                                                      0.4s
+ => exporting to image                                                                                           412.1s
+ => => exporting layers                                                                                          271.3s
+ => => exporting manifest sha256:4e945d64765222fe3532bffa3e34b437a7466487aba810b4aaf30a2c6bd3739b                  0.1s
+ => => exporting config sha256:465d7c6dce84356eecadd681c29fb27465c147085ed2becedf48a1e623306f9b                    0.0s
+ => => exporting attestation manifest sha256:d22ef6cad178ade01885d07d173514aa6b0ae75d66f2de3ae67a2a864b6edc0e      0.1s
+ => => exporting manifest list sha256:9d54197b701ec8c32e79da03a20389a7ebbfd078acfd2985cb003c08c6f42ed7             0.0s
+ => => naming to docker.io/library/pi-setup-pos:latest                                                             0.0s
+ => => unpacking to docker.io/library/pi-setup-pos:latest                                                        140.5s
+ => resolving provenance for metadata file                                                                         0.0s
+[+] build 1/1
+ ✔ Image pi-setup-pos Built                                                                                      1539.9s
+[+] up 3/4
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 3/4... Running                                                                                              0.0ss
+[+] up 4/4... Running                                                                                              0.0ss
+[+] up 2/4... Running                                                                                              0.0ss
+[+] up 2/4... Waiting                                                                                              31.0s
+[+] up 2/4... Waiting                                                                                              31.1s
+[+] up 2/4... Waiting                                                                                              31.2s
+[+] up 2/4... Waiting                                                                                              31.3s
+[+] up 3/4... Waiting                                                                                              31.4s
+[+] up 3/4... Healthy                                                                                              31.4s
+[+] up 4/4... Healthy                                                                                              31.4s
+ ✔ Contain... Healthy                                                                                              31.4s
+ ✔ Contain... Healthy                                                                                              31.4s
+ ✔ Contain... Started                                                                                              31.6s
+ ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+--- status ---
+NAMES            STATUS
+pi-setup-pos-1   Up 18 seconds (healthy)
+health=200
+--- log ---
+192.168.86.250 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:18:52:37 +0000] "GET /health HTTP/1.1" 200 234 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /health HTTP/1.1" 200 234 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [18/Apr/2026:18:52:42 +0000] "GET /health HTTP/1.1" 200 234 "-" "curl/8.14.1"
+DONE
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>
