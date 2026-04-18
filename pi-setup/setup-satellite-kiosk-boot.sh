@@ -391,6 +391,20 @@ cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 # Connects to the main Pi's POS server — no Docker needed on this Pi.
 # =============================================================================
 
+# ── Single-instance guard ────────────────────────────────────────────────────
+# Pi 5 Bookworm registers this launcher in 3 autostart paths (XDG / labwc /
+# LXDE) and at least 2 of them fire on Wayland sessions.  Without a lock,
+# both copies race for the Chromium SingletonLock → losing instance exits
+# with "Opening in existing browser session" → infinite restart loop →
+# windows flash and disappear back to the desktop.
+LOCK_FILE="/tmp/hanryx-kiosk-launcher.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[$(date +%H:%M:%S)] Another launcher instance is already running — exiting." \
+        >> /var/log/hanryx-kiosk.log 2>/dev/null
+    exit 0
+fi
+
 LOG_FILE="/var/log/hanryx-kiosk.log"
 CONFIG_FILE="$HOME/.hanryx/satellite.conf"
 PROFILE_ADMIN="$HOME/.hanryx/admin-profile"

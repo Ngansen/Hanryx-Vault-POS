@@ -1,0 +1,114 @@
+ngansen@hanryxvault:~/hanryx-vault-pos $ Connection to 192.168.86.22 closed by remote host.
+Connection to 192.168.86.22 closed.
+
+C:\Users\USER>ssh ngansen@192.168.86.22 "tail -100 /var/log/hanryx-kiosk.log"
+ssh: connect to host 192.168.86.22 port 22: Connection timed out
+
+C:\Users\USER>ssh ngansen@100.85.79.40 "tail -100 /var/log/hanryx-kiosk.log"
+The authenticity of host '100.85.79.40 (100.85.79.40)' can't be established.
+ED25519 key fingerprint is SHA256:471MF43/n1J34TyaGYG3Ev+qqEZYwTfGggbyR2jqHA0.
+This host key is known by the following other names/addresses:
+    C:\Users\USER/.ssh/known_hosts:7: 192.168.86.22
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '100.85.79.40' (ED25519) to the list of known hosts.
+ngansen@100.85.79.40's password:
+[02:07:52] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:07:53] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:07:54] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:07:54] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:07:55] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:07:56] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:07:57] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:07:58] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:07:59] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:08:00] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:08:00] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:08:00] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:08:02] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:08:02] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:08:04] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:08:05] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:08:05] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:08:06] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:08:06] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:08:07] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:08:08] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:08:09] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[02:09:12] ============================================
+[02:09:12] HanryxVault satellite kiosk starting…
+[02:09:12] ============================================
+[02:09:12] Main Pi: 100.125.5.34
+[02:09:12] Admin URL:  http://100.125.5.34:8080/admin
+[02:09:12] Kiosk URL:  http://100.125.5.34:8080/kiosk
+[02:09:12] Health URL: http://100.125.5.34:8080/health
+[02:09:12] DNS resolved 100.125.5.34
+[02:09:12] ============================================
+[02:09:12] HanryxVault satellite kiosk starting…
+[02:09:12] ============================================
+[02:09:12] Main Pi: 100.125.5.34
+[02:09:12] Admin URL:  http://100.125.5.34:8080/admin
+[02:09:12] Kiosk URL:  http://100.125.5.34:8080/kiosk
+[02:09:12] Health URL: http://100.125.5.34:8080/health
+[02:09:12] DNS resolved 100.125.5.34
+[02:09:13] Main Pi reachable immediately — launching kiosk
+[02:09:13] Main Pi reachable immediately — launching kiosk
+[02:09:13] Display server: X11/XWayland (DISPLAY=:0)
+[02:09:13] Display server: X11/XWayland (DISPLAY=:0)
+[02:09:15] WARNING: No outputs found by xrandr — check HDMI cables and /boot/firmware/config.txt.
+[02:09:15] WARNING: No outputs found by xrandr — check HDMI cables and /boot/firmware/config.txt.
+[02:09:15] Window positions — Admin x=0px  Kiosk x=1920px
+[02:09:15] Window positions — Admin x=0px  Kiosk x=1920px
+[02:09:15] Splash pages written
+[02:09:15] Splash pages written
+[02:09:15] Chromium binary: /usr/lib/chromium/chromium
+[02:09:15] Chromium binary: /usr/lib/chromium/chromium
+[02:09:16] Launching Admin (Monitor 1) (position 0,0)
+[02:09:16] Launching Admin (Monitor 1) (position 0,0)
+[02:09:16] Admin (Monitor 1) → file:///tmp/hvault-splash-admin.html
+[02:09:16] Admin (Monitor 1) → file:///tmp/hvault-splash-admin.html
+[2137:2137:0418/020917.393865:ERROR:chrome/browser/process_singleton_posix.cc:345] Failed to create /home/ngansen/.hanryx/admin-profile/SingletonLock: File exists (17)
+Opening in existing browser session.
+[02:09:19] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:20] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:20] Both windows launched — Tailscale tunnel active
+[02:09:20] Launching Kiosk (Monitor 2) (position 1920,0)
+[02:09:20] Launching Kiosk (Monitor 2) (position 1920,0)
+[02:09:20] Both windows launched — Tailscale tunnel active
+[02:09:20] Kiosk (Monitor 2) → file:///tmp/hvault-splash-kiosk.html
+[02:09:20] Kiosk (Monitor 2) → file:///tmp/hvault-splash-kiosk.html
+Opening in existing browser session.
+[02:09:20] Heartbeat loop started (PID 2377) — pinging main Pi every 60 s
+[02:09:20] Heartbeat loop started (PID 2383) — pinging main Pi every 60 s
+[02:09:21] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:21] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:24] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:25] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:26] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:26] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:26] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:09:26] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+Opening in existing browser session.
+[02:09:28] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:28] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[02:09:31] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:31] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:33] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:33] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:33] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:09:33] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+Opening in existing browser session.
+[02:09:34] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:34] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:38] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:38] Admin (Monitor 1) → http://100.125.5.34:8080/admin
+[02:09:39] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:39] Admin (Monitor 1) exited (code 0) — restarting in 5 s…
+[02:09:39] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+[02:09:39] Kiosk (Monitor 2) → http://100.125.5.34:8080/kiosk
+Opening in existing browser session.
+[02:09:41] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
+[02:09:41] Kiosk (Monitor 2) exited (code 0) — restarting in 5 s…
