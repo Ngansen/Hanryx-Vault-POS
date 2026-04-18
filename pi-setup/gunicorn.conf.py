@@ -26,25 +26,28 @@ errorlog  = "-"
 preload_app = False
 
 
-def on_starting(server):
-    """Initialise the database schema once before workers start."""
-    try:
-        from server import init_db, _load_tokens_from_db
-        init_db()
-        _load_tokens_from_db()
-        server.log.info("DB schema initialised successfully")
-    except Exception as _e:
-        server.log.warning("DB init error (will retry on first request): %s", _e)
+# NOTE: do NOT define on_starting here — importing `server` in the master
+# process pulls in urllib3 / redis / jwt BEFORE gevent's monkey.patch_all
+# runs in each worker, leaving them un-patched and causing routes that do
+# HTTPS / JWT verification (e.g. /api/v1/checkout) to block the hub forever.
+# All initialisation now happens in post_worker_init below.
 
 
 def post_worker_init(worker):
-    """Apply psycogreen AFTER gevent's monkey.patch_all has run."""
+    """Run AFTER gevent's monkey.patch_all so HTTPS/Redis/JWT are cooperative."""
     try:
         from psycogreen.gevent import patch_psycopg
         patch_psycopg()
         worker.log.info("[psycogreen] psycopg patched for gevent")
     except Exception as _e:
         worker.log.warning("[psycogreen] patch failed: %s", _e)
+    try:
+        from server import init_db, _load_tokens_from_db
+        init_db()
+        _load_tokens_from_db()
+        worker.log.info("DB schema initialised successfully (worker)")
+    except Exception as _e:
+        worker.log.warning("DB init error (will retry on first request): %s", _e)
 
 
 def post_fork(server, worker):
