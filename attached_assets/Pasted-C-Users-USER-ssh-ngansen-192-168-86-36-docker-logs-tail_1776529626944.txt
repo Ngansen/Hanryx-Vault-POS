@@ -1,0 +1,37 @@
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs --tail=80 pi-setup-pos-1 2>&1 | grep -E 'push-scan|trade|500'"
+ngansen@192.168.86.36's password:
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "echo '=== last hour 4xx/5xx requests ==='; docker logs --since 1h pi-setup-pos-1 2>&1 | grep -E '\" (4[0-9]{2}|5[0-9]{2}) ' | awk '{print \$7, \$9}' | sort | uniq -c | sort -rn | head -30; echo; echo '=== exception types ==='; docker logs --since 1h pi-setup-pos-1 2>&1 | grep -oE '\"exc\":\"[A-Za-z._]+Error|Exception on /[a-zA-Z0-9/_-]+' | sort | uniq -c | sort -rn | head -20; echo; echo '=== unhealthy/restart events ==='; docker logs --since 24h pi-setup-pos-1 2>&1 | grep -E 'CRITICAL|FATAL|unhealthy|restart' | tail -10; echo; echo '=== container health ==='; docker ps --format 'table {{.Names}}\t{{.Status}}'; echo; echo '=== storefront last 20 errors ==='; docker logs --since 1h pi-setup-storefront-1 2>&1 | grep -iE 'error|exception|fail' | tail -20"
+'5[0-9]{2})' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "echo IyEvYmluL2Jhc2gKZWNobyAiPT09IGNvbnRhaW5lciBoZWFsdGggPT09Igpkb2NrZXIgcHMgLS1mb3JtYXQgJ3RhYmxlIHt7Lk5hbWVzfX1cdHt7LlN0YXR1c319JwplY2hvCmVjaG8gIj09PSBsYXN0IDFoOiBmYWlsaW5nIGVuZHBvaW50cyAoNHh4LzV4eCkgd2l0aCBjb3VudHMgPT09Igpkb2NrZXIgbG9ncyAtLXNpbmNlIDFoIHBpLXNldHVwLXBvcy0xIDI+JjEgfCBncmVwIC1FICciICg0WzAtOV17Mn18NVswLTldezJ9KSAnIHwgYXdrICd7cHJpbnQgJDksICQ3fScgfCBzb3J0IHwgdW5pcSAtYyB8IHNvcnQgLXJuIHwgaGVhZCAtMzAKZWNobwplY2hvICI9PT0gbGFzdCAxaDogZXhjZXB0aW9uIHR5cGVzICYgZW5kcG9pbnRzID09PSIKZG9ja2VyIGxvZ3MgLS1zaW5jZSAxaCBwaS1zZXR1cC1wb3MtMSAyPiYxIHwgZ3JlcCAtb0UgJ0V4Y2VwdGlvbiBvbiAvW2EtekEtWjAtOS9fLi1dK3wiZXhjIjoiW14iXFxdK0Vycm9yfHBzeWNvcGcyXC5lcnJvcnNcLltBLVphLXpdKycgfCBzb3J0IHwgdW5pcSAtYyB8IHNvcnQgLXJuIHwgaGVhZCAtMzAKZWNobwplY2hvICI9PT0gbGFzdCAyNGg6IGNyaXRpY2FsL2ZhdGFsL3VuaGVhbHRoeSA9PT0iCmRvY2tlciBsb2dzIC0tc2luY2UgMjRoIHBpLXNldHVwLXBvcy0xIDI+JjEgfCBncmVwIC1FICdDUklUSUNBTHxGQVRBTHx1bmhlYWx0aHl8cmVzdGFydHxPT018S2lsbGVkJyB8IHRhaWwgLTE1CmVjaG8KZWNobyAiPT09IGxhc3QgMWg6IGZ1bGwgdHJhY2ViYWNrIHNhbXBsZXMgKGZpcnN0IDMpID09PSIKZG9ja2VyIGxvZ3MgLS1zaW5jZSAxaCBwaS1zZXR1cC1wb3MtMSAyPiYxIHwgZ3JlcCAnImV4YyI6IlRyYWNlYmFjaycgfCBoZWFkIC0zIHwgcHl0aG9uMyAtYyAiCmltcG9ydCBzeXMsIGpzb24KZm9yIGxpbmUgaW4gc3lzLnN0ZGluOgogICAgdHJ5OgogICAgICAgIGkgPSBsaW5lLmluZGV4KCd7XCJ0c1wiJykKICAgICAgICBkID0ganNvbi5sb2FkcyhsaW5lW2k6XSkKICAgICAgICBwcmludCgnLS0tJywgZC5nZXQoJ3BhdGgnLCc/JyksICctLS0nKQogICAgICAgIHByaW50KGQuZ2V0KCdleGMnLCcnKVs6MTUwMF0pCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgcHJpbnQoJ3BhcnNlIGZhaWw6JywgZSkKIgplY2hvCmVjaG8gIj09PSBzdG9yZWZyb250IGVycm9ycyBsYXN0IDFoID09PSIKZG9ja2VyIGxvZ3MgLS1zaW5jZSAxaCBwaS1zZXR1cC1zdG9yZWZyb250LTEgMj4mMSB8IGdyZXAgLWlFICdlcnJvcnxleGNlcHRpb258ZmFpbHx0cmFjZWJhY2snIHwgdGFpbCAtMTUKZWNobwplY2hvICI9PT0gc2F0ZWxsaXRlIGhlYXJ0YmVhdCBzdGF0dXMgPT09Igpkb2NrZXIgbG9ncyAtLXNpbmNlIDEwbSBwaS1zZXR1cC1wb3MtMSAyPiYxIHwgZ3JlcCAnc2F0ZWxsaXRlL2hlYXJ0YmVhdCcgfCB0YWlsIC01Cg== | base64 -d | bash"
+ngansen@192.168.86.36's password:
+=== container health ===
+NAMES                   STATUS
+pi-setup-pos-1          Up 9 minutes (healthy)
+pi-setup-storefront-1   Up 17 hours (unhealthy)
+pi-setup-pgbouncer-1    Up 17 hours (healthy)
+pi-setup-redis-1        Up 17 hours (healthy)
+pi-setup-db-1           Up 17 hours (healthy)
+
+=== last 1h: failing endpoints (4xx/5xx) with counts ===
+     10 500 /satellite/heartbeat
+      2 404 /favicon.ico
+
+=== last 1h: exception types & endpoints ===
+
+=== last 24h: critical/fatal/unhealthy ===
+
+=== last 1h: full traceback samples (first 3) ===
+
+=== storefront errors last 1h ===
+Error cleaning up expired tokens: error: relation "auth_tokens" does not exist
+  severity: 'ERROR',
+
+=== satellite heartbeat status ===
+192.168.86.22 - - [18/Apr/2026:16:21:56 +0000] "POST /satellite/heartbeat HTTP/1.1" 500 50 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:16:23:17 +0000] "POST /satellite/heartbeat HTTP/1.1" 500 50 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:16:24:17 +0000] "POST /satellite/heartbeat HTTP/1.1" 500 50 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:16:25:17 +0000] "POST /satellite/heartbeat HTTP/1.1" 500 50 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:16:26:17 +0000] "POST /satellite/heartbeat HTTP/1.1" 500 50 "-" "curl/8.14.1"
