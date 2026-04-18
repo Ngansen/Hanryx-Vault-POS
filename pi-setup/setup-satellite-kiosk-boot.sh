@@ -716,12 +716,13 @@ COMMON_FLAGS=(
     --disable-features=TranslateUI
     --check-for-update-interval=31536000
     --autoplay-policy=no-user-gesture-required
-    # Pi 5 GL driver doesn't support GLES3 via XWayland — disable GPU process
-    # and fall back to Chromium's built-in software renderer (SwiftShader).
-    # This is stable and more than fast enough for kiosk/admin pages.
-    --disable-gpu
-    --disable-software-rasterizer=false
-    --use-gl=swiftshader
+    # Pi 5 GL driver doesn't support GLES3 via XWayland with native GL.
+    # ANGLE SwiftShader keeps the GPU *process* alive (WebGL + video decode work)
+    # but routes all GL calls through software — no native GLES3 needed.
+    # This is the correct fix: --disable-gpu also kills WebGL which breaks YouTube.
+    --use-gl=angle
+    --use-angle=swiftshader
+    --enable-features=VaapiVideoDecoder,VaapiVideoDecoderLinuxGL
     # Memory & rendering optimisation
     --disable-backing-store-limit
     --renderer-process-limit=4
@@ -770,6 +771,19 @@ launch_with_watchdog() {
     local pos_x="$5"
     local extra_flags=("${@:6}")   # optional extra flags per-window
     local first_run=1
+    local quick_crash_count=0       # detect ANGLE crash → fallback to --disable-gpu
+    # Build fallback flags: swap ANGLE SwiftShader for plain --disable-gpu
+    local FALLBACK_FLAGS=()
+    local using_fallback=0
+    for f in "${COMMON_FLAGS[@]}"; do
+        case "$f" in
+            --use-gl=angle|--use-angle=swiftshader|--enable-features=VaapiVideoDecoder*)
+                : ;;   # drop ANGLE flags in fallback mode
+            *)
+                FALLBACK_FLAGS+=("$f") ;;
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
 
     mkdir -p "$profile"
     log "Launching $name (position ${pos_x},0)"
@@ -783,12 +797,20 @@ launch_with_watchdog() {
             START_URL="$real_url"
         fi
 
-        log "$name → $START_URL"
+        # Choose flag set: use fallback (--disable-gpu) after 2 quick crashes
+        if [ "$using_fallback" -eq 1 ]; then
+            ACTIVE_FLAGS=("${FALLBACK_FLAGS[@]}")
+        else
+            ACTIVE_FLAGS=("${COMMON_FLAGS[@]}")
+        fi
+
+        log "$name → $START_URL  (flags: $([ "$using_fallback" -eq 1 ] && echo 'fallback --disable-gpu' || echo 'ANGLE swiftshader'))"
+        LAUNCH_TS=$(date +%s)
         "$CHROMIUM_BIN" \
             --kiosk \
             --window-position="${pos_x},0" \
             --user-data-dir="$profile" \
-            "${COMMON_FLAGS[@]}" \
+            "${ACTIVE_FLAGS[@]}" \
             "${extra_flags[@]}" \
             "$START_URL" \
             >> "$LOG_FILE" 2>&1
@@ -799,13 +821,26 @@ launch_with_watchdog() {
         # The real browser keeps running under the child PID. Check by profile path.
         sleep 1
         if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            quick_crash_count=0   # successfully forked — reset crash counter
             log "$name launcher exited ($EXIT_CODE) — browser forked OK, waiting for it…"
             while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
                 sleep 3
             done
             log "$name browser process ended — restarting in 5 s…"
         else
-            log "$name exited (code $EXIT_CODE) — restarting in 5 s…"
+            # No child process — check if it crashed very quickly (< 4 s)
+            ELAPSED=$(( $(date +%s) - LAUNCH_TS ))
+            if [ "$ELAPSED" -lt 4 ] && [ "$using_fallback" -eq 0 ]; then
+                quick_crash_count=$(( quick_crash_count + 1 ))
+                log "$name crashed in ${ELAPSED}s (quick_crash_count=$quick_crash_count)"
+                if [ "$quick_crash_count" -ge 2 ]; then
+                    log "$name ANGLE swiftshader unstable — switching to --disable-gpu fallback"
+                    using_fallback=1
+                    quick_crash_count=0
+                fi
+            else
+                log "$name exited (code $EXIT_CODE, ${ELAPSED}s) — restarting in 5 s…"
+            fi
         fi
         sleep 5
     done
