@@ -1,0 +1,58 @@
+ngansen@hanryxvault:~ $ cat ~/.hanryx/satellite.conf; echo '---FIXING---'; sudo sed -i 's|192\.168\.1\.45|192.168.86.36|g' ~/.hanryx/satellite.conf; cat ~/.hanryx/satellite.conf; echo '---RESTART LAUNCHER---'; sudo pkill -9 -f hanryx-dual-monitor; sudo pkill -9 chromium; rm -f /tmp/hanryx-kiosk-launcher.lock; sleep 2; nohup ~/.hanryx-dual-monitor.sh >/dev/null 2>&1 & sleep 8; tail -40 /var/log/hanryx-kiosk.log
+MAIN_PI_TS_HOST=100.125.5.34
+ADMIN_URL=http://100.125.5.34:8080/admin
+KIOSK_URL=http://100.125.5.34:8080/kiosk
+HEALTH_URL=http://100.125.5.34:8080/health
+USE_TAILSCALE=y
+SWAP_SCREENS=y
+---FIXING---
+[sudo] password for ngansen:
+MAIN_PI_TS_HOST=100.125.5.34
+ADMIN_URL=http://100.125.5.34:8080/admin
+KIOSK_URL=http://100.125.5.34:8080/kiosk
+HEALTH_URL=http://100.125.5.34:8080/health
+USE_TAILSCALE=y
+SWAP_SCREENS=y
+---RESTART LAUNCHER---
+Killed
+[1] 8358
+[8101:8101:0418/125527.548502:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8101:8101:0418/125527.548520:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:28] [Admin] exited code=1 after 0s — restarting in 5s
+[12:55:30] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[8146:8146:0418/125530.147442:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[8146:8146:0418/125530.147508:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8146:8146:0418/125530.147526:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:31] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:55:33] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[8185:8185:0418/125533.693394:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[8185:8185:0418/125533.693468:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8185:8185:0418/125533.693484:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:34] [Admin] exited code=1 after 0s — restarting in 5s
+[12:55:36] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[8231:8231:0418/125536.295900:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[8231:8231:0418/125536.295973:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8231:8231:0418/125536.295990:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:37] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:55:39] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[8270:8270:0418/125539.876771:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[8270:8270:0418/125539.876845:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8270:8270:0418/125539.876862:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:40] [Admin] exited code=1 after 0s — restarting in 5s
+[12:55:42] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[8315:8315:0418/125542.443119:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[8315:8315:0418/125542.443208:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[8315:8315:0418/125542.443227:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:55:44] ============================================
+[12:55:44] HanryxVault satellite kiosk v6 starting
+[12:55:44] PID=8358  USER=ngansen  PPID=2471
+[12:55:44] Initial env: WAYLAND_DISPLAY=unset  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=unset
+[12:55:44] ============================================
+[12:55:44] No live Wayland compositor yet (attempt 1) — waiting 2s…
+[12:55:44]   sockets present: /run/user/1000/wayland-0 /run/user/1000/wayland-0.lock
+[12:55:46] No live Wayland compositor yet (attempt 2) — waiting 2s…
+[12:55:46]   sockets present: /run/user/1000/wayland-0 /run/user/1000/wayland-0.lock
+[12:55:48] No live Wayland compositor yet (attempt 3) — waiting 2s…
+[12:55:48]   sockets present: /run/user/1000/wayland-0 /run/user/1000/wayland-0.lock
+[12:55:50] No live Wayland compositor yet (attempt 4) — waiting 2s…
+[12:55:50]   sockets prese
