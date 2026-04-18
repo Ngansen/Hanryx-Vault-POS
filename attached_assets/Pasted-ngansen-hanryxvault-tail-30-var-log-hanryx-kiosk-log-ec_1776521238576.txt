@@ -1,0 +1,35 @@
+ngansen@hanryxvault:~ $ tail -30 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af "chromium|labwc" | head -8
+[14:06:16] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:17] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:06:20] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:22] [Admin] exited code=0 after 1s — restarting in 5s
+[14:06:22] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:24] [Kiosk] exited code=0 after 1s — restarting in 5s
+[14:06:27] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:28] [Admin] exited code=0 after 0s — restarting in 5s
+[14:06:29] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:30] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:06:33] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:35] [Admin] exited code=0 after 1s — restarting in 5s
+[14:06:35] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:37] [Kiosk] exited code=0 after 1s — restarting in 5s
+[14:06:40] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:41] [Admin] exited code=0 after 0s — restarting in 5s
+[14:06:42] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:43] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:06:46] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:47] [Admin] exited code=0 after 0s — restarting in 5s
+[14:06:48] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:49] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:06:52] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:06:54] [Admin] exited code=0 after 1s — restarting in 5s
+[14:06:54] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:06:56] [Kiosk] exited code=0 after 1s — restarting in 5s
+[14:06:59] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:07:00] [Admin] exited code=0 after 0s — restarting in 5s
+[14:07:01] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:07:02] [Kiosk] exited code=0 after 0s — restarting in 5s
+---PROCS---
+2583 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+3489 /usr/bin/labwc -m
+3536 /usr/bin/ssh-agent /usr/bin/labwc-pi
