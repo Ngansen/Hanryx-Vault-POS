@@ -780,7 +780,19 @@ launch_with_watchdog() {
             >> "$LOG_FILE" 2>&1
 
         EXIT_CODE=$?
-        log "$name exited (code $EXIT_CODE) — restarting in 5 s…"
+
+        # Chromium's launcher process often forks a child and exits with code 0.
+        # The real browser keeps running under the child PID. Check by profile path.
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "$name launcher exited ($EXIT_CODE) — browser forked OK, waiting for it…"
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "$name browser process ended — restarting in 5 s…"
+        else
+            log "$name exited (code $EXIT_CODE) — restarting in 5 s…"
+        fi
         sleep 5
     done
 }
