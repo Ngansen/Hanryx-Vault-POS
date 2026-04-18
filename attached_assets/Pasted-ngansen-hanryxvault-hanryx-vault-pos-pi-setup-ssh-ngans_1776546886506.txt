@@ -1,0 +1,372 @@
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ ssh ngansen@192.168.86.22 "cat ~/.hanryx-dual-monitor.sh"
+ngansen@192.168.86.22's password:
+#!/usr/bin/env bash
+# =============================================================================
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6 native Wayland)
+# =============================================================================
+# Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
+#   • Detects outputs with wlr-randr (xrandr does not work under labwc)
+#   • Places each Chromium window on the right monitor via labwc rc.xml rules
+#     (--window-position is ignored under Wayland; you MUST use compositor rules)
+#   • Logs every step loudly so we can see exactly where it fails if it does
+#   • Single instance via flock — only one autostart path is configured (labwc)
+# =============================================================================
+
+set -u
+LOG_FILE="/var/log/hanryx-kiosk.log"
+log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE" 2>/dev/null; }
+
+# ── Single-instance guard ────────────────────────────────────────────────────
+LOCK_FILE="/tmp/hanryx-kiosk-launcher.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log "Another launcher instance is already running — exiting (PID $$)"
+    exit 0
+fi
+
+log "============================================"
+log "HanryxVault satellite kiosk v6 starting"
+log "PID=$$  USER=$(id -un)  PPID=$PPID"
+log "Initial env: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}  DISPLAY=${DISPLAY:-unset}"
+log "============================================"
+
+# ── Wayland environment (always native Wayland on Pi 5 labwc) ───────────────
+# A wayland-N file existing is NOT enough — stale sockets from prior compositor
+# runs persist after crash/reboot. We must actively probe each socket with a
+# real client (wlr-randr) and use only the one that the live compositor accepts.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+probe_wayland() {
+    local name="$1"
+    WAYLAND_DISPLAY="$name" timeout 3 wlr-randr >/dev/null 2>&1
+}
+
+find_live_wayland() {
+    # Prefer the WAYLAND_DISPLAY inherited from labwc autostart if it works
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && probe_wayland "$WAYLAND_DISPLAY"; then
+        echo "$WAYLAND_DISPLAY"
+        return 0
+    fi
+    # Otherwise try every wayland-* socket in XDG_RUNTIME_DIR
+    for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+        [ -S "$sock" ] || continue
+        case "$sock" in *.lock) continue ;; esac
+        local n="$(basename "$sock")"
+        if probe_wayland "$n"; then
+            echo "$n"
+            return 0
+        fi
+    done
+    return 1
+}
+
+LIVE_WD=""
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if LIVE_WD="$(find_live_wayland)" && [ -n "$LIVE_WD" ]; then
+        break
+    fi
+    log "No live Wayland compositor yet (attempt $attempt) — waiting 2s…"
+    log "  sockets present: $(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | tr '\n' ' ')"
+    sleep 2
+    LIVE_WD=""
+done
+
+if [ -z "$LIVE_WD" ]; then
+    log "FATAL: no Wayland compositor responded after 30s."
+    log "       Available sockets: $(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | tr '\n' ' ')"
+    log "       The launcher must run inside a labwc session, not from a system service."
+    sleep 30
+    exit 1
+fi
+
+export WAYLAND_DISPLAY="$LIVE_WD"
+log "Live Wayland compositor on $WAYLAND_DISPLAY (XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
+
+# ── Load config ──────────────────────────────────────────────────────────────
+CONFIG_FILE="$HOME/.hanryx/satellite.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    log "Loaded config from $CONFIG_FILE"
+fi
+MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-hanryxvault}"
+ADMIN_URL="${ADMIN_URL:-http://${MAIN_PI_TS_HOST}:8080/admin}"
+KIOSK_URL="${KIOSK_URL:-http://${MAIN_PI_TS_HOST}:8080/kiosk}"
+HEALTH_URL="${HEALTH_URL:-http://${MAIN_PI_TS_HOST}:8080/health}"
+log "Admin URL : $ADMIN_URL"
+log "Kiosk URL : $KIOSK_URL"
+log "Health URL: $HEALTH_URL"
+
+PROFILE_ADMIN="$HOME/.hanryx/admin-profile"
+PROFILE_KIOSK="$HOME/.hanryx/kiosk-profile"
+SPLASH_KIOSK="/tmp/hvault-splash-kiosk.html"
+SPLASH_ADMIN="/tmp/hvault-splash-admin.html"
+mkdir -p "$PROFILE_ADMIN" "$PROFILE_KIOSK"
+
+# ── Quick non-blocking connectivity check ────────────────────────────────────
+if curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; then
+    log "Main Pi reachable immediately"
+else
+    log "Main Pi not yet reachable — splash will retry automatically"
+    [ "${USE_TAILSCALE:-n}" = "y" ] && systemctl restart tailscaled 2>/dev/null &
+fi
+
+# ── Detect Wayland outputs via wlr-randr ────────────────────────────────────
+log "Probing outputs with wlr-randr…"
+WLR_OUT=$(wlr-randr 2>&1 || true)
+log "wlr-randr output ($(echo "$WLR_OUT" | wc -l) lines):"
+echo "$WLR_OUT" | while IFS= read -r l; do log "  | $l"; done
+
+declare -A OUT_W
+CUR=""
+while IFS= read -r line; do
+    if [[ "$line" =~ ^([A-Za-z][A-Za-z0-9_-]+) ]]; then
+        CUR="${BASH_REMATCH[1]}"
+    elif [[ -n "$CUR" && "$line" =~ ^[[:space:]]+([0-9]+)x([0-9]+)[[:space:]]+px ]]; then
+        # Only take the FIRST resolution line (the active mode)
+        if [ -z "${OUT_W[$CUR]:-}" ]; then
+            OUT_W[$CUR]="${BASH_REMATCH[1]}"
+        fi
+    fi
+done <<< "$WLR_OUT"
+
+for o in "${!OUT_W[@]}"; do
+    log "Detected output: $o  (${OUT_W[$o]}px wide)"
+done
+
+# ── Decide which output is admin (large) vs kiosk (small) ────────────────────
+WL_ADMIN=""; WL_KIOSK=""
+if [ -n "${ADMIN_OUTPUT:-}" ] && [ -n "${KIOSK_OUTPUT:-}" ]; then
+    WL_ADMIN="$ADMIN_OUTPUT"
+    WL_KIOSK="$KIOSK_OUTPUT"
+    log "Manual override from satellite.conf: Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
+elif [ "${#OUT_W[@]}" -ge 2 ]; then
+    MAX=0; MIN=999999
+    for o in "${!OUT_W[@]}"; do
+        w="${OUT_W[$o]:-0}"
+        if [ "$w" -gt "$MAX" ]; then MAX="$w"; WL_ADMIN="$o"; fi
+        if [ "$w" -lt "$MIN" ]; then MIN="$w"; WL_KIOSK="$o"; fi
+    done
+    if [ "$MAX" -eq "$MIN" ]; then
+        mapfile -t OUTS < <(printf '%s\n' "${!OUT_W[@]}" | sort)
+        if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+            WL_ADMIN="${OUTS[1]}"; WL_KIOSK="${OUTS[0]}"
+        else
+            WL_ADMIN="${OUTS[0]}"; WL_KIOSK="${OUTS[1]}"
+        fi
+        log "Equal sizes — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
+    else
+        log "Auto-assigned by width: Admin(${MAX}px)=$WL_ADMIN  Kiosk(${MIN}px)=$WL_KIOSK"
+    fi
+elif [ "${#OUT_W[@]}" -eq 1 ]; then
+    only="${!OUT_W[*]}"
+    log "WARN: only 1 output detected ($only) — both windows will share it"
+    WL_ADMIN="$only"; WL_KIOSK="$only"
+else
+    log "WARN: no outputs detected — windows will use compositor defaults"
+fi
+
+# ── Write labwc rc.xml window rules so each app_id lands on right output ────
+LABWC_RC="$HOME/.config/labwc/rc.xml"
+mkdir -p "$HOME/.config/labwc"
+cat > "$LABWC_RC" << RCEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="hvault-admin" matchType="exact">
+      <action name="MoveToOutput"><output>${WL_ADMIN}</output></action>
+    </windowRule>
+    <windowRule identifier="hvault-kiosk" matchType="exact">
+      <action name="MoveToOutput"><output>${WL_KIOSK}</output></action>
+    </windowRule>
+  </windowRules>
+</labwc_config>
+RCEOF
+log "labwc rc.xml written → Admin→${WL_ADMIN:-default}  Kiosk→${WL_KIOSK:-default}"
+labwcctl --reconfigure 2>/dev/null || killall -USR1 labwc 2>/dev/null || true
+
+# ── Hide mouse cursor ───────────────────────────────────────────────────────
+unclutter --timeout 3 2>/dev/null &
+
+# ── Splash pages ────────────────────────────────────────────────────────────
+write_splash() {
+    local target_url="$1" label="$2" out_file="$3"
+    cat > "$out_file" << HTMLEOF
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>HanryxVault — Connecting…</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0a;color:#fff;font-family:'Segoe UI',sans-serif;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       height:100vh;overflow:hidden}
+  .logo{font-size:72px;margin-bottom:28px;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}
+  h1{font-size:36px;font-weight:900;color:#facc15;letter-spacing:2px;margin-bottom:8px}
+  .sub{font-size:15px;color:#555;margin-bottom:48px;letter-spacing:1px}
+  .dot-wrap{display:flex;gap:12px;margin-bottom:36px}
+  .dot{width:12px;height:12px;border-radius:50%;background:#facc15;
+       animation:bounce 1.4s ease-in-out infinite}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+  .status{font-size:13px;color:#333;min-height:20px;letter-spacing:.5px}
+  .label{position:fixed;bottom:20px;right:24px;font-size:11px;color:#222;letter-spacing:1px}
+</style></head><body>
+<div class="logo">🃏</div><h1>HanryxVault</h1><p class="sub">Trading Card Shop</p>
+<div class="dot-wrap"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+<p class="status" id="st">Connecting to POS server…</p><div class="label">${label}</div>
+<script>
+var TARGET="${target_url}",HEALTH="${HEALTH_URL}",attempts=0;
+function check(){attempts++;document.getElementById('st').textContent='Connecting to POS server… (attempt '+attempts+')';
+  fetch(HEALTH,{cache:'no-store',signal:AbortSignal.timeout(2000)}).then(function(r){if(r.ok){window.location.replace(TARGET);}else{retry();}}).catch(function(){retry();});}
+function retry(){setTimeout(check,2000);}check();
+</script></body></html>
+HTMLEOF
+}
+write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
+write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
+log "Splash pages written"
+
+# ── Find chromium binary ────────────────────────────────────────────────────
+if   [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
+elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
+elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+else                                         CHROMIUM_BIN=chromium
+fi
+log "Chromium binary: $CHROMIUM_BIN"
+export DISPLAY="${DISPLAY:-:0}"
+
+if ! pgrep -x Xwayland >/dev/null 2>&1; then
+    log "Starting Xwayland on $DISPLAY"
+    Xwayland "$DISPLAY" >/dev/null 2>&1 &
+    sleep 3
+fi
+
+log "DISPLAY=$DISPLAY (XWayland via labwc)"
+
+# ── Common Chromium flags (native Wayland) ──────────────────────────────────
+COMMON_FLAGS=(
+    --kiosk
+    --no-first-run
+    --noerrdialogs
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --disable-translate
+    --disable-features=Translate,TranslateUI
+    --check-for-update-interval=31536000
+    --autoplay-policy=no-user-gesture-required
+    --disable-background-networking
+    --disable-default-apps
+    --disable-extensions
+    --disable-sync
+    --disable-breakpad
+    --disable-component-update
+    --no-process-singleton
+    --ozone-platform=wayland
+    --enable-features=UseOzonePlatform,VaapiVideoDecoder
+    --disable-dev-shm-usage
+    --allow-file-access-from-files
+    --disable-web-security
+)
+
+# ── Kill any stale chromium / locks ─────────────────────────────────────────
+pkill -f 'chromium' 2>/dev/null || true
+sleep 1
+rm -f "$PROFILE_ADMIN"/Singleton* "$PROFILE_KIOSK"/Singleton* 2>/dev/null
+
+# ── Launch function with watchdog ───────────────────────────────────────────
+launch_window() {
+    local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
+    local first_run=1 quick_crashes=0 using_fallback=0
+    local FALLBACK_FLAGS=()
+    for f in "${COMMON_FLAGS[@]}"; do
+        case "$f" in
+            *) FALLBACK_FLAGS+=("$f") ;;
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
+    while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash}"
+            first_run=0
+        else
+            START_URL="$url"
+        fi
+        if [ "$using_fallback" -eq 1 ]; then
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
+        else
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
+        fi
+        log "[$name] → $START_URL  ($mode)"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        "$CHROMIUM_BIN" \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            quick_crashes=0
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "[$name] child process ended — restarting in 5s"
+        else
+            if [ "$ELAPSED" -lt 4 ] && [ "$using_fallback" -eq 0 ]; then
+                quick_crashes=$(( quick_crashes + 1 ))
+                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes)"
+                if [ "$quick_crashes" -ge 2 ]; then
+                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+                    using_fallback=1
+                    quick_crashes=0
+                fi
+            else
+                log "[$name] exited code=$EXIT after ${ELAPSED}s — restarting in 5s"
+            fi
+        fi
+        sleep 5
+    done
+}
+
+# ── Start both windows ──────────────────────────────────────────────────────
+launch_window "Admin" "$ADMIN_URL" "$SPLASH_ADMIN" "$PROFILE_ADMIN" "hvault-admin" &
+sleep 4
+launch_window "Kiosk" "$KIOSK_URL" "$SPLASH_KIOSK" "$PROFILE_KIOSK" "hvault-kiosk" &
+
+CONNECTION_MODE=$([ -n "${USE_TAILSCALE:-}" ] && [ "$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
+log "Both windows launched — $CONNECTION_MODE tunnel active"
+
+# ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
+HEARTBEAT_PID_FILE="/tmp/hanryx-heartbeat.pid"
+if [ -f "$HEARTBEAT_PID_FILE" ]; then
+    OLD_PID=$(cat "$HEARTBEAT_PID_FILE" 2>/dev/null)
+    kill "$OLD_PID" 2>/dev/null || true
+fi
+OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
+(
+    while true; do
+        UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
+        CHROMIUM_OK=$(pgrep -f 'chromium' > /dev/null 2>&1 && echo true || echo false)
+        TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
+            2>/dev/null || echo "unknown")
+        curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
+             -H "Content-Type: application/json" \
+             -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v6\"}" \
+             > /dev/null 2>&1 || true
+        sleep 60
+    done
+) &
+echo $! > "$HEARTBEAT_PID_FILE"
+log "Heartbeat loop started (PID $!)"
+
+wait
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $
