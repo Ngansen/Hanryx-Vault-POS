@@ -1,0 +1,70 @@
+
+ngansen@hanryxvault:~ $ echo '---SATELLITE CONF---'; cat /home/ngansen/.hanryx/satellite.conf 2>/dev/null; echo '---WATCHDOG SCRIPT (full)---'; sudo systemctl cat hanryx-watchdog.service 2>/dev/null; echo '---HEALTH PROBE TEST---'; curl -sf --max-time 3 http://hanryxvault:8080/health -o /dev/null && echo "DNS health: OK" || echo "DNS health: FAILED"; curl -sf --max-time 3 http://192.168.86.36:8080/health -o /dev/null && echo "IP health: OK" || echo "IP health: FAILED"; echo '---STOP WATCHDOG, WAIT, CHECK---'; sudo systemctl stop hanryx-watchdog.service; sudo systemctl disable hanryx-watchdog.service 2>/dev/null; echo "watchdog stopped — waiting 12s for launcher to respawn chromium..."; sleep 12; echo '---LOG TAIL AFTER STOP---'; tail -15 /var/log/hanryx-kiosk.log; echo '---CHROMIUM PROCS---'; pgrep -af chromium | head -8
+---SATELLITE CONF---
+MAIN_PI_TS_HOST=192.168.86.36
+ADMIN_URL=http://192.168.86.36:8080/admin
+KIOSK_URL=http://192.168.86.36:8080/kiosk
+HEALTH_URL=http://192.168.86.36:8080/health
+USE_TAILSCALE=y
+SWAP_SCREENS=y
+---WATCHDOG SCRIPT (full)---
+# /etc/systemd/system/hanryx-watchdog.service
+[Unit]
+Description=HanryxVault Satellite Network Watchdog
+After=network-online.target
+
+[Service]
+Type=simple
+User=ngansen
+Environment=HOME=/home/ngansen
+ExecStart=/bin/bash -c '\
+  LOG="/var/log/hanryx-kiosk.log"; \
+  CONF="/home/ngansen/.hanryx/satellite.conf"; \
+  FAIL=0; \
+  while true; do \
+    source "$CONF" 2>/dev/null || true; \
+    HURL="${HEALTH_URL:-http://hanryxvault:8080/health}"; \
+    if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then \
+      if [ "$FAIL" -ge 3 ]; then \
+        echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG"; \
+        pkill -f chromium 2>/dev/null; \
+      fi; \
+      FAIL=0; \
+    else \
+      FAIL=$((FAIL+1)); \
+      echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG"; \
+      if [ "$FAIL" -eq 3 ]; then \
+        echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG"; \
+      fi; \
+    fi; \
+    sleep 30; \
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+---HEALTH PROBE TEST---
+DNS health: OK
+IP health: OK
+---STOP WATCHDOG, WAIT, CHECK---
+watchdog stopped — waiting 12s for launcher to respawn chromium...
+---LOG TAIL AFTER STOP---
+[14:22:47] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:22:49] [Kiosk] exited code=0 after 1s — restarting in 5s
+[14:22:51] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:22:53] [Admin] exited code=0 after 1s — restarting in 5s
+[14:22:54] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:22:55] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:22:58] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:22:59] [Admin] exited code=0 after 0s — restarting in 5s
+[14:23:00] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:23:02] [Kiosk] exited code=0 after 1s — restarting in 5s
+[14:23:04] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[14:23:06] [Admin] exited code=0 after 1s — restarting in 5s
+[14:23:07] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[14:23:08] [Kiosk] exited code=0 after 0s — restarting in 5s
+[14:23:11] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+---CHROMIUM PROCS---
