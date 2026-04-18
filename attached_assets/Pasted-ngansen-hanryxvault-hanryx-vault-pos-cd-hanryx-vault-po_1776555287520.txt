@@ -1,0 +1,77 @@
+ngansen@hanryxvault:~/hanryx-vault-pos $ cd ~/hanryx-vault-pos
+git checkout origin/main -- pi-setup/docker-compose.yml
+docker compose -f pi-setup/docker-compose.yml up -d --build
+[+] Building 134.4s (29/36)
+ => [internal] load local bake definitions                                 0.0s
+ => => reading from stdin 1.11kB                                           0.0s
+ => [storefront internal] load build definition from Dockerfile            0.0s
+ => => transferring dockerfile: 1.02kB                                     0.0s
+ => [pos internal] load build definition from Dockerfile                   0.0s
+ => => transferring dockerfile: 1.14kB                                     0.0s
+ => [storefront internal] load metadata for docker.io/library/node:20-sli  0.9s
+ => [pos internal] load metadata for docker.io/library/python:3.11-slim-b  0.8s
+ => [pos internal] load .dockerignore                                      0.0s
+ => => transferring context: 193B                                          0.0s
+ => [pos internal] load build context                                      0.1s
+ => => transferring context: 904.49kB                                      0.0s
+ => [pos builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sh  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f908  0.1s
+ => [storefront internal] load .dockerignore                               0.1s
+ => => transferring context: 2B                                            0.0s
+ => [storefront internal] load build context                               0.1s
+ => => transferring context: 10.70kB                                       0.0s
+ => [storefront builder 1/6] FROM docker.io/library/node:20-slim@sha256:f  0.1s
+ => => resolve docker.io/library/node:20-slim@sha256:f93745c153377ee2fbbd  0.1s
+ => CACHED [pos builder 2/6] WORKDIR /app                                  0.0s
+ => [pos builder 3/6] RUN apt-get update && apt-get install -y --no-ins  124.5s
+ => CACHED [storefront stage-1 2/7] WORKDIR /app                           0.0s
+ => CACHED [storefront builder 2/6] RUN apt-get update && apt-get install  0.0s
+ => CACHED [storefront builder 3/6] WORKDIR /app                           0.0s
+ => CACHED [storefront builder 4/6] COPY storefront-src/ .                 0.0s
+ => CACHED [storefront builder 5/6] RUN npm ci                             0.0s
+ => CACHED [storefront builder 6/6] RUN npm run build                      0.0s
+ => CACHED [storefront stage-1 3/7] COPY --from=builder /app/dist ./dist   0.0s
+ => CACHED [storefront stage-1 4/7] COPY --from=builder /app/package*.jso  0.0s
+ => [storefront stage-1 5/7] RUN npm ci --omit=dev --ignore-scripts       33.7s
+ => [storefront stage-1 6/7] COPY docker-entrypoint.sh /usr/local/bin/doc  0.4s
+ => [storefront stage-1 7/7] RUN chmod +x /usr/local/bin/docker-entrypoin  0.5s
+ => [storefront] exporting to image                                       36.3s
+ => => exporting layers                                                   23.4s
+ => => exporting manifest sha256:a54b54f5602f2d280daba75469789fe8a21f09e9  0.1s
+ => => exporting config sha256:58b9c9251ba843593801d461134fe2c5085ddc6c92  0.1s
+ => => exporting attestation manifest sha256:6976ff8ac52e1fe2f284486840c0  0.1s
+ => => exporting manifest list sha256:f400685d76ab7325eaeea750aadbe7ed78e  0.1s
+ => => naming to docker.io/library/pi-setup-storefront:latest              0.0s
+ => => unpacking to docker.io/library/pi-setup-storefront:latest          12.4s
+ => [storefront] resolving provenance for metadata file                    0.0s
+ => [pos builder 4/6] COPY requirements.txt .                              0.3s
+ => [pos builder 5/6] RUN python -m venv /opt/venv                         6.8s
+ => ERROR [pos builder 6/6] RUN pip install --no-cache-dir -r requirement  1.3s
+------
+ > [pos builder 6/6] RUN pip install --no-cache-dir -r requirements.txt:
+0.727 ERROR: Invalid requirement: '<<<<<<< Updated upstream' (from line 6 of req                                                                             uirements.txt)
+1.038
+1.038 [notice] A new release of pip is available: 24.0 -> 26.0.1
+1.038 [notice] To update, run: pip install --upgrade pip
+------
+[+] up 0/2
+ ⠙ Image pi-setup-pos        Building                                     134.4s
+ ⠙ Image pi-setup-storefront Building                                     134.4s
+Dockerfile:18
+
+--------------------
+
+  16 |     RUN python -m venv /opt/venv
+
+  17 |     ENV PATH="/opt/venv/bin:$PATH"
+
+  18 | >>> RUN pip install --no-cache-dir -r requirements.txt
+
+  19 |
+
+  20 |     FROM python:3.11-slim-bookworm
+
+--------------------
+
+target pos: failed to solve: process "/bin/sh -c pip install --no-cache-dir -r r                                                                             equirements.txt" did not complete successfully: exit code: 1
+
