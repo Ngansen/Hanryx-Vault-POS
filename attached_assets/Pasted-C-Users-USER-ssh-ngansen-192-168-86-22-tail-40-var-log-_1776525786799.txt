@@ -1,0 +1,53 @@
+C:\Users\USER>ssh ngansen@192.168.86.22 "tail -40 /var/log/hanryx-kiosk.log 2>/dev/null; echo '--- conf ---'; cat /home/ngansen/.hanryx/satellite.conf 2>/dev/null; echo '--- autostart ---'; cat /home/ngansen/.config/labwc/autostart"
+ngansen@192.168.86.22's password:
+[2302:2302:0418/151844.173507:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[15:18:44] Heartbeat loop started (PID 2351)
+[15:18:45] [Kiosk] crashed in 0s (count=1)
+[15:18:47] [Admin] → http://192.168.86.36:8080/admin  (ANGLE swiftshader)
+Error: unrecognized flag --no-decommit-pooled-pages
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Try --help for options
+[15:18:50] [Kiosk] → http://192.168.86.36:8080/kiosk  (ANGLE swiftshader)
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[15:18:52] Another launcher instance is already running — exiting (PID 2526)
+[2498:2623:0418/151855.086779:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[2901:2938:0418/151856.096687:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[2498:2623:0418/151920.237167:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[2901:2938:0418/151920.444607:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #2
+[watchdog] Health check failed #2
+[watchdog] Health check failed #3
+[watchdog] Health check failed #3
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[watchdog] 3 consecutive failures — Chromium will reload on recovery
+[2498:2623:0418/152015.558541:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[2901:2938:0418/152020.514478:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #4
+[watchdog] Health check failed #4
+[watchdog] Health check failed #5
+[watchdog] Health check failed #5
+[watchdog] Health check failed #6
+[watchdog] Health check failed #6
+[2901:2938:0418/152206.637107:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #7
+[watchdog] Health check failed #7
+[2498:2623:0418/152213.006933:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #8
+[watchdog] Health check failed #8
+--- conf ---
+MAIN_PI_TS_HOST=192.168.86.36
+ADMIN_URL=http://192.168.86.36:8080/admin
+KIOSK_URL=http://192.168.86.36:8080/kiosk
+HEALTH_URL=http://192.168.86.36:8080/health
+USE_TAILSCALE=y
+SWAP_SCREENS=y
+--- autostart ---
+sleep 5 && /home/ngansen/.hanryx-dual-monitor.sh &
+
+C:\Users\USER>
