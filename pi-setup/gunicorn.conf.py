@@ -49,6 +49,7 @@ def post_fork(server, worker):
                 _run_low_stock_checker,
                 _prewarm_all_pricing_bg,
                 _prewarm_lang_all_bg,
+                _receipt_replay_worker,
             )
             def _maybe(name, fn, thread_name):
                 if os.environ.get(f"DISABLE_BG_{name}") == "1":
@@ -61,5 +62,9 @@ def post_fork(server, worker):
             _maybe("LOW_STOCK",       _run_low_stock_checker,     "low-stock")
             _maybe("PRICING_PREWARM", _prewarm_all_pricing_bg,    "pricing-prewarm")
             _maybe("LANG_PREWARM",    _prewarm_lang_all_bg,       "lang-prewarm")
+            # Receipt replay worker is critical (drains receipts queued during PG outages)
+            # — always on, no env gate.
+            threading.Thread(target=_receipt_replay_worker, daemon=True,
+                             name="receipt-replay").start()
         except Exception as _e:
             server.log.warning("post_fork startup thread error: %s", _e)

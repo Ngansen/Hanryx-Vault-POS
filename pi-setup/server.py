@@ -615,11 +615,24 @@ class _PgConn:
         self._conn.rollback()
 
     def close(self):
+        commit_err = None
         try:
             self._conn.commit()
-        except Exception:
-            pass
-        _get_pool().putconn(self._conn)
+        except Exception as _e:
+            commit_err = _e
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            log.error("[_PgConn.close] commit failed — rolled back: %s", _e)
+        # Always return the connection so the pool doesn't leak.
+        try:
+            _get_pool().putconn(self._conn)
+        finally:
+            if commit_err is not None:
+                # Re-raise so the caller (request handler) sees the failure
+                # instead of silently believing the write succeeded.
+                raise commit_err
 
     # Compatibility no-ops for code that sets conn.row_factory = sqlite3.Row
     @property
@@ -648,16 +661,28 @@ class _PooledConn:
         return self._conn
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        commit_err = None
         if self._conn is not None:
             try:
                 if exc_type:
                     self._conn.rollback()
                 else:
                     self._conn.commit()
+            except Exception as _e:
+                commit_err = _e
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+                log.error("[_PooledConn.__exit__] commit/rollback failed: %s", _e)
+            try:
+                _get_pool().putconn(self._conn)
             except Exception:
-                pass
-            _get_pool().putconn(self._conn)
+                log.exception("[_PooledConn.__exit__] putconn failed")
             self._conn = None
+        if commit_err is not None and exc_type is None:
+            # Surface DB write failure when the request thought it was succeeding.
+            raise commit_err
         return False
 
 
@@ -3461,7 +3486,10 @@ def handle_options():
 def health():
     cached = _cache_get(_health_cache, "h")
     if cached:
-        return jsonify(cached)
+        # Cache the HTTP status alongside payload so a degraded state
+        # (PG down) cannot be masked by a recent healthy 200.
+        _status = 200 if cached.get("status") == "ok" else 503
+        return jsonify(cached), _status
     db = get_db()
     try:
         inv_count = db.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
@@ -17553,7 +17581,13 @@ def _kiosk_broadcast(data: dict):
     for _q in subs:
         try:
             _q.put_nowait(msg)
-        except Exception:
+        except Exception as _be:
+            # Log so we notice if a kiosk client is silently being dropped
+            # (e.g. queue full because the satellite browser is hung).
+            app.logger.warning(
+                "[kiosk SSE] dropping subscriber: %s (live=%d)",
+                _be, len(subs),
+            )
             dead.append(_q)
     if dead:
         with _kiosk_sse_lock:
@@ -17586,6 +17620,7 @@ def kiosk_state_json():
 
 
 @app.route("/kiosk/mode", methods=["POST"])
+@require_api_token
 def kiosk_mode():
     """Lightweight endpoint — update the screen mode without touching cart items."""
     data = request.get_json(force=True, silent=True) or {}
@@ -17690,6 +17725,7 @@ def _validate_kiosk_cart_payload(data: dict) -> tuple[bool, str]:
 
 
 @app.route("/kiosk/cart", methods=["POST"])
+@require_api_token
 def kiosk_cart_update():
     """POS pushes cart state here so the kiosk display updates live."""
     data = request.get_json(silent=True) or {}
@@ -17721,6 +17757,7 @@ def kiosk_cart_update():
 
 
 @app.route("/kiosk/reset", methods=["POST"])
+@require_api_token
 def kiosk_reset():
     """Hard-reset the customer display to an empty idle state.
     Tablet can call this after a checkout completes/cancels as a safety net."""
@@ -17742,6 +17779,7 @@ def kiosk_reset():
 
 
 @app.route("/kiosk/payment-processing", methods=["POST"])
+@require_api_token
 def kiosk_payment_processing():
     """Show 'Please continue on card reader' screen on the kiosk display.
     Call this when the staff presses Charge with Card on the POS.
@@ -17760,6 +17798,7 @@ def kiosk_payment_processing():
 
 
 @app.route("/kiosk/sale-complete", methods=["POST"])
+@require_api_token
 def kiosk_sale_complete():
     """
     Call this after a sale is finalised (Zettle confirm, cash received, etc.).
@@ -18163,6 +18202,7 @@ def sales_queue_pending():
 
 
 @app.route("/kiosk/stream")
+@require_api_token
 def kiosk_sse_stream():
     """SSE stream — kiosk display subscribes here for live cart updates."""
     try:
@@ -20700,6 +20740,54 @@ function applyFilters(q) {{
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _receipt_replay_worker():
+    """Drain hvault:receipt_replay_queue back into Postgres.
+    Receipts queued by /kiosk/sale-complete when PG was unreachable get
+    re-inserted as soon as PG comes back up. Without this worker the queue
+    just grows and customers' QR receipts never resolve."""
+    import time as _t
+    while True:
+        try:
+            r = _redis()
+            if not r:
+                _t.sleep(30)
+                continue
+            raw = r.lpop("hvault:receipt_replay_queue")
+            if not raw:
+                _t.sleep(15)
+                continue
+            try:
+                rec = json.loads(raw)
+            except Exception:
+                log.warning("[receipt-replay] dropping malformed entry")
+                continue
+            try:
+                with _direct_db() as _db:
+                    _db.execute(
+                        "INSERT INTO digital_receipts "
+                        "(token, items_json, subtotal, tax, total, payment_method, expires_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                        "ON CONFLICT (token) DO NOTHING",
+                        (rec.get("token"), json.dumps(rec.get("items", [])),
+                         rec.get("subtotal", 0), rec.get("tax", 0),
+                         rec.get("total", 0), rec.get("payment_method", ""),
+                         rec.get("expires_at", _now_ms() + 24*3_600_000)),
+                    )
+                    _db.commit()
+                log.info("[receipt-replay] re-inserted receipt %s", rec.get("token"))
+            except Exception as _ie:
+                # PG still down — push back to the tail and back off
+                log.warning("[receipt-replay] re-insert failed, requeuing: %s", _ie)
+                try:
+                    r.rpush("hvault:receipt_replay_queue", raw)
+                except Exception:
+                    pass
+                _t.sleep(30)
+        except Exception:
+            log.exception("[receipt-replay] worker loop error")
+            _t.sleep(30)
+
+
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
@@ -20708,6 +20796,7 @@ if __name__ == "__main__":
     threading.Thread(target=_run_low_stock_checker,     daemon=True).start()
     threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
     threading.Thread(target=_prewarm_lang_all_bg,       daemon=True, name="lang-prewarm").start()
+    threading.Thread(target=_receipt_replay_worker,     daemon=True, name="receipt-replay").start()
     _cleanup_scan_queue()
     log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

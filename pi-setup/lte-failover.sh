@@ -10,7 +10,8 @@
 #   sudo cp lte-failover.sh /usr/local/bin/hanryx-lte-failover.sh
 #   sudo chmod +x /usr/local/bin/hanryx-lte-failover.sh
 #   sudo cp lte-failover.service /etc/systemd/system/
-#   sudo systemctl enable --now hanryx-lte-failover
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lte-failover.service
 #
 # Configure these for your hardware:
 #   PRIMARY_IF   — wired/wifi interface (e.g. eth0, wlan0)
@@ -38,12 +39,16 @@ current_default_iface() {
 
 switch_to_lte() {
     if [ -z "$LTE_GW" ]; then
-        LTE_GW="$(ip route show dev "$LTE_IF" | awk '/proto/ {print $1; exit}' | cut -d/ -f1)"
-        # If still empty, try the first IP on the LTE iface's subnet
-        [ -z "$LTE_GW" ] && LTE_GW="$(ip -4 addr show "$LTE_IF" | awk '/inet / {print $2; exit}' | cut -d/ -f1)"
+        # Prefer an existing default route bound to the LTE iface (modems set
+        # this up via dhclient / ModemManager).
+        LTE_GW="$(ip route show default dev "$LTE_IF" | awk '/^default/ {print $3; exit}')"
+        # Fall back to a non-default route on the iface (peer/p2p modems)
+        if [ -z "$LTE_GW" ]; then
+            LTE_GW="$(ip route show dev "$LTE_IF" | awk '/via/ {for(i=1;i<=NF;i++) if($i=="via"){print $(i+1); exit}}')"
+        fi
     fi
     if [ -z "$LTE_GW" ]; then
-        log "FAIL: cannot determine LTE gateway, aborting failover"
+        log "FAIL: cannot determine LTE gateway on $LTE_IF, aborting failover"
         return 1
     fi
     log "Switching default route to LTE ($LTE_IF via $LTE_GW)"
