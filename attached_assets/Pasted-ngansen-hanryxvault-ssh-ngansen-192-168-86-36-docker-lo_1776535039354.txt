@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~ $ ssh ngansen@192.168.86.36 "docker logs --since 2m pi-setup-pos-1 2>&1 | grep 'Exception on /health' | tail -1 | python3 -c 'import sys,json; print(json.loads(sys.stdin.read())[\"exc\"])'"
+ngansen@192.168.86.36's password:
+Traceback (most recent call last):
+  File "/opt/venv/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server.py", line 3439, in health
+    db = get_db()
+         ^^^^^^^^
+  File "/app/server.py", line 1789, in get_db
+    g.db = _PgConn(_get_pool().getconn())
+                   ^^^^^^^^^^^
+  File "/app/server.py", line 550, in _get_pool
+    _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 161, in __init__
+    AbstractConnectionPool.__init__(
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 59, in __init__
+    self._connect()
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/pool.py", line 63, in _connect
+    conn = psycopg2.connect(*self._args, **self._kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.OperationalError: could not translate host name "db" to address: Temporary failure in name resolution
+
