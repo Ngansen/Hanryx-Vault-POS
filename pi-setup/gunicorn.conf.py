@@ -1,5 +1,14 @@
 import threading
 
+# Make psycopg2 cooperative with gevent — without this, every DB call blocks
+# the entire event loop including all SSE streams + concurrent API requests,
+# eventually causing worker timeouts and 1-2 s outages on every restart.
+try:
+    from psycogreen.gevent import patch_psycopg
+    patch_psycopg()
+except ImportError:
+    pass
+
 workers             = 1      # single worker so SSE subscribers share memory with cart updates
 worker_class        = "gevent"
 worker_connections  = 500   # gevent handles hundreds of concurrent SSE + API connections

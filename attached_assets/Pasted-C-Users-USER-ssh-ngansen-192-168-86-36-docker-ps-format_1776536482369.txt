@@ -1,0 +1,39 @@
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo === && curl -sS -m 5 -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health"
+ngansen@192.168.86.36's password:
+NAMES                   STATUS
+pi-setup-pos-1          Up 14 minutes (unhealthy)
+pi-setup-storefront-1   Up 58 minutes (unhealthy)
+pi-setup-pgbouncer-1    Up 58 minutes (healthy)
+pi-setup-redis-1        Up 58 minutes (healthy)
+pi-setup-db-1           Up 58 minutes (healthy)
+===
+health=000
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "sudo ss -ltnp | grep :8080 ; echo === ; docker exec pi-setup-pos-1 getent hosts db ; echo === ; docker logs --tail=20 pi-setup-pos-1 2>&1 | tail -25"
+ngansen@192.168.86.36's password:
+LISTEN 0      4096                      0.0.0.0:8080       0.0.0.0:*    users:(("docker-proxy",pid=33108,fd=8))         
+LISTEN 0      4096                         [::]:8080          [::]:*    users:(("docker-proxy",pid=33115,fd=8))         
+===
+172.18.0.4      db
+===
+127.0.0.1 - - [18/Apr/2026:18:13:12 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/7.88.1"
+192.168.86.22 - - [18/Apr/2026:18:13:12 +0000] "GET /health HTTP/1.1" 200 235 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.41 - - [18/Apr/2026:18:13:12 +0000] "GET /card/condition/PKM-MLAANO6Y-4777D2 HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+[2026-04-18 18:18:13 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:215)
+[2026-04-18 18:18:14 +0000] [8] [ERROR] Worker (pid:215) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 18:18:14 +0000] [323] [INFO] Booting worker with pid: 323
+[2026-04-18 18:18:14 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+  monkey.patch_all()
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDXMQ7Z-ABC69A HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDXZF33-998A72 HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDY25LJ-A3738F HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /inventory HTTP/1.1" 200 3125 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /admin/receipt HTTP/1.1" 302 251 "-" "okhttp/4.12.0"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "http://192.168.86.36:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "POST /satellite/heartbeat HTTP/1.1" 200 12 "-" "curl/8.14.1"
+127.0.0.1 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/7.88.1"
