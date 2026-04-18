@@ -1,0 +1,61 @@
+ngansen@hanryxvault:~ $ tail -60 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af chromium | head -5
+[13:03:57]   |   Enabled: yes
+[13:03:57]   |   Modes:
+[13:03:57]   |     800x480 px, 59.995998 Hz (preferred, current)
+[13:03:57]   |   Position: 1024,0
+[13:03:57]   |   Transform: normal
+[13:03:57]   |   Scale: 1.000000
+[13:03:57]   |   Adaptive Sync: disabled
+[13:03:57]   | HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+[13:03:57]   |   Make: DZX
+[13:03:57]   |   Model: Z3
+[13:03:57]   |   Serial: 0000000000000
+[13:03:57]   |   Physical size: 150x90 mm
+[13:03:57]   |   Enabled: yes
+[13:03:57]   |   Modes:
+[13:03:57]   |     1024x600 px, 60.004002 Hz (preferred, current)
+[13:03:57]   |     1920x1080 px, 60.000000 Hz
+[13:03:57]   |     1920x1080 px, 60.000000 Hz
+[13:03:57]   |     1920x1080 px, 59.939999 Hz
+[13:03:57]   |     1280x1024 px, 60.020000 Hz
+[13:03:57]   |     1280x960 px, 60.000000 Hz
+[13:03:57]   |     1152x864 px, 59.966999 Hz
+[13:03:57]   |     1280x720 px, 60.000000 Hz
+[13:03:57]   |     1280x720 px, 60.000000 Hz
+[13:03:57]   |     1280x720 px, 59.939999 Hz
+[13:03:57]   |     1024x768 px, 60.004002 Hz
+[13:03:57]   |     1440x480 px, 60.000000 Hz
+[13:03:57]   |     1440x480 px, 59.939999 Hz
+[13:03:57]   |     1024x640 px, 59.987999 Hz
+[13:03:57]   |     800x600 px, 60.317001 Hz
+[13:03:57]   |     720x480 px, 60.000000 Hz
+[13:03:57]   |     720x480 px, 60.000000 Hz
+[13:03:57]   |     720x480 px, 59.939999 Hz
+[13:03:57]   |     720x480 px, 59.939999 Hz
+[13:03:57]   |     640x480 px, 60.000000 Hz
+[13:03:57]   |     640x480 px, 59.939999 Hz
+[13:03:57]   |   Position: 0,0
+[13:03:57]   |   Transform: normal
+[13:03:57]   |   Scale: 1.000000
+[13:03:57]   |   Adaptive Sync: disabled
+[13:03:57] Detected output: HDMI-A-2  (800px wide)
+[13:03:57] Detected output: HDMI-A-1  (1024px wide)
+[13:03:57] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[13:03:57] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[13:03:57] Splash pages written
+[13:03:57] Chromium binary: /usr/bin/chromium
+[13:03:57] DISPLAY=:0 (XWayland via labwc)
+[13:03:58] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[13:03:58] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)
+[2325:2325:0418/130359.654828:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2325:2325:0418/130359.654902:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2325:2325:0418/130359.654919:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:04:00] [Admin] crashed in 1s (count=1)
+[13:04:02] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[13:04:02] Both windows launched — Tailscale tunnel active
+[13:04:02] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)
+[2422:2422:0418/130402.445031:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2422:2422:0418/130402.445139:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2422:2422:0418/130402.445163:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:04:02] Heartbeat loop started (PID 2479)
+[13:04:03] [Kiosk] crashed in 0s (coun
