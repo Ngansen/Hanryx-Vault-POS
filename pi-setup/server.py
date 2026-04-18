@@ -299,6 +299,14 @@ def _refresh_token_if_needed():
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+# Long cache on /static/* — logo, brand-pulse, JS bundles never change between
+# deploys (Flask appends ?v=mtime when needed). Saves dozens of round-trips
+# per kiosk reload.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 30  # 30 days
+# Lower gzip level — on a Pi 5, level 6 can cost 30-80 ms on a 200 KB JSON.
+# Level 4 cuts that ~3x for ~5 % larger payload, which matters far less on LAN.
+app.config["COMPRESS_LEVEL"]      = 4
+app.config["COMPRESS_MIN_SIZE"]   = 1024  # don't bother gzipping tiny payloads
 Compress(app)  # gzip all responses automatically
 
 # Session secret — required for admin login cookies and Zettle CSRF state
@@ -569,7 +577,21 @@ _pg_pool: "psycopg2.pool.ThreadedConnectionPool | None" = None
 def _get_pool() -> "psycopg2.pool.ThreadedConnectionPool":
     global _pg_pool
     if _pg_pool is None:
-        _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL)
+        # Bigger pool — 1 gunicorn worker × 500 gevent connections + several
+        # background threads (cloud-sync, pricing-prewarm, receipt-replay)
+        # easily exceed 10 simultaneous PG conns under load.
+        # TCP keepalives surface dead connections in seconds instead of minutes.
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+            int(os.environ.get("PG_POOL_MIN", "2")),
+            int(os.environ.get("PG_POOL_MAX", "20")),
+            dsn=DATABASE_URL,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+            # Prevent a runaway query from holding a worker forever — 8 s ceiling.
+            options=f"-c statement_timeout={os.environ.get('PG_STATEMENT_TIMEOUT_MS', '8000')}",
+        )
     return _pg_pool
 
 
