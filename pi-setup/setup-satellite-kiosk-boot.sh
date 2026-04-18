@@ -56,13 +56,17 @@ echo "  ============================================================"
 echo ""
 
 # ── Ask for Main Pi connection details ────────────────────────────────────────
-DEFAULT_HOST="hanryxvault"
-USE_TAILSCALE="n"
+# Defaults: Tailscale mode, Main Pi at 100.79.94.15
+# Override defaults by setting env vars before running:
+#   MAIN_PI_HOST=100.x.x.x  USE_TAILSCALE=y  TAILSCALE_AUTH_KEY=tskey-auth-...
+#   sudo -E bash pi-setup/setup-satellite-kiosk-boot.sh
+DEFAULT_HOST="${MAIN_PI_HOST:-100.79.94.15}"
+USE_TAILSCALE="y"
 if [ -f "$CONFIG_FILE" ]; then
     SAVED_HOST=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
     DEFAULT_HOST="${SAVED_HOST:-$DEFAULT_HOST}"
     SAVED_TS_MODE=$(grep "^USE_TAILSCALE=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
-    USE_TAILSCALE="${SAVED_TS_MODE:-n}"
+    USE_TAILSCALE="${SAVED_TS_MODE:-y}"
 fi
 
 echo -e "${CYAN}  Network layout:${NC}"
@@ -71,23 +75,23 @@ echo -e "${CYAN}    Satellite (here) = dual-monitor kiosk + nginx proxy for the 
 echo -e "${CYAN}    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi${NC}"
 echo ""
 echo -e "${CYAN}  How does this satellite connect to the Main Pi?${NC}"
-echo -e "${CYAN}    1) Direct LAN IP  — both Pis on the same network (simplest)${NC}"
-echo -e "${CYAN}    2) Tailscale VPN  — Pis on different networks (home ↔ shop)${NC}"
+echo -e "${CYAN}    1) Tailscale VPN  — works anywhere, home ↔ shop  [DEFAULT]${NC}"
+echo -e "${CYAN}    2) Direct LAN IP  — both Pis must be on the same network${NC}"
 echo ""
-read -rp "  Choose [1/2] (default: 1 — direct LAN): " CONN_MODE
+read -rp "  Choose [1/2] (default: 1 — Tailscale): " CONN_MODE
 CONN_MODE="${CONN_MODE:-1}"
 
 if [ "$CONN_MODE" = "2" ]; then
-    USE_TAILSCALE="y"
-    echo ""
-    echo -e "${CYAN}  Enter the Main Pi's Tailscale hostname or IP (100.x.x.x):${NC}"
-    read -rp "  Main Pi Tailscale hostname [$DEFAULT_HOST]: " MAIN_PI_TS_HOST
-    MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_HOST}"
-else
     USE_TAILSCALE="n"
     echo ""
     echo -e "${CYAN}  Enter the Main Pi's LAN IP address (e.g. 192.168.1.100):${NC}"
     read -rp "  Main Pi LAN IP [$DEFAULT_HOST]: " MAIN_PI_TS_HOST
+    MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_HOST}"
+else
+    USE_TAILSCALE="y"
+    echo ""
+    echo -e "${CYAN}  Enter the Main Pi's Tailscale IP (100.x.x.x) or hostname:${NC}"
+    read -rp "  Main Pi Tailscale IP [$DEFAULT_HOST]: " MAIN_PI_TS_HOST
     MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-$DEFAULT_HOST}"
 fi
 
@@ -170,12 +174,18 @@ if [ "$USE_TAILSCALE" = "y" ]; then
 
     echo ""
     echo -e "${CYAN}  ── Tailscale authentication ─────────────────────────────${NC}"
-    echo -e "${CYAN}  You need to connect this satellite Pi to your Tailscale network.${NC}"
-    echo -e "${CYAN}  Options:${NC}"
-    echo -e "${CYAN}    A) Auth key (recommended — paste from Tailscale admin panel)${NC}"
-    echo -e "${CYAN}    B) Interactive — browser link printed for you to approve${NC}"
-    echo ""
-    read -rp "  Paste your Tailscale auth key (or press Enter to authenticate interactively): " TS_AUTH_KEY
+
+    # Prefer key passed via environment (sudo -E): TAILSCALE_AUTH_KEY=tskey-auth-...
+    # If not set, prompt interactively.
+    if [ -n "${TAILSCALE_AUTH_KEY:-}" ]; then
+        TS_AUTH_KEY="$TAILSCALE_AUTH_KEY"
+        ok "Using Tailscale auth key from environment (TAILSCALE_AUTH_KEY)"
+    else
+        echo -e "${CYAN}  Pass TAILSCALE_AUTH_KEY=tskey-auth-... as an env var to skip this prompt.${NC}"
+        echo -e "${CYAN}  Or press Enter to authenticate interactively via browser link.${NC}"
+        echo ""
+        read -rp "  Paste your Tailscale auth key (or Enter for browser auth): " TS_AUTH_KEY
+    fi
 
     if [ -n "$TS_AUTH_KEY" ]; then
         tailscale up --authkey="$TS_AUTH_KEY" --hostname="hanryxvault-sat" 2>/dev/null || \
