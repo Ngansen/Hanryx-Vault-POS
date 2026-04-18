@@ -56,11 +56,11 @@ echo "  ============================================================"
 echo ""
 
 # ── Ask for Main Pi connection details ────────────────────────────────────────
-# Defaults: Tailscale mode, Main Pi at 100.79.94.15
+# Defaults: Tailscale mode, Main Pi at 100.125.5.34
 # Override defaults by setting env vars before running:
 #   MAIN_PI_HOST=100.x.x.x  USE_TAILSCALE=y  TAILSCALE_AUTH_KEY=tskey-auth-...
 #   sudo -E bash pi-setup/setup-satellite-kiosk-boot.sh
-DEFAULT_HOST="${MAIN_PI_HOST:-100.79.94.15}"
+DEFAULT_HOST="${MAIN_PI_HOST:-100.125.5.34}"
 USE_TAILSCALE="y"
 if [ -f "$CONFIG_FILE" ]; then
     SAVED_HOST=$(grep "^MAIN_PI_TS_HOST=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || true)
