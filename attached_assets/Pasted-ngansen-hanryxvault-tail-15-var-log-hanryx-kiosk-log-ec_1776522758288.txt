@@ -1,0 +1,19 @@
+ngansen@hanryxvault:~ $ tail -15 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af chromium | head -6
+[14:32:16] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[3255:3255:0418/143216.371574:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[3255:3255:0418/143216.371656:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[3255:3255:0418/143216.371674:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[14:32:17] [Kiosk] exited code=1 after 0s — restarting in 5s
+[14:32:19] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[3338:3338:0418/143219.689928:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[3338:3338:0418/143219.689998:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[3338:3338:0418/143219.690025:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[14:32:20] [Admin] exited code=1 after 0s — restarting in 5s
+[14:32:22] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[3394:3394:0418/143222.533506:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[3394:3394:0418/143222.533588:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[3394:3394:0418/143222.533607:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[14:32:23] [Kiosk] exited code=1 after 0s — restarting in 5s
+---PROCS---
+2538 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+ngansen@hanryxvault:~ $
