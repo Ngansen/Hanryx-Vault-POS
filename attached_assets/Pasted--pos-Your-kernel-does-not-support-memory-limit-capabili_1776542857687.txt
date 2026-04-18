@@ -1,0 +1,46 @@
+ ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+--- status ---
+NAMES            STATUS
+pi-setup-pos-1   Up 15 seconds (health: starting)
+curl: (28) Operation timed out after 8000 milliseconds with 0 bytes received
+health=000
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker ps --filter name=pos --format 'table {{.Names}}\t{{.Status}}' ; curl -sS -m 8 -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health ; echo === ; docker logs pi-setup-pos-1 2>&1 | grep -E 'bg\]|prewarm|enrich|TIMEOUT|Booting' | head -15"
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker ps --filter name=pos --format 'table {{.Names}}\t{{.Status}}' ; curl -sS -m 8 -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health ; echo === ; docker logs pi-setup-pos-1 2>&1 | grep -E 'bg\]|prewarm|enrich|TIMEOUT|Booting' | head -15"
+ngansen@192.168.86.36's password:
+NAMES            STATUS
+pi-setup-pos-1   Up About a minute (health: starting)
+curl: (28) Operation timed out afthealth=000
+===
+er 8001 milliseconds with 0 bytes received
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+[2026-04-18 19:40:46 +0000] [14] [INFO] Booting worker with pid: 14
+[2026-04-18 19:40:46 +0000] [14] [INFO] [bg] pricing-prewarm disabled via env
+[2026-04-18 19:40:46 +0000] [14] [INFO] [bg] lang-prewarm disabled via env
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs --tail=80 pi-setup-pos-1 2>&1 ; echo === ; docker exec pi-setup-pos-1 ps -ef 2>&1 | head -20"
+ngansen@192.168.86.36's password:
+[2026-04-18 19:40:45 +0000] [8] [INFO] Starting gunicorn 25.3.0
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+{"ts":"2026-04-18T19:40:46","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:40:46","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+[2026-04-18 19:40:46 +0000] [8] [INFO] DB schema initialised successfully
+[2026-04-18 19:40:46 +0000] [8] [INFO] Listening at: http://0.0.0.0:8080 (8)
+[2026-04-18 19:40:46 +0000] [8] [INFO] Using worker: gevent
+[2026-04-18 19:40:46 +0000] [14] [INFO] Booting worker with pid: 14
+[2026-04-18 19:40:46 +0000] [14] [INFO] [bg] pricing-prewarm disabled via env
+[2026-04-18 19:40:46 +0000] [14] [INFO] [bg] lang-prewarm disabled via env
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 58 products — skipping auto-sync"}
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 58 cards"}
+[2026-04-18 19:40:46 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+{"ts":"2026-04-18T19:40:46","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)'].
+  monkey.patch_all()
+===
+OCI runtime exec failed: exec failed: unable to start container process: exec: "ps": executable file not found in $PATH
