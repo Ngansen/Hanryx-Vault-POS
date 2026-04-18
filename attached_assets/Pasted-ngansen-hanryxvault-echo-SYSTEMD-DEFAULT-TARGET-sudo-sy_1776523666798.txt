@@ -1,0 +1,60 @@
+ngansen@hanryxvault:~ $ echo '---SYSTEMD DEFAULT TARGET---'; sudo systemctl get-default; echo '---LIGHTDM MAIN CONF (autologin lines)---'; sudo grep -nE "autologin|^session|^\[" /etc/lightdm/lightdm.conf | grep -v "^#"; echo '---CONF.D FILES---'; ls -la /etc/lightdm/lightdm.conf.d/ 2>/dev/null; sudo cat /etc/lightdm/lightdm.conf.d/*.conf 2>/dev/null; echo '---SATELLITE LOG---'; tail -15 /var/log/hanryx-kiosk.log; echo '---CAN REACH MAIN---'; curl -s -o /dev/null -w 'kiosk HTTP=%{http_code} bytes=%{size_download}\n' http://192.168.86.36:8080/kiosk; echo '---APPLYING REVERT FIX---'; sudo systemctl set-default graphical.target; sudo tee /etc/lightdm/lightdm.conf.d/01-hanryx-autologin.conf > /dev/null <<'EOF'
+[Seat:*]
+autologin-user=ngansen
+autologin-user-timeout=0
+autologin-session=rpd-labwc
+EOF
+echo '---POST FIX---'; sudo cat /etc/lightdm/lightdm.conf.d/01-hanryx-autologin.conf; sudo systemctl get-default; sudo reboot
+---SYSTEMD DEFAULT TARGET---
+[sudo] password for ngansen:
+graphical.target
+---LIGHTDM MAIN CONF (autologin lines)---
+21:[LightDM]
+49:# pam-autologin-service = PAM service to use for autologin
+79:# autologin-guest = True to log in as guest by default
+80:# autologin-user = User to log in with by default (overrides autologin-guest)
+81:# autologin-user-timeout = Number of seconds to wait before loading default user
+82:# autologin-session = Session to load for automatic login (overrides user-session)
+83:# autologin-in-background = True if autologin session should not be immediately activated
+86:[Seat:*]
+89:#pam-autologin-service=lightdm-autologin
+119:#autologin-guest=false
+120:autologin-user=ngansen
+121:autologin-user-timeout=0
+122:#autologin-in-background=false
+123:autologin-session=rpd-labwc
+138:[XDMCPServer]
+156:[VNCServer]
+---CONF.D FILES---
+total 12
+drwxr-xr-x 2 root root 4096 Apr 18 13:35 .
+drwxr-xr-x 3 root root 4096 Apr 18 14:37 ..
+-rw-r--r-- 1 root root   57 Apr 18 13:35 01-hanryx-autologin.conf
+[Seat:*]
+autologin-user=ngansen
+autologin-user-timeout=0
+---SATELLITE LOG---
+[14:46:29] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[4170:4244:0418/144633.558675:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[4169:4234:0418/144633.732704:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[4169:4234:0418/144657.079318:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[4170:4244:0418/144701.794418:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+---CAN REACH MAIN---
+kiosk HTTP=200 bytes=54424
+---APPLYING REVERT FIX---
+---POST FIX---
+[Seat:*]
+autologin-user=ngansen
+autologin-user-timeout=0
+autologin-session=rpd-labwc
+graphical.target

@@ -649,9 +649,8 @@ COMMON_FLAGS=(
     --disable-breakpad
     --disable-component-update
     --no-process-singleton
-    --use-gl=angle
-    --use-angle=swiftshader
-    --enable-features=VaapiVideoDecoder
+    --ozone-platform=wayland
+    --enable-features=UseOzonePlatform,VaapiVideoDecoder
     --disable-dev-shm-usage
     --allow-file-access-from-files
     --disable-web-security
@@ -669,7 +668,7 @@ launch_window() {
     local FALLBACK_FLAGS=()
     for f in "${COMMON_FLAGS[@]}"; do
         case "$f" in
-            --use-gl=angle|--use-angle=swiftshader|--enable-features=VaapiVideoDecoder) : ;;
+            --enable-features=UseOzonePlatform,VaapiVideoDecoder) FALLBACK_FLAGS+=("--enable-features=UseOzonePlatform") ;;
             *) FALLBACK_FLAGS+=("$f") ;;
         esac
     done
@@ -697,7 +696,6 @@ launch_window() {
             "${FLAGS[@]}" \
             --user-data-dir="$profile" \
             --class="$app_id" \
-            --app-id="$app_id" \
             "$START_URL" >> "$LOG_FILE" 2>&1
         EXIT=$?
         ELAPSED=$(( $(date +%s) - START ))
