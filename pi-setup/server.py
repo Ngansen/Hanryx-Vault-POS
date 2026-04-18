@@ -10828,7 +10828,7 @@ def satellite_heartbeat():
             "uptime":      str(body.get("uptime", "")),
             "chromium_ok": bool(body.get("chromium_ok", True)),
             "tailscale":   str(body.get("tailscale", "unknown")),
-            "last_seen":   time.time(),
+            "last_seen":   _time.time(),
             "version":     str(body.get("version", "v5")),
         }
         os.makedirs(os.path.dirname(_SAT_HB_PATH), exist_ok=True)
@@ -10845,7 +10845,7 @@ def satellite_status():
     try:
         with open(_SAT_HB_PATH) as fh:
             data = json.load(fh)
-        age = time.time() - data.get("last_seen", 0)
+        age = _time.time() - data.get("last_seen", 0)
         data["age_s"]  = round(age)
         data["online"] = age < 90     # heartbeat every 60 s → 90 s grace
         return jsonify(data)
