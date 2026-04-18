@@ -820,6 +820,10 @@ launch_with_watchdog() {
 
         log "$name → $START_URL  (flags: $([ "$using_fallback" -eq 1 ] && echo 'fallback --disable-gpu' || echo 'ANGLE swiftshader'))"
         LAUNCH_TS=$(date +%s)
+        # Clean stale Singleton* lock files left behind by previous crash —
+        # otherwise Chromium reads the dead PID and exits with "Opening in
+        # existing browser session" → infinite restart loop → blank desktop.
+        rm -f "$profile"/Singleton* 2>/dev/null || true
         "$CHROMIUM_BIN" \
             --kiosk \
             --window-position="${pos_x},0" \
