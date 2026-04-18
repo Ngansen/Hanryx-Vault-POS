@@ -5412,23 +5412,40 @@ def admin_trade_in_list():
 let _activeTiId = null;
 let _activeTiItems = [];
 
+/* Fetch wrapper: detects session expiry (redirect to /login) and shows
+   a clear error rather than silently failing. */
+async function _apiFetch(url, opts) {{
+  let r;
+  try {{ r = await fetch(url, opts); }} catch(e) {{ alert('Network error: ' + e.message); return null; }}
+  if (r.redirected && r.url.includes('/login')) {{
+    if (confirm('Your session has expired. Click OK to log in again.')) window.location.href = '/admin/login';
+    return null;
+  }}
+  if (!r.ok) {{
+    let msg = 'Server error ' + r.status;
+    try {{ const e = await r.json(); msg = e.error || msg; }} catch(_) {{}}
+    alert(msg); return null;
+  }}
+  try {{ return await r.json(); }} catch(e) {{ alert('Bad response from server — check logs.'); return null; }}
+}}
+
 async function createTi() {{
   const customer = document.getElementById('ti-customer').value.trim() || 'Walk-in';
   const notes    = document.getElementById('ti-notes').value.trim();
-  const r = await fetch('/admin/trade-in/create', {{
+  const d = await _apiFetch('/admin/trade-in/create', {{
     method: 'POST',
     headers: {{'Content-Type':'application/json'}},
     body: JSON.stringify({{customer, notes}})
   }});
-  const d = await r.json();
+  if (!d) return;
   if (d.error) {{ alert(d.error); return; }}
   openTi(d.id);
 }}
 
 async function openTi(id) {{
   _activeTiId = id;
-  const r = await fetch('/admin/trade-in/' + id);
-  const d = await r.json();
+  const d = await _apiFetch('/admin/trade-in/' + id);
+  if (!d) return;
   document.getElementById('ti-modal-title').textContent = d.reference + ' — ' + d.customer;
   _activeTiItems = d.items || [];
   renderTiItems();
@@ -5464,12 +5481,12 @@ async function addTiItem() {{
   const offered_price = parseFloat(document.getElementById('ti-offered').value) || 0;
   const market_price  = parseFloat(document.getElementById('ti-market').value) || 0;
   if (!qr_code || !name) {{ alert('QR code and name are required'); return; }}
-  const r = await fetch('/admin/trade-in/' + _activeTiId + '/add-item', {{
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/add-item', {{
     method: 'POST',
     headers: {{'Content-Type':'application/json'}},
     body: JSON.stringify({{qr_code, name, condition, offered_price, market_price}})
   }});
-  const d = await r.json();
+  if (!d) return;
   if (d.error) {{ alert(d.error); return; }}
   _activeTiItems = d.items;
   renderTiItems();
@@ -5478,8 +5495,8 @@ async function addTiItem() {{
 
 async function removeTiItem(itemId) {{
   if (!_activeTiId) return;
-  const r = await fetch('/admin/trade-in/' + _activeTiId + '/remove-item/' + itemId, {{method:'POST'}});
-  const d = await r.json();
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/remove-item/' + itemId, {{method:'POST'}});
+  if (!d) return;
   if (d.error) {{ alert(d.error); return; }}
   _activeTiItems = d.items;
   renderTiItems();
@@ -5488,8 +5505,8 @@ async function removeTiItem(itemId) {{
 async function completeTi() {{
   if (!_activeTiId || !_activeTiItems.length) {{ alert('Add at least one item first'); return; }}
   if (!confirm('Complete this trade-in? All accepted cards will be added to your POS inventory.')) return;
-  const r = await fetch('/admin/trade-in/' + _activeTiId + '/complete', {{method:'POST'}});
-  const d = await r.json();
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/complete', {{method:'POST'}});
+  if (!d) return;
   const msg = document.getElementById('ti-msg');
   if (d.error) {{ msg.textContent = '❌ ' + d.error; msg.style.color='#f87171'; return; }}
   msg.textContent = '✅ Done! ' + d.added + ' card(s) added to inventory.';
@@ -5499,8 +5516,8 @@ async function completeTi() {{
 
 async function cancelTi(id) {{
   if (!confirm('Cancel this trade-in?')) return;
-  const r = await fetch('/admin/trade-in/' + id + '/cancel', {{method:'POST'}});
-  if (r.ok) location.reload();
+  const d = await _apiFetch('/admin/trade-in/' + id + '/cancel', {{method:'POST'}});
+  if (d) location.reload();
 }}
 </script>
 </body></html>""")
@@ -15415,7 +15432,7 @@ def admin_scan_ai():
 </style>
 </head>
 <body>
-{{nav}}
+{nav}
 <div class="wrap">
 <h1>🤖 AI Visual Scanner</h1>
 <div class="subtitle" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -19766,7 +19783,7 @@ def admin_fake_detector():
 </style>
 </head>
 <body>
-{{nav}}
+{nav}
 <div class="wrap">
 <h1>🔍 AI Fake Card Detector</h1>
 <p class="subtitle">Multi-factor image analysis · Checks proportions, colour, sharpness, borders & more</p>
@@ -20021,7 +20038,7 @@ def admin_pack_rip():
 </style>
 </head>
 <body>
-{{nav}}
+{nav}
 <div class="wrap">
 <h1>🎰 Pack Rip Tracker</h1>
 <p class="subtitle">Live EV calculation · Log every pull · Track box profitability</p>
@@ -20329,7 +20346,7 @@ def admin_buy_list():
 </style>
 </head>
 <body>
-{{nav}}
+{nav}
 <div class="wrap">
 <h1>📋 Smart Buy List</h1>
 <p class="subtitle">Auto-generated from eBay pricing · Low / no-stock cards · Suggested buy prices at 40% of market</p>
