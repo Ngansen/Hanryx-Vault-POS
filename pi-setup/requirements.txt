@@ -46,6 +46,9 @@ deep-translator>=1.11.0
 # QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
 evdev>=1.6.1
 
+# Twilio — SMS digital-receipt sender (set TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM env vars to enable)
+twilio>=8.0.0
+
 # OCR card scanning — image → text → smart scan pipeline
 pytesseract>=0.3.10
 

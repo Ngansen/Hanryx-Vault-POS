@@ -558,7 +558,7 @@ def audit_action(action: str, resource_fn=None):
                     _audit_write(action, str(resource))
             except Exception:
                 pass
-hat            return result
+            return result
         return _wrapped
     return _decorator
 
@@ -722,6 +722,30 @@ _health_cache    = TTLCache(maxsize=1,   ttl=5)    # /health — 5 s TTL
 _qr_scan_cache   = TTLCache(maxsize=500, ttl=300)  # /card/scan — 5 min per QR code
 _cache_stats     = {"inventory_hits": 0, "inventory_misses": 0,
                     "scan_hits": 0,      "scan_misses": 0}
+
+# ---------------------------------------------------------------------------
+# Scan-image prefetch — kiosk customer monitor preloads recently-scanned card
+# images on idle so the next scan flips the picture instantly (chromium serves
+# from local HTTP cache instead of doing a 100-300 ms fetch).
+# ---------------------------------------------------------------------------
+import collections as _collections
+_recent_scan_image_urls: "_collections.deque[str]" = _collections.deque(maxlen=200)
+_recent_scan_lock = threading.Lock()
+
+
+def _track_scan_image(url: str):
+    """Record a card image URL as 'recently scanned' for the kiosk to prefetch."""
+    if not url or not isinstance(url, str):
+        return
+    if not (url.startswith("http://") or url.startswith("https://") or url.startswith("/")):
+        return
+    with _recent_scan_lock:
+        # Keep most-recent ordering: remove duplicate then push to the right
+        try:
+            _recent_scan_image_urls.remove(url)
+        except ValueError:
+            pass
+        _recent_scan_image_urls.append(url)
 
 # ---------------------------------------------------------------------------
 # Redis — lazy singleton, cross-worker pub/sub + L2 cache
@@ -2245,6 +2269,20 @@ def init_db():
             expires_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
         "CREATE INDEX IF NOT EXISTS idx_receipt_expires ON digital_receipts(expires_at)",
+
+        # ── SMS receipt audit log — one row per Twilio send attempt ───────────
+        f"""CREATE TABLE IF NOT EXISTS receipt_sms_log (
+            id          BIGSERIAL PRIMARY KEY,
+            token       TEXT NOT NULL,
+            phone       TEXT NOT NULL,
+            sent_at     BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            ip          TEXT NOT NULL DEFAULT '',
+            ok          INTEGER NOT NULL DEFAULT 0,
+            err         TEXT NOT NULL DEFAULT '',
+            twilio_sid  TEXT NOT NULL DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sms_token ON receipt_sms_log(token)",
+        "CREATE INDEX IF NOT EXISTS idx_sms_ip_ts ON receipt_sms_log(ip, sent_at DESC)",
 
         # ── Offline sale queue — sales queued locally while server is unavailable ─
         f"""CREATE TABLE IF NOT EXISTS offline_sale_queue (
@@ -4274,6 +4312,7 @@ def card_scan_fast():
 
     if row:
         result = _row_to_scan_result(row, confidence=1.0, method="exact")
+        _track_scan_image(row.get("image_url") or "")
     elif smart_result and smart_result["found"]:
         item = smart_result["item"]
         result = _row_to_scan_result(
@@ -4282,6 +4321,7 @@ def card_scan_fast():
             method=smart_result["method"],
             variant=smart_result["variant"],
         )
+        _track_scan_image(item.get("image_url") or "")
     else:
         # Nothing found — include fuzzy suggestions so the app can show "Did you mean?"
         suggestions = (smart_result or {}).get("suggestions", []) if smart_result else []
@@ -17629,6 +17669,21 @@ def _kiosk_get_state() -> dict:
     return state
 
 
+@app.route("/kiosk/prefetch")
+def kiosk_prefetch():
+    """Return the most-recently-scanned card image URLs so the kiosk display
+    can preload them into the browser cache while idle. Eliminates the
+    100-300 ms image fetch when the next scan flips the lookup screen."""
+    limit = max(1, min(100, _safe_int(request.args.get("limit"), 60)))
+    with _recent_scan_lock:
+        # Newest first (most likely to be re-scanned)
+        urls = list(_recent_scan_image_urls)[-limit:][::-1]
+    resp = jsonify({"count": len(urls), "urls": urls})
+    # Short cache so the kiosk's poll doesn't hammer us; long enough to be useful
+    resp.headers["Cache-Control"] = "public, max-age=30"
+    return resp
+
+
 @app.route("/kiosk/state")
 def kiosk_state():
     """GET current kiosk cart state as JSON — polling fallback for the kiosk display."""
@@ -17985,12 +18040,204 @@ table{{width:100%;border-collapse:collapse}}
       <td style="text-align:right">£{_safe_float(row["total"], 0):.2f}</td>
     </tr>
   </table>
+  <div class="sms-box" style="padding:18px 24px;border-top:1px solid #1a1a1a;background:#0d0d0d">
+    <div style="font-size:13px;color:#888;margin-bottom:8px;text-align:center">📱 Want a copy by text?</div>
+    <form id="sms-form" onsubmit="return sendSms(event)" style="display:flex;gap:8px">
+      <input id="sms-phone" type="tel" inputmode="tel" autocomplete="tel"
+             placeholder="+44 7… mobile number" maxlength="20" required
+             style="flex:1;background:#111;border:1px solid #222;border-radius:8px;
+                    padding:10px 12px;color:#e0e0e0;font-size:14px;outline:none"
+             onfocus="this.style.borderColor='{accent}'" onblur="this.style.borderColor='#222'">
+      <button id="sms-btn" type="submit"
+              style="background:{accent};color:#0d0d0d;border:none;border-radius:8px;
+                     padding:0 16px;font-weight:800;font-size:14px;cursor:pointer">Send</button>
+    </form>
+    <div id="sms-status" style="font-size:12px;color:#555;margin-top:8px;text-align:center;min-height:16px"></div>
+  </div>
   <div class="footer">
     <div class="thanks">Thank you for supporting my small business! 🙏</div>
     <div class="tagline">HanryxVault · Pokémon TCG · Card Singles · Sealed Product</div>
   </div>
 </div>
+<script>
+function sendSms(ev){{
+  ev.preventDefault();
+  var phone = document.getElementById('sms-phone').value.trim();
+  var btn   = document.getElementById('sms-btn');
+  var st    = document.getElementById('sms-status');
+  if(!phone){{ return false; }}
+  btn.disabled = true; btn.textContent = '…'; st.style.color = '#555';
+  st.textContent = 'Sending…';
+  fetch('/receipt/{token}/sms', {{
+    method:'POST', headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{phone: phone}})
+  }}).then(function(r){{ return r.json().then(function(j){{ return {{s:r.status,j:j}}; }}); }})
+    .then(function(o){{
+      if(o.s===200 && o.j.ok){{
+        st.style.color = '#22c55e';
+        st.textContent = '✓ Sent — check your phone';
+        btn.textContent = 'Sent';
+      }} else {{
+        st.style.color = '#ef4444';
+        st.textContent = (o.j && o.j.error) || 'Could not send — try again later';
+        btn.disabled = false; btn.textContent = 'Send';
+      }}
+    }})
+    .catch(function(){{
+      st.style.color = '#ef4444';
+      st.textContent = 'Network error — try again';
+      btn.disabled = false; btn.textContent = 'Send';
+    }});
+  return false;
+}}
+</script>
 </body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# Twilio SMS — digital receipt sender
+# ---------------------------------------------------------------------------
+_twilio_client_obj  = None
+_twilio_client_lock = threading.Lock()
+
+
+def _twilio_enabled() -> bool:
+    return bool(os.environ.get("TWILIO_SID") and
+                os.environ.get("TWILIO_TOKEN") and
+                os.environ.get("TWILIO_FROM"))
+
+
+def _twilio_client():
+    """Lazy-build a Twilio REST client. Returns None if creds missing or import fails."""
+    global _twilio_client_obj
+    if _twilio_client_obj is not None:
+        return _twilio_client_obj
+    if not _twilio_enabled():
+        return None
+    with _twilio_client_lock:
+        if _twilio_client_obj is not None:
+            return _twilio_client_obj
+        try:
+            from twilio.rest import Client as _TwilioClient
+            _twilio_client_obj = _TwilioClient(
+                os.environ["TWILIO_SID"], os.environ["TWILIO_TOKEN"]
+            )
+        except Exception as exc:
+            log.warning("[twilio] init failed: %s", exc)
+            return None
+    return _twilio_client_obj
+
+
+_PHONE_RE = re.compile(r"^\+?[0-9 ()\-]{7,20}$")
+
+
+def _normalize_phone(raw: str) -> str:
+    """Best-effort E.164 normalization — defaults to UK (+44) if no country code.
+    Also strips a leading '0' national-trunk prefix that follows a country code,
+    e.g. '+44 (0) 7700 900 123' → '+447700900123'."""
+    if not raw:
+        return ""
+    cleaned = re.sub(r"[^\d+]", "", raw)
+    # Drop any '+' that isn't at position 0 (e.g. people typing "44+7…")
+    if cleaned.count("+") > 1 or (cleaned.find("+") > 0):
+        cleaned = "+" + cleaned.replace("+", "")
+    if cleaned.startswith("+"):
+        # Strip a trunk-prefix '0' that some users include after the country code
+        # (most common form: "+44 (0) 7700 ..." → "+4407700...")
+        # We strip ONE leading '0' immediately after the 2-3 digit country code
+        m = re.match(r"^\+(\d{1,3})0(\d+)$", cleaned)
+        if m and len(m.group(2)) >= 7:
+            cleaned = "+" + m.group(1) + m.group(2)
+        return cleaned
+    if cleaned.startswith("00"):
+        return "+" + cleaned[2:]
+    if cleaned.startswith("0"):
+        return "+44" + cleaned[1:]
+    return "+" + cleaned
+
+
+def _send_sms(to: str, body: str) -> tuple[bool, str, str]:
+    """Send an SMS via Twilio. Returns (ok, message_sid_or_empty, error_string)."""
+    client = _twilio_client()
+    if not client:
+        return False, "", "SMS service not configured"
+    try:
+        msg = client.messages.create(
+            body=body, from_=os.environ["TWILIO_FROM"], to=to,
+        )
+        return True, getattr(msg, "sid", "") or "", ""
+    except Exception as exc:
+        return False, "", str(exc)[:240]
+
+
+@app.route("/receipt/<token>/sms", methods=["POST"])
+def receipt_sms(token):
+    """Send a digital receipt link to a customer phone via Twilio.
+    Rate-limited: max 3 sends per token, max 8 sends per IP per hour."""
+    if not _twilio_enabled():
+        return jsonify(ok=False, error="SMS receipts are not enabled on this store"), 503
+
+    body = request.get_json(silent=True) or {}
+    phone_raw = (body.get("phone") or "").strip()
+    if not phone_raw or not _PHONE_RE.match(phone_raw):
+        return jsonify(ok=False, error="Please enter a valid phone number"), 400
+    phone = _normalize_phone(phone_raw)
+    if not phone or len(phone) < 8:
+        return jsonify(ok=False, error="Please enter a valid phone number"), 400
+
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+    try:
+        db  = get_db()
+        row = db.execute(
+            "SELECT total, payment_method FROM digital_receipts "
+            "WHERE token=%s AND expires_at > %s",
+            (token, _now_ms()),
+        ).fetchone()
+    except Exception as exc:
+        app.logger.error("[sms] receipt lookup failed for token=%s: %s", token, exc)
+        return jsonify(ok=False, error="Receipt not found"), 404
+    if not row:
+        return jsonify(ok=False, error="Receipt not found or expired"), 404
+
+    # Rate limits
+    try:
+        hour_ago = _now_ms() - 3_600_000
+        n_token = db.execute(
+            "SELECT COUNT(*) AS c FROM receipt_sms_log WHERE token=%s AND ok=1",
+            (token,),
+        ).fetchone()
+        if n_token and _safe_int(n_token["c"], 0) >= 3:
+            return jsonify(ok=False, error="This receipt has already been texted 3 times"), 429
+        n_ip = db.execute(
+            "SELECT COUNT(*) AS c FROM receipt_sms_log WHERE ip=%s AND sent_at > %s",
+            (ip, hour_ago),
+        ).fetchone()
+        if n_ip and _safe_int(n_ip["c"], 0) >= 8:
+            return jsonify(ok=False, error="Too many requests — please try again later"), 429
+    except Exception as exc:
+        app.logger.warning("[sms] rate-limit check failed: %s", exc)
+
+    receipt_url = (request.host_url.rstrip("/") + f"/receipt/{token}")
+    sms_body = (
+        f"HanryxVault receipt £{_safe_float(row['total'], 0):.2f}"
+        + (f" ({row['payment_method']})" if row.get('payment_method') else "")
+        + f"\n{receipt_url}\nThanks for your order!"
+    )
+
+    ok, sid, err = _send_sms(phone, sms_body)
+    try:
+        db.execute(
+            "INSERT INTO receipt_sms_log (token, phone, sent_at, ip, ok, err, twilio_sid) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (token, phone, _now_ms(), ip, 1 if ok else 0, err, sid),
+        )
+    except Exception as exc:
+        app.logger.warning("[sms] audit log insert failed: %s", exc)
+
+    if not ok:
+        return jsonify(ok=False, error="Could not send SMS — please try again"), 502
+    return jsonify(ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -19177,6 +19424,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       }}
     }}
     // Auto-dismiss after 12 s → thank you → idle
+
     setTimeout(function(){{
       showOnly(elTy,"Thank you");
       var m=document.getElementById("ty-method");
@@ -19331,6 +19579,30 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
       ? s.stock_qty+" in stock" : (s.card_price>0 ? "In stock" : "");
     setTimeout(goIdle, 30000);
   }}
+
+  /* ── PREFETCH: warm browser cache with recently-scanned card images ──
+     Polls the server every 90 s for the URLs most likely to appear next.
+     Eliminates the ~150 ms image fetch when a customer scans a card. */
+  var _prefetched = {{}};
+  function prefetchScanImages(){{
+    fetch("/kiosk/prefetch?limit=60", {{credentials:"same-origin"}})
+      .then(function(r){{ return r.ok ? r.json() : null; }})
+      .then(function(j){{
+        if(!j || !j.urls) return;
+        for(var i=0;i<j.urls.length;i++){{
+          var u = j.urls[i];
+          if(!u || _prefetched[u]) continue;
+          _prefetched[u] = 1;
+          var img = new Image();   // chromium caches the response
+          img.decoding = "async";
+          img.src = u;
+        }}
+      }})
+      .catch(function(){{ /* offline — try again next tick */ }});
+  }}
+  // First warm-up shortly after load, then every 90 s
+  setTimeout(prefetchScanImages, 4000);
+  setInterval(prefetchScanImages, 90000);
 
   /* ── SSE dispatcher ── */
   function onData(s){{
