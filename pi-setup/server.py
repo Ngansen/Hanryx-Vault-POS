@@ -1749,7 +1749,326 @@ _tcg_cache_lock = threading.Lock()
 # OpenAI — card photo identification via GPT-4o Vision
 _OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 _tcg_mem_cache: dict = {}    # card_id → {"data": {...}, "fetched_ms": int}
-_TCG_MEM_TTL_MS = 3_600_000  # 1 hour in-memory; DB stores 24 hours
+_TCG_MEM_TTL_MS = 3_600_000           # 1 hour in-memory
+_TCG_DB_TTL_MS  = 7 * 86_400_000      # 7 days fresh cache (was 24 h) — market prices barely move daily
+_TCG_STALE_OK_MS = 30 * 86_400_000    # serve up to 30-day-old data on upstream failure ("stale-on-error")
+
+# ---------------------------------------------------------------------------
+# Pooled HTTP session for ALL TCG-related requests (api.pokemontcg.io, JustTCG,
+# TCGCSV). Saves ~80-150 ms TLS handshake per call (huge over the day) and adds
+# automatic retry + back-off on 429/5xx so a single hiccup doesn't poison a scan.
+# ---------------------------------------------------------------------------
+_tcg_session_obj  = None
+_tcg_session_lock = threading.Lock()
+
+
+def _build_tcg_session():
+    from requests.adapters import HTTPAdapter
+    try:
+        from urllib3.util.retry import Retry
+    except ImportError:
+        from requests.packages.urllib3.util.retry import Retry  # type: ignore
+    s = _requests.Session()
+    retry = Retry(
+        total=3, connect=3, read=3,
+        backoff_factor=0.5,                        # 0.5, 1.0, 2.0 s between tries
+        status_forcelist=(408, 425, 429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "HEAD"]),
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(
+        pool_connections=10, pool_maxsize=20, max_retries=retry, pool_block=False,
+    )
+    s.mount("https://", adapter)
+    s.mount("http://",  adapter)
+    s.headers.update({"Accept": "application/json",
+                      "User-Agent": "HanryxVault-POS/2.0 (+pi)"})
+    return s
+
+
+def _tcg_session():
+    """Return a process-wide pooled requests.Session with retry/back-off."""
+    global _tcg_session_obj
+    if _tcg_session_obj is not None:
+        return _tcg_session_obj
+    with _tcg_session_lock:
+        if _tcg_session_obj is None:
+            _tcg_session_obj = _build_tcg_session()
+    return _tcg_session_obj
+
+
+# ---------------------------------------------------------------------------
+# JustTCG — free secondary price source. Used as a fallback when
+# api.pokemontcg.io is rate-limited or unreachable. Set JUSTTCG_API_KEY env
+# var to enable; without it this is a no-op (returns None).
+#   Docs: https://justtcg.com/docs (free key, generous quota)
+# ---------------------------------------------------------------------------
+_JUSTTCG_API_KEY  = os.environ.get("JUSTTCG_API_KEY", "").strip()
+_JUSTTCG_BASE     = "https://api.justtcg.com/v1"
+
+
+def _justtcg_lookup_by_id(card_id: str) -> dict | None:
+    """Best-effort price lookup via JustTCG. Returns a pokemontcg.io-shaped
+    dict with at least {id, name, tcgplayer.prices} so it slots into the same
+    summarizer. Returns None when JustTCG is disabled, the card isn't found,
+    or the call fails."""
+    if not _JUSTTCG_API_KEY or not card_id:
+        return None
+    cid = card_id.lower().strip()
+    m = re.match(r"^([a-z0-9]+)-(\d+[a-z]?)$", cid)
+    if not m:
+        return None
+    set_id, number = m.group(1), m.group(2)
+    try:
+        params = {"game": "pokemon", "set": set_id, "number": number, "limit": 1}
+        resp = _tcg_session().get(
+            f"{_JUSTTCG_BASE}/cards",
+            headers={"x-api-key": _JUSTTCG_API_KEY},
+            params=params, timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        items = (resp.json() or {}).get("data") or []
+        if not items:
+            return None
+        item = items[0]
+        # Pick best market price across variants
+        market = None
+        for v in item.get("variants") or []:
+            p = v.get("price") or v.get("market") or v.get("low")
+            if p and (market is None or p < market * 1.5):
+                market = float(p)
+        if market is None:
+            return None
+        # Reshape to look like a pokemontcg.io card object so _tcg_to_summary works
+        return {
+            "id":     cid,
+            "name":   item.get("name") or "",
+            "number": number,
+            "set":    {"id": set_id, "name": item.get("set") or set_id},
+            "images": {"small": item.get("imageUrl"), "large": item.get("imageUrl")},
+            "tcgplayer": {
+                "url":       item.get("tcgplayerUrl") or "",
+                "updatedAt": item.get("updatedAt") or "",
+                "prices":    {"holofoil": {"market": market}},
+            },
+            "_source": "justtcg",
+        }
+    except Exception as e:
+        log.debug("[justtcg] lookup failed for %s: %s", cid, e)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# TCGCSV — daily Pokémon TCGplayer price snapshot (no API key required).
+# Downloads ProductsAndPrices for each Pokémon group (set) and stores in the
+# tcgcsv_prices table. Used as a fast-path before hitting api.pokemontcg.io
+# during enrichment / price refresh — once warmed, most lookups never touch
+# the network at all.
+#   Docs: https://tcgcsv.com  (CategoryId 3 = Pokémon)
+# ---------------------------------------------------------------------------
+_TCGCSV_BASE = "https://tcgcsv.com/tcgplayer/3"
+_tcgcsv_lock = threading.Lock()
+
+
+def _tcgcsv_norm(text: str) -> str:
+    """Lowercase + strip non-alphanumerics for fuzzy joins."""
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def _tcgcsv_refresh_groups(session) -> list[dict]:
+    """Pull the full Pokémon groups (sets) listing and upsert into tcgcsv_groups."""
+    try:
+        resp = session.get(f"{_TCGCSV_BASE}/groups", timeout=20)
+        if resp.status_code != 200:
+            log.warning("[tcgcsv] groups upstream %s", resp.status_code)
+            return []
+        groups = (resp.json() or {}).get("results") or []
+    except Exception as e:
+        log.warning("[tcgcsv] groups fetch failed: %s", e)
+        return []
+    try:
+        db = _direct_db()
+        for g in groups:
+            db.execute(
+                "INSERT INTO tcgcsv_groups (group_id, name, abbreviation, published_on) "
+                "VALUES (%s,%s,%s,%s) "
+                "ON CONFLICT (group_id) DO UPDATE SET name=EXCLUDED.name, "
+                "abbreviation=EXCLUDED.abbreviation, published_on=EXCLUDED.published_on",
+                (int(g.get("groupId") or 0),
+                 g.get("name") or "",
+                 g.get("abbreviation") or "",
+                 g.get("publishedOn") or ""),
+            )
+        db.commit(); db.close()
+    except Exception as e:
+        try: db.close()
+        except Exception: pass
+        log.warning("[tcgcsv] groups DB persist failed: %s", e)
+    return groups
+
+
+def _tcgcsv_refresh_group_prices(session, group_id: int) -> int:
+    """Download ProductsAndPrices for one group; upsert into tcgcsv_prices.
+    Returns number of rows written."""
+    try:
+        resp = session.get(
+            f"{_TCGCSV_BASE}/{group_id}/ProductsAndPrices.csv", timeout=30
+        )
+        if resp.status_code != 200:
+            return 0
+        text = resp.text
+    except Exception as e:
+        log.debug("[tcgcsv] group %s fetch failed: %s", group_id, e)
+        return 0
+
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows:
+        return 0
+    now = _now_ms()
+    written = 0
+    try:
+        db = _direct_db()
+        for r in rows:
+            try:
+                pid = int(r.get("productId") or r.get("ProductId") or 0)
+                if not pid:
+                    continue
+                name   = (r.get("name") or r.get("Name") or "").strip()
+                number = (r.get("extNumber") or r.get("Number") or "").strip()
+                sub    = (r.get("subTypeName") or r.get("SubTypeName") or "").strip()
+                mkt    = _safe_float(r.get("marketPrice")  or r.get("MarketPrice"), 0)
+                low    = _safe_float(r.get("lowPrice")     or r.get("LowPrice"),    0)
+                mid    = _safe_float(r.get("midPrice")     or r.get("MidPrice"),    0)
+                high   = _safe_float(r.get("highPrice")    or r.get("HighPrice"),   0)
+                if mkt <= 0 and mid <= 0 and low <= 0:
+                    continue
+                db.execute(
+                    "INSERT INTO tcgcsv_prices "
+                    "(product_id, group_id, name, name_norm, number, sub_type_name, "
+                    " market_price, low_price, mid_price, high_price, fetched_ms) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "ON CONFLICT (product_id) DO UPDATE SET "
+                    "  market_price=EXCLUDED.market_price, low_price=EXCLUDED.low_price, "
+                    "  mid_price=EXCLUDED.mid_price, high_price=EXCLUDED.high_price, "
+                    "  fetched_ms=EXCLUDED.fetched_ms",
+                    (pid, group_id, name, _tcgcsv_norm(name), number, sub,
+                     mkt, low, mid, high, now),
+                )
+                written += 1
+            except Exception:
+                continue
+        db.commit(); db.close()
+    except Exception as e:
+        try: db.close()
+        except Exception: pass
+        log.warning("[tcgcsv] group %s persist failed: %s", group_id, e)
+    return written
+
+
+def _tcgcsv_lookup_price(card_name: str, set_abbr: str = "",
+                         number: str = "") -> float | None:
+    """Fast-path market price lookup from the local TCGCSV snapshot.
+    Match: same group abbreviation AND (same number OR fuzzy name match).
+    Returns the market price (or mid/low fallback) in USD, or None if no hit."""
+    if not card_name:
+        return None
+    name_norm = _tcgcsv_norm(card_name)
+    if not name_norm:
+        return None
+    try:
+        db = _direct_db()
+        params: list = [name_norm]
+        sql = (
+            "SELECT p.market_price, p.mid_price, p.low_price, p.number, g.abbreviation "
+            "FROM tcgcsv_prices p "
+            "LEFT JOIN tcgcsv_groups g ON g.group_id = p.group_id "
+            "WHERE p.name_norm = %s "
+        )
+        if set_abbr:
+            sql += "AND (g.abbreviation ILIKE %s OR g.name ILIKE %s) "
+            params += [set_abbr, f"%{set_abbr}%"]
+        if number:
+            num = number.lstrip("0") or "0"
+            sql += "AND (p.number = %s OR p.number = %s) "
+            params += [number, num]
+        sql += "ORDER BY p.market_price DESC LIMIT 1"
+        row = db.execute(sql, tuple(params)).fetchone()
+        db.close()
+        if not row:
+            return None
+        for k in ("market_price", "mid_price", "low_price"):
+            v = _safe_float(row.get(k), 0)
+            if v > 0:
+                return v
+    except Exception as e:
+        log.debug("[tcgcsv] lookup failed for %r: %s", card_name, e)
+        try: db.close()
+        except Exception: pass
+    return None
+
+
+def _run_tcgcsv_refresh(group_cap: int = 60):
+    """Refresh the TCGCSV snapshot. Caps groups per run so a single bad night
+    can't hammer them — defaults to 60 groups (≈ all of Pokémon in 4-5 nights)."""
+    if os.environ.get("DISABLE_BG_TCGCSV") == "1":
+        log.info("[tcgcsv] disabled via env"); return
+    if not _tcgcsv_lock.acquire(blocking=False):
+        log.info("[tcgcsv] refresh already in progress, skipping")
+        return
+    started = _now_ms()
+    try:
+        s = _tcg_session()
+        groups = _tcgcsv_refresh_groups(s)
+        if not groups:
+            log.warning("[tcgcsv] no groups returned; aborting refresh")
+            return
+        # Pick groups that haven't been refreshed in the last 6 days, oldest-first
+        try:
+            db = _direct_db()
+            pending = db.execute(
+                "SELECT g.group_id, COALESCE(MAX(p.fetched_ms), 0) AS last_fetched "
+                "FROM tcgcsv_groups g LEFT JOIN tcgcsv_prices p ON p.group_id = g.group_id "
+                "GROUP BY g.group_id "
+                "HAVING COALESCE(MAX(p.fetched_ms), 0) < %s "
+                "ORDER BY last_fetched ASC LIMIT %s",
+                (_now_ms() - 6 * 86_400_000, group_cap),
+            ).fetchall()
+            db.close()
+        except Exception as e:
+            log.warning("[tcgcsv] pending-groups query failed: %s", e)
+            return
+
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        total_rows = 0
+        with _TPE(max_workers=4) as pool:
+            results = list(pool.map(
+                lambda gid: _tcgcsv_refresh_group_prices(s, gid),
+                [int(r["group_id"]) for r in pending],
+            ))
+        total_rows = sum(results)
+        elapsed = (_now_ms() - started) / 1000
+        log.info("[tcgcsv] refreshed %d groups, %d price rows in %.1fs",
+                 len(pending), total_rows, elapsed)
+    finally:
+        _tcgcsv_lock.release()
+
+
+def _start_tcgcsv_scheduler():
+    """Kick off a daily TCGCSV refresh (24 h interval). First run after 4 min."""
+    if os.environ.get("DISABLE_BG_TCGCSV") == "1":
+        log.info("[bg] tcgcsv scheduler disabled via env"); return
+    def _loop():
+        _time.sleep(240)
+        while True:
+            try:
+                _run_tcgcsv_refresh()
+            except Exception as e:
+                log.warning("[tcgcsv] scheduler iteration failed: %s", e)
+            _time.sleep(24 * 3600)
+    threading.Thread(target=_loop, daemon=True, name="tcgcsv-refresh").start()
+    log.info("[tcgcsv] daily refresh scheduler started")
 
 # ---------------------------------------------------------------------------
 # Local card image cache — images are downloaded on first scan and served
@@ -2269,6 +2588,30 @@ def init_db():
             expires_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
         "CREATE INDEX IF NOT EXISTS idx_receipt_expires ON digital_receipts(expires_at)",
+
+        # ── TCGCSV daily price snapshot (Pokémon, free tier, no API key) ─────
+        f"""CREATE TABLE IF NOT EXISTS tcgcsv_groups (
+            group_id      INTEGER PRIMARY KEY,
+            name          TEXT NOT NULL DEFAULT '',
+            abbreviation  TEXT NOT NULL DEFAULT '',
+            published_on  TEXT NOT NULL DEFAULT ''
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS tcgcsv_prices (
+            product_id    BIGINT PRIMARY KEY,
+            group_id      INTEGER NOT NULL,
+            name          TEXT NOT NULL DEFAULT '',
+            name_norm     TEXT NOT NULL DEFAULT '',
+            number        TEXT NOT NULL DEFAULT '',
+            sub_type_name TEXT NOT NULL DEFAULT '',
+            market_price  DOUBLE PRECISION NOT NULL DEFAULT 0,
+            low_price     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            mid_price     DOUBLE PRECISION NOT NULL DEFAULT 0,
+            high_price    DOUBLE PRECISION NOT NULL DEFAULT 0,
+            fetched_ms    BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_tcgcsv_name      ON tcgcsv_prices(name_norm)",
+        "CREATE INDEX IF NOT EXISTS idx_tcgcsv_group_num ON tcgcsv_prices(group_id, number)",
+        "CREATE INDEX IF NOT EXISTS idx_tcgcsv_groups_abbr ON tcgcsv_groups(abbreviation)",
 
         # ── SMS receipt audit log — one row per Twilio send attempt ───────────
         f"""CREATE TABLE IF NOT EXISTS receipt_sms_log (
@@ -3254,15 +3597,21 @@ def _tcg_headers() -> dict:
     return h
 
 
-def _tcg_db_get(card_id: str) -> dict | None:
-    """Return PostgreSQL-cached TCG data if younger than 24 h, else None."""
+def _tcg_db_get(card_id: str, allow_stale: bool = False) -> dict | None:
+    """Return PostgreSQL-cached TCG data.
+    Default: only return entries younger than _TCG_DB_TTL_MS (7 d).
+    With allow_stale=True: return up to _TCG_STALE_OK_MS (30 d) — used as a
+    last-resort fallback when the upstream API is failing."""
     try:
         conn = _direct_db()
         row = conn.execute(
             "SELECT data_json, fetched_ms FROM card_tcg_cache WHERE card_id=%s", (card_id,)
         ).fetchone()
         conn.close()
-        if row and (_now_ms() - row["fetched_ms"]) < 86_400_000:
+        if not row:
+            return None
+        age = _now_ms() - row["fetched_ms"]
+        if age < _TCG_DB_TTL_MS or (allow_stale and age < _TCG_STALE_OK_MS):
             return json.loads(row["data_json"])
     except Exception:
         pass
@@ -3307,19 +3656,34 @@ def _tcg_fetch(card_id: str) -> dict | None:
             _tcg_mem_cache[cid] = {"data": cached, "fetched_ms": _now_ms()}
         return cached
 
-    # 3 — live API
+    # 3 — live API (pooled session, auto-retries on 429/5xx)
     try:
         url = f"{_TCG_API_BASE}/cards/{urllib.parse.quote(cid, safe='')}"
-        resp = _requests.get(url, headers=_tcg_headers(), timeout=7)
-        resp.raise_for_status()
-        data = resp.json().get("data")
-        if data:
-            _tcg_db_set(cid, data)
-            with _tcg_cache_lock:
-                _tcg_mem_cache[cid] = {"data": data, "fetched_ms": _now_ms()}
-            return data
+        resp = _tcg_session().get(url, headers=_tcg_headers(), timeout=8)
+        if resp.status_code == 200:
+            data = resp.json().get("data")
+            if data:
+                _tcg_db_set(cid, data)
+                with _tcg_cache_lock:
+                    _tcg_mem_cache[cid] = {"data": data, "fetched_ms": _now_ms()}
+                return data
+        elif resp.status_code != 404:
+            log.warning("[tcg] fetch '%s' upstream %s", cid, resp.status_code)
     except Exception as e:
-        log.error("[tcg] fetch '%s' failed: %s", cid, e)
+        log.warning("[tcg] fetch '%s' network error: %s", cid, e)
+
+    # 4 — JustTCG fallback (free secondary source)
+    jt = _justtcg_lookup_by_id(cid)
+    if jt:
+        with _tcg_cache_lock:
+            _tcg_mem_cache[cid] = {"data": jt, "fetched_ms": _now_ms()}
+        return jt
+
+    # 5 — serve-stale-on-error: prefer 8-30-day-old cache to returning nothing
+    stale = _tcg_db_get(cid, allow_stale=True)
+    if stale:
+        log.info("[tcg] serving stale cache for '%s' (upstream unavailable)", cid)
+        return stale
     return None
 
 
@@ -3345,18 +3709,19 @@ def _tcg_search(name: str = "", set_id: str = "", number: str = "",
                                      "pageSize": limit,
                                      "orderBy": "-set.releaseDate"}))
     try:
-        resp = _requests.get(url, headers=_tcg_headers(), timeout=9)
-        resp.raise_for_status()
-        results = resp.json().get("data", [])
-        for card in results:
-            cid = card.get("id", "").lower()
-            if cid:
-                _tcg_db_set(cid, card)
-                with _tcg_cache_lock:
-                    _tcg_mem_cache[cid] = {"data": card, "fetched_ms": _now_ms()}
-        return results
+        resp = _tcg_session().get(url, headers=_tcg_headers(), timeout=10)
+        if resp.status_code == 200:
+            results = resp.json().get("data", [])
+            for card in results:
+                cid = card.get("id", "").lower()
+                if cid:
+                    _tcg_db_set(cid, card)
+                    with _tcg_cache_lock:
+                        _tcg_mem_cache[cid] = {"data": card, "fetched_ms": _now_ms()}
+            return results
+        log.warning("[tcg] search upstream %s for '%s'", resp.status_code, " ".join(parts))
     except Exception as e:
-        log.error("[tcg] search failed ('%s'): %s", " ".join(parts), e)
+        log.warning("[tcg] search failed ('%s'): %s", " ".join(parts), e)
     return []
 
 
@@ -16639,6 +17004,13 @@ def _enrich_single_card(qr_code: str, db) -> bool:
         if hits:
             tcg_raw = hits[0]
 
+    # ── 1a. TCGCSV fast-path price (no network — local snapshot) ───────────
+    # Resolve a price even when api.pokemontcg.io is rate-limited or down.
+    _tcgcsv_price = _tcgcsv_lookup_price(
+        card_name, set_abbr=row["set_code"] or "",
+        number=row["card_number"] or "",
+    )
+
     if tcg_raw:
         summary = _tcg_to_summary(tcg_raw)
         if not row["name"] and summary.get("name"):
@@ -16672,6 +17044,12 @@ def _enrich_single_card(qr_code: str, db) -> bool:
             updated_fields["resale_price"] = round(mkt, 2)
             if not row["price"] or float(row["price"]) == 0:
                 updated_fields["price"] = round(mkt, 2)
+
+    # If we still have no resale price, fall back to the TCGCSV snapshot.
+    if "resale_price" not in updated_fields and _tcgcsv_price and _tcgcsv_price > 0:
+        updated_fields["resale_price"] = round(_tcgcsv_price, 2)
+        if not row["price"] or float(row["price"]) == 0:
+            updated_fields["price"] = round(_tcgcsv_price, 2)
 
     # ── 2. eBay market price (best-effort, skip if no eBay key) ────────────
     try:
@@ -16747,31 +17125,42 @@ def _run_bulk_enrich():
             _enrich_state["total"] = len(rows)
         _enrich_log(f"Found {len(rows)} cards to process")
 
-        for i, row in enumerate(rows):
-            qr = row["qr_code"]
-            with _enrich_lock:
-                _enrich_state["processed"] = i + 1
-                _enrich_state["last_card"] = row["name"] or qr
+        # Parallel enrichment — pooled session + urllib3.Retry handle 429
+        # back-off automatically, so we no longer need a hard sleep between
+        # cards. 8 workers × keep-alive ≈ 6× throughput vs. the old loop.
+        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
 
+        def _one(qr_code: str, name: str) -> tuple[str, str]:
+            wdb = None
             try:
-                db = _direct_db()
-                did_enrich = _enrich_single_card(qr, db)
-                db.close()
-
-                with _enrich_lock:
-                    if did_enrich:
-                        _enrich_state["enriched"] += 1
-                    else:
-                        _enrich_state["skipped"] += 1
+                wdb = _direct_db()
+                ok = _enrich_single_card(qr_code, wdb)
+                return ("ok" if ok else "skip", name or qr_code)
             except Exception as _ce:
-                try: db.close()
+                return (f"err:{_ce}", name or qr_code)
+            finally:
+                try:
+                    if wdb is not None: wdb.close()
                 except Exception: pass
-                with _enrich_lock:
-                    _enrich_state["errors"] += 1
-                _enrich_log(f"Error enriching {qr}: {_ce}")
 
-            # Rate limit: ~1 card/sec for free TCG API tier
-            _time.sleep(1.2)
+        max_workers = int(os.environ.get("BULK_ENRICH_WORKERS", "8"))
+        with _TPE(max_workers=max_workers) as pool:
+            futs = {pool.submit(_one, r["qr_code"], r["name"]): r for r in rows}
+            done = 0
+            for fut in _ac(futs):
+                done += 1
+                status, label = fut.result()
+                with _enrich_lock:
+                    _enrich_state["processed"] = done
+                    _enrich_state["last_card"] = label
+                    if status == "ok":
+                        _enrich_state["enriched"] += 1
+                    elif status == "skip":
+                        _enrich_state["skipped"] += 1
+                    else:
+                        _enrich_state["errors"] += 1
+                if status.startswith("err:"):
+                    _enrich_log(f"Error enriching {label}: {status[4:]}")
 
         _enrich_log("Bulk enrichment complete")
     except Exception as _be:
@@ -16796,18 +17185,27 @@ def _run_price_refresh():
         ).fetchall()
         db.close()
 
-        count = 0
-        for row in rows:
-            qr = row["qr_code"]
+        # Parallel refresh — pooled session + Retry replace the old sleep loop.
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        def _one(qr_code: str) -> bool:
+            wdb = None
             try:
-                db = _direct_db()
-                _enrich_single_card(qr, db)
-                db.close()
-                count += 1
+                wdb = _direct_db()
+                _enrich_single_card(qr_code, wdb)
+                return True
             except Exception:
-                try: db.close()
+                return False
+            finally:
+                try:
+                    if wdb is not None: wdb.close()
                 except Exception: pass
-            _time.sleep(1.5)
+
+        workers = int(os.environ.get("PRICE_REFRESH_WORKERS", "6"))
+        count = 0
+        with _TPE(max_workers=workers) as pool:
+            for ok in pool.map(_one, [r["qr_code"] for r in rows]):
+                if ok: count += 1
 
         _enrich_log(f"Price refresh: updated {count}/{len(rows)} cards")
     except Exception as _pre:

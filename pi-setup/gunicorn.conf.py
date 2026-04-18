@@ -50,6 +50,7 @@ def post_fork(server, worker):
                 _prewarm_all_pricing_bg,
                 _prewarm_lang_all_bg,
                 _receipt_replay_worker,
+                _start_tcgcsv_scheduler,
             )
             def _maybe(name, fn, thread_name):
                 if os.environ.get(f"DISABLE_BG_{name}") == "1":
@@ -66,5 +67,12 @@ def post_fork(server, worker):
             # — always on, no env gate.
             threading.Thread(target=_receipt_replay_worker, daemon=True,
                              name="receipt-replay").start()
+
+            # TCGCSV nightly snapshot — populates local Pokémon TCGplayer prices
+            # so scans don't depend on api.pokemontcg.io being responsive.
+            try:
+                _start_tcgcsv_scheduler()
+            except Exception as _te:
+                server.log.warning("[bg] tcgcsv scheduler failed to start: %s", _te)
         except Exception as _e:
             server.log.warning("post_fork startup thread error: %s", _e)
