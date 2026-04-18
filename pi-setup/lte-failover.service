@@ -1,0 +1,23 @@
+[Unit]
+Description=HanryxVault LTE Failover Heartbeat
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hanryx-lte-failover.sh
+Restart=always
+RestartSec=10
+# Drop to a non-root user if your kernel allows ip route changes via capabilities.
+# Easiest: run as root since we manipulate the routing table.
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# Optional environment overrides
+# Environment=PRIMARY_IF=eth0
+# Environment=LTE_IF=wwan0
+# Environment=PRIMARY_GW=192.168.86.1
+
+[Install]
+WantedBy=multi-user.target

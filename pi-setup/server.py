@@ -153,7 +153,29 @@ class _JsonFormatter(logging.Formatter):
 
 _json_handler = logging.StreamHandler()
 _json_handler.setFormatter(_JsonFormatter())
-logging.basicConfig(level=logging.INFO, handlers=[_json_handler])
+
+# In-memory ring buffer of recent WARNING+ records → exposed at /admin/errors
+import collections as _collections
+_ERROR_RING = _collections.deque(maxlen=500)
+
+class _RingHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            _ERROR_RING.append({
+                "ts":    int(record.created * 1000),
+                "level": record.levelname,
+                "name":  record.name,
+                "msg":   self.format(record),
+            })
+        except Exception:
+            pass
+
+_ring_handler = _RingHandler(level=logging.WARNING)
+_ring_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(name)s: %(message)s", "%H:%M:%S"
+))
+
+logging.basicConfig(level=logging.INFO, handlers=[_json_handler, _ring_handler])
 log = logging.getLogger("hanryxvault")
 
 # ---------------------------------------------------------------------------
@@ -3477,8 +3499,31 @@ def health():
     except Exception:
         pass
 
+    # Real subsystem probes — /health must NOT return 200 if Postgres or Redis is down
+    pg_ok = False
+    pg_err = ""
+    try:
+        get_db().execute("SELECT 1").fetchone()
+        pg_ok = True
+    except Exception as _pe:
+        pg_err = str(_pe)[:200]
+
+    redis_ok = False
+    redis_err = ""
+    try:
+        _r = _redis()
+        if _r and _r.ping():
+            redis_ok = True
+        elif _r is None:
+            redis_err = "redis client unavailable"
+        else:
+            redis_err = "ping returned false"
+    except Exception as _re:
+        redis_err = str(_re)[:200]
+
+    overall_ok = pg_ok  # Redis is degraded-but-operational, PG is required
     data = {
-        "status":          "ok",
+        "status":          "ok" if overall_ok else "degraded",
         "server":          "HanryxVault Pi",
         "version":         "2.0",
         "time_ms":         int(_time.time() * 1000),
@@ -3491,9 +3536,75 @@ def health():
         "sse_clients":     len(_sse_scan_subscribers),
         "db_size_mb":      db_size_mb,
         "wal_size_mb":     wal_size_mb,
+        "subsystems":      {
+            "postgres": {"ok": pg_ok, "error": pg_err},
+            "redis":    {"ok": redis_ok, "error": redis_err},
+        },
     }
     _cache_set(_health_cache, "h", data)
-    return jsonify(data)
+    return jsonify(data), (200 if overall_ok else 503)
+
+
+@app.route("/admin/errors", methods=["GET"])
+@require_admin
+def admin_errors():
+    """Tail of recent WARNING+ log records — saves SSH'ing to the Pi for
+    every glitch. Returns JSON when ?format=json, otherwise an HTML page."""
+    level_filter = (request.args.get("level") or "").upper().strip()
+    limit = max(1, min(500, _safe_int(request.args.get("limit"), 200)))
+    rows = list(_ERROR_RING)[-limit:]
+    if level_filter:
+        rows = [r for r in rows if r["level"] == level_filter]
+    rows.reverse()  # newest first
+
+    if (request.args.get("format") or "").lower() == "json":
+        return jsonify({"count": len(rows), "rows": rows})
+
+    def _row_html(r):
+        color = {"ERROR": "#f87171", "WARNING": "#facc15",
+                 "CRITICAL": "#dc2626"}.get(r["level"], "#aaa")
+        ts = datetime.datetime.fromtimestamp(r["ts"] / 1000).strftime("%H:%M:%S")
+        msg = (r["msg"] or "").replace("<", "&lt;").replace(">", "&gt;")
+        return (f'<tr><td style="color:#666">{ts}</td>'
+                f'<td style="color:{color};font-weight:600">{r["level"]}</td>'
+                f'<td><pre style="margin:0;white-space:pre-wrap;'
+                f'font-family:ui-monospace,monospace;font-size:12px;'
+                f'color:#ddd">{msg}</pre></td></tr>')
+
+    body_rows = "".join(_row_html(r) for r in rows) or (
+        '<tr><td colspan="3" style="text-align:center;color:#555;'
+        'padding:40px">No warnings or errors in buffer 🎉</td></tr>'
+    )
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Recent Errors — HanryxVault</title>
+<meta http-equiv="refresh" content="10">
+<style>
+  body{{background:#0a0a0a;color:#eee;font-family:system-ui,sans-serif;
+       margin:0;padding:24px}}
+  h1{{color:#facc15;margin:0 0 6px;font-size:22px}}
+  .meta{{color:#666;font-size:12px;margin-bottom:18px}}
+  .links a{{color:#60a5fa;text-decoration:none;margin-right:14px;font-size:13px}}
+  table{{width:100%;border-collapse:collapse;margin-top:16px}}
+  td{{padding:6px 10px;vertical-align:top;border-bottom:1px solid #181818;
+     font-size:13px}}
+  th{{text-align:left;padding:8px 10px;color:#666;font-size:11px;
+     text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #222}}
+</style></head>
+<body>
+  <h1>⚠️ Recent Errors & Warnings</h1>
+  <div class="meta">Live ring buffer (last {len(_ERROR_RING)} of 500). Auto-refreshes every 10 s.</div>
+  <div class="links">
+    <a href="/admin/errors">All</a>
+    <a href="/admin/errors?level=ERROR">ERROR only</a>
+    <a href="/admin/errors?level=WARNING">WARNING only</a>
+    <a href="/admin/errors?format=json">JSON</a>
+    <a href="/admin">← Admin</a>
+  </div>
+  <table>
+    <thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
+    <tbody>{body_rows}</tbody>
+  </table>
+</body></html>"""
 
 
 @app.route("/admin/monitor-stats", methods=["GET"])
@@ -17296,6 +17407,7 @@ _KIOSK_DEFAULT: dict = {
     "show_receipt_qr":   True,   # show QR receipt screen after sale
     "price_confirm_ms":  2200,   # ms to show per-item price confirm flash
     "satellite_host":    "192.168.86.22",  # Satellite Pi IP for display blanking
+    "satellite_user":    "ngansen",        # SSH user on Satellite Pi (was hardcoded 'pi')
 }
 
 
@@ -17430,18 +17542,26 @@ def _kiosk_cart_load_redis() -> dict | None:
 
 
 def _kiosk_broadcast(data: dict):
-    """Push cart state to all connected kiosk SSE clients and persist to Redis."""
+    """Push cart state to all connected kiosk SSE clients and persist to Redis.
+    Snapshot subscribers under the lock, then dispatch *outside* the lock so a
+    single slow/full client queue cannot stall every other broadcast."""
     _kiosk_cart_save_redis(data)
     msg = f"data: {json.dumps(data)}\n\n"
     with _kiosk_sse_lock:
-        dead = []
-        for _q in list(_kiosk_sse_subscribers):
-            try:
-                _q.put_nowait(msg)
-            except Exception:
-                dead.append(_q)
-        for _q in dead:
-            _kiosk_sse_subscribers.remove(_q)
+        subs = list(_kiosk_sse_subscribers)
+    dead = []
+    for _q in subs:
+        try:
+            _q.put_nowait(msg)
+        except Exception:
+            dead.append(_q)
+    if dead:
+        with _kiosk_sse_lock:
+            for _q in dead:
+                try:
+                    _kiosk_sse_subscribers.remove(_q)
+                except ValueError:
+                    pass
 
 
 def _kiosk_get_state() -> dict:
@@ -17476,20 +17596,27 @@ def kiosk_mode():
     return jsonify(ok=True)
 
 
-def _satellite_ssh(host: str, cmd: str):
-    """Fire-and-forget SSH command to the Satellite Pi (non-blocking)."""
+def _satellite_ssh(host: str, cmd: str, user: str = ""):
+    """Fire-and-forget SSH command to the Satellite Pi (non-blocking).
+    `user` defaults to the kiosk_settings 'satellite_user' (e.g. ngansen);
+    falls back to 'pi' for legacy installs."""
     if not host:
         return
+    if not user:
+        try:
+            user = (_load_kiosk_settings().get("satellite_user") or "pi").strip()
+        except Exception:
+            user = "pi"
     try:
         import subprocess as _sp
         _sp.Popen(
             ["ssh", "-o", "StrictHostKeyChecking=no",
              "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             f"pi@{host}", cmd],
+             f"{user}@{host}", cmd],
             stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
         )
     except Exception as _e:
-        app.logger.warning("satellite SSH failed (%s): %s", host, _e)
+        app.logger.warning("satellite SSH failed (%s@%s): %s", user, host, _e)
 
 
 @app.route("/kiosk/standby", methods=["POST"])
@@ -17519,10 +17646,59 @@ def kiosk_wake():
     return jsonify(ok=True)
 
 
+_KIOSK_CART_ALLOWED_KEYS = {
+    "mode", "active", "items", "subtotal", "tax", "total",
+    "payment_method", "paid", "payment_processing",
+    "receipt_token", "receipt_url",
+    "trade_complete", "trade_customer", "trade_cash", "trade_credit",
+    "checkout", "lookup_card", "lookup_price", "lookup_image",
+}
+
+
+def _validate_kiosk_cart_payload(data: dict) -> tuple[bool, str]:
+    """Reject obviously bad cart payloads before they corrupt in-memory + Redis state."""
+    if not isinstance(data, dict):
+        return False, "payload must be an object"
+    items = data.get("items")
+    if items is not None:
+        if not isinstance(items, list):
+            return False, "items must be a list"
+        if len(items) > 200:
+            return False, "too many items (max 200)"
+        for it in items:
+            if not isinstance(it, dict):
+                return False, "each item must be an object"
+            try:
+                float(it.get("price", 0))
+                int(it.get("qty", 1))
+            except (TypeError, ValueError):
+                return False, "item price/qty must be numeric"
+    for k in ("subtotal", "tax", "total"):
+        if k in data and data[k] is not None:
+            try:
+                v = float(data[k])
+            except (TypeError, ValueError):
+                return False, f"{k} must be numeric"
+            if v < 0 or v > 1_000_000:
+                return False, f"{k} out of range"
+    mode = data.get("mode")
+    if mode is not None and mode not in (
+        "idle", "cart", "trade", "standby", "checkout", "thankyou", "lookup"
+    ):
+        return False, f"invalid mode: {mode!r}"
+    return True, ""
+
+
 @app.route("/kiosk/cart", methods=["POST"])
 def kiosk_cart_update():
     """POS pushes cart state here so the kiosk display updates live."""
     data = request.get_json(silent=True) or {}
+    ok, err = _validate_kiosk_cart_payload(data)
+    if not ok:
+        app.logger.warning("/kiosk/cart rejected: %s", err)
+        return jsonify(ok=False, error=err), 400
+    # Strip unknown keys so a buggy/hostile client can't inject arbitrary state
+    data = {k: v for k, v in data.items() if k in _KIOSK_CART_ALLOWED_KEYS}
     with _kiosk_cart_lock:
         # Preserve the current mode if the tablet doesn't send one
         if "mode" not in data:
@@ -17602,18 +17778,43 @@ def kiosk_sale_complete():
     token   = _sec.token_urlsafe(10)   # ~80-bit, URL-safe
     expires = _now_ms() + 24 * 3_600_000        # valid 24 h
 
-    try:
-        db = get_db()
-        db.execute(
-            "INSERT INTO digital_receipts "
-            "(token, items_json, subtotal, tax, total, payment_method, expires_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (token, json.dumps(items), sub, tax, total, method, expires),
-        )
-        db.commit()
-    except Exception:
-        log.exception("[kiosk/sale-complete] Could not save receipt")
-        token = _sec.token_urlsafe(10)  # still return a token; page won't load
+    # Retry up to 3× with short backoff — Postgres hiccups shouldn't lose the receipt
+    _persisted = False
+    for _attempt in range(3):
+        try:
+            db = get_db()
+            db.execute(
+                "INSERT INTO digital_receipts "
+                "(token, items_json, subtotal, tax, total, payment_method, expires_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (token, json.dumps(items), sub, tax, total, method, expires),
+            )
+            db.commit()
+            _persisted = True
+            break
+        except Exception:
+            log.exception("[kiosk/sale-complete] receipt insert attempt %d failed", _attempt + 1)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            import time as _t
+            _t.sleep(0.25 * (_attempt + 1))
+    if not _persisted:
+        # Last-resort: queue to Redis so a janitor can replay later instead of silently dropping
+        try:
+            r = _redis()
+            if r:
+                r.rpush("hvault:receipt_replay_queue", json.dumps({
+                    "token": token, "items": items, "subtotal": sub,
+                    "tax": tax, "total": total, "payment_method": method,
+                    "expires_at": expires,
+                }))
+                r.ltrim("hvault:receipt_replay_queue", -1000, -1)
+                log.warning("[kiosk/sale-complete] receipt %s queued to Redis for replay", token)
+        except Exception:
+            log.exception("[kiosk/sale-complete] receipt %s could not even be queued", token)
+            token = _sec.token_urlsafe(10)  # still return a token; page won't load
 
     receipt_url = f"/receipt/{token}"
     # Broadcast to kiosk: paid=True + receipt info so the display can show QR
@@ -18090,8 +18291,18 @@ def kiosk_display():
             "    }\n"
             "  });\n"
             "}\n"
-            "function ytPlay()  { if(ytPlayer && ytPlayer.playVideo)  { ytPlayer.playVideo();  _ytShow(); } }\n"
-            "function ytPause() { if(ytPlayer && ytPlayer.pauseVideo) { ytPlayer.pauseVideo(); _ytHide(); } }\n"
+            "function _ytFadeVol(target, ms){\n"
+            "  if(!ytPlayer || !ytPlayer.getVolume || !ytPlayer.setVolume) return;\n"
+            "  var start = ytPlayer.getVolume();\n"
+            "  var steps = 16, i = 0;\n"
+            "  var iv = setInterval(function(){\n"
+            "    i++; var v = start + (target - start) * (i/steps);\n"
+            "    try{ ytPlayer.setVolume(Math.max(0, Math.min(100, v))); }catch(e){}\n"
+            "    if(i>=steps){ clearInterval(iv); }\n"
+            "  }, Math.max(20, Math.floor(ms/steps)));\n"
+            "}\n"
+            "function ytPlay()  { if(ytPlayer && ytPlayer.playVideo)  { try{ytPlayer.setVolume(0);}catch(e){} ytPlayer.playVideo();  _ytShow(); _ytFadeVol(70, 800); } }\n"
+            "function ytPause() { if(ytPlayer && ytPlayer.pauseVideo) { _ytFadeVol(0, 400); setTimeout(function(){ try{ytPlayer.pauseVideo();}catch(e){} _ytHide(); }, 420); } }\n"
         )
         _yt_idle_html = """
 <div id="yt-wrap" style="position:fixed;inset:0;z-index:1;opacity:0;pointer-events:none;transition:opacity 1s">
@@ -19186,7 +19397,7 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
           // for >3 s — prevents reloading while SSE is actively delivering
           // updates (e.g. during price-confirm flash, trade-in, etc.)
           // NOTE: _lastSseMsg is updated only by SSE onmessage, not here.
-          var sseSilent = (Date.now() - _lastSseMsg) > 3000;
+          var sseSilent = (Date.now() - _lastSseMsg) > 8000;
           if(sig !== _kiosk_sig && sseSilent){{ window.location.reload(); return; }}
           _busy = false;
           setTimeout(_sigPoll, 500);
@@ -19234,6 +19445,12 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
   /* Add a sale to the queue */
   window.hvaultQueueSale = function(items, total, paymentMethod){{
     var q = getQueue();
+    if(q.length >= 100){{
+      // Hard cap — refuse rather than silently drop
+      console.error("[offline-queue] Queue full (100) — refusing to enqueue more");
+      try{{ alert("⚠️ Offline queue full (100 sales). Reconnect to server before taking more orders."); }}catch(e){{}}
+      return false;
+    }}
     q.push({{
       items:          items||[],
       total:          parseFloat(total)||0,
@@ -19242,7 +19459,11 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
     }});
     localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
     console.log("[offline-queue] Queued sale. Queue length:", q.length);
+    if(q.length === 20 || q.length === 50 || q.length === 80){{
+      try{{ alert("⚠️ "+q.length+" offline sales queued. Reconnect soon to sync."); }}catch(e){{}}
+    }}
     updateOfflineBadge();
+    return true;
   }};
 
   /* Drain the queue to the server */
@@ -19519,6 +19740,15 @@ def admin_kiosk_page():
             Used by Standby / Wake to blank the physical display over SSH.
             Leave empty to skip the SSH step (software standby still works).
           </p>
+          <label class="form-label" style="margin-top:12px">Satellite Pi SSH user</label>
+          <input class="form-input" name="satellite_user"
+                 value="{ks.get('satellite_user','ngansen')}"
+                 placeholder="ngansen">
+          <p style="color:#444;font-size:11px">
+            SSH login on the Satellite Pi. Older installs used <code>pi</code>;
+            current image uses <code>ngansen</code>. Must have passwordless SSH
+            from Main Pi (or this is a no-op).
+          </p>
         </div>
         <div style="display:flex;gap:12px;margin-top:20px">
           <button type="submit" class="btn btn-primary">💾 Save Settings</button>
@@ -19669,6 +19899,7 @@ def admin_kiosk_save():
         "show_receipt_qr":  bool(request.form.get("show_receipt_qr")),
         "price_confirm_ms": max(500, min(8000, _safe_int(request.form.get("price_confirm_ms", 2200), 2200))),
         "satellite_host":   request.form.get("satellite_host", "192.168.86.22").strip(),
+        "satellite_user":   request.form.get("satellite_user", "ngansen").strip() or "ngansen",
     }
     try:
         _save_kiosk_settings(settings)

@@ -665,6 +665,7 @@ rm -f "$PROFILE_ADMIN"/Singleton* "$PROFILE_KIOSK"/Singleton* 2>/dev/null
 launch_window() {
     local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
     local first_run=1 quick_crashes=0 using_fallback=0
+    local backoff=5 max_backoff=60
     local FALLBACK_FLAGS=()
     for f in "${COMMON_FLAGS[@]}"; do
         case "$f" in
@@ -689,7 +690,7 @@ launch_window() {
             FLAGS=("${COMMON_FLAGS[@]}")
             mode="ANGLE swiftshader"
         fi
-        log "[$name] → $START_URL  ($mode)"
+        log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
         rm -f "$profile"/Singleton* 2>/dev/null
         START=$(date +%s)
         "$CHROMIUM_BIN" \
@@ -703,25 +704,38 @@ launch_window() {
         sleep 1
         if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
             log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            # Stable run — reset crash budget + backoff
             quick_crashes=0
+            backoff=5
             while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
                 sleep 3
             done
-            log "[$name] child process ended — restarting in 5s"
+            log "[$name] child process ended — restarting in ${backoff}s"
         else
-            if [ "$ELAPSED" -lt 4 ] && [ "$using_fallback" -eq 0 ]; then
+            if [ "$ELAPSED" -lt 4 ]; then
                 quick_crashes=$(( quick_crashes + 1 ))
-                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes)"
-                if [ "$quick_crashes" -ge 2 ]; then
+                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes, mode=$mode)"
+                # Exponential backoff capped at max_backoff
+                backoff=$(( backoff * 2 ))
+                if [ "$backoff" -gt "$max_backoff" ]; then backoff=$max_backoff; fi
+                # First time we hit 2 quick crashes on ANGLE → drop to fallback
+                if [ "$using_fallback" -eq 0 ] && [ "$quick_crashes" -ge 2 ]; then
                     log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
                     using_fallback=1
                     quick_crashes=0
+                    backoff=5
+                # If even fallback keeps crashing, log loudly every 5 attempts
+                elif [ "$using_fallback" -eq 1 ] && [ $(( quick_crashes % 5 )) -eq 0 ]; then
+                    log "[$name] WARN: fallback mode also crashing repeatedly ($quick_crashes total). Check display, GPU, or chromium install."
                 fi
             else
-                log "[$name] exited code=$EXIT after ${ELAPSED}s — restarting in 5s"
+                # Ran for >=4s before exit → not a crash loop; reset budget
+                log "[$name] exited code=$EXIT after ${ELAPSED}s — restarting in ${backoff}s"
+                quick_crashes=0
+                backoff=5
             fi
         fi
-        sleep 5
+        sleep "$backoff"
     done
 }
 
