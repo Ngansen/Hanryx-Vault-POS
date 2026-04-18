@@ -1833,12 +1833,20 @@ def _justtcg_lookup_by_id(card_id: str) -> dict | None:
         if not items:
             return None
         item = items[0]
-        # Pick best market price across variants
+        # Pick best market price across variants — defensively coerce to float
+        # (some upstreams return prices as strings, which would crash the
+        # comparison and silently disable the entire fallback).
         market = None
         for v in item.get("variants") or []:
-            p = v.get("price") or v.get("market") or v.get("low")
-            if p and (market is None or p < market * 1.5):
-                market = float(p)
+            raw = v.get("price") or v.get("market") or v.get("low")
+            if raw is None:
+                continue
+            try:
+                p = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if p > 0 and (market is None or p < market * 1.5):
+                market = p
         if market is None:
             return None
         # Reshape to look like a pokemontcg.io card object so _tcg_to_summary works
@@ -2055,10 +2063,21 @@ def _run_tcgcsv_refresh(group_cap: int = 60):
         _tcgcsv_lock.release()
 
 
+_tcgcsv_scheduler_started = False
+_tcgcsv_scheduler_lock    = threading.Lock()
+
+
 def _start_tcgcsv_scheduler():
-    """Kick off a daily TCGCSV refresh (24 h interval). First run after 4 min."""
+    """Kick off a daily TCGCSV refresh (24 h interval). First run after 4 min.
+    Singleton-guarded — repeated calls (e.g. from post_fork retries) are no-ops."""
     if os.environ.get("DISABLE_BG_TCGCSV") == "1":
         log.info("[bg] tcgcsv scheduler disabled via env"); return
+    global _tcgcsv_scheduler_started
+    with _tcgcsv_scheduler_lock:
+        if _tcgcsv_scheduler_started:
+            log.debug("[tcgcsv] scheduler already running, skipping duplicate start")
+            return
+        _tcgcsv_scheduler_started = True
     def _loop():
         _time.sleep(240)
         while True:
@@ -17143,7 +17162,13 @@ def _run_bulk_enrich():
                     if wdb is not None: wdb.close()
                 except Exception: pass
 
-        max_workers = int(os.environ.get("BULK_ENRICH_WORKERS", "8"))
+        # Cap concurrency to a safe fraction of PG_POOL_MAX. Each worker holds
+        # one primary conn plus opens 1-3 nested conns (TCG cache + TCGCSV
+        # lookup + price-history insert) inside _enrich_single_card, so we
+        # budget ~4 conns per worker against the pool ceiling.
+        _pg_max = int(os.environ.get("PG_POOL_MAX", "20"))
+        _safe_cap = max(2, _pg_max // 4)
+        max_workers = min(int(os.environ.get("BULK_ENRICH_WORKERS", "5")), _safe_cap)
         with _TPE(max_workers=max_workers) as pool:
             futs = {pool.submit(_one, r["qr_code"], r["name"]): r for r in rows}
             done = 0
@@ -17201,7 +17226,10 @@ def _run_price_refresh():
                     if wdb is not None: wdb.close()
                 except Exception: pass
 
-        workers = int(os.environ.get("PRICE_REFRESH_WORKERS", "6"))
+        # Same conn-budget logic as bulk enrich (see comment there).
+        _pg_max  = int(os.environ.get("PG_POOL_MAX", "20"))
+        _safe_cap = max(2, _pg_max // 4)
+        workers   = min(int(os.environ.get("PRICE_REFRESH_WORKERS", "4")), _safe_cap)
         count = 0
         with _TPE(max_workers=workers) as pool:
             for ok in pool.map(_one, [r["qr_code"] for r in rows]):
