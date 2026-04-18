@@ -558,7 +558,7 @@ def audit_action(action: str, resource_fn=None):
                     _audit_write(action, str(resource))
             except Exception:
                 pass
-            return result
+hat            return result
         return _wrapped
     return _decorator
 
