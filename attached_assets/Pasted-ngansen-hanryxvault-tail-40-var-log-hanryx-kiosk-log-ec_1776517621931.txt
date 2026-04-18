@@ -1,0 +1,44 @@
+ngansen@hanryxvault:~ $ tail -40 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af chromium | head -5
+[13:06:26]   |     640x480 px, 60.000000 Hz
+[13:06:26]   |     640x480 px, 59.939999 Hz
+[13:06:26]   |   Position: 0,0
+[13:06:26]   |   Transform: normal
+[13:06:26]   |   Scale: 1.000000
+[13:06:26]   |   Adaptive Sync: disabled
+[13:06:26] Detected output: HDMI-A-2  (800px wide)
+[13:06:26] Detected output: HDMI-A-1  (1024px wide)
+[13:06:26] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[13:06:26] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[13:06:27] Splash pages written
+[13:06:27] Chromium binary: /usr/bin/chromium
+[13:06:27] DISPLAY=:0 (XWayland via labwc)
+[13:06:28] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[13:06:28] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)
+[2337:2337:0418/130629.387732:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2337:2337:0418/130629.387812:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:06:30] [Admin] crashed in 1s (count=1)
+[13:06:32] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[13:06:32] Both windows launched — Tailscale tunnel active
+[13:06:32] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)
+[2436:2436:0418/130632.157382:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2436:2436:0418/130632.157451:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:06:32] Heartbeat loop started (PID 2485)
+[13:06:33] [Kiosk] crashed in 0s (count=1)
+[13:06:35] [Admin] → http://192.168.86.36:8080/admin  (ANGLE swiftshader)
+[2519:2519:0418/130635.544678:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2519:2519:0418/130635.544744:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:06:36] [Admin] crashed in 0s (count=2)
+[13:06:36] [Admin] ANGLE unstable — switching to --disable-gpu fallback
+[13:06:38] [Kiosk] → http://192.168.86.36:8080/kiosk  (ANGLE swiftshader)
+[2587:2587:0418/130638.288858:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2587:2587:0418/130638.288951:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:06:39] [Kiosk] crashed in 0s (count=2)
+[13:06:39] [Kiosk] ANGLE unstable — switching to --disable-gpu fallback
+[13:06:41] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[2643:2643:0418/130641.670756:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2643:2643:0418/130641.670826:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:06:42] [Admin] exited code=1 after 0s — restarting in 5s
+[13:06:44] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+---PROCS---
+2573 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+2725 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk --app-id=hvault-kiosk http://192.168.86.36:8080/kiosk
