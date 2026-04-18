@@ -1,0 +1,82 @@
+ngansen@hanryxvault:~ $ tail -80 /var/log/hanryx-kiosk.log
+[12:59:03]   |     1920x1080 px, 60.000000 Hz
+[12:59:03]   |     1920x1080 px, 60.000000 Hz
+[12:59:03]   |     1920x1080 px, 59.939999 Hz
+[12:59:03]   |     1280x1024 px, 60.020000 Hz
+[12:59:03]   |     1280x960 px, 60.000000 Hz
+[12:59:03]   |     1152x864 px, 59.966999 Hz
+[12:59:03]   |     1280x720 px, 60.000000 Hz
+[12:59:03]   |     1280x720 px, 60.000000 Hz
+[12:59:03]   |     1280x720 px, 59.939999 Hz
+[12:59:03]   |     1024x768 px, 60.004002 Hz
+[12:59:03]   |     1440x480 px, 60.000000 Hz
+[12:59:03]   |     1440x480 px, 59.939999 Hz
+[12:59:03]   |     1024x640 px, 59.987999 Hz
+[12:59:03]   |     800x600 px, 60.317001 Hz
+[12:59:04]   |     720x480 px, 60.000000 Hz
+[12:59:04]   |     720x480 px, 60.000000 Hz
+[12:59:04]   |     720x480 px, 59.939999 Hz
+[12:59:04]   |     720x480 px, 59.939999 Hz
+[12:59:04]   |     640x480 px, 60.000000 Hz
+[12:59:04]   |     640x480 px, 59.939999 Hz
+[12:59:04]   |   Position: 0,0
+[12:59:04]   |   Transform: normal
+[12:59:04]   |   Scale: 1.000000
+[12:59:04]   |   Adaptive Sync: disabled
+[12:59:04] Detected output: HDMI-A-2  (800px wide)
+[12:59:04] Detected output: HDMI-A-1  (1024px wide)
+[12:59:04] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[12:59:04] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[12:59:04] Splash pages written
+[12:59:04] Chromium binary: /usr/lib/chromium/chromium
+[12:59:05] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[12:59:05] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)
+[2322:2322:0418/125906.423708:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2322:2322:0418/125906.423798:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2322:2322:0418/125906.423817:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:07] [Admin] crashed in 1s (count=1)
+[12:59:09] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[12:59:09] Both windows launched — Tailscale tunnel active
+[12:59:09] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)
+[2405:2405:0418/125909.219640:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2405:2405:0418/125909.219709:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2405:2405:0418/125909.219724:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:09] Heartbeat loop started (PID 2439)
+[12:59:10] [Kiosk] crashed in 0s (count=1)
+[12:59:12] [Admin] → http://192.168.86.36:8080/admin  (ANGLE swiftshader)
+[2476:2476:0418/125912.608808:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2476:2476:0418/125912.608875:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2476:2476:0418/125912.608892:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:13] [Admin] crashed in 0s (count=2)
+[12:59:13] [Admin] ANGLE unstable — switching to --disable-gpu fallback
+[12:59:15] [Kiosk] → http://192.168.86.36:8080/kiosk  (ANGLE swiftshader)
+[2529:2529:0418/125915.381899:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2529:2529:0418/125915.381967:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2529:2529:0418/125915.381983:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:16] [Kiosk] crashed in 0s (count=2)
+[12:59:16] [Kiosk] ANGLE unstable — switching to --disable-gpu fallback
+[12:59:18] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[2571:2571:0418/125918.763373:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2571:2571:0418/125918.763454:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2571:2571:0418/125918.763472:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:19] [Admin] exited code=1 after 0s — restarting in 5s
+[12:59:21] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[2616:2616:0418/125921.534340:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2616:2616:0418/125921.534409:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2616:2616:0418/125921.534425:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:22] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:59:24] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[2679:2679:0418/125924.914336:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2679:2679:0418/125924.914407:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2679:2679:0418/125924.914424:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:25] [Admin] exited code=1 after 0s — restarting in 5s
+[12:59:27] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+[2723:2723:0418/125927.685416:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2723:2723:0418/125927.685481:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2723:2723:0418/125927.685497:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:59:28] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:59:30] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+[2761:2761:0418/125931.064032:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2761:2761:0418/125931.064100:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2761:2761:0418/125931.064118:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+ngansen@hanryxvault:~ $

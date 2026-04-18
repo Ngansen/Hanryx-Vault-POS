@@ -389,7 +389,7 @@ info "Writing dual-monitor launcher…"
 cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6 native Wayland)
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.2 XWayland fix)
 # =============================================================================
 # Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
 #   • Uses native Wayland Chromium (--ozone-platform=wayland) — NO XWayland
@@ -413,7 +413,7 @@ if ! flock -n 9; then
 fi
 
 log "============================================"
-log "HanryxVault satellite kiosk v6 starting"
+log "HanryxVault satellite kiosk v6.2 starting (XWayland mode)"
 log "PID=$$  USER=$(id -un)  PPID=$PPID"
 log "Initial env: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}  DISPLAY=${DISPLAY:-unset}"
 log "============================================"
@@ -613,15 +613,25 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Find chromium binary ────────────────────────────────────────────────────
-if   [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+# ── Find chromium binary (prefer Pi OS wrapper, NOT raw binary) ─────────────
+# /usr/bin/chromium and chromium-browser are wrapper scripts that set up
+# the correct env (XDG, GTK, fontconfig). The raw /usr/lib/chromium/chromium
+# binary skips that setup and fails to connect to Wayland/XWayland on Pi 5.
+if   [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
 elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
-elif [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
+elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
 else                                         CHROMIUM_BIN=chromium
 fi
 log "Chromium binary: $CHROMIUM_BIN"
 
-# ── Common Chromium flags (native Wayland) ──────────────────────────────────
+# ── Ensure DISPLAY is set for XWayland (labwc auto-starts XWayland) ─────────
+# Pi OS Chromium runs as an X11 client through XWayland — NOT native Wayland.
+# labwc exports DISPLAY into its session env; if we lost it (e.g. systemd
+# respawn), default to :0 which is XWayland's typical socket.
+export DISPLAY="${DISPLAY:-:0}"
+log "DISPLAY=$DISPLAY  (XWayland via labwc)"
+
+# ── Common Chromium flags (XWayland — Pi OS supported path) ─────────────────
 COMMON_FLAGS=(
     --kiosk
     --no-first-run
@@ -639,8 +649,6 @@ COMMON_FLAGS=(
     --disable-breakpad
     --disable-component-update
     --no-process-singleton
-    --ozone-platform=wayland
-    --enable-features=UseOzonePlatform
     --use-gl=angle
     --use-angle=swiftshader
     --enable-features=VaapiVideoDecoder
@@ -744,7 +752,7 @@ OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
             2>/dev/null || echo "unknown")
         curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
              -H "Content-Type: application/json" \
-             -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v6\"}" \
+             -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v6.2\"}" \
              > /dev/null 2>&1 || true
         sleep 60
     done
