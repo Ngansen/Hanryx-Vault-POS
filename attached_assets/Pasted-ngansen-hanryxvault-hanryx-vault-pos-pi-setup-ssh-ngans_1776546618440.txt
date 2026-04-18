@@ -1,0 +1,25 @@
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ ssh ngansen@192.168.86.22 "sudo systemctl is-active nginx ; ss -tlnp | grep -E ':(80|443|8080)' ; grep -RE 'TARGET|kiosk_url|--app=|google-chrome|chromium' /etc/nginx ~/.config 2>/dev/null | head -20"
+ngansen@192.168.86.22's password:
+sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+sudo: a password is required
+LISTEN 0      511                        0.0.0.0:8080       0.0.0.0:*
+/home/ngansen/.config/chromium/WasmTtsEngine/20260415.1/bindings_main.js:  var TARGET_NOT_SUPPORTED = 2147483647;
+/home/ngansen/.config/chromium/WasmTtsEngine/20260415.1/bindings_main.js:  var currentNodeVersion = isNode ? humanReadableVersionToPacked(process.versions.node) : TARGET_NOT_SUPPORTED;
+/home/ngansen/.config/chromium/WasmTtsEngine/20260415.1/bindings_main.js:  var currentSafariVersion = userAgent.includes("Safari/") && !userAgent.includes("Chrome/") && userAgent.match(/Version\/(\d+\.?\d*\.?\d*)/) ? humanReadableVersionToPacked(userAgent.match(/Version\/(\d+\.?\d*\.?\d*)/)[1]) : TARGET_NOT_SUPPORTED;
+/home/ngansen/.config/chromium/WasmTtsEngine/20260415.1/bindings_main.js:  var currentFirefoxVersion = userAgent.match(/Firefox\/(\d+(?:\.\d+)?)/) ? parseFloat(userAgent.match(/Firefox\/(\d+(?:\.\d+)?)/)[1]) : TARGET_NOT_SUPPORTED;
+/home/ngansen/.config/chromium/WasmTtsEngine/20260415.1/bindings_main.js:  var currentChromeVersion = userAgent.match(/Chrome\/(\d+(?:\.\d+)?)/) ? parseFloat(userAgent.match(/Chrome\/(\d+(?:\.\d+)?)/)[1]) : TARGET_NOT_SUPPORTED;
+/home/ngansen/.config/chromium/ActorSafetyLists/8.6294.2057/listdata.json:            "to": "bugs.chromium.org"
+/home/ngansen/.config/chromium/ActorSafetyLists/8.6294.2057/listdata.json:            "to": "chromium-review.googlesource.com"
+/home/ngansen/.config/chromium/ZxcvbnData/3/us_tv_and_film.txt:chromium
+/home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/LOG:2026/04/16-22:51:58.313 182a Reusing MANIFEST /home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/LOG:2026/04/16-22:51:58.313 182a Reusing old log /home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/000013.log
+/home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/LOG.old:2026/04/16-22:05:53.623 806 Reusing MANIFEST /home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/LOG.old:2026/04/16-22:05:53.625 806 Reusing old log /home/ngansen/.config/chromium/Default/IndexedDB/https_replit.com_0.indexeddb.leveldb/000010.log
+/home/ngansen/.config/chromium/Default/Sync Data/LevelDB/LOG:2026/04/18-14:18:45.755 4009 Reusing MANIFEST /home/ngansen/.config/chromium/Default/Sync Data/LevelDB/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/Sync Data/LevelDB/LOG:2026/04/18-14:18:45.757 4009 Reusing old log /home/ngansen/.config/chromium/Default/Sync Data/LevelDB/000003.log
+/home/ngansen/.config/chromium/Default/Sync Data/LevelDB/LOG.old:2026/04/16-23:52:15.310 869 Reusing MANIFEST /home/ngansen/.config/chromium/Default/Sync Data/LevelDB/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/Sync Data/LevelDB/LOG.old:2026/04/16-23:52:15.458 869 Reusing old log /home/ngansen/.config/chromium/Default/Sync Data/LevelDB/000003.log
+/home/ngansen/.config/chromium/Default/Site Characteristics Database/LOG:2026/04/18-14:18:45.758 4022 Reusing MANIFEST /home/ngansen/.config/chromium/Default/Site Characteristics Database/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/Site Characteristics Database/LOG:2026/04/18-14:18:45.767 4022 Reusing old log /home/ngansen/.config/chromium/Default/Site Characteristics Database/000003.log
+/home/ngansen/.config/chromium/Default/Site Characteristics Database/LOG.old:2026/04/16-23:52:15.529 88c Reusing MANIFEST /home/ngansen/.config/chromium/Default/Site Characteristics Database/MANIFEST-000001
+/home/ngansen/.config/chromium/Default/Site Characteristics Database/LOG.old:2026/04/16-23:52:15.532 88c Reusing old log /home/ngansen/.config/chromium/Default/Site Characteristics Database/000003.log
