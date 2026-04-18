@@ -1,0 +1,100 @@
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs pi-setup-pos-1 2>&1 | grep -E 'bg\]|prewarm|TIMEOUT' | head -20"
+ngansen@192.168.86.36's password:
+{"ts":"2026-04-18T19:29:57","level":"INFO","logger":"hanryxvault","msg":"[prewarm] starting bulk pricing pre-warm …"}
+{"ts":"2026-04-18T19:29:57","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [1/58] fetching 'Battle Region Battle Region pokemon' …"}
+{"ts":"2026-04-18T19:29:59","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [2/58] fetching 'Cynithia's Roserade Destined Rivals pokemon' …"}
+{"ts":"2026-04-18T19:30:02","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [3/58] fetching 'Blaine's Growlithe Gym Heroes pokemon' …"}
+{"ts":"2026-04-18T19:30:04","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [4/58] fetching 'Dragonite V 76 Evolving Skies pokemon' …"}
+{"ts":"2026-04-18T19:30:07","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [5/58] fetching 'Mew pokemon' …"}
+{"ts":"2026-04-18T19:30:09","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [6/58] fetching 'mew pokemon' …"}
+{"ts":"2026-04-18T19:30:12","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [7/58] fetching 'Galarian Articuno V TG16 VStar Universe pokemon' …"}
+{"ts":"2026-04-18T19:30:14","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [8/58] fetching 'Mew EX 232 Lost Origin pokemon' …"}
+{"ts":"2026-04-18T19:30:17","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [9/58] fetching 'Mega Venusaur Ex 177 Mega Evolution pokemon' …"}
+{"ts":"2026-04-18T19:30:19","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [10/58] fetching 'Oricorio EX 110 Pham Flames pokemon' …"}
+{"ts":"2026-04-18T19:30:22","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [11/58] fetching 'Lugia VSTAR Secret Rare 211 Silver Tempest pokemon' …"}
+{"ts":"2026-04-18T19:30:24","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [12/58] fetching 'Falinks 88 Astral Rad pokemon' …"}
+{"ts":"2026-04-18T19:30:27","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [13/58] fetching 'Vaporeon EX 149 Pop Series 3 pokemon' …"}
+{"ts":"2026-04-18T19:30:29","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [14/58] fetching 'Houndour 37 Obsidian Flames pokemon' …"}
+{"ts":"2026-04-18T19:30:32","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [15/58] fetching 'Parasol Lady 255 Paradox Rift pokemon' …"}
+{"ts":"2026-04-18T19:30:34","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [16/58] fetching 'Plusle 193 Paradox Rift pokemon' …"}
+{"ts":"2026-04-18T19:30:37","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [17/58] fetching 'Paldean Wooper 102 Paldea Evolved pokemon' …"}
+{"ts":"2026-04-18T19:30:39","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [18/58] fetching 'Flying Pikachu V 6 Celebrations pokemon' …"}
+{"ts":"2026-04-18T19:30:42","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [19/58] fetching 'Foongus 95 Rebel Clash pokemon' …"}
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker exec pi-setup-pos-1 env | grep -E 'DISABLE_BG|FLASK' ; echo === ; docker exec pi-setup-pos-1 cat /app/gunicorn.conf.py | head -50 ; echo === ; docker logs pi-setup-pos-1 2>&1 | head -20"
+ngansen@192.168.86.36's password:
+DISABLE_BG_LANG_PREWARM=1
+DISABLE_BG_PRICING_PREWARM=1
+FLASK_ENV=production
+===
+import threading
+
+# Make psycopg2 cooperative with gevent — eliminates worker timeouts.
+try:
+    from psycogreen.gevent import patch_psycopg
+    patch_psycopg()
+except ImportError:
+    pass
+workers             = 1      # single worker so SSE subscribers share memory with cart updates
+worker_class        = "gevent"
+worker_connections  = 500   # gevent handles hundreds of concurrent SSE + API connections
+
+bind      = "0.0.0.0:8080"
+
+timeout          = 300   # longer timeout for SSE streams
+keepalive        = 65
+
+max_requests       = 2000
+max_requests_jitter = 200
+
+loglevel  = "info"
+accesslog = "-"
+errorlog  = "-"
+
+preload_app = False
+
+
+def on_starting(server):
+    """Initialise the database schema once before workers start."""
+    try:
+        from server import init_db, _load_tokens_from_db
+        init_db()
+        _load_tokens_from_db()
+        server.log.info("DB schema initialised successfully")
+    except Exception as _e:
+        server.log.warning("DB init error (will retry on first request): %s", _e)
+
+
+def post_fork(server, worker):
+    """Start background threads after fork."""
+    # Only start background threads in worker 1 to avoid duplication
+    if worker.age == 1:
+        try:
+            from server import (
+                sync_inventory_from_cloud,
+                _warmup_smart_scanner,
+                _run_low_stock_checker,
+                _prewarm_all_pricing_bg,
+                _prewarm_lang_all_bg,
+            )
+===
+[2026-04-18 19:29:26 +0000] [8] [INFO] Starting gunicorn 25.3.0
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[enrich] Price refresh scheduler started (every 6h)"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+{"ts":"2026-04-18T19:29:27","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:29:27","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+[2026-04-18 19:29:27 +0000] [8] [INFO] DB schema initialised successfully
+[2026-04-18 19:29:27 +0000] [8] [INFO] Listening at: http://0.0.0.0:8080 (8)
+[2026-04-18 19:29:27 +0000] [8] [INFO] Using worker: gevent
+[2026-04-18 19:29:27 +0000] [15] [INFO] Booting worker with pid: 15
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 58 products — skipping auto-sync"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 58 cards"}
+{"ts":"2026-04-18T19:29:27","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+[2026-04-18 19:29:27 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)'].
+  monkey.patch_all()
+192.168.86.250 - - [18/Apr/2026:19:29:27 +0000] "GET /health HTTP/1.1" 200 233 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:19:29:27 +0000] "GET /health HTTP/1.1" 200 233 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
