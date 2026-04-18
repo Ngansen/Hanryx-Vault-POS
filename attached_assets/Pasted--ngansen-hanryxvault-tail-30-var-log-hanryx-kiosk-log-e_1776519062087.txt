@@ -1,0 +1,36 @@
+
+ngansen@hanryxvault:~ $ tail -30 /var/log/hanryx-kiosk.log; echo '---PROCS---'; pgrep -af "chromium|Xwayland" | head -8
+[13:30:31] [Admin] exited code=1 after 0s — restarting in 5s
+[13:30:33] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[2799:2799:0418/133033.586379:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2799:2799:0418/133033.586453:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:30:34] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:30:36] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[2852:2852:0418/133036.988718:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2852:2852:0418/133036.988762:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:30:38] [Admin] exited code=1 after 0s — restarting in 5s
+[13:30:39] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[2912:2912:0418/133039.714777:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2912:2912:0418/133039.714828:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:30:40] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:30:43] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[2965:2965:0418/133043.113120:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[2965:2965:0418/133043.113181:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:30:44] [Admin] exited code=1 after 0s — restarting in 5s
+[13:30:45] [Kiosk] → http://192.168.86.36:8080/kiosk  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[3025:3025:0418/133045.840056:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[3025:3025:0418/133045.840103:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[13:30:46] [Kiosk] exited code=1 after 0s — restarting in 5s
+[13:30:49] [Admin] → http://192.168.86.36:8080/admin  (fallback(--disable-gpu))
+Invalid MIT-MAGIC-COOKIE-1 key
+[3107:3107:0418/133049.241350:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[3107:3107:0418/133049.241393:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+---PROCS---
+2375 Xwayland :0 -rootless -core -terminate 10 -listenfd 32 -listenfd 33 -displayfd 77 -wm 73
+2550 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+ngansen@hanryxvault:~ $
