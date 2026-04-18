@@ -17523,7 +17523,39 @@ def kiosk_cart_update():
         # Preserve the current mode if the tablet doesn't send one
         if "mode" not in data:
             data["mode"] = _kiosk_cart.get("mode", "idle")
+        # Sticky flags must default to False every update unless tablet explicitly
+        # re-asserts them. Otherwise a previous "paid" or "payment_processing"
+        # state lingers on the customer display after the tablet has cleared.
+        for sticky in ("paid", "payment_processing", "active"):
+            if sticky not in data:
+                data[sticky] = False
+        # Empty cart → also zero the monetary totals so the display fully resets
+        if data.get("items") == []:
+            data.setdefault("subtotal", 0.0)
+            data.setdefault("tax", 0.0)
+            data.setdefault("total", 0.0)
         _kiosk_cart.update(data)
+        snapshot = dict(_kiosk_cart)
+    _kiosk_broadcast(snapshot)
+    return jsonify(ok=True)
+
+
+@app.route("/kiosk/reset", methods=["POST"])
+def kiosk_reset():
+    """Hard-reset the customer display to an empty idle state.
+    Tablet can call this after a checkout completes/cancels as a safety net."""
+    with _kiosk_cart_lock:
+        _kiosk_cart.update({
+            "mode": "idle",
+            "active": False,
+            "items": [],
+            "subtotal": 0.0,
+            "tax": 0.0,
+            "total": 0.0,
+            "payment_method": "",
+            "paid": False,
+            "payment_processing": False,
+        })
         snapshot = dict(_kiosk_cart)
     _kiosk_broadcast(snapshot)
     return jsonify(ok=True)
