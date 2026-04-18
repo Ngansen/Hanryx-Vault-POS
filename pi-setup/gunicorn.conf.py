@@ -1,13 +1,11 @@
 import threading
 
-# Make psycopg2 cooperative with gevent — without this, every DB call blocks
-# the entire event loop including all SSE streams + concurrent API requests,
-# eventually causing worker timeouts and 1-2 s outages on every restart.
-try:
-    from psycogreen.gevent import patch_psycopg
-    patch_psycopg()
-except ImportError:
-    pass
+# IMPORTANT: do NOT import psycogreen / gevent at the top of this config file.
+# Doing so transitively imports ssl, redis, urllib3 BEFORE gevent's worker
+# class runs monkey.patch_all(), leaving those modules un-patched. Outbound
+# TLS / Redis calls then block the hub forever (SSE never completes, /health
+# hangs). psycogreen.patch_psycopg() runs in post_worker_init below, AFTER
+# gevent has patched the stdlib.
 
 workers             = 1      # single worker so SSE subscribers share memory with cart updates
 worker_class        = "gevent"
@@ -37,6 +35,16 @@ def on_starting(server):
         server.log.info("DB schema initialised successfully")
     except Exception as _e:
         server.log.warning("DB init error (will retry on first request): %s", _e)
+
+
+def post_worker_init(worker):
+    """Apply psycogreen AFTER gevent's monkey.patch_all has run."""
+    try:
+        from psycogreen.gevent import patch_psycopg
+        patch_psycopg()
+        worker.log.info("[psycogreen] psycopg patched for gevent")
+    except Exception as _e:
+        worker.log.warning("[psycogreen] patch failed: %s", _e)
 
 
 def post_fork(server, worker):
