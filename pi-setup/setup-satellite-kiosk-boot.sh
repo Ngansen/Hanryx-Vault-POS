@@ -160,7 +160,9 @@ apt-get install -y -qq \
 # Chromium: try both package names
 apt-get install -y -qq chromium-browser unclutter 2>/dev/null || \
 apt-get install -y -qq chromium         unclutter 2>/dev/null || true
-ok "Packages ready (nginx, chromium, unclutter, curl, avahi)"
+# wlr-randr: needed for output detection under labwc/Wayland (xrandr does not work)
+apt-get install -y -qq wlr-randr 2>/dev/null || true
+ok "Packages ready (nginx, chromium, unclutter, wlr-randr, curl, avahi)"
 
 # ── Tailscale (optional) ────────────────────────────────────────────────────
 if [ "$USE_TAILSCALE" = "y" ]; then
@@ -387,194 +389,168 @@ info "Writing dual-monitor launcher…"
 cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v4 + mDNS + splash)
-# Connects to the main Pi's POS server — no Docker needed on this Pi.
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6 native Wayland)
+# =============================================================================
+# Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
+#   • Uses native Wayland Chromium (--ozone-platform=wayland) — NO XWayland
+#   • Detects outputs with wlr-randr (xrandr does not work under labwc)
+#   • Places each Chromium window on the right monitor via labwc rc.xml rules
+#     (--window-position is ignored under Wayland; you MUST use compositor rules)
+#   • Logs every step loudly so we can see exactly where it fails if it does
+#   • Single instance via flock — only one autostart path is configured (labwc)
 # =============================================================================
 
+set -u
+LOG_FILE="/var/log/hanryx-kiosk.log"
+log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE" 2>/dev/null; }
+
 # ── Single-instance guard ────────────────────────────────────────────────────
-# Pi 5 Bookworm registers this launcher in 3 autostart paths (XDG / labwc /
-# LXDE) and at least 2 of them fire on Wayland sessions.  Without a lock,
-# both copies race for the Chromium SingletonLock → losing instance exits
-# with "Opening in existing browser session" → infinite restart loop →
-# windows flash and disappear back to the desktop.
 LOCK_FILE="/tmp/hanryx-kiosk-launcher.lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-    echo "[$(date +%H:%M:%S)] Another launcher instance is already running — exiting." \
-        >> /var/log/hanryx-kiosk.log 2>/dev/null
+    log "Another launcher instance is already running — exiting (PID $$)"
     exit 0
 fi
 
-LOG_FILE="/var/log/hanryx-kiosk.log"
+log "============================================"
+log "HanryxVault satellite kiosk v6 starting"
+log "PID=$$  USER=$(id -un)  PPID=$PPID"
+log "Initial env: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}  DISPLAY=${DISPLAY:-unset}"
+log "============================================"
+
+# ── Wayland environment (always native Wayland on Pi 5 labwc) ───────────────
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+# Auto-detect the active Wayland socket (could be wayland-0 or wayland-1)
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+        [ -S "$sock" ] || continue
+        case "$sock" in *.lock) continue ;; esac
+        WAYLAND_DISPLAY="$(basename "$sock")"
+        break
+    done
+fi
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+log "Wayland: WAYLAND_DISPLAY=$WAYLAND_DISPLAY  XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+
+if [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+    log "FATAL: Wayland socket $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY does not exist."
+    log "       Available sockets: $(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | tr '\n' ' ')"
+    log "       This launcher must be started from inside a labwc session."
+    sleep 30
+    exit 1
+fi
+log "Wayland socket OK"
+
+# ── Load config ──────────────────────────────────────────────────────────────
 CONFIG_FILE="$HOME/.hanryx/satellite.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    log "Loaded config from $CONFIG_FILE"
+fi
+MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-hanryxvault}"
+ADMIN_URL="${ADMIN_URL:-http://${MAIN_PI_TS_HOST}:8080/admin}"
+KIOSK_URL="${KIOSK_URL:-http://${MAIN_PI_TS_HOST}:8080/kiosk}"
+HEALTH_URL="${HEALTH_URL:-http://${MAIN_PI_TS_HOST}:8080/health}"
+log "Admin URL : $ADMIN_URL"
+log "Kiosk URL : $KIOSK_URL"
+log "Health URL: $HEALTH_URL"
+
 PROFILE_ADMIN="$HOME/.hanryx/admin-profile"
 PROFILE_KIOSK="$HOME/.hanryx/kiosk-profile"
 SPLASH_KIOSK="/tmp/hvault-splash-kiosk.html"
 SPLASH_ADMIN="/tmp/hvault-splash-admin.html"
-
-log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
-
-log "============================================"
-log "HanryxVault satellite kiosk starting…"
-log "============================================"
-
-# ── Load config ──────────────────────────────────────────────────────────────
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
-else
-    MAIN_PI_TS_HOST="hanryxvault"
-    ADMIN_URL="http://hanryxvault:8080/admin"
-    KIOSK_URL="http://hanryxvault:8080/kiosk"
-    HEALTH_URL="http://hanryxvault:8080/health"
-fi
-HEALTH_URL="${HEALTH_URL:-${KIOSK_URL%/kiosk}/health}"
-log "Main Pi: $MAIN_PI_TS_HOST"
-log "Admin URL:  $ADMIN_URL"
-log "Kiosk URL:  $KIOSK_URL"
-log "Health URL: $HEALTH_URL"
-
-# ── Pre-warm DNS so first connection is faster ──────────────────────────────
-getent hosts "$MAIN_PI_TS_HOST" > /dev/null 2>&1 && log "DNS resolved $MAIN_PI_TS_HOST" || true
+mkdir -p "$PROFILE_ADMIN" "$PROFILE_KIOSK"
 
 # ── Quick non-blocking connectivity check ────────────────────────────────────
-# We do NOT block here — the splash page already shows "Connecting…" and polls
-# the server with JavaScript, then auto-redirects when it's ready.
-# Blocking here just leaves both screens showing the raw desktop while we wait.
 if curl -sf --max-time 3 "$HEALTH_URL" > /dev/null 2>&1; then
-    log "Main Pi reachable immediately — launching kiosk"
+    log "Main Pi reachable immediately"
 else
-    log "Main Pi not yet reachable — launching splash (it will retry automatically)"
-    # Kick off a background Tailscale restart if needed; splash handles the wait
-    if [ "${USE_TAILSCALE:-n}" = "y" ]; then
-        systemctl restart tailscaled 2>/dev/null &
-    fi
+    log "Main Pi not yet reachable — splash will retry automatically"
+    [ "${USE_TAILSCALE:-n}" = "y" ] && systemctl restart tailscaled 2>/dev/null &
 fi
 
-# ── Detect display server (Wayland vs X11) ───────────────────────────────────
-# labwc (Wayland compositor on Pi 5) runs XWayland, which exposes a full X11
-# server at DISPLAY=:0. We always use X11/XWayland so that:
-#   • --window-position works for dual-monitor placement
-#   • xrandr correctly reports both outputs and their pixel widths
-#   • Chromium launches reliably regardless of WAYLAND_DISPLAY being set
-export DISPLAY="${DISPLAY:-:0}"
-unset WAYLAND_DISPLAY   # prevent Chromium auto-detecting Wayland even in labwc session
-DISPLAY_SERVER="x11"
-log "Display server: X11/XWayland (DISPLAY=$DISPLAY)"
+# ── Detect Wayland outputs via wlr-randr ────────────────────────────────────
+log "Probing outputs with wlr-randr…"
+WLR_OUT=$(wlr-randr 2>&1 || true)
+log "wlr-randr output ($(echo "$WLR_OUT" | wc -l) lines):"
+echo "$WLR_OUT" | while IFS= read -r l; do log "  | $l"; done
 
-# ── Disable screen blanking ───────────────────────────────────────────────────
-if [ "$DISPLAY_SERVER" = "x11" ]; then
-    xset s off    2>/dev/null || true
-    xset -dpms    2>/dev/null || true
-    xset s noblank 2>/dev/null || true
-fi
-
-# ── Configure dual-monitor layout ────────────────────────────────────────────
-# Detects physical screen size from xrandr (mm) and always assigns the smaller
-# screen (5") to kiosk and the larger screen (10.1") to admin.
-# Falls back to SWAP_SCREENS if both screens report the same/unknown size.
-MONITOR1_W=1920
-MONITOR2_X=1920
-OUT_ADMIN=""
-OUT_KIOSK=""
-if [ "$DISPLAY_SERVER" = "x11" ]; then
-    sleep 2   # give X11 time to enumerate outputs after startup
-
-    # Parse connected outputs and their physical widths (mm) from xrandr.
-    # Example line: "HDMI-1 connected primary 1920x1080+0+0 (...) 476mm x 268mm"
-    declare -A _OUT_MM
-    _CUR=""
-    while IFS= read -r _line; do
-        if [[ "$_line" =~ ^([A-Za-z0-9_-]+)[[:space:]]connected ]]; then
-            _CUR="${BASH_REMATCH[1]}"
-        elif [[ -n "$_CUR" && "$_line" =~ ([0-9]+)mm[[:space:]]x[[:space:]]([0-9]+)mm ]]; then
-            _OUT_MM[$_CUR]="${BASH_REMATCH[1]}"   # physical width in mm
-            _CUR=""
+declare -A OUT_W
+CUR=""
+while IFS= read -r line; do
+    if [[ "$line" =~ ^([A-Za-z][A-Za-z0-9_-]+) ]]; then
+        CUR="${BASH_REMATCH[1]}"
+    elif [[ -n "$CUR" && "$line" =~ ^[[:space:]]+([0-9]+)x([0-9]+)[[:space:]]+px ]]; then
+        # Only take the FIRST resolution line (the active mode)
+        if [ -z "${OUT_W[$CUR]:-}" ]; then
+            OUT_W[$CUR]="${BASH_REMATCH[1]}"
         fi
-    done < <(xrandr 2>/dev/null)
+    fi
+done <<< "$WLR_OUT"
 
-    for _o in "${!_OUT_MM[@]}"; do
-        log "Detected output: $_o  (${_OUT_MM[$_o]}mm wide physically)"
+for o in "${!OUT_W[@]}"; do
+    log "Detected output: $o  (${OUT_W[$o]}px wide)"
+done
+
+# ── Decide which output is admin (large) vs kiosk (small) ────────────────────
+WL_ADMIN=""; WL_KIOSK=""
+if [ -n "${ADMIN_OUTPUT:-}" ] && [ -n "${KIOSK_OUTPUT:-}" ]; then
+    WL_ADMIN="$ADMIN_OUTPUT"
+    WL_KIOSK="$KIOSK_OUTPUT"
+    log "Manual override from satellite.conf: Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
+elif [ "${#OUT_W[@]}" -ge 2 ]; then
+    MAX=0; MIN=999999
+    for o in "${!OUT_W[@]}"; do
+        w="${OUT_W[$o]:-0}"
+        if [ "$w" -gt "$MAX" ]; then MAX="$w"; WL_ADMIN="$o"; fi
+        if [ "$w" -lt "$MIN" ]; then MIN="$w"; WL_KIOSK="$o"; fi
     done
-
-    if [ "${#_OUT_MM[@]}" -ge 2 ]; then
-        # ── PRIORITY 1: explicit output names from satellite.conf ────────────
-        # If KIOSK_OUTPUT and ADMIN_OUTPUT are set, use them verbatim.
-        if [ -n "${KIOSK_OUTPUT:-}" ] && [ -n "${ADMIN_OUTPUT:-}" ] \
-           && [ -n "${_OUT_MM[$KIOSK_OUTPUT]:-}" ] \
-           && [ -n "${_OUT_MM[$ADMIN_OUTPUT]:-}" ]; then
-            OUT_KIOSK="$KIOSK_OUTPUT"
-            OUT_ADMIN="$ADMIN_OUTPUT"
-            log "Manual override from satellite.conf: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
+    if [ "$MAX" -eq "$MIN" ]; then
+        mapfile -t OUTS < <(printf '%s\n' "${!OUT_W[@]}" | sort)
+        if [ "${SWAP_SCREENS:-n}" = "y" ]; then
+            WL_ADMIN="${OUTS[1]}"; WL_KIOSK="${OUTS[0]}"
         else
-            # ── PRIORITY 2: auto-detect by physical width ────────────────────
-            _MIN=99999; _MAX=0; _KIOSK_CAND=""; _ADMIN_CAND=""
-            for _o in "${!_OUT_MM[@]}"; do
-                _mm="${_OUT_MM[$_o]:-0}"
-                if [ "$_mm" -lt "$_MIN" ]; then _MIN="$_mm"; _KIOSK_CAND="$_o"; fi
-                if [ "$_mm" -gt "$_MAX" ]; then _MAX="$_mm"; _ADMIN_CAND="$_o"; fi
-            done
-            if [ "$_MIN" -ne "$_MAX" ] && [ "$_MIN" -gt 0 ]; then
-                OUT_KIOSK="$_KIOSK_CAND"
-                OUT_ADMIN="$_ADMIN_CAND"
-                log "Auto-assigned by size: Admin(${_MAX}mm)=$OUT_ADMIN  Kiosk(${_MIN}mm)=$OUT_KIOSK"
-            else
-                # ── PRIORITY 3: SWAP_SCREENS y/n fallback ────────────────────
-                mapfile -t _OUTS < <(printf '%s\n' "${!_OUT_MM[@]}" | sort)
-                if [ "${SWAP_SCREENS:-n}" = "y" ]; then
-                    OUT_ADMIN="${_OUTS[1]}"; OUT_KIOSK="${_OUTS[0]}"
-                else
-                    OUT_ADMIN="${_OUTS[0]}"; OUT_KIOSK="${_OUTS[1]}"
-                fi
-                log "Sizes equal/unknown — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$OUT_ADMIN  Kiosk=$OUT_KIOSK"
-            fi
+            WL_ADMIN="${OUTS[0]}"; WL_KIOSK="${OUTS[1]}"
         fi
-
-        # Apply layout: admin primary at 0,0 — kiosk extends to the right
-        if xrandr \
-              --output "$OUT_ADMIN" --auto --primary --pos 0x0 \
-              --output "$OUT_KIOSK" --auto --right-of "$OUT_ADMIN" \
-              2>/dev/null; then
-            log "xrandr layout applied successfully"
-        else
-            log "WARNING: xrandr layout command failed — falling back to --auto"
-            xrandr --auto 2>/dev/null || true
-        fi
-
-        # Re-read admin monitor's actual pixel width after layout is applied
-        sleep 1
-        _W=$(xrandr 2>/dev/null \
-             | awk -v o="$OUT_ADMIN" 'index($0,o)==1 && / connected /{
-                 match($0,/([0-9]+)x[0-9]+\+/,a); print a[1]; exit}')
-        MONITOR1_W=${_W:-1920}
-
-    elif [ "${#_OUT_MM[@]}" -eq 1 ]; then
-        _ONLY="${!_OUT_MM[*]}"
-        log "WARNING: Only 1 monitor detected ($_ONLY). Check the HDMI cable on the second port."
-        xrandr --output "$_ONLY" --auto --primary 2>/dev/null || true
+        log "Equal sizes — SWAP_SCREENS=${SWAP_SCREENS:-n}: Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
     else
-        log "WARNING: No outputs found by xrandr — check HDMI cables and /boot/firmware/config.txt."
-        xrandr --auto 2>/dev/null || true
+        log "Auto-assigned by width: Admin(${MAX}px)=$WL_ADMIN  Kiosk(${MIN}px)=$WL_KIOSK"
     fi
-
-    MONITOR2_X=$MONITOR1_W
-    log "Window positions — Admin x=0px  Kiosk x=${MONITOR2_X}px"
+elif [ "${#OUT_W[@]}" -eq 1 ]; then
+    only="${!OUT_W[*]}"
+    log "WARN: only 1 output detected ($only) — both windows will share it"
+    WL_ADMIN="$only"; WL_KIOSK="$only"
+else
+    log "WARN: no outputs detected — windows will use compositor defaults"
 fi
 
-# ── Hide mouse cursor ─────────────────────────────────────────────────────────
-unclutter -idle 3 -root 2>/dev/null &
+# ── Write labwc rc.xml window rules so each app_id lands on right output ────
+LABWC_RC="$HOME/.config/labwc/rc.xml"
+mkdir -p "$HOME/.config/labwc"
+cat > "$LABWC_RC" << RCEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="hvault-admin" matchType="exact">
+      <action name="MoveToOutput"><output>${WL_ADMIN}</output></action>
+    </windowRule>
+    <windowRule identifier="hvault-kiosk" matchType="exact">
+      <action name="MoveToOutput"><output>${WL_KIOSK}</output></action>
+    </windowRule>
+  </windowRules>
+</labwc_config>
+RCEOF
+log "labwc rc.xml written → Admin→${WL_ADMIN:-default}  Kiosk→${WL_KIOSK:-default}"
+labwcctl --reconfigure 2>/dev/null || killall -USR1 labwc 2>/dev/null || true
 
-# ── Write branded splash pages ───────────────────────────────────────────────
-# Each splash polls /health and auto-navigates to the real URL when ready.
+# ── Hide mouse cursor ───────────────────────────────────────────────────────
+unclutter --timeout 3 2>/dev/null &
+
+# ── Splash pages ────────────────────────────────────────────────────────────
 write_splash() {
-    local target_url="$1"
-    local label="$2"
-    local out_file="$3"
+    local target_url="$1" label="$2" out_file="$3"
     cat > "$out_file" << HTMLEOF
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>HanryxVault — Connecting…</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -588,333 +564,164 @@ write_splash() {
   .dot-wrap{display:flex;gap:12px;margin-bottom:36px}
   .dot{width:12px;height:12px;border-radius:50%;background:#facc15;
        animation:bounce 1.4s ease-in-out infinite}
-  .dot:nth-child(2){animation-delay:.2s}
-  .dot:nth-child(3){animation-delay:.4s}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
   @keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:.4}40%{transform:scale(1);opacity:1}}
   .status{font-size:13px;color:#333;min-height:20px;letter-spacing:.5px}
   .label{position:fixed;bottom:20px;right:24px;font-size:11px;color:#222;letter-spacing:1px}
-</style>
-</head>
-<body>
-<div class="logo">🃏</div>
-<h1>HanryxVault</h1>
-<p class="sub">Trading Card Shop</p>
+</style></head><body>
+<div class="logo">🃏</div><h1>HanryxVault</h1><p class="sub">Trading Card Shop</p>
 <div class="dot-wrap"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-<p class="status" id="st">Connecting to POS server…</p>
-<div class="label">${label}</div>
+<p class="status" id="st">Connecting to POS server…</p><div class="label">${label}</div>
 <script>
-var TARGET = "${target_url}";
-var HEALTH = "${HEALTH_URL}";
-var attempts = 0;
-function check() {
-  attempts++;
-  document.getElementById('st').textContent =
-    'Connecting to POS server… (attempt ' + attempts + ')';
-  fetch(HEALTH, {cache:'no-store', signal: AbortSignal.timeout(2000)})
-    .then(function(r){ if(r.ok){ window.location.replace(TARGET); } else { retry(); } })
-    .catch(function(){ retry(); });
-}
-function retry() { setTimeout(check, 2000); }
-check();
-</script>
-</body>
-</html>
+var TARGET="${target_url}",HEALTH="${HEALTH_URL}",attempts=0;
+function check(){attempts++;document.getElementById('st').textContent='Connecting to POS server… (attempt '+attempts+')';
+  fetch(HEALTH,{cache:'no-store',signal:AbortSignal.timeout(2000)}).then(function(r){if(r.ok){window.location.replace(TARGET);}else{retry();}}).catch(function(){retry();});}
+function retry(){setTimeout(check,2000);}check();
+</script></body></html>
 HTMLEOF
 }
-
 write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Wayland monitor layout (skipped — always using X11/XWayland) ─────────────
-if [ "$DISPLAY_SERVER" = "wayland_DISABLED" ]; then
-    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
-    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    log "Wayland env: WAYLAND_DISPLAY=$WAYLAND_DISPLAY  XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
-
-    # Parse wlr-randr for output names and their current pixel widths
-    declare -A _WL_W
-    _WL_CUR=""
-    while IFS= read -r _line; do
-        # Output header line: "HDMI-A-1 ..." (starts with non-whitespace)
-        if [[ "$_line" =~ ^([A-Za-z][A-Za-z0-9_-]+) ]]; then
-            _WL_CUR="${BASH_REMATCH[1]}"
-        # Resolution line: "  1024x600 px, ..." (indented)
-        elif [[ -n "$_WL_CUR" && "$_line" =~ ^[[:space:]]+([0-9]+)x([0-9]+)[[:space:]]+px ]]; then
-            _WL_W[$_WL_CUR]="${BASH_REMATCH[1]}"
-            _WL_CUR=""
-        fi
-    done < <(wlr-randr 2>/dev/null)
-
-    for _o in "${!_WL_W[@]}"; do
-        log "Wayland output: $_o  (${_WL_W[$_o]}px wide)"
-    done
-
-    # Determine admin and kiosk outputs (same priority logic as X11)
-    WL_ADMIN=""; WL_KIOSK=""
-    if [ "${#_WL_W[@]}" -ge 2 ]; then
-        if [ -n "${KIOSK_OUTPUT:-}" ] && [ -n "${ADMIN_OUTPUT:-}" ]; then
-            WL_KIOSK="$KIOSK_OUTPUT"; WL_ADMIN="$ADMIN_OUTPUT"
-            log "Wayland: manual override — Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
-        else
-            # Assign by pixel width: larger = admin, smaller = kiosk
-            _WL_MAX=0; _WL_MIN=999999
-            for _o in "${!_WL_W[@]}"; do
-                _w="${_WL_W[$_o]:-0}"
-                if [ "$_w" -gt "$_WL_MAX" ]; then _WL_MAX="$_w"; WL_ADMIN="$_o"; fi
-                if [ "$_w" -lt "$_WL_MIN" ]; then _WL_MIN="$_w"; WL_KIOSK="$_o"; fi
-            done
-            if [ "$_WL_MAX" -eq "$_WL_MIN" ]; then
-                mapfile -t _WL_OUTS < <(printf '%s\n' "${!_WL_W[@]}" | sort)
-                if [ "${SWAP_SCREENS:-n}" = "y" ]; then
-                    WL_ADMIN="${_WL_OUTS[1]}"; WL_KIOSK="${_WL_OUTS[0]}"
-                else
-                    WL_ADMIN="${_WL_OUTS[0]}"; WL_KIOSK="${_WL_OUTS[1]}"
-                fi
-            fi
-            log "Wayland: auto-assigned — Admin=$WL_ADMIN  Kiosk=$WL_KIOSK"
-        fi
-
-        # Write labwc rc.xml window rules so each app-id opens on the right output
-        LABWC_RC="$HOME/.config/labwc/rc.xml"
-        mkdir -p "$HOME/.config/labwc"
-        if [ ! -f "$LABWC_RC" ]; then
-            cat > "$LABWC_RC" << 'RCEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<labwc_config>
-</labwc_config>
-RCEOF
-        fi
-        # Remove any previous HanryxVault window rules then re-inject
-        sed -i '/<\!-- HanryxVault -->/,/<\!-- \/HanryxVault -->/d' "$LABWC_RC" 2>/dev/null || true
-        # Insert before closing tag
-        RULE_BLOCK="  <!-- HanryxVault -->
-  <windowRules>
-    <windowRule identifier=\"hvault-admin\" type=\"app_id\" matchType=\"exact\">
-      <action name=\"MoveToOutput\"><output>${WL_ADMIN}</output></action>
-      <action name=\"ToggleMaximize\"/>
-    </windowRule>
-    <windowRule identifier=\"hvault-kiosk\" type=\"app_id\" matchType=\"exact\">
-      <action name=\"MoveToOutput\"><output>${WL_KIOSK}</output></action>
-      <action name=\"ToggleMaximize\"/>
-    </windowRule>
-  </windowRules>
-  <!-- /HanryxVault -->"
-        # Append before the last closing tag (</labwc_config>)
-        python3 - "$LABWC_RC" "$RULE_BLOCK" << 'PYEOF'
-import sys, re
-path, rules = sys.argv[1], sys.argv[2]
-txt = open(path).read()
-txt = re.sub(r'(</labwc_config>)', rules + '\n\\1', txt)
-open(path, 'w').write(txt)
-PYEOF
-        log "labwc rc.xml updated — Admin→$WL_ADMIN  Kiosk→$WL_KIOSK"
-
-        # Tell labwc to reload its config if it's running
-        labwcctl --reconfigure 2>/dev/null || killall -USR1 labwc 2>/dev/null || true
-    else
-        log "WARNING: fewer than 2 Wayland outputs detected — check HDMI cables."
-    fi
-
-    # Fall-through: MONITOR2_X is not used on Wayland (window rules handle placement)
-    MONITOR2_X=0
-fi
-
-# ── Build Chromium flags ──────────────────────────────────────────────────────
-COMMON_FLAGS=(
-    --noerrdialogs
-    --disable-infobars
-    --disable-session-crashed-bubble
-    --no-first-run
-    --disable-translate
-    --disable-features=TranslateUI
-    --check-for-update-interval=31536000
-    --autoplay-policy=no-user-gesture-required
-    # Pi 5 GL driver doesn't support GLES3 via XWayland with native GL.
-    # ANGLE SwiftShader keeps the GPU *process* alive (WebGL + video decode work)
-    # but routes all GL calls through software — no native GLES3 needed.
-    # This is the correct fix: --disable-gpu also kills WebGL which breaks YouTube.
-    --use-gl=angle
-    --use-angle=swiftshader
-    --enable-features=VaapiVideoDecoder,VaapiVideoDecoderLinuxGL
-    # Memory & rendering optimisation
-    --disable-backing-store-limit
-    --renderer-process-limit=4
-    --disk-cache-size=104857600
-    --media-cache-size=52428800
-    --disable-dev-shm-usage
-    # Disable unnecessary Chromium services
-    --disable-background-networking
-    --disable-default-apps
-    --disable-extensions
-    --disable-plugins
-    --disable-sync
-    --disable-breakpad
-    --disable-component-update
-    --process-per-site
-    # Allow file:// to fetch http:// (for splash page health polling)
-    --allow-file-access-from-files
-    --disable-web-security
-    # Prevent "Opening in existing browser session" crash-loop
-    --no-process-singleton
-    # Force X11 backend (via XWayland) even when WAYLAND_DISPLAY is set.
-    # Without this, Chromium auto-detects Wayland and exits immediately when
-    # launched from a terminal/SSH session where WAYLAND_DISPLAY scope is wrong.
-    --ozone-platform=x11
-)
-
-# ── Find chromium binary — prefer real binary over Pi OS wrapper ──────────────
-# /usr/bin/chromium on Pi OS is a shell script wrapper that adds flags
-# (e.g. --no-decommit-pooled-pages) not supported by the current Chromium build.
-# Use the real binary at /usr/lib/chromium/chromium directly.
-if   [ -x /usr/lib/chromium/chromium ];   then CHROMIUM_BIN=/usr/lib/chromium/chromium
-elif [ -x /usr/bin/chromium ];            then CHROMIUM_BIN=/usr/bin/chromium
-elif [ -x /usr/bin/chromium-browser ];    then CHROMIUM_BIN=/usr/bin/chromium-browser
-else                                           CHROMIUM_BIN=chromium
+# ── Find chromium binary ────────────────────────────────────────────────────
+if   [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
+elif [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
+else                                         CHROMIUM_BIN=chromium
 fi
 log "Chromium binary: $CHROMIUM_BIN"
 
-# ── Launch function with watchdog ────────────────────────────────────────────
-# On first launch: open the splash page (which auto-redirects to real URL).
-# On restart (crash recovery): go straight to real URL (server already up).
-launch_with_watchdog() {
-    local name="$1"
-    local real_url="$2"
-    local splash_file="$3"
-    local profile="$4"
-    local pos_x="$5"
-    local extra_flags=("${@:6}")   # optional extra flags per-window
-    local first_run=1
-    local quick_crash_count=0       # detect ANGLE crash → fallback to --disable-gpu
-    # Build fallback flags: swap ANGLE SwiftShader for plain --disable-gpu
+# ── Common Chromium flags (native Wayland) ──────────────────────────────────
+COMMON_FLAGS=(
+    --kiosk
+    --no-first-run
+    --noerrdialogs
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --disable-translate
+    --disable-features=Translate,TranslateUI
+    --check-for-update-interval=31536000
+    --autoplay-policy=no-user-gesture-required
+    --disable-background-networking
+    --disable-default-apps
+    --disable-extensions
+    --disable-sync
+    --disable-breakpad
+    --disable-component-update
+    --no-process-singleton
+    --ozone-platform=wayland
+    --enable-features=UseOzonePlatform
+    --use-gl=angle
+    --use-angle=swiftshader
+    --enable-features=VaapiVideoDecoder
+    --disable-dev-shm-usage
+    --allow-file-access-from-files
+    --disable-web-security
+)
+
+# ── Kill any stale chromium / locks ─────────────────────────────────────────
+pkill -f 'chromium' 2>/dev/null || true
+sleep 1
+rm -f "$PROFILE_ADMIN"/Singleton* "$PROFILE_KIOSK"/Singleton* 2>/dev/null
+
+# ── Launch function with watchdog ───────────────────────────────────────────
+launch_window() {
+    local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
+    local first_run=1 quick_crashes=0 using_fallback=0
     local FALLBACK_FLAGS=()
-    local using_fallback=0
     for f in "${COMMON_FLAGS[@]}"; do
         case "$f" in
-            --use-gl=angle|--use-angle=swiftshader|--enable-features=VaapiVideoDecoder*)
-                : ;;   # drop ANGLE flags in fallback mode
-            *)
-                FALLBACK_FLAGS+=("$f") ;;
+            --use-gl=angle|--use-angle=swiftshader|--enable-features=VaapiVideoDecoder) : ;;
+            *) FALLBACK_FLAGS+=("$f") ;;
         esac
     done
     FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
 
-    mkdir -p "$profile"
-    log "Launching $name (position ${pos_x},0)"
-
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
     while true; do
         if [ "$first_run" -eq 1 ]; then
-            START_URL="file://${splash_file}"
+            START_URL="file://${splash}"
             first_run=0
         else
-            # After a crash, server is likely still running — go direct
-            START_URL="$real_url"
+            START_URL="$url"
         fi
-
-        # Choose flag set: use fallback (--disable-gpu) after 2 quick crashes
         if [ "$using_fallback" -eq 1 ]; then
-            ACTIVE_FLAGS=("${FALLBACK_FLAGS[@]}")
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
         else
-            ACTIVE_FLAGS=("${COMMON_FLAGS[@]}")
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
         fi
-
-        log "$name → $START_URL  (flags: $([ "$using_fallback" -eq 1 ] && echo 'fallback --disable-gpu' || echo 'ANGLE swiftshader'))"
-        LAUNCH_TS=$(date +%s)
-        # Clean stale Singleton* lock files left behind by previous crash —
-        # otherwise Chromium reads the dead PID and exits with "Opening in
-        # existing browser session" → infinite restart loop → blank desktop.
-        rm -f "$profile"/Singleton* 2>/dev/null || true
+        log "[$name] → $START_URL  ($mode)"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
         "$CHROMIUM_BIN" \
-            --kiosk \
-            --window-position="${pos_x},0" \
+            "${FLAGS[@]}" \
             --user-data-dir="$profile" \
-            "${ACTIVE_FLAGS[@]}" \
-            "${extra_flags[@]}" \
-            "$START_URL" \
-            >> "$LOG_FILE" 2>&1
-
-        EXIT_CODE=$?
-
-        # Chromium's launcher process often forks a child and exits with code 0.
-        # The real browser keeps running under the child PID. Check by profile path.
+            --class="$app_id" \
+            --app-id="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
         sleep 1
         if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
-            quick_crash_count=0   # successfully forked — reset crash counter
-            log "$name launcher exited ($EXIT_CODE) — browser forked OK, waiting for it…"
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            quick_crashes=0
             while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
                 sleep 3
             done
-            log "$name browser process ended — restarting in 5 s…"
+            log "[$name] child process ended — restarting in 5s"
         else
-            # No child process — check if it crashed very quickly (< 4 s)
-            ELAPSED=$(( $(date +%s) - LAUNCH_TS ))
             if [ "$ELAPSED" -lt 4 ] && [ "$using_fallback" -eq 0 ]; then
-                quick_crash_count=$(( quick_crash_count + 1 ))
-                log "$name crashed in ${ELAPSED}s (quick_crash_count=$quick_crash_count)"
-                if [ "$quick_crash_count" -ge 2 ]; then
-                    log "$name ANGLE swiftshader unstable — switching to --disable-gpu fallback"
+                quick_crashes=$(( quick_crashes + 1 ))
+                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes)"
+                if [ "$quick_crashes" -ge 2 ]; then
+                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
                     using_fallback=1
-                    quick_crash_count=0
+                    quick_crashes=0
                 fi
             else
-                log "$name exited (code $EXIT_CODE, ${ELAPSED}s) — restarting in 5 s…"
+                log "[$name] exited code=$EXIT after ${ELAPSED}s — restarting in 5s"
             fi
         fi
         sleep 5
     done
 }
 
-# ── Kill any stale Chromium / lock files before launching ────────────────────
-pkill -f 'chromium.*hvault' 2>/dev/null || true
-pkill -f 'chromium-browser' 2>/dev/null || true
-pkill -f 'chromium' 2>/dev/null || true
-sleep 1
-# Remove stale SingletonLock files that cause "existing browser session" errors
-rm -f "$PROFILE_ADMIN/SingletonLock" "$PROFILE_ADMIN/SingletonCookie" \
-      "$PROFILE_KIOSK/SingletonLock"  "$PROFILE_KIOSK/SingletonCookie"  2>/dev/null || true
-
-# ── Start Monitor 1: staff admin  (restore session on crash so you stay logged in)
-launch_with_watchdog "Admin (Monitor 1)" "$ADMIN_URL" \
-    "$SPLASH_ADMIN" "$PROFILE_ADMIN" 0 \
-    "--app-id=hvault-admin" "--restore-last-session" "--password-store=basic" &
-
-# Small delay so Monitor 1 claims focus first
+# ── Start both windows ──────────────────────────────────────────────────────
+launch_window "Admin" "$ADMIN_URL" "$SPLASH_ADMIN" "$PROFILE_ADMIN" "hvault-admin" &
 sleep 4
+launch_window "Kiosk" "$KIOSK_URL" "$SPLASH_KIOSK" "$PROFILE_KIOSK" "hvault-kiosk" &
 
-# ── Start Monitor 2: customer kiosk ─────────────────────────────────────────
-launch_with_watchdog "Kiosk (Monitor 2)" "$KIOSK_URL" \
-    "$SPLASH_KIOSK" "$PROFILE_KIOSK" "$MONITOR2_X" \
-    "--app-id=hvault-kiosk" &
-
-CONNECTION_MODE=$([ -n "$USE_TAILSCALE" ] && [ "$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
+CONNECTION_MODE=$([ -n "${USE_TAILSCALE:-}" ] && [ "$USE_TAILSCALE" = "y" ] && echo "Tailscale" || echo "LAN")
 log "Both windows launched — $CONNECTION_MODE tunnel active"
 
 # ── Heartbeat: register satellite with main Pi every 60 s ──────────────────
-# Kill any existing heartbeat from a previous launcher run to prevent duplicates
 HEARTBEAT_PID_FILE="/tmp/hanryx-heartbeat.pid"
 if [ -f "$HEARTBEAT_PID_FILE" ]; then
-  OLD_PID=$(cat "$HEARTBEAT_PID_FILE" 2>/dev/null)
-  kill "$OLD_PID" 2>/dev/null || true
-  log "Killed previous heartbeat (PID $OLD_PID)"
+    OLD_PID=$(cat "$HEARTBEAT_PID_FILE" 2>/dev/null)
+    kill "$OLD_PID" 2>/dev/null || true
 fi
 OWN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 OWN_TS_IP=$(tailscale ip -4 2>/dev/null || echo "unknown")
 (
-  while true; do
-    UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
-    CHROMIUM_OK=$(pgrep -f 'chromium.*hvault' > /dev/null 2>&1 && echo true || echo false)
-    TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
-        "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
-        2>/dev/null || echo "unknown")
-    curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
-         -H "Content-Type: application/json" \
-         -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v5\"}" \
-         > /dev/null 2>&1 || true
-    sleep 60
-  done
+    while true; do
+        UPTIME=$(uptime -p 2>/dev/null || uptime | sed 's/.*up //' | cut -d, -f1)
+        CHROMIUM_OK=$(pgrep -f 'chromium' > /dev/null 2>&1 && echo true || echo false)
+        TS_STATUS=$(tailscale status --json 2>/dev/null | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print('connected' if d.get('BackendState')=='Running' else 'disconnected')" \
+            2>/dev/null || echo "unknown")
+        curl -sf --max-time 5 -X POST "${HEALTH_URL%/health}/satellite/heartbeat" \
+             -H "Content-Type: application/json" \
+             -d "{\"ip\":\"$OWN_IP\",\"ts_ip\":\"$OWN_TS_IP\",\"uptime\":\"$UPTIME\",\"chromium_ok\":$CHROMIUM_OK,\"tailscale\":\"$TS_STATUS\",\"version\":\"v6\"}" \
+             > /dev/null 2>&1 || true
+        sleep 60
+    done
 ) &
 echo $! > "$HEARTBEAT_PID_FILE"
-log "Heartbeat loop started (PID $!) — pinging main Pi every 60 s"
+log "Heartbeat loop started (PID $!)"
 
 wait
 LAUNCH
@@ -923,48 +730,29 @@ chmod +x "$LAUNCH_SCRIPT"
 chown -R "$CURRENT_USER:$CURRENT_USER" "$HOME_DIR/.hanryx" "$LAUNCH_SCRIPT"
 ok "Launcher written → $LAUNCH_SCRIPT"
 
-# ── 9. XDG autostart (Wayland / GNOME / modern Pi Bookworm) ────────────────
-info "Creating XDG autostart entry…"
-mkdir -p "$HOME_DIR/.config/autostart"
-cat > "$HOME_DIR/.config/autostart/hanryx-dual-kiosk.desktop" << EOF
-[Desktop Entry]
-Type=Application
-Name=HanryxVault Dual Monitor
-Comment=Customer kiosk + Staff admin — auto-launched at desktop login
-Exec=/bin/bash -c 'sleep 8 && $LAUNCH_SCRIPT'
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-EOF
-chown -R "$CURRENT_USER:$CURRENT_USER" "$HOME_DIR/.config/autostart"
-ok "XDG autostart entry created"
-
-# ── 10. labwc autostart (Pi 5 Bookworm Wayland window manager) ───────────────
-info "Configuring labwc autostart (Pi 5 Wayland)…"
+# ── 9. Autostart — labwc only (single entry, no race) ───────────────────────
+# Pi 5 Bookworm uses labwc (Wayland). Multiple autostart paths cause race
+# conditions where two launchers fight for the SingletonLock and both die.
+# We register ONLY in labwc autostart and explicitly REMOVE the XDG and
+# LXDE entries that previous setup runs may have left behind.
+info "Configuring labwc autostart (single entry)…"
 LABWC_DIR="$HOME_DIR/.config/labwc"
 mkdir -p "$LABWC_DIR"
 LABWC_AUTO="$LABWC_DIR/autostart"
 grep -v "hanryx" "$LABWC_AUTO" 2>/dev/null > /tmp/labwc_auto.tmp || true
 cat /tmp/labwc_auto.tmp > "$LABWC_AUTO" 2>/dev/null || true
-echo "sleep 8 && $LAUNCH_SCRIPT &" >> "$LABWC_AUTO"
+echo "sleep 5 && $LAUNCH_SCRIPT &" >> "$LABWC_AUTO"
 chown -R "$CURRENT_USER:$CURRENT_USER" "$LABWC_DIR"
-ok "labwc autostart configured"
+ok "labwc autostart configured → $LABWC_AUTO"
 
-# ── 11. LXDE autostart (X11 / older Raspberry Pi OS fallback) ───────────────
-info "Configuring LXDE autostart (X11 fallback)…"
-mkdir -p "$HOME_DIR/.config/lxsession/LXDE-pi"
+info "Removing legacy XDG/LXDE autostart entries (avoid races)…"
+rm -f "$HOME_DIR/.config/autostart/hanryx-dual-kiosk.desktop" 2>/dev/null || true
 LXDE_AUTO="$HOME_DIR/.config/lxsession/LXDE-pi/autostart"
-grep -v "hanryx\|chromium.*kiosk\|unclutter\|xset.*dpms\|xset.*s off" \
-    "$LXDE_AUTO" 2>/dev/null > /tmp/lxde_auto.tmp || true
-cat /tmp/lxde_auto.tmp > "$LXDE_AUTO" 2>/dev/null || true
-cat >> "$LXDE_AUTO" << EOF
-@xset s off
-@xset -dpms
-@xset s noblank
-@sleep 8 && $LAUNCH_SCRIPT
-EOF
-chown "$CURRENT_USER:$CURRENT_USER" "$LXDE_AUTO"
-ok "LXDE autostart configured"
+if [ -f "$LXDE_AUTO" ]; then
+    grep -v "hanryx" "$LXDE_AUTO" > /tmp/lxde_auto.tmp 2>/dev/null || true
+    cat /tmp/lxde_auto.tmp > "$LXDE_AUTO" 2>/dev/null || true
+fi
+ok "Legacy autostart entries removed"
 
 # ── 12. Create log file with correct ownership ───────────────────────────────
 touch "$LOG_FILE"
