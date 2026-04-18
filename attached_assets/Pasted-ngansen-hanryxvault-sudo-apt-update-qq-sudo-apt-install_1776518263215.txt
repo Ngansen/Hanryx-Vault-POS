@@ -1,0 +1,62 @@
+ngansen@hanryxvault:~ $ sudo apt update -qq && sudo apt install -y xwayland 2>&1 | tail -3; echo '---'; which Xwayland; echo '---PATCH---'; sudo python3 -c "
+p='/home/ngansen/.hanryx-dual-monitor.sh'
+s=open(p).read()
+inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+if ! pgrep -x Xwayland >/dev/null 2>&1; then
+    log \"Starting Xwayland on \$DISPLAY\"
+    Xwayland \"\$DISPLAY\" >/dev/null 2>&1 &
+    sleep 3
+fi
+'''
+if 'Ensure Xwayland is running' not in s:
+    s=s.replace('log \"DISPLAY=','\n'+inject+'\nlog \"DISPLAY=',1)
+    open(p,'w').write(s); print('PATCHED')
+else: print('ALREADY PATCHED')
+"; echo '---VERIFY---'; grep -n -B1 -A4 "Ensure Xwayland" ~/.hanryx-dual-monitor.sh; sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null; sudo pkill -9 chromium 2>/dev/null; sudo rebootsudo apt update -qq && sudo apt install -y xwayland 2>&1 | tail -3; echo '---'; which Xwayland; echo '---PATCH---'; sudo python3 -c "
+p='/home/ngansen/.hanryx-dual-monitor.sh'
+s=open(p).read()
+inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+/dev/null; sudo reboothanryx-dual-monitor 2>/dev/null; sudo pkill -9 chromium 2>
+[sudo] password for ngansen:
+All packages are up to date.
+xwayland set to manually installed.
+Summary:
+  Upgrading: 0, Installing: 0, Removing: 0, Not Upgrading: 0
+---
+/usr/bin/Xwayland
+---PATCH---
+PATCHED
+---VERIFY---
+234-
+235:# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+236-if ! pgrep -x Xwayland >/dev/null 2>&1; then
+237-    log "Starting Xwayland on $DISPLAY"
+238-    Xwayland "$DISPLAY" >/dev/null 2>&1 &
+239-    sleep 3
+Killed
+sudo: rebootsudo: command not found
+---
+/usr/bin/Xwayland
+---PATCH---
+ALREADY PATCHED
+---VERIFY---
+234-
+235:# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+236-if ! pgrep -x Xwayland >/dev/null 2>&1; then
+237-    log "Starting Xwayland on $DISPLAY"
+238-    Xwayland "$DISPLAY" >/dev/null 2>&1 &
+239-    sleep 3
+Killed
+sudo: rebootsudo: command not found
+---
+/usr/bin/Xwayland
+---PATCH---
+ALREADY PATCHED
+---VERIFY---
+234-
+235:# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+236-if ! pgrep -x Xwayland >/dev/null 2>&1; then
+237-    log "Starting Xwayland on $DISPLAY"
+238-    Xwayland "$DISPLAY" >/dev/null 2>&1 &
+239-    sleep 3
+Killed
