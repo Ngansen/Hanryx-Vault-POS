@@ -1,0 +1,149 @@
+C:\Users\USER>ssh -t ngansen@192.168.86.22 "sudo -S ls /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>&1"
+ngansen@192.168.86.22's password:
+[sudo] password for ngansen:
+/etc/nginx/conf.d/:
+
+/etc/nginx/sites-enabled/:
+hanryxvault-proxy
+Connection to 192.168.86.22 closed.
+
+C:\Users\USER>ssh -t ngansen@192.168.86.22 "pkill -9 -f chromium ; echo killed"
+ngansen@192.168.86.22's password:
+Connection to 192.168.86.22 closed.
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo === && curl -sS -m 5 -o /dev/null -w 'main_health=%{http_code}\n' http://localhost:8080/health"
+ngansen@192.168.86.36's password:
+NAMES                   STATUS
+pi-setup-pos-1          Up 31 minutes (unhealthy)
+pi-setup-storefront-1   Up 2 hours (unhealthy)
+pi-setup-pgbouncer-1    Up 2 hours (healthy)
+pi-setup-redis-1        Up 2 hours (healthy)
+pi-setup-db-1           Up 2 hours (healthy)
+===
+curl: (28) Operation timed out afmain_health=000
+ter 5002 milliseconds with 0 bytes received
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' pi-setup-pos-1 ; echo === ; docker exec pi-setup-pos-1 sh -c 'ps -ef | head -20'"
+ngansen@192.168.86.36's password:
+NAME             CPU %     MEM USAGE / LIMIT
+pi-setup-pos-1   0.05%     0B / 0B
+===
+sh: 1: ps: not found
+
+C:\Users\USER>C:\Users\USER>ssh ngansen@192.168.86.36 "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' pi-setup-pos-1 ; echo === ; docker exec pi-setup-pos-1 sh -c 'ps -ef | head -20'"
+'C:\Users\USER' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>ngansen@192.168.86.36's password:
+'ngansen@192.168.86.36's' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>NAME             CPU %     MEM USAGE / LIMIT
+'NAME' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>pi-setup-pos-1   0.05%     0B / 0B
+'pi-setup-pos-1' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>===
+C:\Users\USER>sh: 1: ps: not found
+'sh:' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\USER>
+C:\Users\USER>
+C:\Users\USER>
+C:\Users\USER>
+C:\Users\USER>
+C:\Users\USER>
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' pi-setup-pos-1 ; echo === ; docker exec pi-setup-pos-1 sh -c 'ps -ef | head -20'"
+ngansen@192.168.86.36's password:
+NAME             CPU %     MEM USAGE / LIMIT
+pi-setup-pos-1   0.05%     0B / 0B
+===
+sh: 1: ps: not found
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs --tail=100 pi-setup-pos-1 2>&1 | tail -60 ; echo === ; docker exec pi-setup-pos-1 sh -c 'ls /proc/[0-9]*/comm 2>/dev/null | head -20 | xargs -I {} sh -c \"echo -n {}: ; cat {}\"'"
+ngansen@192.168.86.36's password:
+192.168.86.250 - - [18/Apr/2026:19:03:41 +0000] "GET /static/brand-pulse.jpeg HTTP/1.1" 304 0 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:19:03:41 +0000] "GET /static/logo.png HTTP/1.1" 304 0 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:19:03:41 +0000] "GET /favicon.ico HTTP/1.1" 404 322 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:19:03:42 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:19:03:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-18T19:03:46","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [17/58] fetching 'Paldean Wooper' …"}
+{"ts":"2026-04-18T19:03:46","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [17/58] done for 'Paldean Wooper'"}
+192.168.86.22 - - [18/Apr/2026:19:03:47 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:19:03:51 +0000] "GET /health HTTP/1.1" 200 235 "http://192.168.86.36:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-18T19:03:51","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [18/58] fetching 'Flying Pikachu V' …"}
+{"ts":"2026-04-18T19:03:51","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [18/58] done for 'Flying Pikachu V'"}
+192.168.86.22 - - [18/Apr/2026:19:03:52 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-18T19:03:56","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [19/58] fetching 'Foongus' …"}
+{"ts":"2026-04-18T19:03:56","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [19/58] done for 'Foongus'"}
+192.168.86.250 - - [18/Apr/2026:19:03:57 +0000] "GET /kiosk/stream HTTP/1.1" 200 321 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:19:03:57 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-18T19:04:01","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [20/58] fetching 'Blaziken' …"}
+{"ts":"2026-04-18T19:04:01","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [20/58] done for 'Blaziken'"}
+{"ts":"2026-04-18T19:04:06","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [21/58] fetching 'Lechonk' …"}
+{"ts":"2026-04-18T19:04:06","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [21/58] done for 'Lechonk'"}
+192.168.86.22 - - [18/Apr/2026:19:04:06 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+{"ts":"2026-04-18T19:04:11","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [22/58] fetching 'Foongus' …"}
+{"ts":"2026-04-18T19:04:11","level":"INFO","logger":"hanryxvault","msg":"[lang-prewarm] [22/58] done for 'Foongus'"}
+192.168.86.22 - - [18/Apr/2026:19:04:11 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+[2026-04-18 19:04:12 +0000] [15] [WARNING] Worker graceful timeout (pid:15)
+192.168.86.22 - - [18/Apr/2026:19:04:13 +0000] "GET /kiosk/stream HTTP/1.1" 200 315 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:19:04:13 +0000] "GET /kiosk/stream HTTP/1.1" 200 315 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:19:04:13 +0000] "GET /kiosk/stream HTTP/1.1" 200 315 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:19:04:13 +0000] "GET /kiosk/stream HTTP/1.1" 200 318 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:19:04:13 +0000] "GET /kiosk/stream HTTP/1.1" 200 315 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+[2026-04-18 19:04:14 +0000] [15] [INFO] Worker exiting (pid: 15)
+[2026-04-18 19:04:14 +0000] [380] [INFO] Booting worker with pid: 380
+[2026-04-18 19:04:14 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)'].
+  monkey.patch_all()
+[2026-04-18 19:09:15 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:380)
+[2026-04-18 19:09:16 +0000] [8] [ERROR] Worker (pid:380) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 19:09:16 +0000] [488] [INFO] Booting worker with pid: 488
+[2026-04-18 19:09:16 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)'].
+  monkey.patch_all()
+192.168.86.22 - - [18/Apr/2026:19:09:16 +0000] "POST /satellite/heartbeat HTTP/1.1" 200 12 "-" "curl/8.14.1"
+[2026-04-18 19:14:17 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:488)
+[2026-04-18 19:14:18 +0000] [8] [ERROR] Worker (pid:488) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 19:14:18 +0000] [595] [INFO] Booting worker with pid: 595
+[2026-04-18 19:14:18 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)'].
+  monkey.patch_all()
+[2026-04-18 19:19:19 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:595)
+[2026-04-18 19:19:20 +0000] [8] [ERROR] Worker (pid:595) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 19:19:20 +0000] [702] [INFO] Booting worker with pid: 702
+[2026-04-18 19:19:20 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)'].
+  monkey.patch_all()
+[2026-04-18 19:24:21 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:702)
+[2026-04-18 19:24:22 +0000] [8] [ERROR] Worker (pid:702) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 19:24:22 +0000] [809] [INFO] Booting worker with pid: 809
+[2026-04-18 19:24:22 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)'].
+  monkey.patch_all()
+===
+/proc/1/comm:su
+/proc/372/comm:curl
+/proc/379/comm:curl
+/proc/389/comm:curl
+/proc/396/comm:curl
+/proc/403/comm:curl
+/proc/410/comm:curl
+/proc/417/comm:curl
+/proc/424/comm:curl
+/proc/431/comm:curl
+/proc/438/comm:curl
+/proc/445/comm:curl
+/proc/452/comm:curl
+/proc/459/comm:curl
+/proc/466/comm:curl
+/proc/473/comm:curl
+/proc/480/comm:curl
+/proc/487/comm:curl
+/proc/497/comm:curl
+/proc/504/comm:curl

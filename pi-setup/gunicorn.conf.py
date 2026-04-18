@@ -41,6 +41,7 @@ def on_starting(server):
 
 def post_fork(server, worker):
     """Start background threads after fork."""
+    import os
     # Only start background threads in worker 1 to avoid duplication
     if worker.age == 1:
         try:
@@ -51,10 +52,19 @@ def post_fork(server, worker):
                 _prewarm_all_pricing_bg,
                 _prewarm_lang_all_bg,
             )
-            threading.Thread(target=sync_inventory_from_cloud,  daemon=True, name="cloud-sync").start()
-            threading.Thread(target=_warmup_smart_scanner,      daemon=True, name="smart-scan-warm").start()
-            threading.Thread(target=_run_low_stock_checker,     daemon=True, name="low-stock").start()
-            threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
-            threading.Thread(target=_prewarm_lang_all_bg,       daemon=True, name="lang-prewarm").start()
+            # Each thread can be disabled independently via env var so we can
+            # kill the ones that block gevent's hub and cause WORKER TIMEOUT.
+            # Set DISABLE_BG_<NAME>=1 in the pos service env to turn one off.
+            def _maybe(name, fn, thread_name):
+                if os.environ.get(f"DISABLE_BG_{name}") == "1":
+                    server.log.info("[bg] %s disabled via env", thread_name)
+                    return
+                threading.Thread(target=fn, daemon=True, name=thread_name).start()
+
+            _maybe("CLOUD_SYNC",      sync_inventory_from_cloud,  "cloud-sync")
+            _maybe("SMART_SCAN_WARM", _warmup_smart_scanner,      "smart-scan-warm")
+            _maybe("LOW_STOCK",       _run_low_stock_checker,     "low-stock")
+            _maybe("PRICING_PREWARM", _prewarm_all_pricing_bg,    "pricing-prewarm")
+            _maybe("LANG_PREWARM",    _prewarm_lang_all_bg,       "lang-prewarm")
         except Exception as _e:
             server.log.warning("post_fork startup thread error: %s", _e)
