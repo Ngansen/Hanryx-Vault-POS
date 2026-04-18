@@ -1,0 +1,75 @@
+
+ngansen@hanryxvault:~ $ echo '---LAUNCHER PROCS---'; pgrep -af "hanryx-dual-monitor"; LAUNCHER_PID=$(pgrep -f "hanryx-dual-monitor.sh" | head -1); echo "---LAUNCHER ENV (PID $LAUNCHER_PID)---"; sudo cat /proc/$LAUNCHER_PID/environ 2>/dev/null | tr '\0' '\n' | grep -E "AUTH|DISPLAY|WAYLAND|XDG" | sort; echo '---WAYLAND SOCKETS---'; ls -la /run/user/1000/wayland-* 2>/dev/null; echo '---SCRIPT KEY LINES---'; grep -nE "ozone|CHROMIUM_BIN|--app=|disable-gpu|--no-process|WAYLAND_DISPLAY|export " ~/.hanryx-dual-monitor.sh | head -40; echo '---LIGHTDM LAST LOG (autologin attempt)---'; sudo tail -40 /var/log/lightdm/lightdm.log | grep -iE "auto|session|ngansen|fail|error" | head -20
+---LAUNCHER PROCS---
+1489 bash /home/ngansen/.hanryx-dual-monitor.sh
+2359 bash /home/ngansen/.hanryx-dual-monitor.sh
+2427 bash /home/ngansen/.hanryx-dual-monitor.sh
+2495 bash /home/ngansen/.hanryx-dual-monitor.sh
+---LAUNCHER ENV (PID 1489)---
+[sudo] password for ngansen:
+Sorry, try again.
+[sudo] password for ngansen:
+DISPLAY=:0
+QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+SSH_AUTH_SOCK=/tmp/ssh-CX59mm8THzYv/agent.1334
+WAYLAND_DISPLAY=wayland-0
+WLR_XWAYLAND=/usr/bin/xwayland-xauth
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_CURRENT_DESKTOP=labwc:wlroots
+XDG_DATA_DIRS=~/.local/share:/usr/local/share:/usr/share/raspi-ui-overrides:/usr/share:/usr/share/gdm:/var/lib/menu-xdg
+XDG_GREETER_DATA_DIR=/var/lib/lightdm/data/ngansen
+XDG_MENU_PREFIX=rpd-
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SEAT_PATH=/org/freedesktop/DisplayManager/Seat0
+XDG_SEAT=seat0
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=rpd-labwc
+XDG_SESSION_ID=2
+XDG_SESSION_PATH=/org/freedesktop/DisplayManager/Session0
+XDG_SESSION_TYPE=wayland
+XDG_VTNR=7
+---WAYLAND SOCKETS---
+srwxrwxr-x 1 ngansen ngansen 0 Apr 18 14:05 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 Apr 18 14:04 /run/user/1000/wayland-0.lock
+---SCRIPT KEY LINES---
+28:log "Initial env: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}  DISPLAY=${DISPLAY:-unset}"
+35:export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+39:    WAYLAND_DISPLAY="$name" timeout 3 wlr-randr >/dev/null 2>&1
+43:    # Prefer the WAYLAND_DISPLAY inherited from labwc autostart if it works
+44:    if [ -n "${WAYLAND_DISPLAY:-}" ] && probe_wayland "$WAYLAND_DISPLAY"; then
+45:        echo "$WAYLAND_DISPLAY"
+80:export WAYLAND_DISPLAY="$LIVE_WD"
+81:log "Live Wayland compositor on $WAYLAND_DISPLAY (XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
+227:if   [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
+228:elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
+229:elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+230:else                                         CHROMIUM_BIN=chromium
+232:log "Chromium binary: $CHROMIUM_BIN"
+233:export DISPLAY="${DISPLAY:-:0}"
+260:    --no-process-singleton
+261:    --ozone-platform=wayland
+287:    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+299:            mode="fallback(--disable-gpu)"
+307:        "$CHROMIUM_BIN" \
+329:                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+---LIGHTDM LAST LOG (autologin attempt)---
+[+8.23s] DEBUG: Session pid=2217: Running command /usr/bin/labwc -C /etc/xdg/labwc-greeter/
+[+8.23s] DEBUG: Session pid=2217: Logging to /var/log/lightdm/seat0-greeter.log
+[+8.51s] DEBUG: Activating login1 session c1
+[+8.52s] DEBUG: Seat seat0 changes active session to c1
+[+8.52s] DEBUG: Session c1 is already active
+[+9.38s] DEBUG: Greeter start authentication for ngansen
+[+9.38s] DEBUG: Session pid=2334: Started with service 'lightdm', username 'ngansen'
+[+9.43s] DEBUG: Session pid=2334: Got 1 message(s) from PAM
+[+67.43s] DEBUG: Session pid=2334: Authentication complete with return value 0: Success
+[+67.43s] DEBUG: Authenticate result for user ngansen: Success
+[+67.43s] DEBUG: User ngansen authorized
+[+67.44s] DEBUG: Greeter requests session rpd-labwc
+[+67.44s] DEBUG: Seat seat0: Display server ready, running session
+[+67.44s] DEBUG: Registering session with bus path /org/freedesktop/DisplayManager/Session1
+[+67.44s] DEBUG: Session pid=2334: Running command /etc/X11/Xsession /usr/bin/labwc-pi
+[+67.44s] DEBUG: Creating shared data directory /var/lib/lightdm/data/ngansen
+[+67.44s] DEBUG: Session pid=2334: Logging to .xsession-errors
+[+67.57s] DEBUG: Terminating login1 session c1
+[+67.59s] DEBUG: Session pid=2217: Sending SIGTERM
+[+67.59s] DEBUG: Activating login1 session 5
