@@ -706,20 +706,18 @@ COMMON_FLAGS=(
     --disable-features=TranslateUI
     --check-for-update-interval=31536000
     --autoplay-policy=no-user-gesture-required
-    # GPU acceleration — critical for smooth dual-monitor + YouTube
-    --enable-gpu-rasterization
-    --enable-zero-copy
-    --ignore-gpu-blocklist
-    --use-gl=egl
-    --enable-accelerated-video-decode
-    --enable-features=VaapiVideoDecoder,VaapiVideoEncoder,CanvasOopRasterization
+    # Pi 5 GL driver doesn't support GLES3 via XWayland — disable GPU process
+    # and fall back to Chromium's built-in software renderer (SwiftShader).
+    # This is stable and more than fast enough for kiosk/admin pages.
+    --disable-gpu
+    --disable-software-rasterizer=false
+    --use-gl=swiftshader
     # Memory & rendering optimisation
     --disable-backing-store-limit
     --renderer-process-limit=4
     --disk-cache-size=104857600
     --media-cache-size=52428800
     --disable-dev-shm-usage
-    --disable-gpu-vsync
     # Disable unnecessary Chromium services
     --disable-background-networking
     --disable-default-apps
@@ -740,10 +738,16 @@ COMMON_FLAGS=(
     --ozone-platform=x11
 )
 
-# ── Helper: find chromium binary ─────────────────────────────────────────────
-CHROMIUM_BIN=$(command -v chromium-browser 2>/dev/null \
-               || command -v chromium 2>/dev/null \
-               || echo "chromium-browser")
+# ── Find chromium binary — prefer real binary over Pi OS wrapper ──────────────
+# /usr/bin/chromium on Pi OS is a shell script wrapper that adds flags
+# (e.g. --no-decommit-pooled-pages) not supported by the current Chromium build.
+# Use the real binary at /usr/lib/chromium/chromium directly.
+if   [ -x /usr/lib/chromium/chromium ];   then CHROMIUM_BIN=/usr/lib/chromium/chromium
+elif [ -x /usr/bin/chromium ];            then CHROMIUM_BIN=/usr/bin/chromium
+elif [ -x /usr/bin/chromium-browser ];    then CHROMIUM_BIN=/usr/bin/chromium-browser
+else                                           CHROMIUM_BIN=chromium
+fi
+log "Chromium binary: $CHROMIUM_BIN"
 
 # ── Launch function with watchdog ────────────────────────────────────────────
 # On first launch: open the splash page (which auto-redirects to real URL).
