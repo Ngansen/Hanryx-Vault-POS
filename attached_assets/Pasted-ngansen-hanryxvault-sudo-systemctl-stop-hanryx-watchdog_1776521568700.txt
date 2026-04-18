@@ -1,0 +1,94 @@
+ngansen@hanryxvault:~ $ sudo systemctl stop hanryx-watchdog.service 2>/dev/null; sudo pkill -9 -f hanryx-dual-monitor; sudo pkill -9 chromium; rm -f /tmp/hanryx-kiosk-launcher.lock; sleep 2; echo '---SCRIPT CHROMIUM BLOCK 245-330---'; sed -n '245,330p' ~/.hanryx-dual-monitor.sh; echo '---MANUAL CHROMIUM TEST---'; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority; ls -la /run/user/1000/wayland-0; rm -rf /tmp/testchrome; timeout 6 chromium-browser --ozone-platform=wayland --enable-features=UseOzonePlatform --user-data-dir=/tmp/testchrome --no-first-run --no-sandbox --window-size=800,400 --enable-logging=stderr --app='data:text/html,<h1 style="font-size:80px">WAYLAND OK</h1>' 2>&1 | head -50; echo "---EXITED: $?---"
+Killed
+---SCRIPT CHROMIUM BLOCK 245-330---
+    --kiosk
+    --no-first-run
+    --noerrdialogs
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --disable-translate
+    --disable-features=Translate,TranslateUI
+    --check-for-update-interval=31536000
+    --autoplay-policy=no-user-gesture-required
+    --disable-background-networking
+    --disable-default-apps
+    --disable-extensions
+    --disable-sync
+    --disable-breakpad
+    --disable-component-update
+    --no-process-singleton
+    --ozone-platform=wayland
+    --enable-features=UseOzonePlatform
+    --use-gl=angle
+    --use-angle=swiftshader
+    --enable-features=VaapiVideoDecoder
+    --disable-dev-shm-usage
+    --allow-file-access-from-files
+    --disable-web-security
+)
+
+# ── Kill any stale chromium / locks ─────────────────────────────────────────
+pkill -f 'chromium' 2>/dev/null || true
+sleep 1
+rm -f "$PROFILE_ADMIN"/Singleton* "$PROFILE_KIOSK"/Singleton* 2>/dev/null
+
+# ── Launch function with watchdog ───────────────────────────────────────────
+launch_window() {
+    local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
+    local first_run=1 quick_crashes=0 using_fallback=0
+    local FALLBACK_FLAGS=()
+    for f in "${COMMON_FLAGS[@]}"; do
+        case "$f" in
+            --use-gl=angle|--use-angle=swiftshader|--enable-features=VaapiVideoDecoder) : ;;
+            *) FALLBACK_FLAGS+=("$f") ;;
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
+    while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash}"
+            first_run=0
+        else
+            START_URL="$url"
+        fi
+        if [ "$using_fallback" -eq 1 ]; then
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
+        else
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
+        fi
+        log "[$name] → $START_URL  ($mode)"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        "$CHROMIUM_BIN" \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            --app-id="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            quick_crashes=0
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "[$name] child process ended — restarting in 5s"
+        else
+            if [ "$ELAPSED" -lt 4 ] && [ "$using_fallback" -eq 0 ]; then
+                quick_crashes=$(( quick_crashes + 1 ))
+                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes)"
+                if [ "$quick_crashes" -ge 2 ]; then
+                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+                    using_fallback=1
+---MANUAL CHROMIUM TEST---
+srwxrwxr-x 1 ngansen ngansen 0 Apr 18 14:05 /run/user/1000/wayland-0
+timeout: failed to run command ‘chromium-browser’: No such file or directory
+---EXITED: 0---
+ngansen@hanryxvault:~ $
