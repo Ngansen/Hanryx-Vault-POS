@@ -419,27 +419,56 @@ log "Initial env: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}  XDG_RUNTIME_DIR=${X
 log "============================================"
 
 # ── Wayland environment (always native Wayland on Pi 5 labwc) ───────────────
+# A wayland-N file existing is NOT enough — stale sockets from prior compositor
+# runs persist after crash/reboot. We must actively probe each socket with a
+# real client (wlr-randr) and use only the one that the live compositor accepts.
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-# Auto-detect the active Wayland socket (could be wayland-0 or wayland-1)
-if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+
+probe_wayland() {
+    local name="$1"
+    WAYLAND_DISPLAY="$name" timeout 3 wlr-randr >/dev/null 2>&1
+}
+
+find_live_wayland() {
+    # Prefer the WAYLAND_DISPLAY inherited from labwc autostart if it works
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && probe_wayland "$WAYLAND_DISPLAY"; then
+        echo "$WAYLAND_DISPLAY"
+        return 0
+    fi
+    # Otherwise try every wayland-* socket in XDG_RUNTIME_DIR
     for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
         [ -S "$sock" ] || continue
         case "$sock" in *.lock) continue ;; esac
-        WAYLAND_DISPLAY="$(basename "$sock")"
-        break
+        local n="$(basename "$sock")"
+        if probe_wayland "$n"; then
+            echo "$n"
+            return 0
+        fi
     done
-fi
-export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-log "Wayland: WAYLAND_DISPLAY=$WAYLAND_DISPLAY  XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+    return 1
+}
 
-if [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
-    log "FATAL: Wayland socket $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY does not exist."
+LIVE_WD=""
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if LIVE_WD="$(find_live_wayland)" && [ -n "$LIVE_WD" ]; then
+        break
+    fi
+    log "No live Wayland compositor yet (attempt $attempt) — waiting 2s…"
+    log "  sockets present: $(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | tr '\n' ' ')"
+    sleep 2
+    LIVE_WD=""
+done
+
+if [ -z "$LIVE_WD" ]; then
+    log "FATAL: no Wayland compositor responded after 30s."
     log "       Available sockets: $(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | tr '\n' ' ')"
-    log "       This launcher must be started from inside a labwc session."
+    log "       The launcher must run inside a labwc session, not from a system service."
     sleep 30
     exit 1
 fi
-log "Wayland socket OK"
+
+export WAYLAND_DISPLAY="$LIVE_WD"
+log "Live Wayland compositor on $WAYLAND_DISPLAY (XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
 
 # ── Load config ──────────────────────────────────────────────────────────────
 CONFIG_FILE="$HOME/.hanryx/satellite.conf"
@@ -784,10 +813,8 @@ ExecStart=/bin/bash -c '\\
     HURL="\${HEALTH_URL:-http://hanryxvault:8080/health}"; \\
     if curl -sf --max-time 3 "\$HURL" > /dev/null 2>&1; then \\
       if [ "\$FAIL" -ge 3 ]; then \\
-        echo "[watchdog] Server back online — restarting Chromium" | tee -a "\$LOG"; \\
-        pkill -x chromium-browser 2>/dev/null; pkill -x chromium 2>/dev/null; \\
-        sleep 3; \\
-        bash $LAUNCH_SCRIPT & \\
+        echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "\$LOG"; \\
+        pkill -f chromium 2>/dev/null; \\
       fi; \\
       FAIL=0; \\
     else \\

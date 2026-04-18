@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~ $ ssh ngansen@192.168.86.22 "tail -80 /var/log/hanryx-kiosk.log; echo '---PROCS---'; ps -ef | grep -E 'chromium|hanryx' | grep -v grep"
+ngansen@192.168.86.22's password:
+[2167:2167:0418/124157.395234:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2167:2167:0418/124157.395309:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2167:2167:0418/124157.395328:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:41:58] [Admin] crashed in 2s (count=1)
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[12:41:59] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[12:41:59] Both windows launched — Tailscale tunnel active
+[12:41:59] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)
+[2358:2358:0418/124200.121519:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2358:2358:0418/124200.121602:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2358:2358:0418/124200.121622:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:00] Heartbeat loop started (PID 2394)
+[12:42:01] [Kiosk] crashed in 1s (count=1)
+[12:42:03] [Admin] → http://100.125.5.34:8080/admin  (ANGLE swiftshader)
+[2427:2427:0418/124203.579964:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2427:2427:0418/124203.580032:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2427:2427:0418/124203.580047:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:04] [Admin] crashed in 0s (count=2)
+[12:42:04] [Admin] ANGLE unstable — switching to --disable-gpu fallback
+[12:42:06] [Kiosk] → http://100.125.5.34:8080/kiosk  (ANGLE swiftshader)
+[2475:2475:0418/124206.280412:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2475:2475:0418/124206.280490:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2475:2475:0418/124206.280506:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:07] [Kiosk] crashed in 0s (count=2)
+[12:42:07] [Kiosk] ANGLE unstable — switching to --disable-gpu fallback
+[12:42:09] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2517:2517:0418/124209.731117:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2517:2517:0418/124209.731188:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2517:2517:0418/124209.731204:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:10] [Admin] exited code=1 after 0s — restarting in 5s
+[12:42:12] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[2562:2562:0418/124212.434530:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2562:2562:0418/124212.434611:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2562:2562:0418/124212.434630:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:13] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:42:15] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2625:2625:0418/124215.888275:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2625:2625:0418/124215.888350:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2625:2625:0418/124215.888366:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:16] [Admin] exited code=1 after 0s — restarting in 5s
+[12:42:18] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[2669:2669:0418/124218.588020:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2669:2669:0418/124218.588089:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2669:2669:0418/124218.588106:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:19] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:42:21] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2713:2713:0418/124222.046252:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2713:2713:0418/124222.046320:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2713:2713:0418/124222.046336:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:23] [Admin] exited code=1 after 1s — restarting in 5s
+[12:42:24] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[2754:2754:0418/124224.742231:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2754:2754:0418/124224.742310:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2754:2754:0418/124224.742329:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:25] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:42:28] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2800:2800:0418/124228.198977:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2800:2800:0418/124228.199046:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2800:2800:0418/124228.199063:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:29] [Admin] exited code=1 after 0s — restarting in 5s
+[12:42:30] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[2844:2844:0418/124230.897294:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2844:2844:0418/124230.897367:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2844:2844:0418/124230.897385:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:31] [Kiosk] exited code=1 after 0s — restarting in 5s
+[12:42:34] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2888:2888:0418/124234.354345:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2888:2888:0418/124234.354416:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2888:2888:0418/124234.354435:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:35] [Admin] exited code=1 after 0s — restarting in 5s
+[12:42:36] [Kiosk] → http://100.125.5.34:8080/kiosk  (fallback(--disable-gpu))
+[2928:2928:0418/124237.063069:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2928:2928:0418/124237.063140:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2928:2928:0418/124237.063158:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[12:42:38] [Kiosk] exited code=1 after 1s — restarting in 5s
+[12:42:40] [Admin] → http://100.125.5.34:8080/admin  (fallback(--disable-gpu))
+[2971:2971:0418/124240.501303:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2971:2971:0418/124240.501372:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2971:2971:0418/124240.501389:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+---PROCS---
+avahi        710       1  0 12:41 ?        00:00:00 avahi-daemon: running [hanryxvault-2.local]
+ngansen     1482       1  0 12:41 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     2157    1482  0 12:41 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen     2221       1  0 12:41 ?        00:00:00 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — restarting Chromium" | tee -a "$LOG";          pkill -x chromium-browser 2>/dev/null; pkill -x chromium 2>/dev/null;          sleep 3;          bash /home/ngansen/.hanryx-dual-monitor.sh &        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+ngansen     2340    1482  0 12:41 ?        00:00:00 bash /home/ngansen/.hanryx-dual-monitor.sh
