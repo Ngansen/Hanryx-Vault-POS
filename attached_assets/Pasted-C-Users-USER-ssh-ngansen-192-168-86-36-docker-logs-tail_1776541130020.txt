@@ -1,0 +1,39 @@
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker logs --tail=50 pi-setup-pos-1 2>&1 | tail -30 ; echo === ; curl -sS -m 8 -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health"
+ngansen@192.168.86.36's password:
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[enrich] Price refresh scheduler started (every 6h)"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+{"ts":"2026-04-18T19:36:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:36:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+[2026-04-18 19:36:02 +0000] [8] [INFO] DB schema initialised successfully
+[2026-04-18 19:36:02 +0000] [8] [INFO] Listening at: http://0.0.0.0:8080 (8)
+[2026-04-18 19:36:02 +0000] [8] [INFO] Using worker: gevent
+[2026-04-18 19:36:02 +0000] [15] [INFO] Booting worker with pid: 15
+[2026-04-18 19:36:02 +0000] [15] [INFO] [bg] pricing-prewarm disabled via env
+[2026-04-18 19:36:02 +0000] [15] [INFO] [bg] lang-prewarm disabled via env
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 58 products — skipping auto-sync"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 58 cards"}
+{"ts":"2026-04-18T19:36:02","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+[2026-04-18 19:36:02 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)', 'redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)'].
+  monkey.patch_all()
+{"ts":"2026-04-18T19:38:02","level":"INFO","logger":"hanryxvault","msg":"[enrich] Scheduled price refresh started"}
+{"ts":"2026-04-18T19:38:02","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldy264v-54b419' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldy264v-54b419"}
+{"ts":"2026-04-18T19:38:04","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldy24m9-283549' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldy24m9-283549"}
+{"ts":"2026-04-18T19:38:07","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxzhiu-f3433c' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxzhiu-f3433c"}
+{"ts":"2026-04-18T19:38:09","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxzg1v-478e69' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxzg1v-478e69"}
+{"ts":"2026-04-18T19:38:11","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxzcp5-e20685' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxzcp5-e20685"}
+{"ts":"2026-04-18T19:38:14","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxzbsy-d09819' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxzbsy-d09819"}
+{"ts":"2026-04-18T19:38:16","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxzaqs-f7f787' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxzaqs-f7f787"}
+{"ts":"2026-04-18T19:38:18","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mldxmuoj-577e42' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mldxmuoj-577e42"}
+{"ts":"2026-04-18T19:38:20","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mlablzk3-976f6b' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mlablzk3-976f6b"}
+{"ts":"2026-04-18T19:38:22","level":"ERROR","logger":"hanryxvault","msg":"[tcg] fetch 'pkm-mlab501u-a4e8b4' failed: 404 Client Error: Not Found for url: https://api.pokemontcg.io/v2/cards/pkm-mlab501u-a4e8b4"}
+===
+
+
+
+
+
+

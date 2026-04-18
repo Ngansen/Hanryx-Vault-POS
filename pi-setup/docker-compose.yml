@@ -98,6 +98,7 @@ services:
       # WORKER TIMEOUT every 5 minutes (set to "0" or remove to re-enable).
       DISABLE_BG_PRICING_PREWARM: "1"
       DISABLE_BG_LANG_PREWARM:    "1"
+      DISABLE_BG_PRICE_REFRESH:   "1"
 
       # Storefront cloud sync — remove if you don't run the storefront service
       CLOUD_INVENTORY_SOURCES: ${CLOUD_INVENTORY_SOURCES:-}

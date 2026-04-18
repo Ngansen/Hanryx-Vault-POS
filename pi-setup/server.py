@@ -16631,8 +16631,12 @@ def _start_price_refresh_scheduler():
     log.info("[enrich] Price refresh scheduler started (every %dh)", _PRICE_REFRESH_INTERVAL // 3600)
 
 
-# Start the scheduler on import
-_start_price_refresh_scheduler()
+# Start the scheduler on import — can be disabled via env to keep the gevent
+# hub from being blocked by sync TCG API calls.
+if os.environ.get("DISABLE_BG_PRICE_REFRESH") == "1":
+    log.info("[bg] price-refresh scheduler disabled via env")
+else:
+    _start_price_refresh_scheduler()
 
 
 # ── Central Public API: /api/v1/inventory ──────────────────────────────────
