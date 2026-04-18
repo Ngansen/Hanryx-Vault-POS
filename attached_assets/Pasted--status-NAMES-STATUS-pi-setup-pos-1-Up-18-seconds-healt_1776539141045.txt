@@ -1,0 +1,29 @@
+--- status ---
+NAMES            STATUS
+pi-setup-pos-1   Up 18 seconds (healthy)
+health=200
+--- log ---
+192.168.86.250 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.250 - - [18/Apr/2026:18:52:37 +0000] "GET /health HTTP/1.1" 200 234 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:37 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:38 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /health HTTP/1.1" 200 234 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:52:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.250 - - [18/Apr/2026:18:52:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
+192.168.86.22 - - [18/Apr/2026:18:52:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 305 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+172.18.0.1 - - [18/Apr/2026:18:52:42 +0000] "GET /health HTTP/1.1" 200 234 "-" "curl/8.14.1"
+DONE
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>
