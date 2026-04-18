@@ -1,0 +1,162 @@
+C:\Users\USER>ssh -t ngansen@192.168.86.36 "echo c2V0IC1lCgojIDEuIFRoZSBoZWFsaW5nIHNjcmlwdApzdWRvIHRlZSAvdXNyL2xvY2FsL2Jpbi9oYW5yeXgtZG9ja2VyLWhlYWwuc2ggPiAvZGV2L251bGwgPDwgJ1NDUklQVF9FT0YnCiMhL2Jpbi9iYXNoCiMgQXV0by1yZWF0dGFjaCBIYW5yeXhWYXVsdCBjb250YWluZXJzIHRvIHRoZWlyIGNvbXBvc2UgbmV0d29yayBpZiB0aGV5IGdvdCBkZXRhY2hlZC4KTkVUV09SSz0icGktc2V0dXBfZGVmYXVsdCIKQ09OVEFJTkVSUz0icGktc2V0dXAtcG9zLTEgcGktc2V0dXAtc3RvcmVmcm9udC0xIHBpLXNldHVwLXBnYm91bmNlci0xIHBpLXNldHVwLXJlZGlzLTEgcGktc2V0dXAtZGItMSIKCiMgTWFrZSBzdXJlIHRoZSBuZXR3b3JrIGV4aXN0cyAoY29tcG9zZSBjcmVhdGVzIGl0IG9uIGB1cGApCmlmICEgZG9ja2VyIG5ldHdvcmsgaW5zcGVjdCAiJE5FVFdPUksiID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgbG9nZ2VyIC10IGhhbnJ5eC1oZWFsICJOZXR3b3JrICRORVRXT1JLIG1pc3NpbmcsIHJ1bm5pbmcgY29tcG9zZSB1cCIKICAgIGNkIC9ob21lL25nYW5zZW4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cC
+ngansen@192.168.86.36's password:
+c2V0IC1lCgojIDEuIFRoZSBoZWFsaW5nIHNjcmlwdApzdWRvIHRlZSAvdXNyL2xvY2FsL2Jpbi9oYW5yeXgtZG9ja2VyLWhlYWwuc2ggPiAvZGV2L251bGwgPDwgJ1NDUklQVF9FT0YnCiMhL2Jpbi9iYXNoCiMgQXV0by1yZWF0dGFjaCBIYW5yeXhWYXVsdCBjb250YWluZXJzIHRvIHRoZWlyIGNvbXBvc2UgbmV0d29yayBpZiB0aGV5IGdvdCBkZXRhY2hlZC4KTkVUV09SSz0icGktc2V0dXBfZGVmYXVsdCIKQ09OVEFJTkVSUz0icGktc2V0dXAtcG9zLTEgcGktc2V0dXAtc3RvcmVmcm9udC0xIHBpLXNldHVwLXBnYm91bmNlci0xIHBpLXNldHVwLXJlZGlzLTEgcGktc2V0dXAtZGItMSIKCiMgTWFrZSBzdXJlIHRoZSBuZXR3b3JrIGV4aXN0cyAoY29tcG9zZSBjcmVhdGVzIGl0IG9uIGB1cGApCmlmICEgZG9ja2VyIG5ldHdvcmsgaW5zcGVjdCAiJE5FVFdPUksiID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgbG9nZ2VyIC10IGhhbnJ5eC1oZWFsICJOZXR3b3JrICRORVRXT1JLIG1pc3NpbmcsIHJ1bm5pbmcgY29tcG9zZSB1cCIKICAgIGNkIC9ob21lL25nYW5zZW4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cC
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>ssh -t ngansen@192.168.86.36 "echo c2V0IC1lCgojIDEuIFRoZSBoZWFsaW5nIHNjcmlwdApzdWRvIHRlZSAvdXNyL2xvY2FsL2Jpbi9oYW5yeXgtZG9ja2VyLWhlYWwuc2ggPiAvZGV2L251bGwgPDwgJ1NDUklQVF9FT0YnCiMhL2Jpbi9iYXNoCiMgQXV0by1yZWF0dGFjaCBIYW5yeXhWYXVsdCBjb250YWluZXJzIHRvIHRoZWlyIGNvbXBvc2UgbmV0d29yayBpZiB0aGV5IGdvdCBkZXRhY2hlZC4KTkVUV09SSz0icGktc2V0dXBfZGVmYXVsdCIKQ09OVEFJTkVSUz0icGktc2V0dXAtcG9zLTEgcGktc2V0dXAtc3RvcmVmcm9udC0xIHBpLXNldHVwLXBnYm91bmNlci0xIHBpLXNldHVwLXJlZGlzLTEgcGktc2V0dXAtZGItMSIKCiMgTWFrZSBzdXJlIHRoZSBuZXR3b3JrIGV4aXN0cyAoY29tcG9zZSBjcmVhdGVzIGl0IG9uIGB1cGApCmlmICEgZG9ja2VyIG5ldHdvcmsgaW5zcGVjdCAiJE5FVFdPUksiID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgbG9nZ2VyIC10IGhhbnJ5eC1oZWFsICJOZXR3b3JrICRORVRXT1JLIG1pc3NpbmcsIHJ1bm5pbmcgY29tcG9zZSB1cCIKICAgIGNkIC9ob21lL25nYW5zZW4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cCAmJiBkb2NrZXIgY29tcG9zZSB1cCAtZAogICAgc2xlZXAgNQpmaQoKZm9yIGMgaW4gJENPTlRBSU5FUlM7IGRvCiAgICBpZiAhIGRvY2tlciBpbnNwZWN0ICIkYyIgPi9kZXYvbnVsbCAyPiYxOyB0aGVuCiAgICAgICAgY29udGludWUKICAgIGZpCiAgICBhdHRhY2hlZD0kKGRvY2tlciBpbnNwZWN0ICIkYyIgLS1mb3JtYXQgJ3t7cmFuZ2UgJGssJHYgOj0gLk5ldHdvcmtTZXR0aW5ncy5OZXR3b3Jrc319e3ska319IHt7ZW5kfX0nKQogICAgaWYgISBlY2hvICIkYXR0YWNoZWQiIHwgZ3JlcCAtcXcgIiRORVRXT1JLIjsgdGhlbgogICAgICAgIGxvZ2dlciAtdCBoYW5yeXgtaGVhbCAiUmVhdHRhY2hpbmcgJGMgdG8gJE5FVFdPUksgKHdhcyBvbjogJGF0dGFjaGVkKSIKICAgICAgICBkb2NrZXIgbmV0d29yayBjb25uZWN0ICIkTkVUV09SSyIgIiRjIiAyPi9kZXYvbnVsbCB8fCB0cnVlCiAgICAgICAgZG9ja2VyIHJlc3RhcnQgIiRjIgogICAgICAgIGxvZ2dlciAtdCBoYW5yeXgtaGVhbCAiUmVhdHRhY2hlZCBhbmQgcmVzdGFydGVkICRjIgogICAgZmkKZG9uZQpTQ1JJUFRfRU9GCnN1ZG8gY2htb2QgK3ggL3Vzci9sb2NhbC9iaW4vaGFucnl4LWRvY2tlci1oZWFsLnNoCgojIDIuIFRoZSBzZXJ2aWNlIHVuaXQKc3VkbyB0ZWUgL2V0Yy9zeXN0ZW1kL3N5c3RlbS9oYW5yeXgtZG9ja2VyLWhlYWwuc2VydmljZSA+IC9kZXYvbnVsbCA8PCAnU1ZDX0VPRicKW1VuaXRdCkRlc2NyaXB0aW9uPUhhbnJ5eFZhdWx0IGRvY2tlciBuZXR3b3JrIHNlbGYtaGVhbApBZnRlcj1kb2NrZXIuc2VydmljZQpSZXF1aXJlcz1kb2NrZXIuc2VydmljZQoKW1NlcnZpY2VdClR5cGU9b25lc2hvdApFeGVjU3RhcnQ9L3Vzci9sb2NhbC9iaW4vaGFucnl4LWRvY2tlci1oZWFsLnNoClNWQ19FT0YKCiMgMy4gVGhlIHRpbWVyIChldmVyeSBtaW51dGUsIHBsdXMgMzBzIGFmdGVyIGJvb3QpCnN1ZG8gdGVlIC9ldGMvc3lzdGVtZC9zeXN0ZW0vaGFucnl4LWRvY2tlci1oZWFsLnRpbWVyID4gL2Rldi9udWxsIDw8ICdUTVJfRU9GJwpbVW5pdF0KRGVzY3JpcHRpb249UnVuIGhhbnJ5eCBkb2NrZXIgaGVhbCBldmVyeSBtaW51dGUKCltUaW1lcl0KT25Cb290U2VjPTMwcwpPblVuaXRBY3RpdmVTZWM9NjBzClVuaXQ9aGFucnl4LWRvY2tlci1oZWFsLnNlcnZpY2UKCltJbnN0YWxsXQpXYW50ZWRCeT10aW1lcnMudGFyZ2V0ClRNUl9FT0YKCiMgNC4gRW5hYmxlICYgc3RhcnQKc3VkbyBzeXN0ZW1jdGwgZGFlbW9uLXJlbG9hZApzdWRvIHN5c3RlbWN0bCBlbmFibGUgLS1ub3cgaGFucnl4LWRvY2tlci1oZWFsLnRpbWVyCnN1ZG8gc3lzdGVtY3RsIHN0YXJ0IGhhbnJ5eC1kb2NrZXItaGVhbC5zZXJ2aWNlCgojIDUuIFZlcmlmeQplY2hvICItLS0gdGltZXIgc3RhdHVzIC0tLSIKc3VkbyBzeXN0ZW1jdGwgc3RhdHVzIGhhbnJ5eC1kb2NrZXItaGVhbC50aW1lciAtLW5vLXBhZ2VyIHwgaGVhZCAtMTAKZWNobyAiLS0tIGxhc3QgaGVhbCBydW4gLS0tIgpzdWRvIGpvdXJuYWxjdGwgLXUgaGFucnl4LWRvY2tlci1oZWFsLnNlcnZpY2UgLW4gNSAtLW5vLXBhZ2VyCmVjaG8gIi0tLSBzeXNsb2cgdGFnIC0tLSIKc3VkbyBqb3VybmFsY3RsIC10IGhhbnJ5eC1oZWFsIC1uIDEwIC0tbm8tcGFnZXIKZWNobyBET05FCg== | base64 -d | bash"
+ngansen@192.168.86.36's password:
+Created symlink '/etc/systemd/system/timers.target.wants/hanryx-docker-heal.timer' → '/etc/systemd/system/hanryx-docker-heal.timer'.
+--- timer status ---
+● hanryx-docker-heal.timer - Run hanryx docker heal every minute
+     Loaded: loaded (/etc/systemd/system/hanryx-docker-heal.timer; enabled; preset: enabled)
+     Active: active (waiting) since Sat 2026-04-18 18:09:13 GMT; 204ms ago
+ Invocation: 2c0b84bf852a40cb9b930ef72ffecd54
+    Trigger: Sat 2026-04-18 18:10:13 GMT; 59s left
+   Triggers: ● hanryx-docker-heal.service
+
+Apr 18 18:09:13 hanryxvault systemd[1]: Started hanryx-docker-heal.timer - Run hanryx docker heal every minute.
+--- last heal run ---
+Apr 18 18:09:13 hanryxvault systemd[1]: Starting hanryx-docker-heal.service - HanryxVault docker network self-heal...
+Apr 18 18:09:13 hanryxvault systemd[1]: hanryx-docker-heal.service: Deactivated successfully.
+Apr 18 18:09:13 hanryxvault systemd[1]: Finished hanryx-docker-heal.service - HanryxVault docker network self-heal.
+--- syslog tag ---
+-- No entries --
+DONE
+Connection to 192.168.86.36 closed.
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "curl -sS -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health ; sudo /usr/local/bin/hanryx-docker-heal.sh ; sudo journalctl -t hanryx-heal -n 5 --no-pager"
+ngansen@192.168.86.36's password:
+Norwood@0202
+
+C:\Users\USER>ssh -t ngansen@192.168.86.22 "pkill -9 -f chromium ; echo killed"
+ngansen@192.168.86.22's password:
+Connection to 192.168.86.22 closed.
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "docker ps --format 'table {{.Names}}\t{{.Status}}' && echo === && curl -sS -m 5 -o /dev/null -w 'health=%{http_code}\n' http://localhost:8080/health"
+ngansen@192.168.86.36's password:
+NAMES                   STATUS
+pi-setup-pos-1          Up 14 minutes (unhealthy)
+pi-setup-storefront-1   Up 58 minutes (unhealthy)
+pi-setup-pgbouncer-1    Up 58 minutes (healthy)
+pi-setup-redis-1        Up 58 minutes (healthy)
+pi-setup-db-1           Up 58 minutes (healthy)
+===
+health=000
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+
+C:\Users\USER>ssh ngansen@192.168.86.36 "sudo ss -ltnp | grep :8080 ; echo === ; docker exec pi-setup-pos-1 getent hosts db ; echo === ; docker logs --tail=20 pi-setup-pos-1 2>&1 | tail -25"
+ngansen@192.168.86.36's password:
+LISTEN 0      4096                      0.0.0.0:8080       0.0.0.0:*    users:(("docker-proxy",pid=33108,fd=8))         
+LISTEN 0      4096                         [::]:8080          [::]:*    users:(("docker-proxy",pid=33115,fd=8))         
+===
+172.18.0.4      db
+===
+127.0.0.1 - - [18/Apr/2026:18:13:12 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/7.88.1"
+192.168.86.22 - - [18/Apr/2026:18:13:12 +0000] "GET /health HTTP/1.1" 200 235 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.41 - - [18/Apr/2026:18:13:12 +0000] "GET /card/condition/PKM-MLAANO6Y-4777D2 HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+[2026-04-18 18:18:13 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:215)
+[2026-04-18 18:18:14 +0000] [8] [ERROR] Worker (pid:215) was sent SIGKILL! Perhaps out of memory?
+[2026-04-18 18:18:14 +0000] [323] [INFO] Booting worker with pid: 323
+[2026-04-18 18:18:14 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py:38: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['redis.asyncio.connection (/opt/venv/lib/python3.11/site-packages/redis/asyncio/connection.py)', 'jwt.jwks_client (/opt/venv/lib/python3.11/site-packages/jwt/jwks_client.py)', 'urllib3.util (/opt/venv/lib/python3.11/site-packages/urllib3/util/__init__.py)', 'urllib3.util.ssl_ (/opt/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)'].
+  monkey.patch_all()
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDXMQ7Z-ABC69A HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDXZF33-998A72 HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /card/condition/PKM-MLDY25LJ-A3738F HTTP/1.1" 200 78 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /inventory HTTP/1.1" 200 3125 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "okhttp/4.12.0"
+192.168.86.41 - - [18/Apr/2026:18:18:14 +0000] "GET /admin/receipt HTTP/1.1" 302 251 "-" "okhttp/4.12.0"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/8.14.1"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "http://192.168.86.36:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.86.22 - - [18/Apr/2026:18:18:14 +0000] "POST /satellite/heartbeat HTTP/1.1" 200 12 "-" "curl/8.14.1"
+127.0.0.1 - - [18/Apr/2026:18:18:14 +0000] "GET /health HTTP/1.1" 200 235 "-" "curl/7.88.1"
+
+C:\Users\USER>ssh -t ngansen@192.168.86.36 "echo c2V0IC1lCmNkIH4vaGFucnl4LXZhdWx0LXBvcy9waS1zZXR1cAoKIyAxLiBQYXRjaCByZXF1aXJlbWVudHMudHh0IChpZGVtcG90ZW50IOKAlCBvbmx5IGFkZHMgaWYgbm90IGFscmVhZHkgdGhlcmUpCmlmICEgZ3JlcCAtcSAnXnBzeWNvZ3JlZW4nIHJlcXVpcmVtZW50cy50eHQ7IHRoZW4KICAgIHNlZCAtaSAnL15wc3ljb3BnMi1iaW5hcnkvYSAjIE1ha2UgcHN5Y29wZzIgY29vcGVyYXRpdmUgd2l0aCBnZXZlbnRcbnBzeWNvZ3JlZW4+PTEuMScgcmVxdWlyZW1lbnRzLnR4dAogICAgZWNobyAiKyBwc3ljb2dyZWVuIGFkZGVkIHRvIHJlcXVpcmVtZW50cy50eHQiCmVsc2UKICAgIGVjaG8gIj0gcHN5Y29ncmVlbiBhbHJlYWR5IGluIHJlcXVpcmVtZW50cy50eHQiCmZpCgojIDIuIFBhdGNoIGd1bmljb3JuLmNvbmYucHkgKGlkZW1wb3RlbnQpCmlmICEgZ3JlcCAtcSAncGF0Y2hfcHN5Y29wZycgZ3VuaWNvcm4uY29uZi5weTsgdGhlbgogICAgcHl0aG9uMyAtIDw8ICdQWV9FT0YnCmltcG9ydCByZQpwID0gImd1bmljb3JuLmNvbmYucHkiCnNyYyA9IG9wZW4ocCkucmVhZCgpCnBhdGNoID0gKAogICAgImltcG9ydCB0aHJlYWRpbmdcblxuIgogICAgIiMgTWFrZSBwc3ljb3BnMiBjb29wZXJhdGl2ZSB3aXRoIGdldmVudCDigJQgZWxpbWluYXRlcyB3b3JrZXIgdGltZW91dHMuXG4iCiAgICAidHJ5OlxuIgogICAgIiAgICBmcm9tIHBzeWNvZ3JlZW4uZ2V2ZW50IGltcG9ydCBwYXRjaF9wc3ljb3BnXG4iCiAgICAiICAgIHBhdGNoX3BzeWNvcGcoKVxuIgogICAgImV4Y2VwdCBJbXBvcnRFcnJvcjpcbiIKICAgICIgICAgcGFzc1xuIgopCm5ldyA9IHJlLnN1YihyJ15pbXBvcnQgdGhyZWFkaW5nXHMqXG4nLCBwYXRjaCwgc3JjLCBjb3VudD0xLCBmbGFncz1yZS5NKQpvcGVuKHAsICJ3Iikud3JpdGUobmV3KQpwcmludCgiKyBndW5pY29ybi5jb25mLnB5IHBhdGNoZWQiKQpQWV9FT0YKZWxzZQogICAgZWNobyAiPSBndW5pY29ybi5jb25mLnB5IGFscmVhZHkgcGF0Y2hlZCIKZmkKCiMgMy4gU2hvdyB0aGUgY2hhbmdlcyBmb3IgY29uZmlybWF0aW9uCmVjaG8gIi0tLSByZXF1aXJlbWVudHMudHh0IChwc3ljbyBsaW5lcykgLS0tIgpncmVwIC1uRSAncHN5Y28nIHJlcXVpcmVtZW50cy50eHQKZWNobyAiLS0tIGd1bmljb3JuLmNvbmYucHkgKHRvcCAxMiBsaW5lcykgLS0tIgpoZWFkIC0xMiBndW5pY29ybi5jb25mLnB5CgojIDQuIFJlYnVpbGQgKyByZXN0YXJ0IHBvcwplY2hvICItLS0gcmVidWlsZGluZyBwb3MgY29udGFpbmVyICh0aGlzIHRha2VzIH42MHMpIC0tLSIKZG9ja2VyIGNvbXBvc2UgYnVpbGQgcG9zCmRvY2tlciBjb21wb3NlIHVwIC1kIHBvcwoKIyA1LiBXYWl0IGZvciBoZWFsdGh5ICsgdmVyaWZ5CnNsZWVwIDE1CmVjaG8gIi0tLSBjb250YWluZXIgc3RhdHVzIC0tLSIKZG9ja2VyIHBzIC0tZmlsdGVyIG5hbWU9cG9zIC0tZm9ybWF0ICd0YWJsZSB7ey5OYW1lc319XHR7ey5TdGF0dXN9fScKZWNobyAiLS0tIGhlYWx0aCAtLS0iCmN1cmwgLXNTIC1tIDUgLW8gL2Rldi9udWxsIC13ICdoZWFsdGg9JXtodHRwX2NvZGV9XG4nIGh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9oZWFsdGgKZWNobyAiLS0tIHJlY2VudCBsb2cgLS0tIgpkb2NrZXIgbG9ncyAtLXRhaWw9MzAgcGktc2V0dXAtcG9zLTEgMj4mMSB8IGdyZXAgLWlFICdwc3ljb3xnZXZlbnR8d29ya2VyfHRpbWVvdXQnIHwgdGFpbCAtMTAKZWNobyBET05FCg== | base64 -d | bash"
+ngansen@192.168.86.36's password:
++ psycogreen added to requirements.txt
++ gunicorn.conf.py patched
+--- requirements.txt (psyco lines) ---
+5:psycopg2-binary>=2.9.9
+6:# Make psycopg2 cooperative with gevent
+7:psycogreen>=1.1
+--- gunicorn.conf.py (top 12 lines) ---
+import threading
+
+# Make psycopg2 cooperative with gevent — eliminates worker timeouts.
+try:
+    from psycogreen.gevent import patch_psycopg
+    patch_psycopg()
+except ImportError:
+    pass
+workers             = 1      # single worker so SSE subscribers share memory with cart updates
+worker_class        = "gevent"
+worker_connections  = 500   # gevent handles hundreds of concurrent SSE + API connections
+
+--- rebuilding pos container (this takes ~60s) ---
+[+] Building 21.6s (11/18)
+ => [internal] load local bake definitions                                                                         0.0s
+ => => reading from stdin 520B                                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 1.14kB                                                                             0.0s
+ => [internal] load metadata for docker.io/library/python:3.11-slim-bookworm                                       0.6s
+ => [internal] load .dockerignore                                                                                  0.0s
+ => => transferring context: 193B                                                                                  0.0s
+ => [internal] load build context                                                                                  0.0s
+ => => transferring context: 19.54kB                                                                               0.0s
+ => [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f32  0.1s
+ => => resolve docker.io/library/python:3.11-slim-bookworm@sha256:9c6f90801e6b68e772b7c0ca74260cbf7af9f320acec894  0.1s
+ => CACHED [builder 2/6] WORKDIR /app                                                                              0.0s
+ => CACHED [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential      0.0s
+ => [builder 4/6] COPY requirements.txt .                                                                          0.1s
+ => [builder 5/6] RUN python -m venv /opt/venv                                                                     6.9s
+ => ERROR [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt                                        13.4s
+------
+ > [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt:
+0.753 Collecting clip@ git+https://github.com/openai/CLIP.git (from -r requirements.txt (line 62))
+0.753   Cloning https://github.com/openai/CLIP.git to /tmp/pip-install-is120bzw/clip_6093bdf3fd424e3abc24c33cbd704675
+0.787   Running command git clone --filter=blob:none --quiet https://github.com/openai/CLIP.git /tmp/pip-install-is120bzw/clip_6093bdf3fd424e3abc24c33cbd704675
+4.562   Resolved https://github.com/openai/CLIP.git to commit d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
+4.567   Installing build dependencies: started
+7.200   Installing build dependencies: finished with status 'done'
+7.201   Getting requirements to build wheel: started
+7.449   Getting requirements to build wheel: finished with status 'done'
+7.450   Preparing metadata (pyproject.toml): started
+7.665   Preparing metadata (pyproject.toml): finished with status 'done'
+7.865 Collecting flask>=3.0.0 (from -r requirements.txt (line 1))
+8.409   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+8.465 Collecting flask-compress>=1.14 (from -r requirements.txt (line 2))
+8.488   Downloading flask_compress-1.24-py3-none-any.whl.metadata (11 kB)
+8.554 Collecting gunicorn>=21.2.0 (from -r requirements.txt (line 3))
+8.581   Downloading gunicorn-25.3.0-py3-none-any.whl.metadata (5.5 kB)
+8.806 Collecting gevent>=24.2.1 (from -r requirements.txt (line 4))
+8.827   Downloading gevent-26.4.0-cp311-cp311-manylinux_2_28_aarch64.whl.metadata (14 kB)
+8.951 Collecting psycopg2-binary>=2.9.9 (from -r requirements.txt (line 5))
+8.973   Downloading psycopg2_binary-2.9.11-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl.metadata (4.9 kB)
+9.039 ERROR: Could not find a version that satisfies the requirement psycogreen>=1.1 (from versions: 0.0.1, 1.0, 1.0.1, 1.0.2)
+9.039 ERROR: No matching distribution found for psycogreen>=1.1
+9.408
+9.408 [notice] A new release of pip is available: 24.0 -> 26.0.1
+9.408 [notice] To update, run: pip install --upgrade pip
+------
+[+] build 0/1
+ ⠙ Image pi-setup-pos Building                                                                                     21.7s
+Dockerfile:18
+
+--------------------
+
+  16 |     RUN python -m venv /opt/venv
+
+  17 |     ENV PATH="/opt/venv/bin:$PATH"
+
+  18 | >>> RUN pip install --no-cache-dir -r requirements.txt
+
+  19 |
+
+  20 |     FROM python:3.11-slim-bookworm
+
+--------------------
+
+failed to solve: process "/bin/sh -c pip install --no-cache-dir -r requirements.txt" did not complete successfully: exit code: 1
+
+Connection to 192.168.86.36 closed.
