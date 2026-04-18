@@ -564,12 +564,26 @@ class _PgConn:
 
     def execute(self, sql: str, params=()):
         cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(sql.replace("?", "%s"), params or ())
+        try:
+            cur.execute(sql.replace("?", "%s"), params or ())
+        except Exception:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            raise
         return cur
 
     def executemany(self, sql: str, params_list):
         cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.executemany(sql.replace("?", "%s"), params_list)
+        try:
+            cur.executemany(sql.replace("?", "%s"), params_list)
+        except Exception:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            raise
         return cur
 
     def commit(self):
@@ -5281,6 +5295,10 @@ def api_push_scan():
         ).fetchone()
     except Exception:
         key_row = None  # sessions table lives in the scanner DB, allow open if no table
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
     # If we have session validation available and key is wrong, reject
     if api_key and key_row is None:
@@ -5289,7 +5307,10 @@ def api_push_scan():
             db.execute("SELECT 1 FROM sessions LIMIT 1")
             return jsonify({"error": "invalid api_key"}), 401
         except Exception:
-            pass  # sessions table not on this DB — open access
+            try:
+                db.rollback()
+            except Exception:
+                pass  # sessions table not on this DB — open access
 
     db.execute("""
         INSERT INTO inventory (qr_code, name, price, category, description, stock, last_updated)
