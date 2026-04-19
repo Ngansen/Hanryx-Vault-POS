@@ -131,7 +131,7 @@ COMMON_FLAGS=(
     --enable-low-end-device-mode
     --disk-cache-size=33554432
     --media-cache-size=33554432
-    --js-flags=--max-old-space-size=128
+    --js-flags=--max-old-space-size=384
     --process-per-site
 )
 
