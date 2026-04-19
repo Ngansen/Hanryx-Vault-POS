@@ -1,0 +1,26 @@
+ngansen@hanryxvault:~ $ sudo systemctl start hanryxvault-kiosk.service
+sleep 5
+systemctl is-active hanryxvault-kiosk.service
+journalctl -u hanryxvault-kiosk.service -n 20 --no-pager
+active
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[1965]: [1965:2007:0419/160135.664239:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[1965]: [1965:1965:0419/160135.665321:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[1965]: [1965:2007:0419/160135.665571:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[1965]: [1965:1965:0419/160135.665673:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[1984]: [0419/160135.673886:WARNING:third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc:264] fpsimd not found
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.680283:ERROR:gpu/ipc/service/shared_image_stub.cc:209] SharedImageStub: Unable to create shared image
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.684172:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.687284:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.692565:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.750674:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.816162:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.832085:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.884167:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.917671:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:35 hanryxvault hanryxvault-kiosk[2022]: [2022:2022:0419/160135.966757:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+Apr 19 16:01:38 hanryxvault hanryxvault-kiosk[2041]: [2041:2082:0419/160138.554189:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Apr 19 16:02:07 hanryxvault hanryxvault-kiosk[2041]: [2041:2082:0419/160207.999203:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Apr 19 16:02:35 hanryxvault hanryxvault-kiosk[1965]: [1965:2008:0419/160235.758053:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Apr 19 16:02:49 hanryxvault hanryxvault-kiosk[2041]: [2041:2082:0419/160249.644992:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Apr 19 16:03:00 hanryxvault hanryxvault-kiosk[1965]: [1965:2008:0419/160300.656939:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+ngansen@hanryxvault:~ $
