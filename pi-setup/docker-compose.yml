@@ -147,7 +147,7 @@ services:
         GITHUB_TOKEN: ${GITHUB_TOKEN}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     environment:
       DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/storefront
       PORT:         "3000"

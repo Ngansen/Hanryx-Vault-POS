@@ -110,7 +110,7 @@ SERVICES = [
     ("POS Server",  f"http://{{host}}:{{port}}/health"),
     ("Admin Panel", f"http://{{host}}:{{port}}/admin"),
     ("nginx",       f"http://{{host}}:8080/"),
-    ("Storefront",  f"http://{{host}}:3000/"),
+    ("Storefront",  f"http://{{host}}:8080/store/"),
 ]
 
 
