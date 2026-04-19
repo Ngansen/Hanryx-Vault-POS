@@ -37,4 +37,8 @@ StandardError=journal
 SyslogIdentifier=hanryxvault-kiosk
 
 [Install]
-WantedBy=graphical.target
+# multi-user.target — the satellite Pi is headless (no LightDM/SDDM), so it
+# boots straight into multi-user, then xinit starts a bare X server on vt7.
+# Using graphical.target here would silently fail (unit enabled but never
+# pulled in) on a console-only Pi.
+WantedBy=multi-user.target
