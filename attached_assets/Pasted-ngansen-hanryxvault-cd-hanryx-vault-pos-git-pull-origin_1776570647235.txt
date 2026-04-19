@@ -1,0 +1,75 @@
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull origin main
+sudo cp pi-setup/kiosk/start-monitor.sh /opt/hanryxvault/kiosk/start-monitor.sh
+sudo chmod +x /opt/hanryxvault/kiosk/start-monitor.sh
+
+# Sanity-check it actually changed:
+grep -c chromium /opt/hanryxvault/kiosk/start-monitor.sh    # should be ≥ 5, was 0
+grep -c MONITOR_PY /opt/hanryxvault/kiosk/start-monitor.sh  # should be 0, was 2
+
+# Set the URL the user picked (Main Pi direct, not local nginx):
+echo 'KIOSK_URL=http://192.168.86.36:8080/kiosk' | sudo tee /etc/default/hanryxvault-kiosk
+
+sudo systemctl restart hanryxvault-kiosk.service
+sleep 10
+ps -ef | grep -v grep | grep -E 'xinit|chromium' | head -5
+sudo journalctl -u hanryxvault-kiosk.service -n 8 --no-pager | tail -8
+remote: Enumerating objects: 93, done.
+remote: Counting objects: 100% (93/93), done.
+remote: Compressing objects: 100% (18/18), done.
+remote: Total 85 (delta 68), reused 84 (delta 67), pack-reused 0 (from 0)
+Unpacking objects: 100% (85/85), 7.75 MiB | 6.30 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   e1b8c47..e401a6c  main       -> origin/main
+Updating e1b8c47..e401a6c
+Fast-forward
+ attached_assets/IMG_1034_1776567128325.jpeg        | Bin 0 -> 2379014 bytes
+ attached_assets/IMG_1034_1776567651015.jpeg        | Bin 0 -> 2379014 bytes
+ ...-40-Apr-19-03-27-51-hanryxvau_1776569516053.txt |  41 +++++++++++
+ ...vault-pos-Full-journal-since-_1776570325122.txt |  66 +++++++++++++++++
+ ...ssword-Linux-hanryxvault-6-12_1776569334884.txt |  55 ++++++++++++++
+ ...ssword-Linux-hanryxvault-6-12_1776562507679.txt |  81 +++++++++++++++++++++
+ ...l-the-legacy-wrapper-package-_1776566924683.txt |  53 ++++++++++++++
+ ...actually-enabled-sudo-systemc_1776566662047.txt |  63 ++++++++++++++++
+ ...-grep-E-c-hromium-x-init-head_1776569394293.txt |  19 +++++
+ ...ournalctl-u-hanryxvault-kiosk_1776566840337.txt |  30 ++++++++
+ ...ead-6-ps-aux-grep-E-c-hromium_1776570105930.txt |  56 ++++++++++++++
+ attached_assets/image_1776566298975.jpg            | Bin 0 -> 2048969 bytes
+ attached_assets/image_1776568382060.jpg            | Bin 0 -> 1829544 bytes
+ attached_assets/image_1776569936867.jpg            | Bin 0 -> 1936581 bytes
+ pi-setup/desktop_monitor.py                        |   4 +-
+ pi-setup/docker-compose.yml                        |   2 +-
+ pi-setup/kiosk/install-kiosk.sh                    |  35 ++++++++-
+ pi-setup/kiosk/start-monitor.sh                    |  63 +++++++++++++---
+ 18 files changed, 551 insertions(+), 17 deletions(-)
+ create mode 100644 attached_assets/IMG_1034_1776567128325.jpeg
+ create mode 100644 attached_assets/IMG_1034_1776567651015.jpeg
+ create mode 100644 attached_assets/Pasted--minutes-ago-no-pager-tail-40-Apr-19-03-27-51-hanryxvau_1776569516053.txt
+ create mode 100644 attached_assets/Pasted-gansen-hanryxvault-hanryx-vault-pos-Full-journal-since-_1776570325122.txt
+ create mode 100644 attached_assets/Pasted-ngansen-192-168-86-22-s-password-Linux-hanryxvault-6-12_1776569334884.txt
+ create mode 100644 attached_assets/Pasted-ngansen-192-168-86-36-s-password-Linux-hanryxvault-6-12_1776562507679.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Install-the-legacy-wrapper-package-_1776566924683.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Is-it-actually-enabled-sudo-systemc_1776566662047.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-ps-aux-grep-E-c-hromium-x-init-head_1776569394293.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-sudo-journalctl-u-hanryxvault-kiosk_1776566840337.txt
+ create mode 100644 attached_assets/Pasted-t-kiosk-service-no-pager-head-6-ps-aux-grep-E-c-hromium_1776570105930.txt
+ create mode 100644 attached_assets/image_1776566298975.jpg
+ create mode 100644 attached_assets/image_1776568382060.jpg
+ create mode 100644 attached_assets/image_1776569936867.jpg
+5
+0
+KIOSK_URL=http://192.168.86.36:8080/kiosk
+ngansen     4573       1  0 03:50 ?        00:00:00 /usr/bin/xinit /opt/hanryxvault/kiosk/start-monitor.sh -- :0 vt7 -nocursor -nolisten tcp -dpms
+ngansen     4581    4573 11 03:50 ?        00:00:01 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension= --use-angle=gles --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI,Notifications --no-first-run --start-maximized --autoplay-policy=no-user-gesture-required --disable-pinch --overscroll-history-navigation=0 --check-for-update-interval=31536000 --user-data-dir=/home/ngansen/.config/hanryxvault-chromium --app=http://192.168.86.36:8080/kiosk
+ngansen     4609       1  0 03:50 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+ngansen     4613       1  0 03:50 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=4 --shared-client-connection
+ngansen     4615    4581  0 03:50 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium --change-stack-guard-on-fork=enable
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4649]: [4649:4649:0419/035014.480083:ERROR:gpu/command_buffer/service/shared_image/shared_image_factory.cc:998] Could not find SharedImageBackingFactory with params: usage: Gles2Read|RasterRead|DisplayRead|CpuWriteOnly|CpuRead, format: (Y_UV, 420, 8unorm, ExtSamplerOff), share_between_threads: 0, gmb_type: shared_memory, size: 640x360, debug_label: MediaGmbVideoFramePoolMappableSI_Pid:4707_Pid:4707
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4609]: [0419/035014.505914:WARNING:third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc:264] fpsimd not found
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4649]: [4649:4649:0419/035014.514827:ERROR:gpu/ipc/service/shared_image_stub.cc:209] SharedImageStub: Unable to create shared image
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4581]: [4581:4632:0419/035014.596562:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4581]: [4581:4581:0419/035014.596694:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4581]: [4581:4632:0419/035014.596760:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+Apr 19 03:50:14 hanryxvault hanryxvault-kiosk[4581]: [4581:4581:0419/035014.597161:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
+Apr 19 03:50:15 hanryxvault hanryxvault-kiosk[4581]: [4581:4633:0419/035015.837178:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+ngansen@hanryxvault:~/hanryx-vault-pos $
