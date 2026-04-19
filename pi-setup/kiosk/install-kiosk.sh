@@ -63,9 +63,17 @@ apt-get install -y --no-install-recommends \
     x11-xserver-utils \
     unclutter \
     curl \
-    chromium-browser \
     fonts-noto-color-emoji \
     fonts-dejavu-core
+
+# Chromium: package name differs across Debian/Raspbian versions.
+# Try chromium-browser first (older RPi OS), then chromium (Debian 13 / current).
+if ! command -v chromium-browser &>/dev/null && ! command -v chromium &>/dev/null; then
+    info "Installing Chromium …"
+    apt-get install -y --no-install-recommends chromium-browser 2>/dev/null \
+        || apt-get install -y --no-install-recommends chromium \
+        || warn "Could not install Chromium — kiosk will fail to launch the browser"
+fi
 
 # ── Create kiosk directory ────────────────────────────────────────────────────
 info "Copying kiosk files to $KIOSK_DEST …"
