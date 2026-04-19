@@ -66,3 +66,8 @@ torchvision>=0.16.0
 clip @ git+https://github.com/openai/CLIP.git
 faiss-cpu>=1.7.4
 numpy>=1.24.0
+
+# Multi-TCG: streaming JSON parser — keeps Scryfall's 170 MB MTG bulk import
+# RAM-flat instead of loading the whole array.  Optional (importer falls back
+# to full load if missing) but strongly recommended on the Pi.
+ijson>=3.2.0

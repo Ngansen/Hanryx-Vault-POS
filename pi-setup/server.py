@@ -2873,6 +2873,27 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_cards_jpn_name_en ON cards_jpn (name_en)",
         "CREATE INDEX IF NOT EXISTS idx_cards_jpn_name_jp ON cards_jpn (name_jp)",
         "CREATE INDEX IF NOT EXISTS idx_cards_jpn_setnum  ON cards_jpn (set_code, card_number)",
+
+        # ── Multi-TCG cards (MTG / One Piece / Lorcana / DBS) ────────────────
+        # Unified table — one row per card per game.  Populated by
+        # import_multi_tcg.py (Scryfall, BepoTCG, lorcana-api.com).
+        """CREATE TABLE IF NOT EXISTS cards_multi (
+            game         TEXT NOT NULL,
+            card_id      TEXT NOT NULL,
+            name         TEXT NOT NULL DEFAULT '',
+            set_code     TEXT NOT NULL DEFAULT '',
+            set_name     TEXT NOT NULL DEFAULT '',
+            card_number  TEXT NOT NULL DEFAULT '',
+            rarity       TEXT NOT NULL DEFAULT '',
+            image_url    TEXT NOT NULL DEFAULT '',
+            language     TEXT NOT NULL DEFAULT 'en',
+            price_usd    NUMERIC(10,2),
+            raw          JSONB,
+            imported_at  BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (game, card_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_multi_name   ON cards_multi (game, name)",
+        "CREATE INDEX IF NOT EXISTS idx_multi_setnum ON cards_multi (game, set_code, card_number)",
     ]
 
     for stmt in _ddl_statements:
@@ -2932,6 +2953,27 @@ def init_db():
                 log.info("[init_db] cards_jpn_pocket has %d rows", cnt)
         except Exception as _je:
             log.warning("[init_db] JP Pocket import scheduling failed: %s", _je)
+
+    # ── Trigger multi-TCG imports (One Piece + Lorcana — small datasets) ─────
+    # MTG is intentionally NOT auto-imported: the Scryfall bulk file is ~170 MB
+    # and takes minutes — it's gated behind the manual /admin/multi/mtg/refresh
+    # endpoint instead.  DBS is a placeholder until a usable dataset is wired.
+    if os.environ.get("MULTI_TCG_IMPORT_ON_BOOT", "1") == "1":
+        try:
+            import import_multi_tcg
+            for _g in ("onepiece", "lorcana"):
+                if import_multi_tcg.cards_count(db, _g) == 0:
+                    log.info("[init_db] cards_multi[%s] empty — background import", _g)
+                    import threading
+                    threading.Thread(
+                        target=_run_multi_import_safely, args=(_g,),
+                        name=f"multi-{_g}-import", daemon=True,
+                    ).start()
+                else:
+                    log.info("[init_db] cards_multi[%s] has %d rows", _g,
+                             import_multi_tcg.cards_count(db, _g))
+        except Exception as _me:
+            log.warning("[init_db] multi-TCG import scheduling failed: %s", _me)
 
     # ── Safe migration: add columns that may be missing on older installs ────
     def _col_exists(table, col):
@@ -4981,6 +5023,86 @@ def _jpn_pocket_card_lookup(db, *, name: str = "", set_code: str = "",
     return out
 
 
+def _multi_card_lookup(db, *, game: str, name: str = "", set_code: str = "",
+                       card_num: str = "", limit: int = 10) -> list:
+    """Look up cards in cards_multi for a specific game (mtg/onepiece/lorcana/dbs)."""
+    game = (game or "").strip().lower()
+    if game not in ("mtg", "onepiece", "lorcana", "dbs"):
+        return []
+    name = (name or "").strip()
+    set_code = (set_code or "").strip().upper()
+    card_num = (card_num or "").strip().lstrip("0")
+    if not (name or set_code or card_num):
+        return []
+
+    where = ["game = %s"]
+    params: list = [game]
+    if name:
+        where.append("name ILIKE %s"); params.append(f"%{name}%")
+    if set_code:
+        where.append("(UPPER(set_code) = %s OR UPPER(set_name) ILIKE %s)")
+        params.extend([set_code, f"%{set_code}%"])
+    if card_num:
+        # collector_number can be "001" or "1" — strip the leading-zero comparison
+        where.append("regexp_replace(card_number, '^0+', '') = %s")
+        params.append(card_num or "0")
+
+    sql = (
+        "SELECT card_id, name, set_code, set_name, card_number, rarity, "
+        "       image_url, language, price_usd FROM cards_multi "
+        "WHERE " + " AND ".join(where) + " "
+        "ORDER BY set_code, card_number LIMIT %s"
+    )
+    params.append(int(limit))
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as exc:
+        log.warning("[multi-lookup:%s] query failed: %s", game, exc)
+        try: db.rollback()
+        except Exception: pass
+        return []
+
+    pretty = {"mtg": "Magic: The Gathering", "onepiece": "One Piece TCG",
+              "lorcana": "Disney Lorcana",     "dbs": "Dragon Ball Super CG"}
+    out = []
+    for r in rows:
+        out.append({
+            "id":          r[0],
+            "name":        r[1],
+            "setCode":     r[2], "set_code":    r[2],
+            "setName":     r[3],
+            "cardNumber":  r[4], "card_number": r[4],
+            "rarity":      r[5],
+            "imageUrl":    r[6], "image_url":   r[6],
+            "language":    r[7],
+            "price":       float(r[8]) if r[8] is not None else 0,
+            "price_usd":   float(r[8]) if r[8] is not None else None,
+            "game":        game,
+            "source":      pretty.get(game, game),
+        })
+    return out
+
+
+def _run_multi_import_safely(game: str) -> None:
+    """Background-thread entry point for One Piece / Lorcana / etc imports."""
+    try:
+        import import_multi_tcg
+        fn = import_multi_tcg.IMPORTERS.get(game)
+        if not fn:
+            log.warning("[multi-import] unknown game: %s", game)
+            return
+        conn = _direct_db()
+        try:
+            result = fn(conn, force=False)
+            log.info("[multi-import:%s] background result: %s", game, result)
+        finally:
+            try: conn.close()
+            except Exception: pass
+    except Exception as exc:
+        log.warning("[multi-import:%s] failed: %s", game, exc, exc_info=True)
+
+
 def _run_jpn_pocket_import_safely() -> None:
     """Background-thread entry point: imports JP Pocket cards into Postgres."""
     try:
@@ -5091,6 +5213,54 @@ def jpn_cards_refresh():
             except Exception: pass
     except Exception as exc:
         log.exception("[jpn-import] manual refresh failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/multi/<game>/refresh", methods=["POST"])
+def multi_tcg_refresh(game: str):
+    """Manually re-import a multi-TCG game (mtg / onepiece / lorcana / dbs)."""
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import import_multi_tcg
+        fn = import_multi_tcg.IMPORTERS.get(game.lower())
+        if not fn:
+            return jsonify({"error": f"unknown game: {game}",
+                            "supported": list(import_multi_tcg.IMPORTERS)}), 400
+        conn = _direct_db()
+        try:
+            return jsonify(fn(conn, force=True))
+        finally:
+            try: conn.close()
+            except Exception: pass
+    except Exception as exc:
+        log.exception("[multi-import:%s] refresh failed", game)
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/multi/status", methods=["GET"])
+def multi_tcg_status():
+    """Per-game row counts + a small sample for sanity-checking imports."""
+    try:
+        import import_multi_tcg
+        db = get_db()
+        out = {"games": {}}
+        for g in import_multi_tcg.GAMES:
+            cnt = import_multi_tcg.cards_count(db, g)
+            sample = db.execute(
+                "SELECT name, set_code, card_number, rarity, price_usd "
+                "FROM cards_multi WHERE game = %s "
+                "ORDER BY imported_at DESC LIMIT 3", (g,),
+            ).fetchall()
+            out["games"][g] = {
+                "count": cnt,
+                "sample": [{"name": r[0], "set": r[1], "number": r[2],
+                            "rarity": r[3],
+                            "price_usd": float(r[4]) if r[4] is not None else None}
+                           for r in (sample or [])],
+            }
+        return jsonify(out)
+    except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 
@@ -5426,14 +5596,22 @@ def card_lookup():
         return jsonify({"error": "Provide at least one of: qr, q, name, set"}), 400
 
     db      = get_db()
-    results = _card_lookup(db, q=q, qr=qr, name=name,
-                           set_code=set_code, card_num=card_num, limit=limit)
+    game    = (request.args.get("game") or "").strip().lower()
 
-    # ── Asian-language fallbacks (Korean / Chinese) ──────────────────────────
-    lang = (request.args.get("lang") or "").strip().lower()
-    qtext = name or q
-    results = _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
-                                       limit, lang)
+    if game in ("mtg", "onepiece", "lorcana", "dbs"):
+        # Explicit non-Pokémon TCG lookup — query cards_multi directly and skip
+        # the Pokémon-centric lookup pipeline.
+        results = _multi_card_lookup(db, game=game, name=(name or q),
+                                     set_code=set_code, card_num=card_num,
+                                     limit=limit)
+    else:
+        results = _card_lookup(db, q=q, qr=qr, name=name,
+                               set_code=set_code, card_num=card_num, limit=limit)
+        # Asian-language fallbacks (Korean / Chinese / JP / Pocket)
+        lang = (request.args.get("lang") or "").strip().lower()
+        qtext = name or q
+        results = _maybe_extend_with_asian(db, results, qtext, set_code,
+                                           card_num, limit, lang)
 
     if request.args.get("kiosk") == "1" and results:
         _kiosk_push_lookup(results[0])
@@ -5444,6 +5622,7 @@ def card_lookup():
         "query":   {
             "qr": qr, "q": q, "name": name,
             "set": set_code, "num": card_num,
+            "game": game,
         },
     })
 
@@ -5475,13 +5654,19 @@ def card_lookup_post():
         return jsonify({"error": "Provide at least one of: qr, q, name, set"}), 400
 
     db      = get_db()
-    results = _card_lookup(db, q=q, qr=qr, name=name,
-                           set_code=set_code, card_num=card_num, limit=limit)
+    game    = (body.get("game") or "").strip().lower()
 
-    lang = (body.get("lang") or "").strip().lower()
-    qtext = name or q
-    results = _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
-                                       limit, lang)
+    if game in ("mtg", "onepiece", "lorcana", "dbs"):
+        results = _multi_card_lookup(db, game=game, name=(name or q),
+                                     set_code=set_code, card_num=card_num,
+                                     limit=limit)
+    else:
+        results = _card_lookup(db, q=q, qr=qr, name=name,
+                               set_code=set_code, card_num=card_num, limit=limit)
+        lang = (body.get("lang") or "").strip().lower()
+        qtext = name or q
+        results = _maybe_extend_with_asian(db, results, qtext, set_code,
+                                           card_num, limit, lang)
 
     if body.get("kiosk") and results:
         _kiosk_push_lookup(results[0])
