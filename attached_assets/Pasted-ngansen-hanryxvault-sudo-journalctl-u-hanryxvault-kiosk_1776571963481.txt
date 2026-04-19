@@ -1,0 +1,51 @@
+ngansen@hanryxvault:~ $ sudo journalctl -u hanryxvault-kiosk.service -n 80 --no-pager | tail -50
+Apr 19 04:11:49 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:11:49 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:11:54 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 68.
+Apr 19 04:11:54 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:11:54 hanryxvault hanryxvault-kiosk[7787]: sed: couldn't open temporary file /etc/systemd/system/sedAHwcea: Permission denied
+Apr 19 04:11:54 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:11:54 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:11:54 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:11:59 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 69.
+Apr 19 04:11:59 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:11:59 hanryxvault hanryxvault-kiosk[7794]: sed: couldn't open temporary file /etc/systemd/system/sedIVc3Yl: Permission denied
+Apr 19 04:11:59 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:11:59 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:11:59 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:04 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 70.
+Apr 19 04:12:04 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:04 hanryxvault hanryxvault-kiosk[7801]: sed: couldn't open temporary file /etc/systemd/system/sedivfvOR: Permission denied
+Apr 19 04:12:04 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:04 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:04 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:10 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 71.
+Apr 19 04:12:10 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:10 hanryxvault hanryxvault-kiosk[7808]: sed: couldn't open temporary file /etc/systemd/system/sedFgA1Tq: Permission denied
+Apr 19 04:12:10 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:10 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:10 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:15 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 72.
+Apr 19 04:12:15 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:15 hanryxvault hanryxvault-kiosk[7816]: sed: couldn't open temporary file /etc/systemd/system/sedfw8zFO: Permission denied
+Apr 19 04:12:15 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:15 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:15 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:20 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 73.
+Apr 19 04:12:20 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:20 hanryxvault hanryxvault-kiosk[7825]: sed: couldn't open temporary file /etc/systemd/system/sedgl0n1F: Permission denied
+Apr 19 04:12:20 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:20 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:20 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:25 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 74.
+Apr 19 04:12:25 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:25 hanryxvault hanryxvault-kiosk[7832]: sed: couldn't open temporary file /etc/systemd/system/sedH9nRTO: Permission denied
+Apr 19 04:12:25 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:25 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:25 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 04:12:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 75.
+Apr 19 04:12:31 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 04:12:31 hanryxvault hanryxvault-kiosk[7839]: sed: couldn't open temporary file /etc/systemd/system/sedLCEkwj: Permission denied
+Apr 19 04:12:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=4/NOPERMISSION
+Apr 19 04:12:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 04:12:31 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Mon
