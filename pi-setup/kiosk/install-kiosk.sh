@@ -135,6 +135,23 @@ EOF
     chmod +x "$XINITRC"
 fi
 
+# ── Ensure xserver-xorg-legacy is installed (provides setuid Xorg wrapper) ──
+# Debian 13 ships /usr/bin/Xorg as a non-setuid 274-byte wrapper by default,
+# which means even with needs_root_rights=yes, X cannot grab a VT and dies
+# with "xf86OpenConsole: Cannot open virtual console N (Permission denied)".
+if ! dpkg -s xserver-xorg-legacy &>/dev/null; then
+    info "Installing xserver-xorg-legacy (provides setuid Xorg wrapper) …"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y xserver-xorg-legacy || \
+        warn "Failed to install xserver-xorg-legacy — kiosk may not launch X"
+fi
+# Force setuid bit on both the wrapper and the real binary, since apt
+# sometimes doesn't set it (depends on Xwrapper.config priority).
+for xbin in /usr/bin/Xorg /usr/lib/xorg/Xorg; do
+    if [[ -f "$xbin" ]] && [[ ! -u "$xbin" ]]; then
+        chmod u+s "$xbin" && info "Set setuid bit on $xbin"
+    fi
+done
+
 # ── Allow non-console users to start X (needed for systemd-launched xinit) ──
 # Debian default: /etc/X11/Xwrapper.config restricts X to console users, which
 # kills xinit when launched by a systemd Service=. Allow anybody, request root.
