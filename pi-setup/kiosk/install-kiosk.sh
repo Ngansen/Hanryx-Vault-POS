@@ -140,7 +140,9 @@ fi
 # kills xinit when launched by a systemd Service=. Allow anybody, request root.
 XWRAP=/etc/X11/Xwrapper.config
 mkdir -p /etc/X11
-if [[ -f "$XWRAP" ]] && grep -qE '^allowed_users\s*=\s*anybody' "$XWRAP"; then
+if [[ -f "$XWRAP" ]] \
+   && grep -qE '^allowed_users\s*=\s*anybody'      "$XWRAP" \
+   && grep -qE '^needs_root_rights\s*=\s*yes'      "$XWRAP"; then
     info "Xwrapper.config already permissive."
 else
     info "Patching $XWRAP (allowed_users=anybody, needs_root_rights=yes)"
