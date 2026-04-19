@@ -2777,6 +2777,36 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_cards_kr_name    ON cards_kr (name_kr)",
         "CREATE INDEX IF NOT EXISTS idx_cards_kr_pokedex ON cards_kr (pokedex_no)",
         "CREATE INDEX IF NOT EXISTS idx_cards_kr_setnum  ON cards_kr (prod_code, card_number)",
+
+        # ── Simplified-Chinese Pokémon TCG (PTCG-CHS-Datasets) ───────────────
+        """CREATE TABLE IF NOT EXISTS cards_chs (
+            card_id            BIGINT NOT NULL,
+            commodity_code     TEXT NOT NULL DEFAULT '',
+            collection_number  TEXT NOT NULL DEFAULT '',
+            commodity_name     TEXT NOT NULL DEFAULT '',
+            name_chs           TEXT NOT NULL,
+            yoren_code         TEXT NOT NULL DEFAULT '',
+            card_type          TEXT NOT NULL DEFAULT '',
+            card_type_text     TEXT NOT NULL DEFAULT '',
+            rarity             TEXT NOT NULL DEFAULT '',
+            rarity_text        TEXT NOT NULL DEFAULT '',
+            regulation_mark    TEXT NOT NULL DEFAULT '',
+            hp                 INTEGER,
+            attribute          TEXT NOT NULL DEFAULT '',
+            evolve_text        TEXT NOT NULL DEFAULT '',
+            pokedex_code       TEXT NOT NULL DEFAULT '',
+            pokedex_text       TEXT NOT NULL DEFAULT '',
+            illustrators       TEXT NOT NULL DEFAULT '',
+            image_url          TEXT NOT NULL DEFAULT '',
+            hash               TEXT NOT NULL DEFAULT '',
+            raw_json           JSONB,
+            imported_at        BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (card_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cards_chs_name        ON cards_chs (name_chs)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_chs_commodity   ON cards_chs (commodity_code)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_chs_collection  ON cards_chs (collection_number)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_chs_yoren       ON cards_chs (yoren_code)",
     ]
 
     for stmt in _ddl_statements:
@@ -2800,6 +2830,24 @@ def init_db():
                 log.info("[init_db] cards_kr already has %d rows", cnt)
         except Exception as _kre:
             log.warning("[init_db] Korean card import scheduling failed: %s", _kre)
+
+    # ── Trigger Chinese card import (idempotent — only runs if table empty) ──
+    if os.environ.get("CHS_IMPORT_ON_BOOT", "1") == "1":
+        try:
+            import import_chs_cards  # local module
+            cnt = import_chs_cards.chs_cards_count(db)
+            if cnt == 0:
+                log.info("[init_db] cards_chs is empty — kicking off background import")
+                import threading
+                threading.Thread(
+                    target=_run_chs_import_safely,
+                    name="chs-cards-import",
+                    daemon=True,
+                ).start()
+            else:
+                log.info("[init_db] cards_chs already has %d rows", cnt)
+        except Exception as _ce:
+            log.warning("[init_db] Chinese card import scheduling failed: %s", _ce)
 
     # ── Safe migration: add columns that may be missing on older installs ────
     def _col_exists(table, col):
@@ -4536,6 +4584,32 @@ def _has_hangul(s: str) -> bool:
     return False
 
 
+def _has_cjk(s: str) -> bool:
+    """
+    True if the string contains any CJK ideograph (Han characters used by both
+    Chinese and Japanese kanji).  Note: Hangul is NOT CJK — use _has_hangul.
+    """
+    if not s:
+        return False
+    for ch in s:
+        cp = ord(ch)
+        if (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF) \
+           or (0x20000 <= cp <= 0x2A6DF) or (0xF900 <= cp <= 0xFAFF):
+            return True
+    return False
+
+
+def _has_kana(s: str) -> bool:
+    """True if the string contains hiragana or katakana (Japanese-only signal)."""
+    if not s:
+        return False
+    for ch in s:
+        cp = ord(ch)
+        if (0x3040 <= cp <= 0x309F) or (0x30A0 <= cp <= 0x30FF):
+            return True
+    return False
+
+
 def _kr_card_lookup(db, *, name: str = "", set_code: str = "",
                     card_num: str = "", limit: int = 10) -> list:
     """
@@ -4624,6 +4698,301 @@ def _run_kr_import_safely() -> None:
                 pass
     except Exception as exc:
         log.warning("[kr-import] background import failed: %s", exc, exc_info=True)
+
+
+def _chs_card_lookup(db, *, name: str = "", set_code: str = "",
+                     card_num: str = "", limit: int = 10) -> list:
+    """
+    Look up Simplified-Chinese cards in cards_chs.
+    set_code maps to commodity_code (e.g. "CSV8C") and card_num matches the
+    numeric prefix of collection_number (e.g. "008/207" → "008").
+    """
+    name = (name or "").strip()
+    set_code = (set_code or "").strip().upper()
+    card_num = (card_num or "").strip().lstrip("0")
+
+    if not (name or set_code or card_num):
+        return []
+
+    where, params = [], []
+    if name:
+        where.append("name_chs ILIKE %s")
+        params.append(f"%{name}%")
+    if set_code:
+        where.append("UPPER(commodity_code) = %s")
+        params.append(set_code)
+    if card_num:
+        # collection_number is "008/207" — match the part before the slash
+        where.append("split_part(collection_number, '/', 1) = LPAD(%s, 3, '0')")
+        params.append(card_num or "0")
+
+    sql = (
+        "SELECT card_id, commodity_code, collection_number, commodity_name, "
+        "       name_chs, rarity_text, illustrators, image_url, evolve_text "
+        "FROM cards_chs WHERE " + " AND ".join(where) + " "
+        "ORDER BY card_id DESC LIMIT %s"
+    )
+    params.append(int(limit))
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as exc:
+        log.warning("[chs-lookup] query failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+
+    out = []
+    for r in rows:
+        coll_num = (r[2] or "").split("/")[0] or ""
+        out.append({
+            "id":          f"{r[1]}-{coll_num}" if r[1] else str(r[0]),
+            "tcg_id":      str(r[0]),
+            "setCode":     (r[1] or "").upper(),
+            "set_code":    (r[1] or "").upper(),
+            "cardNumber":  coll_num,
+            "card_number": coll_num,
+            "setName":     r[3],
+            "name":        r[4],
+            "name_chs":    r[4],
+            "rarity":      r[5],
+            "artist":      r[6],
+            "imageUrl":    r[7],
+            "image_url":   r[7],
+            "evolution":   r[8],
+            "language":    "Simplified Chinese",
+            "source":      "PTCG-CHS-Datasets",
+            "price":       0,
+        })
+    return out
+
+
+def _run_chs_import_safely() -> None:
+    """Background-thread entry point: imports Chinese cards into Postgres."""
+    try:
+        import import_chs_cards
+        conn = _direct_db()
+        try:
+            result = import_chs_cards.import_chinese_cards(conn, force=False)
+            log.info("[chs-import] background result: %s", result)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        log.warning("[chs-import] background import failed: %s", exc, exc_info=True)
+
+
+def _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
+                              limit, lang):
+    """
+    Merge Korean and Chinese lookup results into the main result list when:
+      - lang param explicitly requests them ("kr", "chs"/"zh"), OR
+      - the query text contains Hangul / CJK characters, OR
+      - the English search returned no results (use them as a fallback)
+    Asian-explicit queries put Asian results first; otherwise they're appended.
+    """
+    is_kr_query  = lang == "kr"             or _has_hangul(qtext)
+    is_chs_query = lang in ("chs", "zh")    or (_has_cjk(qtext) and not _has_kana(qtext))
+
+    if is_kr_query:
+        kr = _kr_card_lookup(db, name=qtext, set_code=set_code,
+                             card_num=card_num, limit=limit)
+        results = kr + [r for r in results if r not in kr]
+    elif is_chs_query:
+        chs = _chs_card_lookup(db, name=qtext, set_code=set_code,
+                               card_num=card_num, limit=limit)
+        results = chs + [r for r in results if r not in chs]
+    elif not results and lang == "":
+        # No English hits and no language hint — try Korean then Chinese
+        results = _kr_card_lookup(db, name=qtext, set_code=set_code,
+                                  card_num=card_num, limit=limit)
+        if not results:
+            results = _chs_card_lookup(db, name=qtext, set_code=set_code,
+                                       card_num=card_num, limit=limit)
+
+    return results[:limit]
+
+
+@app.route("/admin/chs-cards/refresh", methods=["POST"])
+def chs_cards_refresh():
+    """Manually re-import the Chinese dataset (truncates and re-pulls)."""
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import import_chs_cards
+        conn = _direct_db()
+        try:
+            result = import_chs_cards.import_chinese_cards(conn, force=True)
+            return jsonify(result)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        log.exception("[chs-import] manual refresh failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/chs-cards/status", methods=["GET"])
+def chs_cards_status():
+    """Quick check on how many Chinese cards are loaded."""
+    try:
+        import import_chs_cards
+        db = get_db()
+        cnt = import_chs_cards.chs_cards_count(db)
+        sample = db.execute(
+            "SELECT name_chs, commodity_code, collection_number, rarity_text "
+            "FROM cards_chs ORDER BY imported_at DESC LIMIT 5"
+        ).fetchall()
+        return jsonify({
+            "count": cnt,
+            "sample": [
+                {"name": r[0], "set": r[1], "number": r[2], "rarity": r[3]}
+                for r in (sample or [])
+            ],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "count": 0}), 500
+
+
+# ---------------------------------------------------------------------------
+# Multi-language OCR endpoint — accepts an image upload, recognises EN/KO/JA/ZH
+# text via Tesseract, then routes the recognised text through the appropriate
+# language-specific lookup (cards_kr / cards_chs / inventory).
+# ---------------------------------------------------------------------------
+
+@app.route("/card/scan/image", methods=["POST"])
+def card_scan_image():
+    """
+    OCR-based card scan.
+
+    Accepts:
+      - multipart/form-data with field `image` (a JPEG/PNG card photo), OR
+      - JSON body `{"image_b64": "<base64>"}`
+      - optional `lang` query param to force a language (eng/kor/jpn/chi_sim)
+      - optional `limit` query param (default 10, max 50)
+
+    Returns:
+      {
+        "recognized_text": "...",     # raw Tesseract output
+        "candidate":       "...",     # the line we used for lookup (longest)
+        "scripts":         [...],     # detected scripts: hangul/cjk/kana/latin
+        "results":         [...],     # ranked card matches (same shape as
+                                       # /card/lookup)
+        "count":           N,
+      }
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError as exc:
+        return jsonify({"error": f"OCR dependencies missing: {exc}"}), 500
+
+    # ── 1. Read the uploaded image ───────────────────────────────────────────
+    img = None
+    upload = request.files.get("image")
+    if upload is not None and upload.filename:
+        try:
+            img = Image.open(upload.stream)
+        except Exception as exc:
+            return jsonify({"error": f"could not open image: {exc}"}), 400
+    else:
+        body = request.get_json(silent=True) or {}
+        b64 = body.get("image_b64") or body.get("image")
+        if b64:
+            import base64, io
+            try:
+                if "," in b64 and b64.startswith("data:"):
+                    b64 = b64.split(",", 1)[1]
+                img = Image.open(io.BytesIO(base64.b64decode(b64)))
+            except Exception as exc:
+                return jsonify({"error": f"bad image_b64: {exc}"}), 400
+
+    if img is None:
+        return jsonify({
+            "error": "no image provided. POST multipart 'image' field "
+                     "or JSON {'image_b64': '...'}"
+        }), 400
+
+    # Convert to RGB to satisfy Tesseract on RGBA / palette images
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    # ── 2. Pick OCR languages ────────────────────────────────────────────────
+    forced = (request.args.get("lang") or "").strip().lower()
+    lang_map = {
+        "en": "eng", "eng": "eng",
+        "kr": "kor", "kor": "kor", "ko": "kor",
+        "jp": "jpn", "jpn": "jpn", "ja": "jpn",
+        "zh": "chi_sim", "chs": "chi_sim", "chi_sim": "chi_sim",
+    }
+    if forced in lang_map:
+        ocr_langs = lang_map[forced]
+    else:
+        # Run multi-language pass — Tesseract is decent at picking the right
+        # script when several langs are loaded together
+        ocr_langs = "eng+kor+jpn+chi_sim"
+
+    # ── 3. Run Tesseract ─────────────────────────────────────────────────────
+    try:
+        text = pytesseract.image_to_string(img, lang=ocr_langs).strip()
+    except pytesseract.TesseractError as exc:
+        return jsonify({"error": f"tesseract failed: {exc}",
+                        "lang": ocr_langs}), 500
+
+    # ── 4. Detect scripts and pick a candidate line ──────────────────────────
+    scripts = []
+    if _has_hangul(text): scripts.append("hangul")
+    if _has_kana(text):   scripts.append("kana")
+    if _has_cjk(text):    scripts.append("cjk")
+    if any((c.isascii() and c.isalpha()) for c in text): scripts.append("latin")
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    # Prefer lines that contain Asian characters when present (card name is
+    # usually one of the largest pieces of text on the card)
+    def _line_score(ln: str) -> tuple:
+        return (
+            _has_hangul(ln) or _has_kana(ln) or _has_cjk(ln),
+            len(ln),
+        )
+    candidate = max(lines, key=_line_score, default="") if lines else ""
+
+    try:
+        limit = min(_safe_int(request.args.get("limit", 10), 10), 50)
+    except (ValueError, TypeError):
+        limit = 10
+
+    # ── 5. Route to the right lookup based on detected script ────────────────
+    db = get_db()
+    results: list = []
+
+    if candidate:
+        if "hangul" in scripts:
+            results = _kr_card_lookup(db, name=candidate, limit=limit)
+        elif "kana" in scripts:
+            # Japanese — no JP table yet, fall through to English/general
+            results = _card_lookup(db, q=candidate, limit=limit)
+        elif "cjk" in scripts:
+            results = _chs_card_lookup(db, name=candidate, limit=limit)
+
+        # Always also try the general English lookup — many Asian cards print
+        # the English name underneath
+        if not results:
+            results = _card_lookup(db, q=candidate, limit=limit)
+
+    return jsonify({
+        "recognized_text": text,
+        "candidate":       candidate,
+        "scripts":         scripts,
+        "ocr_lang":        ocr_langs,
+        "results":         results,
+        "count":           len(results),
+    })
 
 
 def _kr_admin_authorized(req) -> bool:
@@ -4725,20 +5094,11 @@ def card_lookup():
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
 
-    # ── Korean fallback: any Hangul in query OR explicit lang=kr OR no hits ──
+    # ── Asian-language fallbacks (Korean / Chinese) ──────────────────────────
     lang = (request.args.get("lang") or "").strip().lower()
-    kr_query_text = name or q
-    if lang == "kr" or _has_hangul(kr_query_text) or (not results and lang == ""):
-        kr_results = _kr_card_lookup(db, name=kr_query_text,
-                                     set_code=set_code, card_num=card_num,
-                                     limit=limit)
-        if kr_results:
-            # Korean-explicit query → put KR first; otherwise append as fallback
-            if lang == "kr" or _has_hangul(kr_query_text):
-                results = kr_results + [r for r in results if r not in kr_results]
-            else:
-                results = results + kr_results
-            results = results[:limit]
+    qtext = name or q
+    results = _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
+                                       limit, lang)
 
     if request.args.get("kiosk") == "1" and results:
         _kiosk_push_lookup(results[0])
@@ -4784,17 +5144,9 @@ def card_lookup_post():
                            set_code=set_code, card_num=card_num, limit=limit)
 
     lang = (body.get("lang") or "").strip().lower()
-    kr_query_text = name or q
-    if lang == "kr" or _has_hangul(kr_query_text) or (not results and lang == ""):
-        kr_results = _kr_card_lookup(db, name=kr_query_text,
-                                     set_code=set_code, card_num=card_num,
-                                     limit=limit)
-        if kr_results:
-            if lang == "kr" or _has_hangul(kr_query_text):
-                results = kr_results + [r for r in results if r not in kr_results]
-            else:
-                results = results + kr_results
-            results = results[:limit]
+    qtext = name or q
+    results = _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
+                                       limit, lang)
 
     if body.get("kiosk") and results:
         _kiosk_push_lookup(results[0])
