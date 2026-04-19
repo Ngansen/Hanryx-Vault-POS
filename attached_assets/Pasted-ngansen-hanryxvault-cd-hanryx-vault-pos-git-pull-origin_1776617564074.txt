@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull origin main
+sudo cp pi-setup/kiosk/standby-toggle.sh /opt/hanryxvault/kiosk/standby-toggle.sh
+sudo chmod +x /opt/hanryxvault/kiosk/standby-toggle.sh
+
+# Test it manually — first press should turn screens OFF
+DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority /opt/hanryxvault/kiosk/standby-toggle.sh
+sleep 3
+# Second press should turn them back ON
+DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority /opt/hanryxvault/kiosk/standby-toggle.sh
+remote: Enumerating objects: 35, done.
+remote: Counting objects: 100% (35/35), done.
+remote: Compressing objects: 100% (18/18), done.
+remote: Total 29 (delta 19), reused 21 (delta 11), pack-reused 0 (from 0)
+Unpacking objects: 100% (29/29), 9.07 KiB | 386.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   97fdee5..b016682  main       -> origin/main
+Updating 97fdee5..b016682
+Fast-forward
+ ...udo-mkdir-p_1776611210536.txt |  25 ++
+ ...ntime-has-b_1776608125824.txt | 184 +++++++++
+ ...nd-got-rebu_1776614261625.txt |  48 +++
+ ...ryxvault-ki_1776614633418.txt |  26 ++
+ ...-xbindkeys-_1776616137985.txt | 122 ++++++
+ pi-setup/docker-compose.yml      |  12 +
+ pi-setup/kiosk/standby-toggle.sh |  54 ++-
+ 7 files changed, 459 insertions(+), 12 deletions(-)
+ create mode 100644 attached_assets/Pasted--deno-ngansen-hanryxvault-hanryx-vault-pos-sudo-mkdir-p_1776611210536.txt
+ create mode 100644 attached_assets/Pasted-nd-config-YouTube-extraction-without-a-JS-runtime-has-b_1776608125824.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-1-Container-is-healthy-and-got-rebu_1776614261625.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-sudo-systemctl-start-hanryxvault-ki_1776614633418.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-which-xbindkeys-pgrep-af-xbindkeys-_1776616137985.txt
+[sudo] password for ngansen: 
+[standby-toggle] monitors -> off  (outputs: HDMI-1 HDMI-2)
+[standby-toggle] monitors -> on  (outputs: HDMI-1 HDMI-2)
+ngansen@hanryxvault:~/hanryx-vault-pos $
