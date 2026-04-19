@@ -1494,8 +1494,41 @@ _smart_scanner = _SmartScanner()
 # Refreshed weekly in the background — no per-request network calls.
 # ---------------------------------------------------------------------------
 
-_POKEAPI_BASE = "https://pokeapi.co/api/v2"
+# Primary PokéAPI URL — defaults to the self-hosted offline mirror running in
+# the `pokeapi` Docker service (see pi-setup/docker-compose.yml).  Override with
+# POKEAPI_BASE_URL=… in the environment for development outside Docker.
+_POKEAPI_BASE        = os.environ.get("POKEAPI_BASE_URL", "https://pokeapi.co/api/v2").rstrip("/")
+_POKEAPI_FALLBACK    = "https://pokeapi.co/api/v2"
 _POKEAPI_CACHE_TTL_DAYS = 7
+
+
+def _pokeapi_get(path: str, *, params=None, timeout: int = 20):
+    """
+    GET against the PokéAPI, preferring the local offline mirror.
+    Falls back to https://pokeapi.co/api/v2 if the mirror is unreachable
+    or returns a 5xx response.  `path` should start with '/'.
+    """
+    headers = {"User-Agent": "HanryxVault-POS/1.0"}
+    last_exc = None
+    bases = [_POKEAPI_BASE]
+    if _POKEAPI_BASE != _POKEAPI_FALLBACK:
+        bases.append(_POKEAPI_FALLBACK)
+
+    for base in bases:
+        url = f"{base}{path}"
+        try:
+            r = _requests.get(url, params=params, timeout=timeout, headers=headers)
+            if r.status_code >= 500:
+                last_exc = RuntimeError(f"{url} → HTTP {r.status_code}")
+                log.warning("[pokeapi] %s returned %d, trying next base", url, r.status_code)
+                continue
+            r.raise_for_status()
+            return r
+        except Exception as exc:
+            last_exc = exc
+            log.warning("[pokeapi] %s failed (%s), trying next base", url, exc)
+            continue
+    raise last_exc or RuntimeError("pokeapi: all bases failed")
 
 # Slugs that need a special display name (PokeAPI returns lowercase-hyphen slugs)
 _SLUG_SPECIAL: dict[str, str] = {
@@ -1560,13 +1593,11 @@ def _pokeapi_fetch_and_store() -> int:
     Returns the count of names stored, or 0 on failure.
     """
     try:
-        resp = _requests.get(
-            f"{_POKEAPI_BASE}/pokemon-species",
+        resp = _pokeapi_get(
+            "/pokemon-species",
             params={"limit": 10000, "offset": 0},
             timeout=20,
-            headers={"User-Agent": "HanryxVault-POS/1.0"},
         )
-        resp.raise_for_status()
         data    = resp.json()
         results = data.get("results", [])
     except Exception as _e:

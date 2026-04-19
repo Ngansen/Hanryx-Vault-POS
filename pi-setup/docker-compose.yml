@@ -121,6 +121,11 @@ services:
       EBAY_APP_ID:  ${EBAY_APP_ID:-}
       EBAY_CERT_ID: ${EBAY_CERT_ID:-}
 
+      # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
+      # The Flask server prefers this URL and only falls back to pokeapi.co
+      # if the local mirror is unreachable.
+      POKEAPI_BASE_URL: ${POKEAPI_BASE_URL:-http://pokeapi/api/v2}
+
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
@@ -153,6 +158,30 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
+
+  # ── Offline PokeAPI mirror ────────────────────────────────────────────────────
+  # nginx serving the static JSON dump from PokeAPI/api-data.  On first start
+  # the init script clones the dataset (~240 MB) into the volume; subsequent
+  # starts are instant.  The Flask POS server reads POKEAPI_BASE_URL and prefers
+  # this URL over the public pokeapi.co API so the POS keeps working when the
+  # shop's internet drops.
+  pokeapi:
+    build: ./pokeapi
+    restart: unless-stopped
+    volumes:
+      - pokeapi-data:/usr/share/nginx/html
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
   storefront:
@@ -195,3 +224,4 @@ volumes:
   pgdata:
   pos-data:
   card-images:
+  pokeapi-data:
