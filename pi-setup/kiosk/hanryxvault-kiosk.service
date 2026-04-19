@@ -25,11 +25,13 @@ ExecStartPre=/bin/bash -c \
 
 # ── Display ───────────────────────────────────────────────────────────────────
 # xinit starts a bare X server on virtual terminal 7 (below the default getty
-# VTs 1-6).  -nocursor hides the hardware cursor at the X driver level.
-# -nolisten tcp blocks remote X connections for security.
+# VTs 1-6).  -nolisten tcp blocks remote X connections for security.
+# (-nocursor was removed so the mouse pointer is available for the /admin
+#  dashboard on the right monitor.  unclutter still auto-hides the idle cursor
+#  on the customer kiosk display.)
 ExecStart=/usr/bin/xinit \
     /opt/hanryxvault/kiosk/start-monitor.sh \
-    -- :0 vt7 -nocursor -nolisten tcp -dpms
+    -- :0 vt7 -nolisten tcp -dpms
 
 # ── Reliability ───────────────────────────────────────────────────────────────
 Restart=always
