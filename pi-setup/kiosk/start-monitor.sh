@@ -128,7 +128,6 @@ COMMON_FLAGS=(
     --check-for-update-interval=31536000
     # Pi 5 hardening — prevents long-running renderer OOM with YouTube iframe
     --disable-software-rasterizer
-    --disable-gpu-sandbox
     --enable-low-end-device-mode
     --disk-cache-size=33554432
     --media-cache-size=33554432
