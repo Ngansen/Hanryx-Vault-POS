@@ -100,16 +100,25 @@ fi
 echo "[kiosk] Using browser: $CHROMIUM"
 
 # Common Chromium flags
+# Memory / GPU-conservative for Pi 5 — reduces YouTube iframe renderer crashes.
 COMMON_FLAGS=(
     --noerrdialogs
     --disable-infobars
     --disable-translate
-    --disable-features=TranslateUI,Notifications
+    --disable-features=TranslateUI,Notifications,CalculateNativeWinOcclusion
     --no-first-run
     --autoplay-policy=no-user-gesture-required
     --disable-pinch
     --overscroll-history-navigation=0
     --check-for-update-interval=31536000
+    # Pi 5 hardening — prevents long-running renderer OOM with YouTube iframe
+    --disable-software-rasterizer
+    --disable-gpu-sandbox
+    --enable-low-end-device-mode
+    --disk-cache-size=33554432
+    --media-cache-size=33554432
+    --js-flags=--max-old-space-size=128
+    --process-per-site
 )
 
 launch_window() {
@@ -136,9 +145,44 @@ if (( RW > 0 )); then
     launch_window "$KIOSK_RIGHT_URL" "$RW" "$RH" "$RX" "$RY" "right"
 fi
 
+# ── Watchdog ─────────────────────────────────────────────────────────────────
+# Two failure modes we recover from:
+#   1. A chromium child process exits  → wait -n returns → we exit → systemd
+#      restarts the whole kiosk service (clean X + chromium).
+#   2. The chromium browser process keeps running but a tab/renderer crashed
+#      (the "Aw Snap" sad face).  JavaScript is dead so the page-level
+#      YouTube watchdog can't recover.  We poll renderer count + uptime and
+#      force-exit so systemd recycles.
+MAX_UPTIME=14400      # 4 hours — proactive recycle even if nothing crashed
+MIN_RENDERERS=1       # at least one renderer per window expected
+EXPECTED_WINDOWS=$(( (LW > 0) + (RW > 0) ))
+START_TS=$(date +%s)
+
+(
+    sleep 60   # let chromium settle before first check
+    while sleep 30; do
+        now=$(date +%s)
+        uptime=$(( now - START_TS ))
+        if (( uptime >= MAX_UPTIME )); then
+            echo "[kiosk-watchdog] Uptime ${uptime}s >= ${MAX_UPTIME}s — recycling"
+            pkill -TERM -f "$CHROMIUM" 2>/dev/null || true
+            exit 0
+        fi
+        # Count renderer processes (one per visible tab/window)
+        renderers=$(pgrep -fc 'chromium.*--type=renderer' || echo 0)
+        if (( renderers < EXPECTED_WINDOWS * MIN_RENDERERS )); then
+            echo "[kiosk-watchdog] Renderers=$renderers (expected >= $EXPECTED_WINDOWS) — recycling"
+            pkill -TERM -f "$CHROMIUM" 2>/dev/null || true
+            exit 0
+        fi
+    done
+) &
+WATCHDOG_PID=$!
+
 # Keep the X session alive until any chromium exits, then exit (xinit will
 # tear down X and systemd will restart us).
 wait -n
-echo "[kiosk] A Chromium window exited — shutting down session"
+echo "[kiosk] A Chromium window exited or watchdog tripped — shutting down session"
+kill "$WATCHDOG_PID" 2>/dev/null || true
 pkill -TERM -P $$ 2>/dev/null || true
 exit 0
