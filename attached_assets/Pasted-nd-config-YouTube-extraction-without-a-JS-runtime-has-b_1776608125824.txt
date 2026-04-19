@@ -1,0 +1,184 @@
+nd/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] nfpsYGAGzF0: Downloading android vr player API JSON
+ERROR: [youtube] nfpsYGAGzF0: This video is not available
+[download] Downloading item 11 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=JhhupHQlal8
+[youtube] JhhupHQlal8: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] JhhupHQlal8: Downloading android vr player API JSON
+ERROR: [youtube] JhhupHQlal8: This video is not available
+[download] Downloading item 12 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=1TlOcjJodHw
+[youtube] 1TlOcjJodHw: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 1TlOcjJodHw: Downloading android vr player API JSON
+ERROR: [youtube] 1TlOcjJodHw: This video is not available
+[download] Downloading item 13 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=3l1lSNQxJA0
+[youtube] 3l1lSNQxJA0: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 3l1lSNQxJA0: Downloading android vr player API JSON
+ERROR: [youtube] 3l1lSNQxJA0: This video is not available
+[download] Downloading item 14 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=Cd-3_QOIjgU
+[youtube] Cd-3_QOIjgU: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] Cd-3_QOIjgU: Downloading android vr player API JSON
+ERROR: [youtube] Cd-3_QOIjgU: This video is not available
+[download] Downloading item 15 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=9wAKxOavTnw
+[youtube] 9wAKxOavTnw: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 9wAKxOavTnw: Downloading android vr player API JSON
+ERROR: [youtube] 9wAKxOavTnw: This video is not available
+[download] Downloading item 16 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=326R_Lhua5w
+[youtube] 326R_Lhua5w: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 326R_Lhua5w: Downloading android vr player API JSON
+ERROR: [youtube] 326R_Lhua5w: This video is not available
+[download] Downloading item 17 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=R-GNznqs7cI
+[youtube] R-GNznqs7cI: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] R-GNznqs7cI: Downloading android vr player API JSON
+ERROR: [youtube] R-GNznqs7cI: This video is not available
+[download] Downloading item 18 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=6uNYmqvF24k
+[youtube] 6uNYmqvF24k: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 6uNYmqvF24k: Downloading android vr player API JSON
+ERROR: [youtube] 6uNYmqvF24k: This video is not available
+[download] Downloading item 19 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=boY4QaYhBeM
+[youtube] boY4QaYhBeM: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] boY4QaYhBeM: Downloading android vr player API JSON
+ERROR: [youtube] boY4QaYhBeM: This video is not available
+[download] Downloading item 20 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=T23nJU-KwZo
+[youtube] T23nJU-KwZo: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] T23nJU-KwZo: Downloading android vr player API JSON
+ERROR: [youtube] T23nJU-KwZo: This video is not available
+[download] Downloading item 21 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=TYhdezzyqPo
+[youtube] TYhdezzyqPo: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] TYhdezzyqPo: Downloading android vr player API JSON
+ERROR: [youtube] TYhdezzyqPo: This video is not available
+[download] Downloading item 22 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=hrANeOomxRw
+[youtube] hrANeOomxRw: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] hrANeOomxRw: Downloading android vr player API JSON
+ERROR: [youtube] hrANeOomxRw: This video is not available
+[download] Downloading item 23 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=9IymXcXl4fk
+[youtube] 9IymXcXl4fk: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 9IymXcXl4fk: Downloading android vr player API JSON
+ERROR: [youtube] 9IymXcXl4fk: This video is not available
+[download] Downloading item 24 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=9aLD8SGoPIc
+[youtube] 9aLD8SGoPIc: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 9aLD8SGoPIc: Downloading android vr player API JSON
+ERROR: [youtube] 9aLD8SGoPIc: This video is not available
+[download] Downloading item 25 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=rrQmjrZedac
+[youtube] rrQmjrZedac: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] rrQmjrZedac: Downloading android vr player API JSON
+ERROR: [youtube] rrQmjrZedac: This video is not available
+[download] Downloading item 26 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=XwpbJK-WE8Q
+[youtube] XwpbJK-WE8Q: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] XwpbJK-WE8Q: Downloading android vr player API JSON
+ERROR: [youtube] XwpbJK-WE8Q: This video is not available
+[download] Downloading item 27 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=lKggkmrv7q4
+[youtube] lKggkmrv7q4: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] lKggkmrv7q4: Downloading android vr player API JSON
+ERROR: [youtube] lKggkmrv7q4: This video is not available
+[download] Downloading item 28 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=_LhB0LIQlQ0
+[youtube] _LhB0LIQlQ0: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] _LhB0LIQlQ0: Downloading android vr player API JSON
+ERROR: [youtube] _LhB0LIQlQ0: This video is not available
+[download] Downloading item 29 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=f8mWMqLO88A
+[youtube] f8mWMqLO88A: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] f8mWMqLO88A: Downloading android vr player API JSON
+ERROR: [youtube] f8mWMqLO88A: This video is not available
+[download] Downloading item 30 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=mRR7mbV0u4U
+[youtube] mRR7mbV0u4U: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] mRR7mbV0u4U: Downloading android vr player API JSON
+ERROR: [youtube] mRR7mbV0u4U: This video is not available
+[download] Downloading item 31 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=XpwNBGB6Fuo
+[youtube] XpwNBGB6Fuo: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] XpwNBGB6Fuo: Downloading android vr player API JSON
+ERROR: [youtube] XpwNBGB6Fuo: This video is not available
+[download] Downloading item 32 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=RYdXQlBjjPI
+[youtube] RYdXQlBjjPI: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] RYdXQlBjjPI: Downloading android vr player API JSON
+ERROR: [youtube] RYdXQlBjjPI: This video is not available
+[download] Downloading item 33 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=1PfJMmwI6b4
+[youtube] 1PfJMmwI6b4: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] 1PfJMmwI6b4: Downloading android vr player API JSON
+ERROR: [youtube] 1PfJMmwI6b4: This video is not available
+[download] Downloading item 34 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=DhRYzCfjysY
+[youtube] DhRYzCfjysY: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] DhRYzCfjysY: Downloading android vr player API JSON
+ERROR: [youtube] DhRYzCfjysY: This video is not available
+[download] Downloading item 35 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=dHuwaW3Vlh4
+[youtube] dHuwaW3Vlh4: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] dHuwaW3Vlh4: Downloading android vr player API JSON
+ERROR: [youtube] dHuwaW3Vlh4: This video is not available
+[download] Downloading item 36 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=lSZ172BJoaE
+[youtube] lSZ172BJoaE: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] lSZ172BJoaE: Downloading android vr player API JSON
+ERROR: [youtube] lSZ172BJoaE: This video is not available
+[download] Downloading item 37 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=xTmgJ8-HCtI
+[youtube] xTmgJ8-HCtI: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] xTmgJ8-HCtI: Downloading android vr player API JSON
+ERROR: [youtube] xTmgJ8-HCtI: This video is not available
+[download] Downloading item 38 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=tuTr_cRGKds
+[youtube] tuTr_cRGKds: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] tuTr_cRGKds: Downloading android vr player API JSON
+ERROR: [youtube] tuTr_cRGKds: This video is not available
+[download] Downloading item 39 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=XXuhIoEBB_M
+[youtube] XXuhIoEBB_M: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] XXuhIoEBB_M: Downloading android vr player API JSON
+ERROR: [youtube] XXuhIoEBB_M: This video is not available
+[download] Downloading item 40 of 40
+[youtube] Extracting URL: https://www.youtube.com/watch?v=pBXQbh0mtCE
+[youtube] pBXQbh0mtCE: Downloading webpage
+WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+[youtube] pBXQbh0mtCE: Downloading android vr player API JSON
+ERROR: [youtube] pBXQbh0mtCE: This video is not available
+[download] Finished downloading playlist: All Pokemon episodes (in order)
