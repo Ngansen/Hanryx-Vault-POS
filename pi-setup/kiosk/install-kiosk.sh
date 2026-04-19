@@ -118,6 +118,20 @@ info "Installing systemd service: $SERVICE_NAME"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
+# ── Install nightly restart timer (clears chromium memory leaks) ─────────────
+RESTART_SVC=/etc/systemd/system/${SERVICE_NAME}-restart.service
+RESTART_TMR=/etc/systemd/system/${SERVICE_NAME}-restart.timer
+if [[ -f "$KIOSK_SRC/${SERVICE_NAME}-restart.service" && -f "$KIOSK_SRC/${SERVICE_NAME}-restart.timer" ]]; then
+    info "Installing nightly restart timer (04:30 local) …"
+    cp "$KIOSK_SRC/${SERVICE_NAME}-restart.service" "$RESTART_SVC"
+    cp "$KIOSK_SRC/${SERVICE_NAME}-restart.timer"   "$RESTART_TMR"
+    systemctl daemon-reload
+    systemctl enable --now "${SERVICE_NAME}-restart.timer"
+    info "Next nightly restart: $(systemctl list-timers ${SERVICE_NAME}-restart.timer --no-pager 2>/dev/null | awk 'NR==2{print $1,$2,$3}')"
+else
+    warn "Nightly restart timer files not found in $KIOSK_SRC — skipping."
+fi
+
 # ── Ownership ─────────────────────────────────────────────────────────────────
 chown -R "${KIOSK_USER}:${KIOSK_USER}" "$KIOSK_DEST" || true
 

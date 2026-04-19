@@ -1,0 +1,7 @@
+[Unit]
+Description=HanryxVault — Nightly kiosk restart (clears chromium memory leaks)
+Wants=hanryxvault-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart hanryxvault-kiosk.service

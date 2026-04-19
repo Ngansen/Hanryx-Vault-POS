@@ -18995,6 +18995,9 @@ def kiosk_display():
         _yt_api_tag = '<script src="https://www.youtube.com/iframe_api"></script>'
         _yt_init_js = (
             "var ytPlayer = null;\n"
+            "var _ytLastPlayingAt = Date.now();\n"
+            "var _ytErrorCount = 0;\n"
+            "var _ytRebuildPending = false;\n"
             "function _ytShow() {\n"
             "  var w=document.getElementById('yt-wrap');\n"
             "  var b=document.getElementById('unmute-btn');\n"
@@ -19011,21 +19014,59 @@ def kiosk_display():
             "  if(b){b.style.display='none';}\n"
             "  if(t){t.style.display='flex';}\n"
             "}\n"
-            "function onYouTubeIframeAPIReady() {\n"
+            "function _ytBuildPlayer() {\n"
             "  ytPlayer = new YT.Player('yt-frame', {\n"
             "    videoId: '" + _video_id_safe + "',\n"
             "    playerVars: {autoplay:1,mute:1,controls:0,rel:0,modestbranding:1,playsinline:1,\n"
             "      cc_load_policy:1,cc_lang_pref:'en'," + _loop_comma + _list_comma + "},\n"
             "    events: {\n"
-            "      onReady: function(e) { e.target.playVideo(); },\n"
+            "      onReady: function(e) { try{ e.target.playVideo(); }catch(_){} },\n"
             "      onStateChange: function(e) {\n"
-            "        if(e.data===YT.PlayerState.PLAYING) _ytShow();\n"
-            "        else if(e.data===YT.PlayerState.ENDED||e.data===-1) _ytHide();\n"
+            "        if(e.data===YT.PlayerState.PLAYING) { _ytShow(); _ytLastPlayingAt = Date.now(); _ytErrorCount = 0; }\n"
+            "        else if(e.data===YT.PlayerState.ENDED) { _ytHide(); }\n"
+            "        else if(e.data===-1) { _ytHide(); }\n"
             "      },\n"
-            "      onError: function() { _ytHide(); }\n"
+            "      onError: function(e) {\n"
+            "        _ytHide();\n"
+            "        _ytErrorCount++;\n"
+            "        console.warn('[kiosk] YT error code='+(e&&e.data)+' count='+_ytErrorCount);\n"
+            "        _ytScheduleRebuild(_ytErrorCount > 3 ? 30000 : 6000);\n"
+            "      }\n"
             "    }\n"
             "  });\n"
             "}\n"
+            "function _ytScheduleRebuild(delayMs) {\n"
+            "  if(_ytRebuildPending) return;\n"
+            "  _ytRebuildPending = true;\n"
+            "  setTimeout(function(){\n"
+            "    _ytRebuildPending = false;\n"
+            "    try { if(ytPlayer && ytPlayer.destroy) ytPlayer.destroy(); } catch(_){}\n"
+            "    var host = document.getElementById('yt-wrap');\n"
+            "    if(host){ host.innerHTML = '<div id=\"yt-frame\" style=\"width:100%;height:100%\"></div>'; }\n"
+            "    if(window.YT && YT.Player) { try { _ytBuildPlayer(); _ytLastPlayingAt = Date.now(); } catch(e){ console.warn('[kiosk] rebuild failed', e); } }\n"
+            "  }, delayMs || 6000);\n"
+            "}\n"
+            "function onYouTubeIframeAPIReady() { _ytBuildPlayer(); }\n"
+            "// Watchdog: if the player has been not-PLAYING for >45 s while the idle\n"
+            "// screen is on, the iframe is wedged (broken video, lost network, lost\n"
+            "// session). Tear it down and rebuild instead of showing a broken tile.\n"
+            "setInterval(function(){\n"
+            "  var idleVisible = false;\n"
+            "  var elI = document.getElementById('idle');\n"
+            "  if(elI && elI.style && elI.style.display !== 'none') idleVisible = true;\n"
+            "  if(!idleVisible) return;\n"
+            "  var stateOk = false;\n"
+            "  try {\n"
+            "    var st = ytPlayer && ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : null;\n"
+            "    if(st === 1 /* PLAYING */ || st === 3 /* BUFFERING */) { _ytLastPlayingAt = Date.now(); stateOk = true; }\n"
+            "  } catch(_){}\n"
+            "  var silentMs = Date.now() - _ytLastPlayingAt;\n"
+            "  if(!stateOk && silentMs > 45000) {\n"
+            "    console.warn('[kiosk] YT watchdog: idle '+silentMs+'ms — rebuilding player');\n"
+            "    _ytScheduleRebuild(1000);\n"
+            "    _ytLastPlayingAt = Date.now();  // reset so we don't immediately retrigger\n"
+            "  }\n"
+            "}, 15000);\n"
             "function _ytFadeVol(target, ms){\n"
             "  if(!ytPlayer || !ytPlayer.getVolume || !ytPlayer.setVolume) return;\n"
             "  var start = ytPlayer.getVolume();\n"
@@ -20168,6 +20209,29 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
         }});
     }}
     setTimeout(_sigPoll, 500);
+  }})();
+
+  /* ── Nightly auto-reload at 04:00 local ─────────────────────────────
+     Refreshes the kiosk page once per night to clear chromium memory
+     leaks, drop stale iframes, and re-fetch the latest server template.
+     Only fires while idle (no active cart) so we never interrupt a sale.
+  ── */
+  (function(){{
+    var _lastReloadDay = -1;
+    setInterval(function(){{
+      var now = new Date();
+      var day = now.getDate();
+      // Window: 04:00–04:05 local. Only once per day. Skip if not idle.
+      if(now.getHours() !== 4 || now.getMinutes() > 5) return;
+      if(day === _lastReloadDay) return;
+      var idleVisible = false;
+      var elI = document.getElementById('idle');
+      if(elI && elI.style && elI.style.display !== 'none') idleVisible = true;
+      if(!idleVisible) return;
+      _lastReloadDay = day;
+      console.warn('[kiosk] nightly auto-reload');
+      setTimeout(function(){{ window.location.reload(); }}, 500);
+    }}, 60000);  // check once a minute
   }})();
 
 }})();

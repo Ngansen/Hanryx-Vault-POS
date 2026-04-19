@@ -1,0 +1,13 @@
+[Unit]
+Description=HanryxVault — Nightly kiosk restart timer (04:30 local)
+
+[Timer]
+# Run once per day at 04:30 local time. The browser-side JS does its own
+# best-effort reload at 04:00; this is the belt-and-braces full process
+# restart so chromium starts each day with a clean slate (RAM, GPU, GL).
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
