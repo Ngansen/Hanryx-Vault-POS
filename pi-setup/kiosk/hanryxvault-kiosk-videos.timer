@@ -1,0 +1,14 @@
+[Unit]
+Description=HanryxVault Kiosk — weekly playlist refresh
+Documentation=https://github.com/Ngansen/Hanryx-Vault-POS
+
+[Timer]
+# Run once a week (Sunday 03:15) and once shortly after boot if we missed a run.
+OnBootSec=10min
+OnCalendar=Sun *-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=30min
+Unit=hanryxvault-kiosk-videos.service
+
+[Install]
+WantedBy=timers.target

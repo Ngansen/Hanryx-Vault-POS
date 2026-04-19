@@ -1,0 +1,20 @@
+[Unit]
+Description=HanryxVault Kiosk — refresh idle-screen video playlist
+Documentation=https://github.com/Ngansen/Hanryx-Vault-POS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ngansen
+Group=ngansen
+EnvironmentFile=-/etc/default/hanryxvault-kiosk
+ExecStart=/opt/hanryxvault/kiosk/download-playlist.sh
+# Don't fail the whole timer if the network is flaky — try again next week.
+SuccessExitStatus=0 1
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=multi-user.target

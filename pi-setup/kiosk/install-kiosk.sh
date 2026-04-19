@@ -62,7 +62,10 @@ apt-get install -y --no-install-recommends \
     xinit \
     x11-xserver-utils \
     unclutter \
+    xbindkeys \
     curl \
+    yt-dlp \
+    ffmpeg \
     fonts-noto-color-emoji \
     fonts-dejavu-core
 
@@ -82,6 +85,19 @@ mkdir -p "$KIOSK_DEST"
 cp "$KIOSK_SRC/start-monitor.sh"         "$KIOSK_DEST/start-monitor.sh"
 cp "$KIOSK_SRC/hanryxvault-kiosk.service" "$SERVICE_FILE"
 chmod +x "$KIOSK_DEST/start-monitor.sh"
+
+# F9 standby toggle helper
+if [[ -f "$KIOSK_SRC/standby-toggle.sh" ]]; then
+    cp "$KIOSK_SRC/standby-toggle.sh" "$KIOSK_DEST/standby-toggle.sh"
+    chmod +x "$KIOSK_DEST/standby-toggle.sh"
+fi
+
+# Idle-screen video playlist downloader
+if [[ -f "$KIOSK_SRC/download-playlist.sh" ]]; then
+    cp "$KIOSK_SRC/download-playlist.sh" "$KIOSK_DEST/download-playlist.sh"
+    chmod +x "$KIOSK_DEST/download-playlist.sh"
+    mkdir -p "$KIOSK_DEST/videos"
+fi
 
 # Substitute the kiosk user/home into the service template (template ships with
 # User=pi / /home/pi as defaults; rewrite to whatever KIOSK_USER we picked).
@@ -200,6 +216,54 @@ if [[ -f "$KIOSK_SRC/${SERVICE_NAME}-restart.service" && -f "$KIOSK_SRC/${SERVIC
     info "Next nightly restart: $(systemctl list-timers ${SERVICE_NAME}-restart.timer --no-pager 2>/dev/null | awk 'NR==2{print $1,$2,$3}')"
 else
     warn "Nightly restart timer files not found in $KIOSK_SRC — skipping."
+fi
+
+# ── Install weekly playlist refresh timer ────────────────────────────────────
+PLAYLIST_SVC=/etc/systemd/system/${SERVICE_NAME}-videos.service
+PLAYLIST_TMR=/etc/systemd/system/${SERVICE_NAME}-videos.timer
+if [[ -f "$KIOSK_SRC/${SERVICE_NAME}-videos.service" && -f "$KIOSK_SRC/${SERVICE_NAME}-videos.timer" ]]; then
+    info "Installing weekly playlist refresh timer (Sun 03:15) …"
+    cp "$KIOSK_SRC/${SERVICE_NAME}-videos.service" "$PLAYLIST_SVC"
+    cp "$KIOSK_SRC/${SERVICE_NAME}-videos.timer"   "$PLAYLIST_TMR"
+    if [[ "$KIOSK_USER" != "ngansen" ]]; then
+        sed -i "s|^User=.*|User=${KIOSK_USER}|"   "$PLAYLIST_SVC"
+        sed -i "s|^Group=.*|Group=${KIOSK_USER}|" "$PLAYLIST_SVC"
+    fi
+    systemctl daemon-reload
+    systemctl enable --now "${SERVICE_NAME}-videos.timer"
+fi
+
+# ── /etc/default/hanryxvault-kiosk — playlist URL + monitor layout ───────────
+DEFAULTS=/etc/default/hanryxvault-kiosk
+if [[ ! -f "$DEFAULTS" ]]; then
+    info "Writing default config to $DEFAULTS"
+    cat > "$DEFAULTS" <<EOF
+# HanryxVault Kiosk — environment defaults (sourced by start-monitor.sh and
+# download-playlist.sh).  Edit then 'sudo systemctl restart hanryxvault-kiosk'.
+
+# Idle-screen YouTube playlist (downloaded weekly to ${KIOSK_DEST}/videos/)
+KIOSK_PLAYLIST_URL="https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg"
+KIOSK_VIDEOS_DIR="${KIOSK_DEST}/videos"
+KIOSK_VIDEO_HEIGHT=720
+EOF
+elif ! grep -q '^KIOSK_PLAYLIST_URL=' "$DEFAULTS"; then
+    info "Adding KIOSK_PLAYLIST_URL to $DEFAULTS"
+    cat >> "$DEFAULTS" <<EOF
+
+# Idle-screen YouTube playlist (downloaded weekly to ${KIOSK_DEST}/videos/)
+KIOSK_PLAYLIST_URL="https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg"
+KIOSK_VIDEOS_DIR="${KIOSK_DEST}/videos"
+KIOSK_VIDEO_HEIGHT=720
+EOF
+fi
+
+# Allow the kiosk user to write into the videos dir
+chown -R "${KIOSK_USER}:${KIOSK_USER}" "$KIOSK_DEST/videos" 2>/dev/null || true
+
+# Kick off the first download in the background so the kiosk has content soon.
+if command -v yt-dlp &>/dev/null && [[ -x "$KIOSK_DEST/download-playlist.sh" ]]; then
+    info "Starting initial playlist download in background (this may take a while) …"
+    systemctl start "${SERVICE_NAME}-videos.service" --no-block || true
 fi
 
 # ── Ownership ─────────────────────────────────────────────────────────────────

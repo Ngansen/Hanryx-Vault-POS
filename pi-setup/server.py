@@ -119,7 +119,8 @@ except ImportError:
     _TRANSLATE_OK = False
 import qrcode as _qrcode
 import qrcode.constants as _qrcode_const
-from flask import Flask, request, jsonify, redirect, g, session, render_template_string, Response, send_file
+from flask import Flask, request, jsonify, redirect, g, session, render_template_string, Response, send_file, send_from_directory
+from urllib.parse import quote
 from flask_compress import Compress
 from cachetools import TTLCache
 
@@ -18951,6 +18952,65 @@ def kiosk_sse_stream():
         )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Local idle-screen video playlist
+#   download-playlist.sh drops MP4 files into KIOSK_VIDEOS_DIR.  The kiosk
+#   page fetches /kiosk/videos.json (a shuffled list) and plays each clip via
+#   an HTML5 <video> element, advancing on `ended` — no YouTube iframe, no
+#   ads, no V8 OOM, no network dependency once downloaded.
+# ─────────────────────────────────────────────────────────────────────────────
+KIOSK_VIDEOS_DIR = os.environ.get("KIOSK_VIDEOS_DIR", "/opt/hanryxvault/kiosk/videos")
+
+
+def _kiosk_local_videos() -> list[dict]:
+    """Return [{name, url, size}, …] of MP4s in KIOSK_VIDEOS_DIR."""
+    out = []
+    try:
+        if not os.path.isdir(KIOSK_VIDEOS_DIR):
+            return out
+        for fn in sorted(os.listdir(KIOSK_VIDEOS_DIR)):
+            if not fn.lower().endswith(".mp4"):
+                continue
+            full = os.path.join(KIOSK_VIDEOS_DIR, fn)
+            try:
+                sz = os.path.getsize(full)
+            except OSError:
+                continue
+            if sz < 64 * 1024:   # skip placeholder/partial files
+                continue
+            out.append({
+                "name": fn,
+                "url":  "/kiosk/videos/" + quote(fn),
+                "size": sz,
+            })
+    except Exception as _e:
+        app.logger.warning("kiosk videos list failed: %s", _e)
+    return out
+
+
+@app.route("/kiosk/videos.json")
+def kiosk_videos_list():
+    """JSON list of local idle-screen MP4s.  Shuffled client-side."""
+    vids = _kiosk_local_videos()
+    return jsonify({"count": len(vids), "videos": vids})
+
+
+@app.route("/kiosk/videos/<path:filename>")
+def kiosk_videos_file(filename: str):
+    """Serve a single MP4 from KIOSK_VIDEOS_DIR (with HTTP Range support)."""
+    # send_from_directory blocks path traversal automatically.
+    safe_name = os.path.basename(filename)
+    if not safe_name.lower().endswith(".mp4"):
+        return ("not found", 404)
+    resp = send_from_directory(
+        KIOSK_VIDEOS_DIR, safe_name,
+        mimetype="video/mp4", conditional=True,
+    )
+    # Long cache — filenames include the YouTube video ID, so they're stable.
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 @app.route("/kiosk")
 def kiosk_display():
     """Customer-facing kiosk display — one screen, four modes: idle / cart / trade / thankyou."""
@@ -18984,7 +19044,132 @@ def kiosk_display():
     yt_vid, yt_pid = _parse_youtube_id(vid_url)
     # Build embed params
     yt_embed_id = yt_vid or (yt_pid or "")
-    if vid_mode and yt_embed_id:
+
+    # Prefer locally-downloaded MP4s (rock-solid, no V8 OOM, no network deps).
+    # Falls back to the YouTube iframe only if no local files are present.
+    _local_vids = _kiosk_local_videos() if vid_mode else []
+
+    if vid_mode and _local_vids:
+        # ── Local-MP4 idle-screen player ────────────────────────────────────
+        # Plays a randomly-shuffled rotation of the downloaded playlist via a
+        # plain <video> element.  No iframe, no YT player JS, no leaks.
+        _yt_api_tag = ""
+        _yt_init_js = (
+            "var _vidEl = null;\n"
+            "var _vidQueue = [];\n"
+            "var _vidIdx = 0;\n"
+            "var _vidShuffled = false;\n"
+            "function _vidShuffle(arr){\n"
+            "  for(var i=arr.length-1;i>0;i--){\n"
+            "    var j=Math.floor(Math.random()*(i+1));\n"
+            "    var t=arr[i]; arr[i]=arr[j]; arr[j]=t;\n"
+            "  }\n"
+            "  return arr;\n"
+            "}\n"
+            "function _vidShow(){\n"
+            "  var w=document.getElementById('yt-wrap');\n"
+            "  var b=document.getElementById('unmute-btn');\n"
+            "  var t=document.getElementById('idle-text');\n"
+            "  if(w){w.style.opacity='1';w.style.pointerEvents='auto';}\n"
+            "  if(b){b.style.display='flex';}\n"
+            "  if(t){t.style.display='none';}\n"
+            "}\n"
+            "function _vidHide(){\n"
+            "  var w=document.getElementById('yt-wrap');\n"
+            "  var b=document.getElementById('unmute-btn');\n"
+            "  var t=document.getElementById('idle-text');\n"
+            "  if(w){w.style.opacity='0';w.style.pointerEvents='none';}\n"
+            "  if(b){b.style.display='none';}\n"
+            "  if(t){t.style.display='flex';}\n"
+            "}\n"
+            "function _vidNext(){\n"
+            "  if(!_vidQueue.length){ return; }\n"
+            "  if(_vidIdx >= _vidQueue.length){\n"
+            "    _vidShuffle(_vidQueue);\n"
+            "    _vidIdx = 0;\n"
+            "  }\n"
+            "  var src = _vidQueue[_vidIdx++];\n"
+            "  if(_vidEl){\n"
+            "    try { _vidEl.src = src; _vidEl.load(); _vidEl.play().catch(function(){}); }\n"
+            "    catch(e){ console.warn('[kiosk] video load failed', e); }\n"
+            "  }\n"
+            "}\n"
+            "function _vidLoadList(){\n"
+            "  fetch('/kiosk/videos.json', {cache:'no-store'})\n"
+            "    .then(function(r){ return r.json(); })\n"
+            "    .then(function(j){\n"
+            "      var v = (j && j.videos) || [];\n"
+            "      _vidQueue = v.map(function(x){ return x.url; });\n"
+            "      if(!_vidShuffled){ _vidShuffle(_vidQueue); _vidShuffled = true; }\n"
+            "      _vidIdx = 0;\n"
+            "      console.log('[kiosk] local playlist: '+_vidQueue.length+' videos');\n"
+            "      if(_vidQueue.length){ _vidNext(); _vidShow(); }\n"
+            "    })\n"
+            "    .catch(function(e){ console.warn('[kiosk] /kiosk/videos.json failed', e); });\n"
+            "}\n"
+            "function _vidBuild(){\n"
+            "  var host = document.getElementById('yt-wrap');\n"
+            "  if(!host) return;\n"
+            "  host.innerHTML = '';\n"
+            "  _vidEl = document.createElement('video');\n"
+            "  _vidEl.id = 'yt-frame';\n"
+            "  _vidEl.muted = true;\n"
+            "  _vidEl.autoplay = true;\n"
+            "  _vidEl.playsInline = true;\n"
+            "  _vidEl.preload = 'auto';\n"
+            "  _vidEl.style.width = '100%';\n"
+            "  _vidEl.style.height = '100%';\n"
+            "  _vidEl.style.objectFit = 'cover';\n"
+            "  _vidEl.style.background = '#000';\n"
+            "  _vidEl.addEventListener('ended', _vidNext);\n"
+            "  _vidEl.addEventListener('error', function(){\n"
+            "    console.warn('[kiosk] video error, advancing');\n"
+            "    setTimeout(_vidNext, 500);\n"
+            "  });\n"
+            "  host.appendChild(_vidEl);\n"
+            "  _vidLoadList();\n"
+            "}\n"
+            "// Refresh the playlist every 6 hours so newly-downloaded clips appear\n"
+            "// without needing to reload the page.\n"
+            "setInterval(function(){ try { _vidLoadList(); } catch(e){} }, 6*60*60*1000);\n"
+            "// Watchdog: if the element ever stalls (paused while idle is visible,\n"
+            "// or readyState 0 for >30 s), advance to the next clip.\n"
+            "var _vidLastAdvance = Date.now();\n"
+            "setInterval(function(){\n"
+            "  var elI = document.getElementById('idle');\n"
+            "  if(!elI || elI.style.display === 'none') return;\n"
+            "  if(!_vidEl) return;\n"
+            "  var stalled = _vidEl.paused || _vidEl.readyState < 2;\n"
+            "  if(stalled && (Date.now() - _vidLastAdvance) > 30000){\n"
+            "    console.warn('[kiosk] local video stalled — advancing');\n"
+            "    _vidLastAdvance = Date.now();\n"
+            "    _vidNext();\n"
+            "  } else if(!stalled){\n"
+            "    _vidLastAdvance = Date.now();\n"
+            "  }\n"
+            "}, 10000);\n"
+            "document.addEventListener('DOMContentLoaded', _vidBuild);\n"
+            "function ytPlay(){ if(_vidEl){ try{_vidEl.muted=true;_vidEl.play();}catch(e){} _vidShow(); } }\n"
+            "function ytPause(){ if(_vidEl){ try{_vidEl.pause();}catch(e){} _vidHide(); } }\n"
+        )
+        _yt_idle_html = """
+<div id="yt-wrap" style="position:fixed;inset:0;z-index:1;opacity:0;pointer-events:none;transition:opacity 1s">
+</div>
+<button id="unmute-btn" onclick="toggleMute(this)"
+  style="position:fixed;bottom:20px;right:20px;z-index:30;
+         background:#0009;border:1px solid #f59e0b55;border-radius:50%;
+         width:52px;height:52px;font-size:22px;cursor:pointer;
+         display:none;align-items:center;justify-content:center;color:#fff">
+  🔇
+</button>"""
+        _yt_mute_js = """
+var _muted = true;
+function toggleMute(btn) {
+  _muted = !_muted;
+  if (_vidEl) { _vidEl.muted = _muted; }
+  btn.textContent = _muted ? '🔇' : '🔊';
+}"""
+    elif vid_mode and yt_embed_id:
         # Pre-compute optional playerVars fragments to avoid quote conflicts in f-strings
         _loop_param    = ("loop:1,playlist:'" + yt_vid + "'") if (yt_vid and not yt_pid) else ""
         _list_param    = ("list:'" + yt_pid + "',listType:'playlist'") if yt_pid else ""
