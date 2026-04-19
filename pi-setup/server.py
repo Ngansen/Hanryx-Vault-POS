@@ -5264,6 +5264,64 @@ def multi_tcg_status():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/card/price", methods=["GET", "POST"])
+def card_price_scrape():
+    """
+    Live marketplace price scrape across Asian + EU sources.
+
+    Query / body params:
+      q          — search string (card name / set+number / SKU)
+      sources    — comma-separated subset of: naver, tcgkorea, snkrdunk,
+                   cardmarket    (default: all four)
+      game       — Cardmarket game slug: pokemon (default), mtg, lorcana,
+                   onepiece, dbs.  Ignored by the other scrapers.
+      limit      — max results per source (default 10, max 30)
+
+    Returns:
+      {"results": {<source>: [...]}, "errors": {<source>: "msg"}, "query": "..."}
+
+    Each result row has:
+      title, price, currency, url, image, source
+
+    All scrapers fail soft — a dead site shows up in `errors`, never as a 500.
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+    else:
+        body = {}
+    q       = (request.values.get("q")       or body.get("q")       or "").strip()
+    raw_src = (request.values.get("sources") or body.get("sources") or "").strip()
+    game    = (request.values.get("game")    or body.get("game")    or "pokemon")
+    try:
+        limit = min(int(request.values.get("limit") or body.get("limit") or 10), 30)
+    except (TypeError, ValueError):
+        limit = 10
+
+    if not q:
+        return jsonify({"error": "q (query) is required"}), 400
+
+    try:
+        import price_scrapers
+    except Exception as exc:
+        return jsonify({"error": f"price_scrapers unavailable: {exc}"}), 500
+
+    sources = [s.strip().lower() for s in raw_src.split(",") if s.strip()] or None
+    if sources:
+        unknown = [s for s in sources if s not in price_scrapers.SCRAPERS]
+        if unknown:
+            return jsonify({"error": f"unknown sources: {unknown}",
+                            "supported": list(price_scrapers.SCRAPERS)}), 400
+
+    out = price_scrapers.search_all(q, sources=sources,
+                                    limit_per_source=limit, game=game)
+    # Add a flat summary so callers don't have to walk the dict
+    flat = []
+    for src, rows in out["results"].items():
+        flat.extend(rows)
+    out["count"] = len(flat)
+    return jsonify(out)
+
+
 @app.route("/admin/jpn-cards/status", methods=["GET"])
 def jpn_cards_status():
     try:
@@ -5371,6 +5429,53 @@ def chs_cards_status():
 # language-specific lookup (cards_kr / cards_chs / inventory).
 # ---------------------------------------------------------------------------
 
+def _ocr_preprocess(img):
+    """
+    Image-preprocessing pipeline to wring more accuracy out of Tesseract.
+
+    Steps (each is best-effort, individual failures are swallowed):
+      1. EXIF auto-orientation                         (PIL.ImageOps.exif_transpose)
+      2. Detect rotation via Tesseract OSD if needed   (image_to_osd)
+      3. Upscale tiny images so x-height ≥ ~30 px      (LANCZOS resample)
+      4. Grayscale + contrast & sharpness boost
+      5. Light unsharp-mask denoise
+
+    Returns a new PIL.Image; never raises (logs and returns the original
+    image if anything goes sideways).
+    """
+    from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass
+
+    # OSD-based rotation only kicks in when EXIF didn't help (most camera
+    # uploads from the kiosk/tablet have no EXIF).
+    try:
+        import pytesseract
+        osd = pytesseract.image_to_osd(img)
+        m = re.search(r"Rotate:\s*(\d+)", osd)
+        if m:
+            angle = int(m.group(1))
+            if angle in (90, 180, 270):
+                img = img.rotate(-angle, expand=True)
+    except Exception:
+        pass  # OSD requires the `osd` traineddata; fall through if missing
+
+    # Upscale small images — Tesseract wants character height ≥ ~30 px.
+    w, h = img.size
+    if max(w, h) < 1200:
+        scale = 1200 / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    # Grayscale + enhance
+    img = img.convert("L")
+    img = ImageEnhance.Contrast(img).enhance(1.4)
+    img = ImageEnhance.Sharpness(img).enhance(1.6)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=130, threshold=3))
+    return img
+
+
 @app.route("/card/scan/image", methods=["POST"])
 def card_scan_image():
     """
@@ -5427,6 +5532,16 @@ def card_scan_image():
     # Convert to RGB to satisfy Tesseract on RGBA / palette images
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
+
+    # ── 1b. Pre-process to maximise OCR accuracy ─────────────────────────────
+    # Auto-orient via EXIF, then run a small enhance pipeline (upscale small
+    # photos, grayscale, contrast/sharpness boost, light denoise).  Tesseract's
+    # OSD pass gives us a real rotation angle when EXIF is missing.
+    if request.args.get("preprocess", "1") != "0":
+        try:
+            img = _ocr_preprocess(img)
+        except Exception as _pp_err:
+            log.info("[ocr] preprocess skipped: %s", _pp_err)
 
     # ── 2. Pick OCR languages ────────────────────────────────────────────────
     forced = (request.args.get("lang") or "").strip().lower()
