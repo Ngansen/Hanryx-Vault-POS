@@ -75,6 +75,15 @@ cp "$KIOSK_SRC/start-monitor.sh"         "$KIOSK_DEST/start-monitor.sh"
 cp "$KIOSK_SRC/hanryxvault-kiosk.service" "$SERVICE_FILE"
 chmod +x "$KIOSK_DEST/start-monitor.sh"
 
+# Substitute the kiosk user/home into the service template (template ships with
+# User=pi / /home/pi as defaults; rewrite to whatever KIOSK_USER we picked).
+if [[ "$KIOSK_USER" != "pi" ]]; then
+    info "Rewriting service file: User=pi → User=${KIOSK_USER}"
+    sed -i "s|^User=.*|User=${KIOSK_USER}|"   "$SERVICE_FILE"
+    sed -i "s|^Group=.*|Group=${KIOSK_USER}|" "$SERVICE_FILE"
+    sed -i "s|/home/pi|/home/${KIOSK_USER}|g" "$SERVICE_FILE"
+fi
+
 # Copy the monitor app itself (or symlink if already installed)
 if [[ -f "$PI_SETUP/desktop_monitor.py" ]]; then
     cp "$PI_SETUP/desktop_monitor.py" "$INSTALL_DIR/desktop_monitor.py"
