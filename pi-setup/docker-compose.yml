@@ -113,6 +113,11 @@ services:
       # Idle-screen kiosk video directory (matches the volume mount below).
       KIOSK_VIDEOS_DIR: /app/kiosk-videos
 
+      # eBay Finding API credentials (sold listings, 30/90-day price history).
+      # Set EBAY_APP_ID / EBAY_CERT_ID in pi-setup/.env on the host.
+      EBAY_APP_ID:  ${EBAY_APP_ID:-}
+      EBAY_CERT_ID: ${EBAY_CERT_ID:-}
+
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
