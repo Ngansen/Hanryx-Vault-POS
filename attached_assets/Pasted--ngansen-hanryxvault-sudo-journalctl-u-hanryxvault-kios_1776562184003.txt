@@ -1,0 +1,63 @@
+
+ngansen@hanryxvault:~ $ sudo journalctl -u hanryxvault-kiosk.service -n 60 --no-pager
+Apr 19 01:28:26 hanryxvault (bash)[1626]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:26 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:26 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:26 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 8.
+Apr 19 01:28:31 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:31 hanryxvault (bash)[1631]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:31 hanryxvault (bash)[1631]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:31 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:31 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:37 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 9.
+Apr 19 01:28:37 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:37 hanryxvault (bash)[1637]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:37 hanryxvault (bash)[1637]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:37 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:37 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:37 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:42 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 10.
+Apr 19 01:28:42 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:42 hanryxvault (bash)[1642]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:42 hanryxvault (bash)[1642]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:42 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:42 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:42 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:47 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 11.
+Apr 19 01:28:47 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:47 hanryxvault (bash)[1650]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:47 hanryxvault (bash)[1650]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:47 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:47 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:47 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:52 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 12.
+Apr 19 01:28:52 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:52 hanryxvault (bash)[1655]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:52 hanryxvault (bash)[1655]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:52 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:52 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:52 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:28:58 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 13.
+Apr 19 01:28:58 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:28:58 hanryxvault (bash)[1660]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:28:58 hanryxvault (bash)[1660]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:28:58 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:28:58 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:28:58 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:29:03 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 14.
+Apr 19 01:29:03 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:29:03 hanryxvault (bash)[1665]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:29:03 hanryxvault (bash)[1665]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:29:03 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:29:03 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:29:03 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 01:29:08 hanryxvault systemd[1]: hanryxvault-kiosk.service: Scheduled restart job, restart counter is at 15.
+Apr 19 01:29:08 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 01:29:08 hanryxvault (bash)[1675]: hanryxvault-kiosk.service: Failed to determine user credentials: No such process
+Apr 19 01:29:08 hanryxvault (bash)[1675]: hanryxvault-kiosk.service: Failed at step USER spawning /bin/bash: No such process
+Apr 19 01:29:08 hanryxvault systemd[1]: hanryxvault-kiosk.service: Control process exited, code=exited, status=217/USER
+Apr 19 01:29:08 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 01:29:08 hanryxvault systemd[1]: Failed to start hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+ngansen@hanryxvault:~ $
