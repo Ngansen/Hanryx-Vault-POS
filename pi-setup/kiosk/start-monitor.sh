@@ -41,6 +41,21 @@ if command -v xsetroot &>/dev/null; then
     xsetroot -solid black
 fi
 
+# ── Hotkey daemon (F9 = standby toggle) ──────────────────────────────────────
+if command -v xbindkeys &>/dev/null; then
+    XBK_RC="$HOME/.xbindkeysrc"
+    cat > "$XBK_RC" <<EOF
+"/opt/hanryxvault/kiosk/standby-toggle.sh"
+    F9
+EOF
+    pkill -x xbindkeys 2>/dev/null || true
+    xbindkeys -f "$XBK_RC"
+    echo "[kiosk] xbindkeys started — F9 toggles monitor standby"
+else
+    echo "[kiosk] xbindkeys not installed — F9 standby hotkey disabled"
+    echo "        install with: sudo apt-get install -y xbindkeys"
+fi
+
 # ── Detect monitors and lay them out side-by-side ────────────────────────────
 mapfile -t CONNECTED < <(xrandr | awk '/ connected/ {print $1}')
 echo "[kiosk] xrandr connected outputs: ${CONNECTED[*]:-<none>}"
