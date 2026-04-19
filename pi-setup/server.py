@@ -19944,6 +19944,12 @@ def kiosk_display():
     enabled         = ks["enabled"]
     vid_mode        = ks.get("video_mode", False)
     vid_url         = ks.get("video_url", "")
+    # Per-screen override — append ?idle=off (or ?video=off) to the kiosk URL on
+    # any display that should NOT play the idle-screen video.  Used to keep one
+    # monitor on the working POS UI while another monitor still cycles videos.
+    if request.args.get("idle", "").lower() in ("off", "0", "false", "no") \
+       or request.args.get("video", "").lower() in ("off", "0", "false", "no"):
+        vid_mode = False
     show_receipt_qr = "true" if ks.get("show_receipt_qr", True) else "false"
     price_confirm_ms = int(ks.get("price_confirm_ms", 2200))
 
