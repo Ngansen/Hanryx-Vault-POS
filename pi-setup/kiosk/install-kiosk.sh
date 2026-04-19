@@ -244,7 +244,8 @@ if [[ ! -f "$DEFAULTS" ]]; then
 # Idle-screen YouTube playlist (downloaded weekly to ${KIOSK_DEST}/videos/)
 KIOSK_PLAYLIST_URL="https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg"
 KIOSK_VIDEOS_DIR="${KIOSK_DEST}/videos"
-KIOSK_VIDEO_HEIGHT=720
+KIOSK_VIDEO_HEIGHT=480
+KIOSK_VIDEO_MAX_COUNT=40
 EOF
 elif ! grep -q '^KIOSK_PLAYLIST_URL=' "$DEFAULTS"; then
     info "Adding KIOSK_PLAYLIST_URL to $DEFAULTS"
@@ -253,7 +254,8 @@ elif ! grep -q '^KIOSK_PLAYLIST_URL=' "$DEFAULTS"; then
 # Idle-screen YouTube playlist (downloaded weekly to ${KIOSK_DEST}/videos/)
 KIOSK_PLAYLIST_URL="https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg"
 KIOSK_VIDEOS_DIR="${KIOSK_DEST}/videos"
-KIOSK_VIDEO_HEIGHT=720
+KIOSK_VIDEO_HEIGHT=480
+KIOSK_VIDEO_MAX_COUNT=40
 EOF
 fi
 

@@ -22,7 +22,8 @@ fi
 
 PLAYLIST_URL="${KIOSK_PLAYLIST_URL:-https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg}"
 VIDEOS_DIR="${KIOSK_VIDEOS_DIR:-/opt/hanryxvault/kiosk/videos}"
-MAX_HEIGHT="${KIOSK_VIDEO_HEIGHT:-720}"
+MAX_HEIGHT="${KIOSK_VIDEO_HEIGHT:-480}"
+MAX_COUNT="${KIOSK_VIDEO_MAX_COUNT:-40}"
 ARCHIVE="$VIDEOS_DIR/.yt-dlp-archive.txt"
 
 mkdir -p "$VIDEOS_DIR"
@@ -35,7 +36,13 @@ if ! command -v yt-dlp >/dev/null 2>&1; then
 fi
 
 echo "[playlist] Source : $PLAYLIST_URL"
-echo "[playlist] Target : $VIDEOS_DIR  (≤ ${MAX_HEIGHT}p, mp4)"
+echo "[playlist] Target : $VIDEOS_DIR  (≤ ${MAX_HEIGHT}p, mp4, max ${MAX_COUNT} clips)"
+
+# Build optional --playlist-end flag (0 = unlimited)
+END_FLAG=()
+if [ "$MAX_COUNT" -gt 0 ] 2>/dev/null; then
+    END_FLAG=(--playlist-end "$MAX_COUNT")
+fi
 
 # -f         : prefer pre-muxed mp4 ≤ MAX_HEIGHT, fall back to bestvideo+bestaudio
 # --merge-output-format mp4 : remux if we had to fetch separate tracks
@@ -44,7 +51,7 @@ echo "[playlist] Target : $VIDEOS_DIR  (≤ ${MAX_HEIGHT}p, mp4)"
 # --yes-playlist     : force playlist mode even if URL also has v=...
 # --no-overwrites    : safety
 # --restrict-filenames : ASCII-only filenames so the web player URL is clean
-# --no-playlist-reverse : keep playlist order
+# --playlist-end N   : cap to first N items (saves SD-card space)
 yt-dlp \
     -f "bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]/b[height<=${MAX_HEIGHT}][ext=mp4]/b[height<=${MAX_HEIGHT}]" \
     --merge-output-format mp4 \
@@ -53,6 +60,7 @@ yt-dlp \
     --yes-playlist \
     --no-overwrites \
     --restrict-filenames \
+    "${END_FLAG[@]}" \
     --output "$VIDEOS_DIR/%(playlist_index)03d-%(id)s-%(title).80s.%(ext)s" \
     "$PLAYLIST_URL"
 
