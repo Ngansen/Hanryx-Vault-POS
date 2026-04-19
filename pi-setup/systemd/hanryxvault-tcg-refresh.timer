@@ -1,0 +1,12 @@
+[Unit]
+Description=HanryxVault POS — refresh non-Pokémon TCG data every Sunday 04:30
+Requires=hanryxvault-tcg-refresh.service
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=1800
+Persistent=true
+Unit=hanryxvault-tcg-refresh.service
+
+[Install]
+WantedBy=timers.target

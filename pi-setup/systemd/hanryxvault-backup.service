@@ -1,0 +1,17 @@
+[Unit]
+Description=HanryxVault POS — nightly Postgres backup (S3 / SFTP / local)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# Inherit AWS_BUCKET / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION
+# (and SFTP_HOST/USER/PATH if used) from /etc/hanryxvault/backup.env
+EnvironmentFile=-/etc/hanryxvault/backup.env
+ExecStart=/bin/bash /opt/hanryxvault/pi-setup/scripts/backup.sh
+StandardOutput=append:/var/log/hanryxvault-backup.log
+StandardError=append:/var/log/hanryxvault-backup.log
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=HanryxVault POS — weekly multi-TCG dataset refresh (Lorcana, OnePiece, MTG)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -sfX POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  http://127.0.0.1:8080/admin/multi/onepiece/refresh
+ExecStart=/usr/bin/curl -sfX POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  http://127.0.0.1:8080/admin/multi/lorcana/refresh
+# MTG takes 5-10 min — leave it OFF the weekly cycle by default; uncomment
+# the next line if you want it included.
+# ExecStart=/usr/bin/curl -sfX POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+#   http://127.0.0.1:8080/admin/multi/mtg/refresh
+EnvironmentFile=-/etc/hanryxvault/admin.env
+StandardOutput=append:/var/log/hanryxvault-tcg-refresh.log
+StandardError=append:/var/log/hanryxvault-tcg-refresh.log
+
+[Install]
+WantedBy=multi-user.target

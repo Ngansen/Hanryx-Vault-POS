@@ -41,6 +41,13 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    from scrape_cache import cached  # Redis-backed cache + drift detector
+except Exception:  # pragma: no cover — bare-script execution fallback
+    def cached(_source, **_):  # type: ignore[no-redef]
+        def deco(fn): return fn
+        return deco
+
 log = logging.getLogger("price_scrapers")
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 "
@@ -77,6 +84,7 @@ def _safe_get(url: str, *, params: dict | None = None) -> str | None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Naver Shopping (Korean) — search.shopping.naver.com
 # ──────────────────────────────────────────────────────────────────────────────
+@cached("naver")
 def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
     if not query:
         return []
@@ -121,6 +129,7 @@ def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 # TCGkorea — tcgkorea.com   (Korean Pokémon-card focused store)
 # ──────────────────────────────────────────────────────────────────────────────
+@cached("tcgkorea")
 def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
     if not query:
         return []
@@ -163,6 +172,7 @@ def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 # SnkrDunk — snkrdunk.com (Japanese marketplace, large Pokémon-card section)
 # ──────────────────────────────────────────────────────────────────────────────
+@cached("snkrdunk")
 def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
     if not query:
         return []
@@ -208,6 +218,7 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 # Cardmarket — cardmarket.com (EU TCG marketplace, all four supported games)
 # ──────────────────────────────────────────────────────────────────────────────
+@cached("cardmarket")
 def cardmarket(query: str, *, game: str = "Pokemon", limit: int = 20) -> list[dict]:
     """
     game ∈ Pokemon | Magic | Lorcana | OnePiece | DragonBallSuperCG …

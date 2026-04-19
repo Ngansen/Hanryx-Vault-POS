@@ -1,0 +1,14 @@
+[Unit]
+Description=HanryxVault POS — nightly backup at 03:15 local time
+Requires=hanryxvault-backup.service
+
+[Timer]
+# 03:15 every day, with a 15-minute jitter so co-located Pis don't all
+# hit S3 at the same instant.
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=hanryxvault-backup.service
+
+[Install]
+WantedBy=timers.target

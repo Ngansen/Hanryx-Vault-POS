@@ -2954,6 +2954,37 @@ def init_db():
         except Exception as _je:
             log.warning("[init_db] JP Pocket import scheduling failed: %s", _je)
 
+    # ── Weekly multi-TCG auto-refresh (background, idempotent) ──────────────
+    # Re-runs the OnePiece + Lorcana importers every 7 days so prices and new
+    # printings stay current without touching the Pi.  MTG is excluded — its
+    # 170 MB Scryfall download isn't friendly to weekly auto-refresh.
+    if os.environ.get("MULTI_TCG_WEEKLY_REFRESH", "1") == "1":
+        try:
+            import threading, time as _t
+            def _weekly_loop():
+                while True:
+                    try:
+                        _t.sleep(7 * 24 * 3600)
+                        import import_multi_tcg
+                        conn = _direct_db()
+                        try:
+                            for g in ("onepiece", "lorcana"):
+                                try:
+                                    r = import_multi_tcg.IMPORTERS[g](conn, force=True)
+                                    log.info("[multi-refresh:%s] %s", g, r)
+                                except Exception as e:
+                                    log.warning("[multi-refresh:%s] %s", g, e)
+                        finally:
+                            try: conn.close()
+                            except Exception: pass
+                    except Exception as e:
+                        log.warning("[multi-refresh] loop error: %s", e)
+            threading.Thread(target=_weekly_loop, name="multi-weekly-refresh",
+                             daemon=True).start()
+            log.info("[init_db] multi-TCG weekly auto-refresh enabled")
+        except Exception as _wre:
+            log.warning("[init_db] multi-TCG weekly refresh init failed: %s", _wre)
+
     # ── Trigger multi-TCG imports (One Piece + Lorcana — small datasets) ─────
     # MTG is intentionally NOT auto-imported: the Scryfall bulk file is ~170 MB
     # and takes minutes — it's gated behind the manual /admin/multi/mtg/refresh
@@ -4235,6 +4266,134 @@ def health():
     return jsonify(data), (200 if overall_ok else 503)
 
 
+@app.route("/health/all", methods=["GET"])
+def health_all():
+    """
+    Aggregated health view across every device in the topology:
+      - Main Pi (this process)  — full /health payload
+      - Satellite Pi (192.168.86.22) — pings its /health
+      - Tablets — last APK check-in timestamps from Redis
+
+    Returns 200 when the main Pi + satellite are both ok, 503 otherwise.
+    Override the satellite URL with SATELLITE_HEALTH_URL.
+    """
+    # Reuse our own /health body to avoid a double DB roundtrip
+    try:
+        local = json.loads(health()[0].get_data(as_text=True))
+    except Exception as exc:
+        local = {"status": "error", "error": str(exc)[:200]}
+    try:
+        import health_aggregator
+        agg = health_aggregator.aggregate(local)
+        return jsonify(agg), (200 if agg.get("overall_ok") else 503)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "main": local}), 500
+
+
+@app.route("/admin/wireguard/status", methods=["GET"])
+def wireguard_status_route():
+    """Structured `wg show` output — interfaces, peers, handshake ages."""
+    try:
+        import wireguard_status
+        return jsonify(wireguard_status.status())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/printer/discover", methods=["POST", "GET"])
+def printer_discover_route():
+    """
+    BT-scan for printers; optionally re-bind /dev/rfcomm0 to the first match.
+    Body / query: scan_seconds (default 6), rebind (default 1)
+    """
+    if request.method == "POST" and not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import printer_discovery
+        scan = int(request.values.get("scan_seconds", 6))
+        rebind = (request.values.get("rebind", "1").lower()
+                  not in ("0", "false", "no"))
+        return jsonify(printer_discovery.discover(scan_seconds=scan,
+                                                  rebind=rebind))
+    except Exception as exc:
+        log.exception("[printer/discover] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/card/scan/multi", methods=["POST"])
+def card_scan_multi():
+    """
+    Visual card-search for the multi-TCG catalog (MTG / OnePiece / Lorcana).
+
+    Body: multipart `image` field OR JSON `{image_b64, game, top_k}`
+    Query: ?game=mtg|onepiece|lorcana   ?top_k=5
+    """
+    game = (request.values.get("game") or "").strip().lower()
+    if game not in ("mtg", "onepiece", "lorcana", "dbs"):
+        body = request.get_json(silent=True) or {}
+        game = (body.get("game") or "").strip().lower()
+    if game not in ("mtg", "onepiece", "lorcana", "dbs"):
+        return jsonify({"error": "game required (mtg/onepiece/lorcana/dbs)"}), 400
+
+    try:
+        from PIL import Image
+        upload = request.files.get("image")
+        if upload and upload.filename:
+            img = Image.open(upload.stream).convert("RGB")
+        else:
+            body = request.get_json(silent=True) or {}
+            b64 = body.get("image_b64") or body.get("image")
+            if not b64:
+                return jsonify({"error": "no image provided"}), 400
+            import base64, io
+            if "," in b64 and b64.startswith("data:"):
+                b64 = b64.split(",", 1)[1]
+            img = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+    except Exception as exc:
+        return jsonify({"error": f"bad image: {exc}"}), 400
+
+    try:
+        top_k = max(1, min(20, int(request.values.get("top_k", 5))))
+    except (TypeError, ValueError):
+        top_k = 5
+
+    try:
+        import multi_tcg_visual
+        db = get_db()
+        results = multi_tcg_visual.search(db, game, img, top_k=top_k)
+        return jsonify({"game": game, "results": results,
+                        "count": len(results)})
+    except Exception as exc:
+        log.exception("[multi-visual:%s] scan failed", game)
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/multi/<game>/visual/status", methods=["GET"])
+def multi_visual_status(game: str):
+    try:
+        import multi_tcg_visual
+        return jsonify(multi_tcg_visual.status(game.lower()))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/multi/<game>/visual/rebuild", methods=["POST"])
+def multi_visual_rebuild(game: str):
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import multi_tcg_visual, threading
+        # Build in background — embedding thousands of images takes minutes
+        threading.Thread(
+            target=lambda: multi_tcg_visual.build_index(
+                _direct_db(), game.lower(), force=True),
+            name=f"multi-visual-{game}", daemon=True).start()
+        return jsonify({"game": game, "started": True,
+                        "note": "build runs in background; poll /status"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/admin/errors", methods=["GET"])
 @require_admin
 def admin_errors():
@@ -5314,12 +5473,57 @@ def card_price_scrape():
 
     out = price_scrapers.search_all(q, sources=sources,
                                     limit_per_source=limit, game=game)
-    # Add a flat summary so callers don't have to walk the dict
-    flat = []
-    for src, rows in out["results"].items():
-        flat.extend(rows)
+
+    # ── USD normalisation + flat summary + median ────────────────────────────
+    flat: list = []
+    try:
+        import fx_rates
+        for src in list(out["results"].keys()):
+            out["results"][src] = fx_rates.normalize_listings(out["results"][src])
+            flat.extend(out["results"][src])
+        out["median_usd"] = fx_rates.median_usd(flat)
+    except Exception as _fx_err:
+        log.info("[card/price] fx normalize skipped: %s", _fx_err)
+        for rows in out["results"].values():
+            flat.extend(rows)
+        out["median_usd"] = None
+
     out["count"] = len(flat)
     return jsonify(out)
+
+
+@app.route("/admin/scrape/status", methods=["GET"])
+def scrape_status():
+    """Per-source cached-key counts + drift counters."""
+    try:
+        import scrape_cache
+        return jsonify(scrape_cache.stats())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/scrape/invalidate", methods=["POST"])
+def scrape_invalidate():
+    """Drop cached scraper results for one source (or all when ?source missing)."""
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import scrape_cache
+        src = (request.values.get("source") or "").strip().lower() or None
+        n = scrape_cache.invalidate(src)
+        return jsonify({"invalidated": n, "source": src or "all"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/fx/rates", methods=["GET"])
+def fx_rates_status():
+    """Current FX rates (USD-base) + cache age."""
+    try:
+        import fx_rates
+        return jsonify({"base": "USD", "rates": fx_rates.rates("USD")})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/admin/jpn-cards/status", methods=["GET"])
@@ -5558,12 +5762,47 @@ def card_scan_image():
         # script when several langs are loaded together
         ocr_langs = "eng+kor+jpn+chi_sim"
 
-    # ── 3. Run Tesseract ─────────────────────────────────────────────────────
+    # ── 3. Run Tesseract — with confidence-based retry ───────────────────────
+    # First pass uses image_to_data so we can read a per-word confidence score.
+    # If the mean confidence is < 50, we retry with a single forced language
+    # picked from whichever script the (low-confidence) text contains the most
+    # of — Tesseract is markedly more accurate when given one language at a time.
     try:
-        text = pytesseract.image_to_string(img, lang=ocr_langs).strip()
+        data = pytesseract.image_to_data(
+            img, lang=ocr_langs, output_type=pytesseract.Output.DICT)
+        words = [w for w in data.get("text", []) if w and w.strip()]
+        confs = [int(c) for c in data.get("conf", [])
+                 if str(c).lstrip("-").isdigit() and int(c) >= 0]
+        text = " ".join(words).strip()
+        mean_conf = round(sum(confs) / len(confs), 1) if confs else 0.0
+
+        if mean_conf < 50 and len(ocr_langs) > 4:
+            # Score scripts in the low-confidence text and retry with the winner
+            scores = {
+                "kor":     sum(1 for c in text if _has_hangul(c)),
+                "jpn":     sum(1 for c in text if _has_kana(c)),
+                "chi_sim": sum(1 for c in text if _has_cjk(c)
+                               and not _has_kana(c) and not _has_hangul(c)),
+                "eng":     sum(1 for c in text if c.isascii() and c.isalpha()),
+            }
+            winner = max(scores, key=scores.get) if any(scores.values()) else None
+            if winner and winner != ocr_langs:
+                retry = pytesseract.image_to_string(img, lang=winner).strip()
+                if retry and len(retry) >= len(text):
+                    log.info("[ocr] retry lang=%s improved (%.1f → ?)",
+                             winner, mean_conf)
+                    text = retry; ocr_langs = winner
     except pytesseract.TesseractError as exc:
         return jsonify({"error": f"tesseract failed: {exc}",
                         "lang": ocr_langs}), 500
+    except Exception:
+        # If image_to_data isn't supported, fall back to simple string mode
+        try:
+            text = pytesseract.image_to_string(img, lang=ocr_langs).strip()
+            mean_conf = None
+        except pytesseract.TesseractError as exc:
+            return jsonify({"error": f"tesseract failed: {exc}",
+                            "lang": ocr_langs}), 500
 
     # ── 4. Detect scripts and pick a candidate line ──────────────────────────
     scripts = []
@@ -5791,6 +6030,33 @@ def card_lookup_post():
 
 def _kiosk_push_lookup(card: dict):
     """Push a card lookup result to the kiosk display for the customer to see."""
+    # ── Live price-comparison across Asian + EU sources (best effort) ───────
+    # This is what makes the kiosk genuinely useful for a Korean-customer-heavy
+    # store: we surface the median USD price and the cheapest-by-region so
+    # customers see we're not gouging.  Failure here never blocks the broadcast.
+    price_compare: dict = {}
+    try:
+        import price_scrapers, fx_rates
+        q = (card.get("name") or "").strip()
+        if q:
+            cmp_out = price_scrapers.search_all(q, limit_per_source=3)
+            flat: list = []
+            for rows in cmp_out.get("results", {}).values():
+                rows = fx_rates.normalize_listings(rows)
+                flat.extend(rows)
+            usd_vals = [r["price_usd"] for r in flat
+                        if r.get("price_usd") is not None]
+            if usd_vals:
+                cheapest = min(flat, key=lambda r: r.get("price_usd") or 9e9)
+                price_compare = {
+                    "median_usd":   fx_rates.median_usd(flat),
+                    "cheapest_usd": cheapest.get("price_usd"),
+                    "cheapest_src": cheapest.get("source"),
+                    "samples":      len(usd_vals),
+                }
+    except Exception as _pc_err:
+        log.debug("[kiosk-push] price compare skipped: %s", _pc_err)
+
     _kiosk_broadcast({
         "mode":       "lookup",
         "card_name":  card.get("name", ""),
@@ -5800,6 +6066,7 @@ def _kiosk_push_lookup(card: dict):
         "card_set":   card.get("setCode") or card.get("set_code") or "",
         "card_number": card.get("cardNumber") or card.get("card_number") or "",
         "stock_qty":  int(card.get("stockQuantity") or card.get("quantity") or 0),
+        "price_compare": price_compare,
     })
 
 
