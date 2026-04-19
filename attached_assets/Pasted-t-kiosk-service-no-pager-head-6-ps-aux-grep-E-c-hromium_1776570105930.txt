@@ -1,0 +1,56 @@
+t-kiosk.service --no-pager | head -6
+ps aux | grep -E '[c]hromium' | wc -l
+● hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)
+     Loaded: loaded (/etc/systemd/system/hanryxvault-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Sun 2026-04-19 03:35:07 GMT; 1min 26s ago
+ Invocation: c8ada2a79cdf4637b1e91db112b4120c
+       Docs: https://github.com/Ngansen/HanRyx-Vault
+    Process: 3358 ExecStartPre=/bin/bash -c test -x /usr/bin/python3 ||       sed -i "s|PYTHON=.*|PYTHON=$(command -v python3)|"       /etc/systemd/system/hanryxvault-kiosk.service (code=exited, status=0/SUCCESS)^C
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull origin main
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+ngansen@hanryxvault:~/hanryx-vault-pos $ cd ~/hanryx-vault-pos && git pull origin main
+sudo cp pi-setup/kiosk/start-monitor.sh /opt/hanryxvault/kiosk/start-monitor.sh
+sudo chmod +x /opt/hanryxvault/kiosk/start-monitor.sh
+sudo systemctl restart hanryxvault-kiosk.service
+sleep 8
+ps aux | grep -E '[c]hromium' | head -3
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+ngansen@hanryxvault:~/hanryx-vault-pos $ ngansen@hanryxvault:~/hanryx-vault-pos $ cd ~/hanryx-vault-pos && git pull origin main
+sudo cp pi-setup/kiosk/start-monitor.sh /opt/hanryxvault/kiosk/start-monitor.sh
+sudo chmod +x /opt/hanryxvault/kiosk/start-monitor.sh
+sudo systemctl restart hanryxvault-kiosk.service
+sleep 8
+ps aux | grep -E '[c]hromium' | head -3
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+-bash: ngansen@hanryxvault:~/hanryx-vault-pos: No such file or directory
+
+
+^C
+-bash: From: command not found
+-bash: artifacts: command not found
+-bash: Already: command not found
+ngansen@hanryxvault:~/hanryx-vault-pos $ head -2 /opt/hanryxvault/kiosk/start-monitor.sh
+grep -cE 'chromium|MONITOR_PY' /opt/hanryxvault/kiosk/start-monitor.sh
+ps aux | grep -E '[c]hromium|[x]init' | head -5
+sudo journalctl -u hanryxvault-kiosk.service -n 15 --no-pager | tail -10
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+2
+ngansen     3843  0.0  0.0   4400  2464 ?        Ss   03:40   0:00 /usr/bin/xinit /opt/hanryxvault/kiosk/start-monitor.sh -- :0 vt7 -nocursor -nolisten tcp -dpms
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         to make sure that you have the latest version.
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: Markers: (--) probed, (**) from config file, (==) default setting,
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         (++) from command line, (!!) notice, (II) informational,
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Log file: "/var/log/Xorg.0.log", Time: Sun Apr 19 03:40:51 2026
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Using config directory: "/etc/X11/xorg.conf.d"
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3854]: server does not have extension for -dpms option
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3851]: [kiosk] Waiting for POS server at http://127.0.0.1:8080/health …
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3851]: [kiosk] Server ready after 0s — launching monitor
+ngansen@hanryxvault:~/hanryx-vault-pos $
