@@ -2838,6 +2838,41 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_cards_chs_commodity   ON cards_chs (commodity_code)",
         "CREATE INDEX IF NOT EXISTS idx_cards_chs_collection  ON cards_chs (collection_number)",
         "CREATE INDEX IF NOT EXISTS idx_cards_chs_yoren       ON cards_chs (yoren_code)",
+
+        # ── Japanese TCG Pocket cards (Ngansen/pokemon-tcg-pocket-database) ──
+        """CREATE TABLE IF NOT EXISTS cards_jpn_pocket (
+            set_code     TEXT NOT NULL,
+            card_number  INTEGER NOT NULL,
+            name         TEXT NOT NULL,
+            rarity       TEXT NOT NULL DEFAULT '',
+            image_url    TEXT NOT NULL DEFAULT '',
+            packs        TEXT NOT NULL DEFAULT '',
+            extra        JSONB,
+            imported_at  BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (set_code, card_number)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_pocket_name   ON cards_jpn_pocket (name)",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_pocket_rarity ON cards_jpn_pocket (rarity)",
+
+        # ── Japanese TCG cards (PokeScraper_3.0 → CSV → import_jpn_cards.py) ──
+        """CREATE TABLE IF NOT EXISTS cards_jpn (
+            url           TEXT PRIMARY KEY,
+            set_code      TEXT NOT NULL DEFAULT '',
+            set_name      TEXT NOT NULL DEFAULT '',
+            series        TEXT NOT NULL DEFAULT '',
+            card_number   TEXT NOT NULL DEFAULT '',
+            name_en       TEXT NOT NULL DEFAULT '',
+            name_jp       TEXT NOT NULL DEFAULT '',
+            rarity        TEXT NOT NULL DEFAULT '',
+            card_type     TEXT NOT NULL DEFAULT '',
+            image_url     TEXT NOT NULL DEFAULT '',
+            release_date  TEXT NOT NULL DEFAULT '',
+            raw           JSONB,
+            imported_at   BIGINT NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cards_jpn_name_en ON cards_jpn (name_en)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_jpn_name_jp ON cards_jpn (name_jp)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_jpn_setnum  ON cards_jpn (set_code, card_number)",
     ]
 
     for stmt in _ddl_statements:
@@ -2879,6 +2914,24 @@ def init_db():
                 log.info("[init_db] cards_chs already has %d rows", cnt)
         except Exception as _ce:
             log.warning("[init_db] Chinese card import scheduling failed: %s", _ce)
+
+    # ── Trigger JP Pocket card import (tiny ~370 KB JSON, near-instant) ──────
+    if os.environ.get("JPN_POCKET_IMPORT_ON_BOOT", "1") == "1":
+        try:
+            import import_jpn_pocket_cards
+            cnt = import_jpn_pocket_cards.cards_count(db)
+            if cnt == 0:
+                log.info("[init_db] cards_jpn_pocket is empty — background import")
+                import threading
+                threading.Thread(
+                    target=_run_jpn_pocket_import_safely,
+                    name="jpn-pocket-import",
+                    daemon=True,
+                ).start()
+            else:
+                log.info("[init_db] cards_jpn_pocket has %d rows", cnt)
+        except Exception as _je:
+            log.warning("[init_db] JP Pocket import scheduling failed: %s", _je)
 
     # ── Safe migration: add columns that may be missing on older installs ────
     def _col_exists(table, col):
@@ -4817,35 +4870,286 @@ def _run_chs_import_safely() -> None:
         log.warning("[chs-import] background import failed: %s", exc, exc_info=True)
 
 
+def _jpn_card_lookup(db, *, name: str = "", set_code: str = "",
+                     card_num: str = "", limit: int = 10) -> list:
+    """Look up Japanese cards in cards_jpn (PokeScraper output)."""
+    name = (name or "").strip()
+    set_code = (set_code or "").strip()
+    card_num = (card_num or "").strip()
+    if not (name or set_code or card_num):
+        return []
+
+    where, params = [], []
+    if name:
+        # match either the JP or EN name
+        where.append("(name_jp ILIKE %s OR name_en ILIKE %s)")
+        params.extend([f"%{name}%", f"%{name}%"])
+    if set_code:
+        where.append("(UPPER(set_code) = %s OR UPPER(set_name) ILIKE %s)")
+        params.extend([set_code.upper(), f"%{set_code}%"])
+    if card_num:
+        where.append("split_part(card_number, '/', 1) = %s")
+        params.append(card_num.lstrip("0") or "0")
+
+    sql = (
+        "SELECT url, set_code, set_name, card_number, name_en, name_jp, "
+        "       rarity, image_url FROM cards_jpn "
+        "WHERE " + " AND ".join(where) + " ORDER BY imported_at DESC LIMIT %s"
+    )
+    params.append(int(limit))
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as exc:
+        log.warning("[jpn-lookup] query failed: %s", exc)
+        try: db.rollback()
+        except Exception: pass
+        return []
+
+    out = []
+    for r in rows:
+        out.append({
+            "id":          f"{r[1]}-{r[3]}" if r[1] else r[0],
+            "setCode":     r[1] or "",
+            "set_code":    r[1] or "",
+            "setName":     r[2],
+            "cardNumber":  (r[3] or "").split("/")[0],
+            "card_number": (r[3] or "").split("/")[0],
+            "name":        r[5] or r[4],   # prefer JP name
+            "name_en":     r[4],
+            "name_jp":     r[5],
+            "rarity":      r[6],
+            "imageUrl":    r[7],
+            "image_url":   r[7],
+            "language":    "Japanese",
+            "source":      "PokeScraper_3.0",
+            "url":         r[0],
+            "price":       0,
+        })
+    return out
+
+
+def _jpn_pocket_card_lookup(db, *, name: str = "", set_code: str = "",
+                             card_num: str = "", limit: int = 10) -> list:
+    """Look up cards in cards_jpn_pocket (Pocket app dataset)."""
+    name = (name or "").strip()
+    set_code = (set_code or "").strip().upper()
+    card_num = (card_num or "").strip().lstrip("0")
+    if not (name or set_code or card_num):
+        return []
+
+    where, params = [], []
+    if name:
+        where.append("name ILIKE %s"); params.append(f"%{name}%")
+    if set_code:
+        where.append("UPPER(set_code) = %s"); params.append(set_code)
+    if card_num:
+        where.append("card_number = %s"); params.append(int(card_num) if card_num.isdigit() else 0)
+
+    sql = (
+        "SELECT set_code, card_number, name, rarity, image_url, packs "
+        "FROM cards_jpn_pocket WHERE " + " AND ".join(where) + " "
+        "ORDER BY set_code, card_number LIMIT %s"
+    )
+    params.append(int(limit))
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as exc:
+        log.warning("[jpn-pocket-lookup] query failed: %s", exc)
+        try: db.rollback()
+        except Exception: pass
+        return []
+
+    out = []
+    for r in rows:
+        out.append({
+            "id":          f"{r[0]}-{r[1]}",
+            "setCode":     r[0],
+            "set_code":    r[0],
+            "cardNumber":  str(r[1]),
+            "card_number": str(r[1]),
+            "name":        r[2],
+            "rarity":      r[3],
+            "imageUrl":    r[4],
+            "image_url":   r[4],
+            "packs":       r[5],
+            "language":    "Japanese (Pocket)",
+            "source":      "pokemon-tcg-pocket-database",
+            "price":       0,
+        })
+    return out
+
+
+def _run_jpn_pocket_import_safely() -> None:
+    """Background-thread entry point: imports JP Pocket cards into Postgres."""
+    try:
+        import import_jpn_pocket_cards
+        conn = _direct_db()
+        try:
+            result = import_jpn_pocket_cards.import_pocket_cards(conn, force=False)
+            log.info("[jpn-pocket-import] background result: %s", result)
+        finally:
+            try: conn.close()
+            except Exception: pass
+    except Exception as exc:
+        log.warning("[jpn-pocket-import] failed: %s", exc, exc_info=True)
+
+
 def _maybe_extend_with_asian(db, results, qtext, set_code, card_num,
                               limit, lang):
     """
-    Merge Korean and Chinese lookup results into the main result list when:
-      - lang param explicitly requests them ("kr", "chs"/"zh"), OR
-      - the query text contains Hangul / CJK characters, OR
-      - the English search returned no results (use them as a fallback)
-    Asian-explicit queries put Asian results first; otherwise they're appended.
-    """
-    is_kr_query  = lang == "kr"             or _has_hangul(qtext)
-    is_chs_query = lang in ("chs", "zh")    or (_has_cjk(qtext) and not _has_kana(qtext))
+    Merge Korean / Chinese / Japanese lookup results into the main result list.
 
-    if is_kr_query:
-        kr = _kr_card_lookup(db, name=qtext, set_code=set_code,
-                             card_num=card_num, limit=limit)
-        results = kr + [r for r in results if r not in kr]
-    elif is_chs_query:
-        chs = _chs_card_lookup(db, name=qtext, set_code=set_code,
+    Routing:
+      - lang=kr  OR Hangul                → cards_kr first
+      - lang=chs/zh  OR CJK without kana  → cards_chs first
+      - lang=jp/jpn  OR kana              → cards_jpn first
+      - lang=pocket                       → cards_jpn_pocket first
+      - no English hits + no lang hint    → fallback chain KR→CHS→JP→Pocket
+    """
+    is_kr     = lang == "kr"                       or _has_hangul(qtext)
+    is_chs    = lang in ("chs", "zh")              or (_has_cjk(qtext) and not _has_kana(qtext))
+    is_jpn    = lang in ("jp", "jpn", "ja")        or _has_kana(qtext)
+    is_pocket = lang in ("pocket", "tcgp", "ptcgp")
+
+    if is_kr:
+        hits = _kr_card_lookup(db, name=qtext, set_code=set_code,
                                card_num=card_num, limit=limit)
-        results = chs + [r for r in results if r not in chs]
+        results = hits + [r for r in results if r not in hits]
+    elif is_chs:
+        hits = _chs_card_lookup(db, name=qtext, set_code=set_code,
+                                card_num=card_num, limit=limit)
+        results = hits + [r for r in results if r not in hits]
+    elif is_jpn:
+        hits = _jpn_card_lookup(db, name=qtext, set_code=set_code,
+                                card_num=card_num, limit=limit)
+        results = hits + [r for r in results if r not in hits]
+    elif is_pocket:
+        hits = _jpn_pocket_card_lookup(db, name=qtext, set_code=set_code,
+                                        card_num=card_num, limit=limit)
+        results = hits + [r for r in results if r not in hits]
     elif not results and lang == "":
-        # No English hits and no language hint — try Korean then Chinese
-        results = _kr_card_lookup(db, name=qtext, set_code=set_code,
-                                  card_num=card_num, limit=limit)
-        if not results:
-            results = _chs_card_lookup(db, name=qtext, set_code=set_code,
-                                       card_num=card_num, limit=limit)
+        # No hits, no hint — try them all in order
+        for fn in (_kr_card_lookup, _chs_card_lookup,
+                   _jpn_card_lookup, _jpn_pocket_card_lookup):
+            results = fn(db, name=qtext, set_code=set_code,
+                         card_num=card_num, limit=limit)
+            if results:
+                break
 
     return results[:limit]
+
+
+# ── JP / Pocket admin endpoints ──────────────────────────────────────────────
+
+@app.route("/admin/jpn-pocket/refresh", methods=["POST"])
+def jpn_pocket_refresh():
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import import_jpn_pocket_cards
+        conn = _direct_db()
+        try:
+            return jsonify(import_jpn_pocket_cards.import_pocket_cards(conn, force=True))
+        finally:
+            try: conn.close()
+            except Exception: pass
+    except Exception as exc:
+        log.exception("[jpn-pocket-import] manual refresh failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/jpn-pocket/status", methods=["GET"])
+def jpn_pocket_status():
+    try:
+        import import_jpn_pocket_cards
+        db = get_db()
+        cnt = import_jpn_pocket_cards.cards_count(db)
+        sample = db.execute(
+            "SELECT name, set_code, card_number, rarity FROM cards_jpn_pocket "
+            "ORDER BY imported_at DESC LIMIT 5"
+        ).fetchall()
+        return jsonify({"count": cnt,
+                        "sample": [{"name": r[0], "set": r[1], "number": r[2],
+                                    "rarity": r[3]} for r in (sample or [])]})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "count": 0}), 500
+
+
+@app.route("/admin/jpn-cards/refresh", methods=["POST"])
+def jpn_cards_refresh():
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import import_jpn_cards
+        conn = _direct_db()
+        try:
+            return jsonify(import_jpn_cards.import_jp_cards(conn, force=True))
+        finally:
+            try: conn.close()
+            except Exception: pass
+    except Exception as exc:
+        log.exception("[jpn-import] manual refresh failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/jpn-cards/status", methods=["GET"])
+def jpn_cards_status():
+    try:
+        import import_jpn_cards
+        db = get_db()
+        cnt = import_jpn_cards.cards_count(db)
+        sample = db.execute(
+            "SELECT COALESCE(NULLIF(name_jp,''), name_en), set_code, "
+            "       card_number, rarity FROM cards_jpn "
+            "ORDER BY imported_at DESC LIMIT 5"
+        ).fetchall()
+        return jsonify({
+            "count": cnt,
+            "data_dir": os.environ.get("JPN_DATA_DIR", "/app/data/jp_pokellector"),
+            "sample": [{"name": r[0], "set": r[1], "number": r[2],
+                        "rarity": r[3]} for r in (sample or [])],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "count": 0}), 500
+
+
+# ── Card recognizer proxy (forwards to the standalone `recognizer` service) ──
+
+_RECOGNIZER_BASE = os.environ.get("RECOGNIZER_BASE_URL", "http://recognizer:8081").rstrip("/")
+
+
+@app.route("/card/scan/video", methods=["POST"])
+def card_scan_video():
+    """
+    Proxy a video upload to the standalone pokemon-card-recognizer service.
+    Accepts multipart with field `video`; returns the recogniser's JSON.
+    """
+    upload = request.files.get("video")
+    if not upload or not upload.filename:
+        return jsonify({"error": "POST multipart 'video' field"}), 400
+    try:
+        files = {"video": (upload.filename, upload.stream,
+                           upload.mimetype or "application/octet-stream")}
+        r = _requests.post(f"{_RECOGNIZER_BASE}/recognize/video",
+                           files=files, timeout=600)
+        return (r.text, r.status_code,
+                {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    except Exception as exc:
+        return jsonify({"error": f"recognizer unreachable: {exc}",
+                        "base": _RECOGNIZER_BASE}), 502
+
+
+@app.route("/card/scan/recognizer/status", methods=["GET"])
+def card_scan_recognizer_status():
+    try:
+        r = _requests.get(f"{_RECOGNIZER_BASE}/healthz", timeout=5)
+        return (r.text, r.status_code,
+                {"Content-Type": r.headers.get("Content-Type", "application/json")})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "base": _RECOGNIZER_BASE,
+                        "ok": False}), 502
 
 
 @app.route("/admin/chs-cards/refresh", methods=["POST"])
