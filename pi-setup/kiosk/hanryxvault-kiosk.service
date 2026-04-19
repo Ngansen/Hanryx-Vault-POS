@@ -8,13 +8,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=ngansen
+Group=ngansen
 
 # ── Environment ───────────────────────────────────────────────────────────────
-Environment=HOME=/home/pi
+Environment=HOME=/home/ngansen
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=XAUTHORITY=/home/ngansen/.Xauthority
 Environment=INSTALL_DIR=/opt/hanryxvault
 Environment=PYTHON=/opt/hanryxvault/venv/bin/python3
 # Fallback to system python3 if the venv doesn't exist yet
