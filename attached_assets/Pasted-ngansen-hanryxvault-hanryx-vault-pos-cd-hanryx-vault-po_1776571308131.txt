@@ -1,0 +1,37 @@
+ngansen@hanryxvault:~/hanryx-vault-pos $ cd ~/hanryx-vault-pos && git pull origin main
+sudo cp pi-setup/kiosk/start-monitor.sh /opt/hanryxvault/kiosk/start-monitor.sh
+sudo chmod +x /opt/hanryxvault/kiosk/start-monitor.sh
+
+# Sanity-check the dual-monitor script is actually on disk:
+grep -c 'launch_window' /opt/hanryxvault/kiosk/start-monitor.sh   # should be ≥ 3, was 0
+grep -c 'KIOSK_LEFT_URL'  /opt/hanryxvault/kiosk/start-monitor.sh  # should be ≥ 1, was 0
+
+sudo systemctl restart hanryxvault-kiosk.service
+sleep 12
+sudo journalctl -u hanryxvault-kiosk.service -n 40 --no-pager | grep -E '\[kiosk\]' | tail -12
+ps -ef | grep -v grep | grep -E 'chromium.*window-position' | sed -E 's/.*(--window-position=[^ ]+).*(--app=[^ ]+).*/\1 \2/'
+remote: Enumerating objects: 12, done.
+remote: Counting objects: 100% (12/12), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 12 (delta 8), reused 12 (delta 8), pack-reused 0 (from 0)
+Unpacking objects: 100% (12/12), 1.96 MiB | 2.75 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   e401a6c..9154118  main       -> origin/main
+Updating e401a6c..9154118
+Fast-forward
+ ...what-is-requesting-the-stop-s_1776570491212.txt | 137 +++++++++++++++++++++
+ ...ryx-vault-pos-git-pull-origin_1776570647235.txt |  75 +++++++++++
+ attached_assets/image_1776570815182.jpg            | Bin 0 -> 2065113 bytes
+ 3 files changed, 212 insertions(+)
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-1-Who-what-is-requesting-the-stop-s_1776570491212.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-cd-hanryx-vault-pos-git-pull-origin_1776570647235.txt
+ create mode 100644 attached_assets/image_1776570815182.jpg
+0
+0
+
+
+^C
+Apr 19 04:01:26 hanryxvault hanryxvault-kiosk[5826]: [kiosk] Waiting for POS server at http://127.0.0.1:8080/health …
+Apr 19 04:01:26 hanryxvault hanryxvault-kiosk[5826]: [kiosk] Server ready after 0s — launching Chromium → http://127.0.0.1:8080/kiosk
+ngansen@hanryxvault:~/hanryx-vault-pos $
