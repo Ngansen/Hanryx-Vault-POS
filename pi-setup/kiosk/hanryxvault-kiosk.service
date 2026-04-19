@@ -16,12 +16,7 @@ Environment=HOME=/home/ngansen
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/ngansen/.Xauthority
 Environment=INSTALL_DIR=/opt/hanryxvault
-Environment=PYTHON=/opt/hanryxvault/venv/bin/python3
-# Fallback to system python3 if the venv doesn't exist yet
-ExecStartPre=/bin/bash -c \
-    'test -x /opt/hanryxvault/venv/bin/python3 || \
-     sed -i "s|PYTHON=.*|PYTHON=$(command -v python3)|" \
-     /etc/systemd/system/hanryxvault-kiosk.service'
+# (Python ExecStartPre removed — kiosk now uses Chromium directly)
 
 # ── Display ───────────────────────────────────────────────────────────────────
 # xinit starts a bare X server on virtual terminal 7 (below the default getty
