@@ -94,11 +94,14 @@ services:
       # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
       GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
 
-      # Disable background prewarm threads that block gevent's hub and cause
-      # WORKER TIMEOUT every 5 minutes (set to "0" or remove to re-enable).
-      DISABLE_BG_PRICING_PREWARM: "0"
-      DISABLE_BG_LANG_PREWARM:    "0"
-      DISABLE_BG_PRICE_REFRESH:   "0"
+      # Disable background prewarm threads.  These walk the inventory and call
+      # eBay continuously to pre-cache prices, which exhausts the 5000/day
+      # Finding API quota in hours and breaks live sold-listings lookups.
+      # Keep "1" (disabled) — pricing is cached on demand when you actually
+      # search a card in the UI.  Set to "0" only if you have a higher quota.
+      DISABLE_BG_PRICING_PREWARM: "1"
+      DISABLE_BG_LANG_PREWARM:    "1"
+      DISABLE_BG_PRICE_REFRESH:   "1"
 
       # Storefront cloud sync — remove if you don't run the storefront service
       CLOUD_INVENTORY_SOURCES: ${CLOUD_INVENTORY_SOURCES:-}
