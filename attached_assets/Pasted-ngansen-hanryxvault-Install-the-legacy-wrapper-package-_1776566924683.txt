@@ -1,0 +1,53 @@
+ngansen@hanryxvault:~ $ # Install the legacy wrapper package (provides the setuid Xorg)
+sudo apt-get update
+sudo apt-get install -y xserver-xorg-legacy
+
+# Make the wrapper setuid (sometimes apt doesn't set this automatically)
+sudo chmod u+s /usr/bin/Xorg
+sudo chmod u+s /usr/lib/xorg/Xorg
+
+# Confirm both have the 's' bit now
+ls -l /usr/bin/Xorg /usr/lib/xorg/Xorg
+
+# Restart kiosk
+sudo systemctl restart hanryxvault-kiosk.service
+sleep 4
+sudo systemctl status hanryxvault-kiosk.service --no-pager | head -10
+Hit:1 http://deb.debian.org/debian trixie InRelease
+Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+Hit:3 http://deb.debian.org/debian-security trixie-security InRelease
+Get:4 https://pkgs.tailscale.com/stable/debian trixie InRelease
+Hit:5 http://archive.raspberrypi.com/debian trixie InRelease
+Fetched 53.9 kB in 1s (84.0 kB/s)
+Reading package lists... Done
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+The following NEW packages will be installed:
+  xserver-xorg-legacy
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 2,422 kB of archives.
+After this operation, 2,614 kB of additional disk space will be used.
+Get:1 http://archive.raspberrypi.com/debian trixie/main arm64 xserver-xorg-legacy arm64 2:21.1.16-1.3+rpt1+deb13u1 [2,422 kB]
+Fetched 2,422 kB in 2s (1,337 kB/s)
+Preconfiguring packages ...
+setting xserver-xorg-legacy/xwrapper/allowed_users from configuration file
+Selecting previously unselected package xserver-xorg-legacy.
+(Reading database ... 121673 files and directories currently installed.)
+Preparing to unpack .../xserver-xorg-legacy_2%3a21.1.16-1.3+rpt1+deb13u1_arm64.deb ...
+Unpacking xserver-xorg-legacy (2:21.1.16-1.3+rpt1+deb13u1) ...
+Setting up xserver-xorg-legacy (2:21.1.16-1.3+rpt1+deb13u1) ...
+setting xserver-xorg-legacy/xwrapper/allowed_users from configuration file
+Processing triggers for man-db (2.13.1-1) ...
+-rwsr-xr-x 1 root root     274 Nov  3 10:33 /usr/bin/Xorg
+-rwsr-xr-x 1 root root 2670144 Nov  3 10:33 /usr/lib/xorg/Xorg
+● hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)
+     Loaded: loaded (/etc/systemd/system/hanryxvault-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Sun 2026-04-19 02:48:09 GMT; 4s ago
+ Invocation: 11c35487c53c4b0a92115c8f914ecb93
+       Docs: https://github.com/Ngansen/HanRyx-Vault
+    Process: 2639 ExecStartPre=/bin/bash -c test -x /usr/bin/python3 ||       sed -i "s|PYTHON=.*|PYTHON=$(command -v python3)|"       /etc/systemd/system/hanryxvault-kiosk.service (code=exited, status=0/SUCCESS)
+   Main PID: 2640 (xinit)
+      Tasks: 7 (limit: 4749)
+        CPU: 598ms
+     CGroup: /system.slice/hanryxvault-kiosk.service
