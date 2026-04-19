@@ -110,6 +110,9 @@ services:
       GITHUB_INVENTORY_REPO:   ${GITHUB_INVENTORY_REPO:-Ngansen/Inventory-Scanner}
       GITHUB_INVENTORY_BRANCH: ${GITHUB_INVENTORY_BRANCH:-main}
 
+      # Idle-screen kiosk video directory (matches the volume mount below).
+      KIOSK_VIDEOS_DIR: /app/kiosk-videos
+
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
@@ -121,6 +124,10 @@ services:
     volumes:
       - pos-data:/data
       - card-images:/app/card-images
+      # Idle-screen video playlist (downloaded by hanryxvault-kiosk-videos.timer
+      # on the host into /opt/hanryxvault/kiosk/videos/).  Read-only inside the
+      # container; Flask serves them via /kiosk/videos/<file>.
+      - /opt/hanryxvault/kiosk/videos:/app/kiosk-videos:ro
     depends_on:
       db:
         condition: service_healthy

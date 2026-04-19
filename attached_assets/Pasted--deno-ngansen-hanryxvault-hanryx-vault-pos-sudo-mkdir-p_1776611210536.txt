@@ -1,0 +1,25 @@
+/deno     
+ngansen@hanryxvault:~/hanryx-vault-pos $ sudo mkdir -p /opt/hanryxvault/kiosk/videos
+sudo chown -R ngansen:ngansen /opt/hanryxvault/kiosk
+sudo cp pi-setup/kiosk/download-playlist.sh /opt/hanryxvault/kiosk/
+sudo chmod +x /opt/hanryxvault/kiosk/download-playlist.sh
+sudo cp pi-setup/kiosk/hanryxvault-kiosk-videos.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now hanryxvault-kiosk-videos.timer
+[ -f /etc/default/hanryxvault-kiosk ] || sudo touch /etc/default/hanryxvault-kiosk
+sudo tee -a /etc/default/hanryxvault-kiosk >/dev/null <<EOF
+KIOSK_PLAYLIST_URL="https://www.youtube.com/playlist?list=PLo60BvbiWBuqUwSRFou3pbPV2IAWaP0rg"
+KIOSK_VIDEOS_DIR="/opt/hanryxvault/kiosk/videos"
+EOFSK_VIDEO_MAX_COUNT=40
+Created symlink '/etc/systemd/system/timers.target.wants/hanryxvault-kiosk-videos.timer' → '/etc/systemd/system/hanryxvault-kiosk-videos.timer'.
+ngansen@hanryxvault:~/hanryx-vault-pos $ sudo ss -tlnp | grep ':8080'
+docker ps 2>/dev/null
+sudo systemctl list-units --type=service --state=running | grep -iE 'hanryx|pos|flask|docker'
+LISTEN 0      4096                      0.0.0.0:8080       0.0.0.0:*    users:(("docker-proxy",pid=2656,fd=8))                   
+LISTEN 0      4096                         [::]:8080          [::]:*    users:(("docker-proxy",pid=2729,fd=8))                   
+CONTAINER ID   IMAGE                      COMMAND                  CREATED        STATUS                    PORTS                                         NAMES
+71504aa0be11   pi-setup-storefront        "docker-entrypoint.sh"   13 hours ago   Up 13 hours (unhealthy)   127.0.0.1:3000->3000/tcp                      pi-setup-storefront-1
+3dc11398c4d8   pi-setup-pos               "/entrypoint.sh"         13 hours ago   Up 13 hours (healthy)     0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp   pi-setup-pos-1
+21a733108760   edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   13 hours ago   Up 13 hours (healthy)     5432/tcp                                      pi-setup-pgbouncer-1
+4c604735ebe7   redis:7-alpine             "docker-entrypoint.s…"   13 hours ago   Up 13 hours (healthy)     6379/tcp                                      pi-setup-redis-1
+808c5257ea26   pgvector/pgvector:pg16     "docker-entrypoint.s…"   13 hours ago   Up 13 hours (healthy)     5432/tcp                                      pi-setup-db-1
+  docker.service                loaded active running Docker Application Container Engine
