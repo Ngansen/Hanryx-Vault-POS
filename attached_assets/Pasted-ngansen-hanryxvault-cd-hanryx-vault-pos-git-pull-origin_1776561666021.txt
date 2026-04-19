@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos && git pull origin main
+cd pi-setup && docker compose up -d --build pos
+remote: Enumerating objects: 55, done.
+remote: Counting objects: 100% (55/55), done.
+remote: Compressing objects: 100% (22/22), done.
+remote: Total 47 (delta 33), reused 39 (delta 25), pack-reused 0 (from 0)
+Unpacking objects: 100% (47/47), 1.46 MiB | 2.34 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   c8b60a0..9bceeb8  main       -> origin/main
+Updating c8b60a0..9bceeb8
+Fast-forward
+ ...x-vault-pos-cd-hanryx-vault-p_1776557371102.txt |  79 +++
+ ...00-12-10-0000-GET-kiosk-state_1776557560229.txt |  15 +
+ ...-vault-pos-cd-hanryx-vault-po_1776555287520.txt |  77 +++
+ ...-vault-pos-cd-hanryx-vault-po_1776555545843.txt | 122 +++++
+ attached_assets/image_1776559941279.jpg            | Bin 0 -> 1504531 bytes
+ pi-setup/gunicorn.conf.py                          |   8 +
+ pi-setup/kiosk/hanryxvault-kiosk-restart.service   |   7 +
+ pi-setup/kiosk/hanryxvault-kiosk-restart.timer     |  13 +
+ pi-setup/kiosk/install-kiosk.sh                    |  14 +
+ pi-setup/network/setup-satellite-show-mode.sh      | 303 +++++++++++
+ pi-setup/network/setup-satellite-wireguard.sh      | 143 +++++
+ pi-setup/server.py                                 | 606 +++++++++++++++++++--
+ 12 files changed, 1329 insertions(+), 58 deletions(-)
+ create mode 100644 attached_assets/Pasted--ngansen-hanryxvault-hanryx-vault-pos-cd-hanryx-vault-p_1776557371102.txt
+ create mode 100644 attached_assets/Pasted-192-168-86-22-19-Apr-2026-00-12-10-0000-GET-kiosk-state_1776557560229.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-hanryx-vault-pos-cd-hanryx-vault-po_1776555287520.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-hanryx-vault-pos-cd-hanryx-vault-po_1776555545843.txt
+ create mode 100644 attached_assets/image_1776559941279.jpg
+ create mode 100644 pi-setup/kiosk/hanryxvault-kiosk-restart.service
+ create mode 100644 pi-setup/kiosk/hanryxvault-kiosk-restart.timer
+ create mode 100755 pi-setup/network/setup-satellite-show-mode.sh
+ create mode 100755 pi-setup/network/setup-satellite-wireguard.sh
+-bash: docker: command not found
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $
