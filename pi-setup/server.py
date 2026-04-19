@@ -2752,11 +2752,54 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_wantlist_customer  ON customer_wantlist(customer_id)",
         "CREATE INDEX IF NOT EXISTS idx_wantlist_pending   ON customer_wantlist(notified, fulfilled)",
         "CREATE INDEX IF NOT EXISTS idx_wantlist_card_name ON customer_wantlist(card_name)",
+
+        # ── Korean Pokémon TCG (ptcg-kr-db dataset) ──────────────────────────
+        """CREATE TABLE IF NOT EXISTS cards_kr (
+            card_id        TEXT NOT NULL,
+            prod_code      TEXT NOT NULL DEFAULT '',
+            card_number    TEXT NOT NULL DEFAULT '',
+            set_name       TEXT NOT NULL DEFAULT '',
+            name_kr        TEXT NOT NULL,
+            pokedex_no     INTEGER,
+            supertype      TEXT NOT NULL DEFAULT '',
+            subtype        TEXT NOT NULL DEFAULT '',
+            hp             INTEGER,
+            type_kr        TEXT NOT NULL DEFAULT '',
+            rarity         TEXT NOT NULL DEFAULT '',
+            artist         TEXT NOT NULL DEFAULT '',
+            prod_number    TEXT NOT NULL DEFAULT '',
+            image_url      TEXT NOT NULL DEFAULT '',
+            flavor_text    TEXT NOT NULL DEFAULT '',
+            raw_json       JSONB,
+            imported_at    BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (card_id, prod_code, card_number)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cards_kr_name    ON cards_kr (name_kr)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_kr_pokedex ON cards_kr (pokedex_no)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_kr_setnum  ON cards_kr (prod_code, card_number)",
     ]
 
     for stmt in _ddl_statements:
         db.execute(stmt)
     db.commit()
+
+    # ── Trigger Korean card import (idempotent — only runs if table empty) ──
+    if os.environ.get("KR_IMPORT_ON_BOOT", "1") == "1":
+        try:
+            import import_kr_cards  # local module
+            cnt = import_kr_cards.kr_cards_count(db)
+            if cnt == 0:
+                log.info("[init_db] cards_kr is empty — kicking off background import")
+                import threading
+                threading.Thread(
+                    target=_run_kr_import_safely,
+                    name="kr-cards-import",
+                    daemon=True,
+                ).start()
+            else:
+                log.info("[init_db] cards_kr already has %d rows", cnt)
+        except Exception as _kre:
+            log.warning("[init_db] Korean card import scheduling failed: %s", _kre)
 
     # ── Safe migration: add columns that may be missing on older installs ────
     def _col_exists(table, col):
@@ -4479,6 +4522,167 @@ def scan_stream():
 
 
 # ---------------------------------------------------------------------------
+# Korean card support (ptcg-kr-db) — helpers used by /card/lookup
+# ---------------------------------------------------------------------------
+
+def _has_hangul(s: str) -> bool:
+    """True if the string contains any Hangul (Korean) character."""
+    if not s:
+        return False
+    for ch in s:
+        cp = ord(ch)
+        if (0xAC00 <= cp <= 0xD7A3) or (0x1100 <= cp <= 0x11FF) or (0x3130 <= cp <= 0x318F):
+            return True
+    return False
+
+
+def _kr_card_lookup(db, *, name: str = "", set_code: str = "",
+                    card_num: str = "", limit: int = 10) -> list:
+    """
+    Look up Korean cards in cards_kr by Hangul name and/or set+number.
+    Returns a list of dicts shaped like the rest of /card/lookup output.
+    Safe no-op if cards_kr does not exist or is empty.
+    """
+    name = (name or "").strip()
+    set_code = (set_code or "").strip().upper()
+    card_num = (card_num or "").strip().lstrip("0")
+    if not (name or (set_code and card_num) or set_code):
+        return []
+
+    where, params = [], []
+    if name:
+        # Look up by exact match OR substring; Hangul names are short enough
+        where.append("name_kr ILIKE %s")
+        params.append(f"%{name}%")
+    if set_code:
+        where.append("UPPER(prod_code) = %s")
+        params.append(set_code)
+    if card_num:
+        where.append("card_number = %s")
+        params.append(card_num or "0")
+
+    sql = (
+        "SELECT card_id, prod_code, card_number, set_name, name_kr, "
+        "       pokedex_no, supertype, rarity, artist, image_url, type_kr "
+        "FROM cards_kr WHERE " + " AND ".join(where) + " "
+        "ORDER BY prod_code DESC, card_number ASC LIMIT %s"
+    )
+    params.append(int(limit))
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception as exc:
+        log.warning("[kr-lookup] query failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+
+    out = []
+    for r in rows:
+        # rows may be tuples or psycopg2 Row-like; index by position is safe
+        out.append({
+            "id":          f"{r[1]}-{r[2]}" if r[1] else r[0],
+            "tcg_id":      r[0],
+            "setCode":     (r[1] or "").upper(),
+            "set_code":    (r[1] or "").upper(),
+            "cardNumber":  r[2],
+            "card_number": r[2],
+            "setName":     r[3],
+            "name":        r[4],
+            "name_kr":     r[4],
+            "pokedex_no":  r[5],
+            "supertype":   r[6],
+            "rarity":      r[7],
+            "artist":      r[8],
+            "imageUrl":    r[9],
+            "image_url":   r[9],
+            "type":        r[10],
+            "language":    "Korean",
+            "source":      "ptcg-kr-db",
+            "price":       0,
+        })
+    return out
+
+
+def _run_kr_import_safely() -> None:
+    """
+    Background-thread entry point: imports Korean cards into Postgres.
+    Uses its own DB connection so it doesn't share the request-scoped one.
+    """
+    try:
+        import import_kr_cards
+        conn = _direct_db()
+        try:
+            result = import_kr_cards.import_korean_cards(conn, force=False)
+            log.info("[kr-import] background result: %s", result)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        log.warning("[kr-import] background import failed: %s", exc, exc_info=True)
+
+
+def _kr_admin_authorized(req) -> bool:
+    """Check ADMIN_TOKEN env var against either ?token=... or X-Admin-Token header."""
+    expected = (os.environ.get("ADMIN_TOKEN") or "").strip()
+    if not expected:
+        # No admin token configured → only allow from localhost
+        remote = (req.remote_addr or "")
+        return remote in ("127.0.0.1", "::1", "localhost")
+    provided = (req.args.get("token")
+                or req.headers.get("X-Admin-Token")
+                or "").strip()
+    return bool(provided) and provided == expected
+
+
+@app.route("/admin/kr-cards/refresh", methods=["POST"])
+def kr_cards_refresh():
+    """Manually re-import the Korean dataset (truncates and re-pulls from GitHub)."""
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import import_kr_cards
+        conn = _direct_db()
+        try:
+            result = import_kr_cards.import_korean_cards(conn, force=True)
+            return jsonify(result)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        log.exception("[kr-import] manual refresh failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/kr-cards/status", methods=["GET"])
+def kr_cards_status():
+    """Quick check on how many Korean cards are loaded."""
+    try:
+        import import_kr_cards
+        db = get_db()
+        cnt = import_kr_cards.kr_cards_count(db)
+        sample = db.execute(
+            "SELECT name_kr, prod_code, card_number, rarity "
+            "FROM cards_kr ORDER BY imported_at DESC LIMIT 5"
+        ).fetchall()
+        return jsonify({
+            "count": cnt,
+            "sample": [
+                {"name": r[0], "set": r[1], "number": r[2], "rarity": r[3]}
+                for r in (sample or [])
+            ],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "count": 0}), 500
+
+
+# ---------------------------------------------------------------------------
 # Card lookup — fuzzy / multi-field search for Pokémon (and any) cards
 # ---------------------------------------------------------------------------
 
@@ -4520,6 +4724,21 @@ def card_lookup():
     db      = get_db()
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
+
+    # ── Korean fallback: any Hangul in query OR explicit lang=kr OR no hits ──
+    lang = (request.args.get("lang") or "").strip().lower()
+    kr_query_text = name or q
+    if lang == "kr" or _has_hangul(kr_query_text) or (not results and lang == ""):
+        kr_results = _kr_card_lookup(db, name=kr_query_text,
+                                     set_code=set_code, card_num=card_num,
+                                     limit=limit)
+        if kr_results:
+            # Korean-explicit query → put KR first; otherwise append as fallback
+            if lang == "kr" or _has_hangul(kr_query_text):
+                results = kr_results + [r for r in results if r not in kr_results]
+            else:
+                results = results + kr_results
+            results = results[:limit]
 
     if request.args.get("kiosk") == "1" and results:
         _kiosk_push_lookup(results[0])
@@ -4563,6 +4782,19 @@ def card_lookup_post():
     db      = get_db()
     results = _card_lookup(db, q=q, qr=qr, name=name,
                            set_code=set_code, card_num=card_num, limit=limit)
+
+    lang = (body.get("lang") or "").strip().lower()
+    kr_query_text = name or q
+    if lang == "kr" or _has_hangul(kr_query_text) or (not results and lang == ""):
+        kr_results = _kr_card_lookup(db, name=kr_query_text,
+                                     set_code=set_code, card_num=card_num,
+                                     limit=limit)
+        if kr_results:
+            if lang == "kr" or _has_hangul(kr_query_text):
+                results = kr_results + [r for r in results if r not in kr_results]
+            else:
+                results = results + kr_results
+            results = results[:limit]
 
     if body.get("kiosk") and results:
         _kiosk_push_lookup(results[0])

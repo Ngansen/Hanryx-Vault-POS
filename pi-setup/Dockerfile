@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     tesseract-ocr \
     tesseract-ocr-eng \
+    tesseract-ocr-kor \
+    tesseract-ocr-jpn \
+    tesseract-ocr-chi-sim \
     libtesseract-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,8 +27,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     postgresql-client \
+    git \
     tesseract-ocr \
     tesseract-ocr-eng \
+    tesseract-ocr-kor \
+    tesseract-ocr-jpn \
+    tesseract-ocr-chi-sim \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
