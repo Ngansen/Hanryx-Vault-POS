@@ -1,0 +1,66 @@
+gansen@hanryxvault:~/hanryx-vault-pos $ # Full journal since restart — chromium's stderr goes here
+sudo journalctl -u hanryxvault-kiosk.service --since "10 minutes ago" --no-pager | tail -50
+
+# All related processes (not just chromium/xinit)
+ps -ef | grep -v grep | grep -E 'xinit|Xorg|chromium|start-monitor'
+
+# Try running the script manually as the kiosk user to see the actual error inline
+sudo systemctl stop hanryxvault-kiosk.service
+sudo -u ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority HOME=/home/ngansen \
+    KIOSK_URL=http://192.168.86.36:8080/kiosk \
+    /usr/bin/xinit /opt/hanryxvault/kiosk/start-monitor.sh -- :0 vt7 -nocursor 2>&1 | tail -40
+# (Press Ctrl+C in ~10 seconds to abort, or wait — it'll print the error itself)
+sudo systemctl start hanryxvault-kiosk.service
+Apr 19 03:40:18 hanryxvault systemd[1]: hanryxvault-kiosk.service: Consumed 2.501s CPU time.
+Apr 19 03:40:18 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 03:40:18 hanryxvault systemd[1]: Started hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: X.Org X Server 1.21.1.16
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: X Protocol Version 11, Revision 0
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: Current Operating System: Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: Kernel command line: reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=0  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:40:13:A9 vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=b7e86d61-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles ds=nocloud;i=rpi-imager-1776299933564 cfg80211.ieee80211_regdom=IS quiet loglevel=3 logo.nologo
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: xorg-server 2:21.1.16-1.3+rpt1+deb13u1 (https://www.debian.org/support)
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: Current version of pixman: 0.46.4
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]:         Before reporting problems, check http://wiki.x.org
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]:         to make sure that you have the latest version.
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: Markers: (--) probed, (**) from config file, (==) default setting,
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]:         (++) from command line, (!!) notice, (II) informational,
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]:         (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: (==) Log file: "/var/log/Xorg.0.log", Time: Sun Apr 19 03:40:18 2026
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: (==) Using config directory: "/etc/X11/xorg.conf.d"
+Apr 19 03:40:18 hanryxvault hanryxvault-kiosk[3768]: (==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Apr 19 03:40:19 hanryxvault hanryxvault-kiosk[3777]: server does not have extension for -dpms option
+Apr 19 03:40:19 hanryxvault hanryxvault-kiosk[3774]: [kiosk] Waiting for POS server at http://127.0.0.1:8080/health …
+Apr 19 03:40:19 hanryxvault hanryxvault-kiosk[3774]: [kiosk] Server ready after 0s — launching monitor
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3766]: /usr/bin/xinit:
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3778]: X connection to :0 broken (explicit kill or server shutdown).
+Apr 19 03:40:51 hanryxvault systemd[1]: Stopping hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3766]: connection to X server lost
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3766]:
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3766]: waiting for X server to shut down .
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3768]: (II) Server terminated successfully (0). Closing log file.
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3766]: /usr/bin/xinit: unexpected signal 15
+Apr 19 03:40:51 hanryxvault systemd[1]: hanryxvault-kiosk.service: Main process exited, code=exited, status=1/FAILURE
+Apr 19 03:40:51 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+Apr 19 03:40:51 hanryxvault systemd[1]: Stopped hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 03:40:51 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 03:40:51 hanryxvault systemd[1]: Started hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: X.Org X Server 1.21.1.16
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: X Protocol Version 11, Revision 0
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: Current Operating System: Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: Kernel command line: reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=0  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:40:13:A9 vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=b7e86d61-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles ds=nocloud;i=rpi-imager-1776299933564 cfg80211.ieee80211_regdom=IS quiet loglevel=3 logo.nologo
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: xorg-server 2:21.1.16-1.3+rpt1+deb13u1 (https://www.debian.org/support)
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: Current version of pixman: 0.46.4
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         Before reporting problems, check http://wiki.x.org
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         to make sure that you have the latest version.
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: Markers: (--) probed, (**) from config file, (==) default setting,
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         (++) from command line, (!!) notice, (II) informational,
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]:         (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Log file: "/var/log/Xorg.0.log", Time: Sun Apr 19 03:40:51 2026
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Using config directory: "/etc/X11/xorg.conf.d"
+Apr 19 03:40:51 hanryxvault hanryxvault-kiosk[3845]: (==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3854]: server does not have extension for -dpms option
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3851]: [kiosk] Waiting for POS server at http://127.0.0.1:8080/health …
+Apr 19 03:40:52 hanryxvault hanryxvault-kiosk[3851]: [kiosk] Server ready after 0s — launching monitor
+ngansen     3843       1  0 03:40 ?        00:00:00 /usr/bin/xinit /opt/hanryxvault/kiosk/start-monitor.sh -- :0 vt7 -nocursor -nolisten tcp -dpms
+root        3845    3843  0 03:40 tty7     00:00:00 /usr/lib/xorg/Xorg :0 vt7 -nocursor -nolisten tcp -dpms
+
