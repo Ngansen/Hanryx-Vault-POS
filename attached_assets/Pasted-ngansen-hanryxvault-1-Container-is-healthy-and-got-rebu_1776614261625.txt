@@ -1,0 +1,48 @@
+ngansen@hanryxvault:~ $ # 1. Container is healthy and got rebuilt with the new code
+sudo docker compose -f ~/hanryx-vault-pos/pi-setup/docker-compose.yml ps pos
+# expect: STATUS = "Up X minutes (healthy)"
+
+# 2. The videos directory is mounted into the container and not empty
+sudo docker compose -f ~/hanryx-vault-pos/pi-setup/docker-compose.yml exec pos ls /app/kiosk-videos | wc -l
+# expect: 40 (or however many downloaded)
+
+# 3. Flask's JSON endpoint lists them
+curl -s http://localhost:8080/kiosk/videos.json | python3 -m json.tool | head -20
+# expect: {"count": 40, "videos": [{"name": "...", "url": "/kiosk/videos/...", ...}]}
+
+# 4. Flask actually streams a video file (HTTP 200# expect: NEXT column shows next Sunday ~03:15.tim
+NAME             IMAGE          COMMAND            SERVICE   CREATED         STATUS                   PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       7 minutes ago   Up 7 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+40
+{
+    "count": 40,
+    "videos": [
+        {
+            "name": "001-z3hMX65Khtg-Pokemon_-_I_Choose_You_FULL_EPISODE_1_Season_1.mp4",
+            "size": 60770332,
+            "url": "/kiosk/videos/001-z3hMX65Khtg-Pokemon_-_I_Choose_You_FULL_EPISODE_1_Season_1.mp4"
+        },
+        {
+            "name": "002-h6LFdBPjbf4-Pokemon_Emergency_FULL_EPISODE_2_Season_1.mp4",
+            "size": 52234657,
+            "url": "/kiosk/videos/002-h6LFdBPjbf4-Pokemon_Emergency_FULL_EPISODE_2_Season_1.mp4"
+        },
+        {
+            "name": "003-ObtS79k2NM4-Ash_Catches_a_Pokemon_FULL_EPISODE_3_Season_1.mp4",
+            "size": 60186994,
+            "url": "/kiosk/videos/003-ObtS79k2NM4-Ash_Catches_a_Pokemon_FULL_EPISODE_3_Season_1.mp4"
+        },
+        {
+            "name": "004-PEUL-1_zGWI-Challenge_of_the_Samurai_POKEMON_FULL_EPISODE_4_Season_1.mp4",
+HTTP/1.1 200 OK
+Server: gunicorn
+Date: Sun, 19 Apr 2026 15:56:43 GMT
+Connection: keep-alive
+Content-Disposition: inline; filename=001-z3hMX65Khtg-Pokemon_-_I_Choose_You_FULL_EPISODE_1_Season_1.mp4
+<link rel="preconnect" href="https://www.youtube.com">
+<link rel="dns-prefetch" href="https://www.youtube.com">
+NEXT                          LEFT LAST          >
+Sun 2026-04-26 03:26:10 GMT 6 days Sun 2026-04-19>
+
+1 timers listed.
+Pass --all
