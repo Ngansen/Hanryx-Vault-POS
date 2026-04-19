@@ -1,0 +1,30 @@
+ngansen@hanryxvault:~ $ sudo journalctl -u hanryxvault-kiosk.service -n 40 --no-pager | tail -25
+ls -l /usr/lib/xorg/Xorg /usr/bin/Xorg 2>/dev/null
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: Current version of pixman: 0.46.4
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:         Before reporting problems, check http://wiki.x.org
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:         to make sure that you have the latest version.
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: Markers: (--) probed, (**) from config file, (==) default setting,
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:         (++) from command line, (!!) notice, (II) informational,
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:         (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (==) Log file: "/home/ngansen/.local/share/xorg/Xorg.0.log", Time: Sun Apr 19 02:46:47 2026
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (==) Using config directory: "/etc/X11/xorg.conf.d"
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE)
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: Fatal server error:
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE) xf86OpenConsole: Cannot open virtual console 7 (Permission denied)
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE)
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE)
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: Please consult the The X.Org Foundation support
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:          at http://wiki.x.org
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]:  for help.
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE) Please also check the log file at "/home/ngansen/.local/share/xorg/Xorg.0.log" for additional information.
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE)
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2304]: (EE) Server terminated with error (1). Closing log file.
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2303]: /usr/bin/xinit: giving up
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2303]: /usr/bin/xinit: unable to connect to X server: Connection refused
+Apr 19 02:46:47 hanryxvault hanryxvault-kiosk[2303]: /usr/bin/xinit: server error
+Apr 19 02:46:47 hanryxvault systemd[1]: hanryxvault-kiosk.service: Main process exited, code=exited, status=1/FAILURE
+Apr 19 02:46:47 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+-rwxr-xr-x 1 root root     274 Nov  3 10:33 /usr/bin/Xorg
+-rwxr-xr-x 1 root root 2670144 Nov  3 10:33 /usr/lib/xorg/Xorg
+ngansen@hanryxvault:~ $
