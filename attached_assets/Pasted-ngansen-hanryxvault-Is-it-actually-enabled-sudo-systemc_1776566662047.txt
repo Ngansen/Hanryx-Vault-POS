@@ -1,0 +1,63 @@
+ngansen@hanryxvault:~ $ # Is it actually enabled?
+sudo systemctl is-enabled hanryxvault-kiosk.service
+
+# Force-start it right now and immediately grab the journal
+sudo systemctl start hanryxvault-kiosk.service
+sleep 3
+sudo systemctl status hanryxvault-kiosk.service --no-pager | head -25
+sudo journalctl -u hanryxvault-kiosk.service -n 60 --no-pager
+
+# Also check the service file itself — make sure install actually wrote the right user
+sudo grep -E '^(User|Group|Environment|ExecStart)' /etc/systemd/system/hanryxvault-kiosk.service
+enabled
+● hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)
+     Loaded: loaded (/etc/systemd/system/hanryxvault-kiosk.service; enabled; preset: enabled)
+     Active: activating (auto-restart) (Result: exit-code) since Sun 2026-04-19 02:43:18 GMT; 2s ago
+ Invocation: b87fece86bfb4c41961734da1f8b78e2
+       Docs: https://github.com/Ngansen/HanRyx-Vault
+    Process: 1868 ExecStartPre=/bin/bash -c test -x /usr/bin/python3 ||       sed -i "s|PYTHON=.*|PYTHON=$(command -v python3)|"       /etc/systemd/system/hanryxvault-kiosk.service (code=exited, status=0/SUCCESS)
+    Process: 1870 ExecStart=/usr/bin/xinit /opt/hanryxvault/kiosk/start-monitor.sh -- :0 vt7 -nocursor -nolisten tcp -dpms (code=exited, status=1/FAILURE)
+   Main PID: 1870 (code=exited, status=1/FAILURE)
+        CPU: 31ms
+Apr 19 02:43:17 hanryxvault systemd[1]: Starting hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display)...
+Apr 19 02:43:17 hanryxvault systemd[1]: Started hanryxvault-kiosk.service - HanryxVault Admin Monitor (Kiosk Display).
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: X.Org X Server 1.21.1.16
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: X Protocol Version 11, Revision 0
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: Current Operating System: Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: Kernel command line: reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=0  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:40:13:A9 vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=b7e86d61-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles ds=nocloud;i=rpi-imager-1776299933564 cfg80211.ieee80211_regdom=IS quiet loglevel=3 logo.nologo
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: xorg-server 2:21.1.16-1.3+rpt1+deb13u1 (https://www.debian.org/support)
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: Current version of pixman: 0.46.4
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]:         Before reporting problems, check http://wiki.x.org
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]:         to make sure that you have the latest version.
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: Markers: (--) probed, (**) from config file, (==) default setting,
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]:         (++) from command line, (!!) notice, (II) informational,
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]:         (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: (==) Log file: "/home/ngansen/.local/share/xorg/Xorg.0.log", Time: Sun Apr 19 02:43:17 2026
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: (==) Using config directory: "/etc/X11/xorg.conf.d"
+Apr 19 02:43:17 hanryxvault hanryxvault-kiosk[1872]: (==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE)
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: Fatal server error:
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE) xf86OpenConsole: Cannot open virtual console 7 (Permission denied)
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE)
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE)
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: Please consult the The X.Org Foundation support
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]:          at http://wiki.x.org
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]:  for help.
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE) Please also check the log file at "/home/ngansen/.local/share/xorg/Xorg.0.log" for additional information.
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE)
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1872]: (EE) Server terminated with error (1). Closing log file.
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1870]: /usr/bin/xinit: giving up
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1870]: /usr/bin/xinit: unable to connect to X server: Connection refused
+Apr 19 02:43:18 hanryxvault hanryxvault-kiosk[1870]: /usr/bin/xinit: server error
+Apr 19 02:43:18 hanryxvault systemd[1]: hanryxvault-kiosk.service: Main process exited, code=exited, status=1/FAILURE
+Apr 19 02:43:18 hanryxvault systemd[1]: hanryxvault-kiosk.service: Failed with result 'exit-code'.
+User=ngansen
+Group=ngansen
+Environment=HOME=/home/ngansen
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/ngansen/.Xauthority
+Environment=INSTALL_DIR=/opt/hanryxvault
+Environment=PYTHON=/usr/bin/python3
+ExecStartPre=/bin/bash -c \
+ExecStart=/usr/bin/xinit \
+ngansen@hanryxvault:~ $
