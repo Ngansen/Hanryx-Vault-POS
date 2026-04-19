@@ -1,0 +1,41 @@
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ sudo bash kiosk/install-kiosk.sh
+[kiosk] Installing OS packages …
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+xserver-xorg is already the newest version (1:7.7+24+deb13u1).
+xserver-xorg set to manually installed.
+xinit is already the newest version (1.4.2-1+b2).
+xinit set to manually installed.
+x11-xserver-utils is already the newest version (7.7+11).
+x11-xserver-utils set to manually installed.
+unclutter is already the newest version (8-25+nmu1).
+curl is already the newest version (8.14.1-2+deb13u2).
+python3-tk is already the newest version (3.13.5-1).
+python3-pil is already the newest version (11.1.0-5+deb13u1).
+python3-pil set to manually installed.
+Suggested packages:
+  python-pil-doc
+The following NEW packages will be installed:
+  python3-pil.imagetk
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 81.5 kB of archives.
+After this operation, 166 kB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main arm64 python3-pil.imagetk arm64 11.1.0-5+deb13u1 [81.5 kB]
+Fetched 81.5 kB in 0s (311 kB/s)
+Selecting previously unselected package python3-pil.imagetk:arm64.
+(Reading database ... 121667 files and directories currently installed.)
+Preparing to unpack .../python3-pil.imagetk_11.1.0-5+deb13u1_arm64.deb ...
+Unpacking python3-pil.imagetk:arm64 (11.1.0-5+deb13u1) ...
+Setting up python3-pil.imagetk:arm64 (11.1.0-5+deb13u1) ...
+[kiosk] Copying kiosk files to /opt/hanryxvault/kiosk …
+[kiosk] Copied desktop_monitor.py to /opt/hanryxvault/
+[kiosk] No venv found at /opt/hanryxvault/venv — using system python3: /usr/bin/python3
+[kiosk] Disabling display manager: lightdm
+Synchronizing state of lightdm.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+Executing: /usr/lib/systemd/systemd-sysv-install disable lightdm
+Removed '/etc/systemd/system/display-manager.service'.
+[kiosk] Setting console auto-login via raspi-config (B2) …
+[kiosk] Writing /home/pi/.xinitrc …
+kiosk/install-kiosk.sh: line 108: /home/pi/.xinitrc: No such file or directory
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $
