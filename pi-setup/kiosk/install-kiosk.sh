@@ -135,6 +135,27 @@ EOF
     chmod +x "$XINITRC"
 fi
 
+# ── Allow non-console users to start X (needed for systemd-launched xinit) ──
+# Debian default: /etc/X11/Xwrapper.config restricts X to console users, which
+# kills xinit when launched by a systemd Service=. Allow anybody, request root.
+XWRAP=/etc/X11/Xwrapper.config
+mkdir -p /etc/X11
+if [[ -f "$XWRAP" ]] && grep -qE '^allowed_users\s*=\s*anybody' "$XWRAP"; then
+    info "Xwrapper.config already permissive."
+else
+    info "Patching $XWRAP (allowed_users=anybody, needs_root_rights=yes)"
+    cat > "$XWRAP" <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+fi
+# Make sure the kiosk user can open input + tty devices
+for grp in tty video input audio; do
+    if getent group "$grp" >/dev/null && ! id -nG "$KIOSK_USER" | grep -qw "$grp"; then
+        usermod -a -G "$grp" "$KIOSK_USER" && info "Added $KIOSK_USER to group $grp"
+    fi
+done
+
 # ── Install + enable the systemd service ─────────────────────────────────────
 info "Installing systemd service: $SERVICE_NAME"
 systemctl daemon-reload
