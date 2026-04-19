@@ -30,7 +30,19 @@ PI_SETUP="$REPO_ROOT/pi-setup"
 KIOSK_DEST="$INSTALL_DIR/kiosk"
 SERVICE_NAME=hanryxvault-kiosk
 SERVICE_FILE=/etc/systemd/system/${SERVICE_NAME}.service
-KIOSK_USER=${KIOSK_USER:-pi}
+# Auto-detect kiosk user: explicit env > sudo invoker > 'pi' > first /home/* dir
+if [[ -z "${KIOSK_USER:-}" ]]; then
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        KIOSK_USER="$SUDO_USER"
+    elif id pi &>/dev/null && [[ -d /home/pi ]]; then
+        KIOSK_USER="pi"
+    else
+        KIOSK_USER=$(ls /home 2>/dev/null | head -1)
+    fi
+fi
+[[ -z "$KIOSK_USER" ]] && { echo "Could not determine kiosk user — set KIOSK_USER=<name>"; exit 1; }
+id "$KIOSK_USER" &>/dev/null || { echo "User '$KIOSK_USER' does not exist"; exit 1; }
+[[ -d "/home/$KIOSK_USER" ]] || { echo "Home dir /home/$KIOSK_USER missing"; exit 1; }
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -42,6 +54,7 @@ die()     { echo -e "${RED}[kiosk] ERROR:${NC} $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "Run this script with sudo: sudo bash $0"
 
 # ── OS package dependencies ───────────────────────────────────────────────────
+info "Kiosk user: $KIOSK_USER  (home: /home/$KIOSK_USER)"
 info "Installing OS packages …"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
