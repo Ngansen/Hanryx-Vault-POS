@@ -63,9 +63,9 @@ apt-get install -y --no-install-recommends \
     x11-xserver-utils \
     unclutter \
     curl \
-    python3-tk \
-    python3-pil \
-    python3-pil.imagetk
+    chromium-browser \
+    fonts-noto-color-emoji \
+    fonts-dejavu-core
 
 # ── Create kiosk directory ────────────────────────────────────────────────────
 info "Copying kiosk files to $KIOSK_DEST …"

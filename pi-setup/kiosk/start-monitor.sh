@@ -2,16 +2,24 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # HanryxVault Kiosk — X session startup script
 #
-# Called by xinit.  Runs inside the bare X server with no desktop environment.
+# Called by xinit. Runs inside the bare X server with no desktop environment.
 # Configures the display, waits for the POS server to become healthy, then
-# launches the admin monitor in fullscreen kiosk mode.
+# launches the full /kiosk page (YouTube idle, sales feed, broken-iframe
+# hardening, nightly auto-recycle) in Chromium kiosk mode.
+#
+# Set KIOSK_URL=/admin in /etc/default/hanryxvault-kiosk to show the admin
+# dashboard instead, or KIOSK_URL=http://other-host:8080/kiosk to point at
+# a different host (e.g. on a satellite without a local nginx).
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Optional config override
+[[ -f /etc/default/hanryxvault-kiosk ]] && . /etc/default/hanryxvault-kiosk
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/hanryxvault}"
-MONITOR_PY="$INSTALL_DIR/desktop_monitor.py"
-PYTHON="${PYTHON:-$(command -v python3)}"
-HEALTH_URL="http://127.0.0.1:8080/health"
-MAX_WAIT=120   # seconds to wait for the server before giving up
+KIOSK_URL="${KIOSK_URL:-http://127.0.0.1:8080/kiosk}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/health}"
+PROFILE_DIR="${PROFILE_DIR:-$HOME/.config/hanryxvault-chromium}"
+MAX_WAIT=120
 
 # ── Display hardening ────────────────────────────────────────────────────────
 xset s off          # disable screensaver
@@ -23,7 +31,7 @@ if command -v unclutter &>/dev/null; then
     unclutter -idle 3 -root &
 fi
 
-# Optional: set a black wallpaper/background
+# Black background
 if command -v xsetroot &>/dev/null; then
     xsetroot -solid black
 fi
@@ -39,7 +47,42 @@ until curl -sf "$HEALTH_URL" > /dev/null 2>&1; do
     sleep 2
     (( waited += 2 ))
 done
-echo "[kiosk] Server ready after ${waited}s — launching monitor"
+echo "[kiosk] Server ready after ${waited}s — launching Chromium → $KIOSK_URL"
 
-# ── Launch the admin monitor ─────────────────────────────────────────────────
-exec "$PYTHON" "$MONITOR_PY" --kiosk
+# ── Pick a chromium binary ───────────────────────────────────────────────────
+CHROMIUM=""
+for c in chromium-browser chromium google-chrome chrome; do
+    if command -v "$c" &>/dev/null; then
+        CHROMIUM="$c"
+        break
+    fi
+done
+
+if [[ -z "$CHROMIUM" ]]; then
+    echo "[kiosk] ERROR: no chromium/chrome binary found. Install with:"
+    echo "        sudo apt-get install -y chromium-browser"
+    sleep 30
+    exit 1
+fi
+
+mkdir -p "$PROFILE_DIR"
+
+# Clear any "browser was closed unexpectedly" prompt from a hard reboot
+sed -i 's/"exited_cleanly":false/"exited_cleanly":true/'   "$PROFILE_DIR/Default/Preferences" 2>/dev/null || true
+sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/'      "$PROFILE_DIR/Default/Preferences" 2>/dev/null || true
+
+# ── Launch Chromium in kiosk mode ────────────────────────────────────────────
+exec "$CHROMIUM" \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-translate \
+    --disable-features=TranslateUI,Notifications \
+    --no-first-run \
+    --start-maximized \
+    --autoplay-policy=no-user-gesture-required \
+    --disable-pinch \
+    --overscroll-history-navigation=0 \
+    --check-for-update-interval=31536000 \
+    --user-data-dir="$PROFILE_DIR" \
+    --app="$KIOSK_URL"
