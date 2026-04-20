@@ -344,7 +344,7 @@ _JWT_TTL_H  = int(os.environ.get("JWT_TTL_HOURS", "24"))
 # Default: accept any RFC-1918 address. Override via LAN_CIDRS env var.
 # e.g. LAN_CIDRS=192.168.1.0/24,10.0.0.0/8
 import ipaddress as _ipaddress
-_LAN_CIDRS_RAW = os.environ.get("LAN_CIDRS", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8")
+_LAN_CIDRS_RAW = os.environ.get("LAN_CIDRS", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,100.64.0.0/10")
 _LAN_NETWORKS  = [_ipaddress.ip_network(c.strip()) for c in _LAN_CIDRS_RAW.split(",") if c.strip()]
 
 
