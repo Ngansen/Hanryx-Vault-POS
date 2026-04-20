@@ -23343,6 +23343,8 @@ def _receipt_replay_worker():
 # Day 3 — Multi-source price aggregator (eBay-sold + trimmed median + condition)
 # Both modules are self-bootstrapping (CREATE TABLE IF NOT EXISTS on import).
 # ─────────────────────────────────────────────────────────────────────────────
+from contextlib import closing as _closing  # _direct_db() is not a CM
+
 try:
     import scan_overrides as _scan_overrides
 except Exception as _exc:
@@ -23369,7 +23371,7 @@ def card_scan_log_pick():
     if not isinstance(payload, dict):
         return jsonify({"error": "JSON object body required"}), 400
     try:
-        with _direct_db() as conn:
+        with _closing(_direct_db()) as conn:
             _scan_overrides.bootstrap(conn)
             new_id = _scan_overrides.log_pick(conn, payload)
         return jsonify({"ok": True, "id": new_id})
@@ -23388,7 +23390,7 @@ def admin_scan_overrides_stats():
     except ValueError:
         since_ms = 0
     try:
-        with _direct_db() as conn:
+        with _closing(_direct_db()) as conn:
             _scan_overrides.bootstrap(conn)
             return jsonify(_scan_overrides.stats(conn, since_ms=since_ms))
     except Exception as exc:
@@ -23407,7 +23409,7 @@ def admin_scan_overrides_export():
     except ValueError:
         since_ms, limit = 0, 10_000
     try:
-        with _direct_db() as conn:
+        with _closing(_direct_db()) as conn:
             _scan_overrides.bootstrap(conn)
             csv_blob = _scan_overrides.export_csv(conn, since_ms=since_ms,
                                                   limit=limit)
@@ -23454,7 +23456,7 @@ def card_price_v2():
     force = str(_val("force_refresh") or "").lower() in ("1", "true", "yes")
 
     try:
-        with _direct_db() as conn:
+        with _closing(_direct_db()) as conn:
             quote = _price_agg.get_quote(
                 conn,
                 query=query,
