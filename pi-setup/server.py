@@ -23458,6 +23458,12 @@ except Exception as _exc:
     _price_trends = None
 
 try:
+    import buy_price as _buy_price
+except Exception as _exc:
+    log.warning("[server] buy_price unavailable: %s", _exc)
+    _buy_price = None
+
+try:
     import recognizer_tuning as _rec_tune
 except Exception as _exc:
     log.warning("[server] recognizer_tuning unavailable: %s", _exc)
@@ -23593,6 +23599,21 @@ def card_price_v2():
                     quote["trends"] = _price_trends.trends(conn, query)
                 except Exception as _e:
                     log.info("[price_v2] trends sidecar failed: %s", _e)
+            # Buy-side intelligence sidecar: max-buy / fair-buy / steal-buy
+            # targets + 90d sparkline + (optionally) overpay verdict if the
+            # quote has a current market price.
+            if _buy_price is not None:
+                try:
+                    asking = None
+                    for k in ("price", "market_price", "median", "best_price"):
+                        v = quote.get(k) if isinstance(quote, dict) else None
+                        if isinstance(v, (int, float)) and v > 0:
+                            asking = float(v); break
+                    quote["buy_intel"] = _buy_price.buy_intelligence(
+                        conn, query, asking_price=asking,
+                    )
+                except Exception as _e:
+                    log.info("[price_v2] buy_intel sidecar failed: %s", _e)
         return jsonify(quote)
     except Exception as exc:
         log.exception("[price_v2] failed")
@@ -23627,6 +23648,48 @@ def card_trends():
             return jsonify(_price_trends.trends(conn, query, your_name=your_name))
     except Exception as exc:
         log.exception("[trends] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/card/buy_price", methods=["GET", "POST"])
+def card_buy_price():
+    """
+    Buy-side intelligence: "what's the most I should pay?"
+
+    Request (JSON or query-string):
+        query         — required, the search string ("Pikachu 25/198")
+        asking_price  — optional, the seller's current list price (USD).
+                        When supplied, the response includes a `verdict`
+                        with a great / fair / overpay / walk-away band.
+
+    Response: see buy_price.buy_intelligence():
+        { query, asof, sample_size, confidence,
+          sold_90d:{p25,p50,p75,...}, sold_30d:{...},
+          trend:{pct_30d_vs_prev, direction, ...},
+          buy:{steal, fair, max, trend_adjust_pct, basis:{...}},
+          verdict:{band,label,action,...}?,  sparkline:{points,svg,...} }
+    """
+    if _buy_price is None:
+        return jsonify({"error": "buy_price module not loaded"}), 500
+    body = (request.get_json(silent=True) if request.is_json else None) or {}
+    args = request.values
+    query = (body.get("query") or args.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "missing 'query'"}), 400
+    asking_raw = body.get("asking_price") or args.get("asking_price")
+    asking = None
+    if asking_raw not in (None, ""):
+        try:
+            asking = float(asking_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "asking_price must be numeric"}), 400
+    try:
+        with _closing(_direct_db()) as conn:
+            return jsonify(_buy_price.buy_intelligence(
+                conn, query, asking_price=asking,
+            ))
+    except Exception as exc:
+        log.exception("[buy_price] failed")
         return jsonify({"error": str(exc)}), 500
 
 
