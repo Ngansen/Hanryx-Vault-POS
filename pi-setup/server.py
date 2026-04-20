@@ -2953,6 +2953,34 @@ def init_db():
         db.execute(stmt)
     db.commit()
 
+    # ── Optional trigram indexes for the Sets Browser ────────────────────
+    # These speed up the cross-language ILIKE searches on the card tables
+    # from a sequential scan to an index lookup. Each statement is wrapped
+    # in its own try/except so a missing pg_trgm extension (e.g. on a
+    # stripped Postgres image) just disables the optimisation rather than
+    # blocking startup.
+    _trgm_stmts = [
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+        "CREATE INDEX IF NOT EXISTS idx_kr_setname_trgm    ON cards_kr  USING gin (LOWER(set_name) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_kr_prodcode_trgm   ON cards_kr  USING gin (LOWER(prod_code) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_chs_cname_trgm     ON cards_chs USING gin (LOWER(commodity_name) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_chs_ccode_trgm     ON cards_chs USING gin (LOWER(commodity_code) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_setname_trgm   ON cards_jpn USING gin (LOWER(set_name) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_setcode_trgm   ON cards_jpn USING gin (LOWER(set_code) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_series_trgm    ON cards_jpn USING gin (LOWER(series)   gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_jpn_pkt_setcode_trgm ON cards_jpn_pocket USING gin (LOWER(set_code) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_multi_setname_trgm ON cards_multi USING gin (LOWER(set_name) gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_multi_setcode_trgm ON cards_multi USING gin (LOWER(set_code) gin_trgm_ops)",
+    ]
+    for stmt in _trgm_stmts:
+        try:
+            db.execute(stmt)
+            db.commit()
+        except Exception as _trgm_exc:
+            db.rollback()
+            log.info("[init_db] skipped trigram stmt (%s): %s",
+                     stmt.split()[3] if len(stmt.split()) > 3 else "ext", _trgm_exc)
+
     # ── Trigger Korean card import (idempotent — only runs if table empty) ──
     if os.environ.get("KR_IMPORT_ON_BOOT", "1") == "1":
         try:

@@ -184,6 +184,13 @@ def sync_now(force: bool = False) -> dict:
             _sa._CACHE = None
     except Exception:
         pass
+    # Wipe the result cache too, otherwise old searches keep returning
+    # the pre-sync union.
+    try:
+        import sets_browser as _sb
+        _sb.invalidate_cache()
+    except Exception:
+        pass
 
     return {
         "ok":          True,
