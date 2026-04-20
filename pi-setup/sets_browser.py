@@ -160,31 +160,61 @@ def _multi_q(set_query: str, limit: int) -> tuple[str, tuple]:
 _QUERIES = (_kr_q, _chs_q, _jpn_q, _jpn_pocket_q, _multi_q)
 
 
-def cards_in_set(conn, set_query: str, *, limit: int = 600) -> list[dict]:
+def cards_in_set(conn, set_query: str, *, limit: int = 600,
+                 use_aliases: bool = True) -> list[dict]:
     """
     Return every card belonging to `set_query` across all language tables.
 
-    `set_query` is a substring (case-insensitive). To get all printings of
-    a given Pokémon set across all languages, search for a token shared by
-    every language's set name — e.g. "twilight masquerade" matches the
-    English / multi side, while "twm" or the prod_code matches the KR /
-    CHS / JPN sides. The UI surfaces both result groups together.
+    When `use_aliases` is True (default), the query is first expanded
+    through set_aliases.expand() so typing one regional name (e.g.
+    "Twilight Masquerade") fetches every printing under every alias
+    that maps to the same logical set ("sv6", "sv6a", "Mask of Change",
+    "Night Wanderer", …). Each table is queried once per expanded token
+    and the results are merged + deduped on (language, card_id).
     """
     set_query = (set_query or "").strip()
     if not set_query:
         return []
-    per_lang = max(50, limit // len(_QUERIES))
-    out: list[dict] = []
-    for builder in _QUERIES:
-        sql, params = builder(set_query, per_lang)
+    tokens: list[str] = [set_query]
+    cluster_name: str | None = None
+    if use_aliases:
         try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                cols = [d[0] for d in cur.description]
-                for row in cur.fetchall():
-                    out.append(dict(zip(cols, row)))
+            import set_aliases as _sa
+            tokens, cluster_name = _sa.expand(set_query)
+            tokens = tokens or [set_query]
         except Exception as exc:
-            log.info("[sets_browser] %s skipped: %s", builder.__name__, exc)
+            log.info("[sets_browser] alias expansion skipped: %s", exc)
+
+    per_lang = max(50, limit // len(_QUERIES))
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for token in tokens:
+        for builder in _QUERIES:
+            sql, params = builder(token, per_lang)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    cols = [d[0] for d in cur.description]
+                    for row in cur.fetchall():
+                        rec = dict(zip(cols, row))
+                        key = (str(rec.get("language") or ""),
+                               str(rec.get("card_id") or ""))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        if cluster_name and not rec.get("matched_via"):
+                            rec["matched_via"] = token
+                        out.append(rec)
+            except Exception as exc:
+                log.info("[sets_browser] %s(%s) skipped: %s",
+                         builder.__name__, token, exc)
+            if len(out) >= limit:
+                break
+        if len(out) >= limit:
+            break
+    if cluster_name:
+        for r in out:
+            r.setdefault("cluster", cluster_name)
     # Stable sort: language label, then set, then card number (naturally).
     out.sort(key=lambda r: (
         str(r.get("language") or ""),

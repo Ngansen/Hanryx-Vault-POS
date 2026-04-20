@@ -23671,12 +23671,17 @@ def admin_sets_cards():
     grouped: dict[str, list] = {}
     for c in cards:
         grouped.setdefault(str(c.get("language") or "?"), []).append(c)
+    cluster = next((c.get("cluster") for c in cards if c.get("cluster")), None)
+    expanded_tokens = sorted({c.get("matched_via") for c in cards
+                              if c.get("matched_via")})
     return jsonify({
-        "query":   set_q,
-        "count":   len(cards),
-        "by_lang": {k: len(v) for k, v in grouped.items()},
-        "cards":   cards,
-        "grouped": grouped,
+        "query":     set_q,
+        "cluster":   cluster,
+        "expanded":  expanded_tokens,
+        "count":     len(cards),
+        "by_lang":   {k: len(v) for k, v in grouped.items()},
+        "cards":     cards,
+        "grouped":   grouped,
     })
 
 
@@ -23770,7 +23775,13 @@ def admin_sets():
     langs.forEach(function(l){{
       if (grouped[l].length >= 400) truncNote = ' <span style="color:#fbbf24;font-weight:700">⚠ some languages capped at 400 — narrow your search</span>';
     }});
-    sumEl.innerHTML = '<strong style="color:#f59e0b">'+data.count+'</strong> cards · '+pills+truncNote;
+    var clusterTag = '';
+    if (data.cluster) {{
+      var ex = (data.expanded||[]).map(esc).join(', ');
+      clusterTag = '<div style="width:100%;font-size:11px;color:#60a5fa;margin-bottom:6px">🔗 Matched cluster: <strong style="color:#bfdbfe">'+esc(data.cluster)+'</strong>'
+                 + (ex ? ' <span style="color:#475569">via '+ex+'</span>' : '') + '</div>';
+    }}
+    sumEl.innerHTML = clusterTag + '<strong style="color:#f59e0b">'+data.count+'</strong> cards · '+pills+truncNote;
     sumEl.classList.add('visible');
     var html = '';
     langs.forEach(function(l){{
