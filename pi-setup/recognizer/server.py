@@ -63,6 +63,7 @@ DB_URL = os.environ.get(
                    "postgresql://vaultpos:vaultpos@db:5432/vaultpos"),
 )
 HASH_REFRESH_SEC = int(os.environ.get("HASH_REFRESH_SEC", "600"))
+TUNING_REFRESH_SEC = int(os.environ.get("TUNING_REFRESH_SEC", "300"))
 PORT = int(os.environ.get("PORT", "8081"))
 
 # Hamming-distance threshold for a "good" pHash match. 64-bit hash:
@@ -166,6 +167,79 @@ def _hash_refresh_loop() -> None:
             _load_hash_index()
         except Exception:
             log.exception("[recognizer] periodic hash refresh failed")
+
+
+# ── Auto-tuning from operator picks ─────────────────────────────────────────
+# Polled from `recognizer_tuning` table populated by the POS server's
+# /admin/recognizer/retune route. Lets the recognizer adjust its candidate
+# scores based on which (method, source) combinations actually produce
+# accepted picks in the field — no model retraining required.
+_tuning: dict = {}
+_tuning_lock = threading.Lock()
+_tuning_loaded_at: float = 0.0
+
+
+def _load_tuning() -> None:
+    """Pull the most recent tuning blob from Postgres into memory."""
+    global _tuning, _tuning_loaded_at
+    try:
+        with _connect_db() as conn, conn.cursor(
+            cursor_factory=psycopg2.extras.DictCursor
+        ) as cur:
+            # Table may not exist on a fresh install; guard with to_regclass.
+            cur.execute("SELECT to_regclass('public.recognizer_tuning')")
+            row = cur.fetchone()
+            if not row or row[0] is None:
+                return
+            cur.execute(
+                "SELECT tuning FROM recognizer_tuning "
+                "ORDER BY computed_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            if not row:
+                return
+            blob = row["tuning"]
+            if isinstance(blob, str):
+                import json as _json
+                blob = _json.loads(blob)
+        with _tuning_lock:
+            _tuning = blob or {}
+            _tuning_loaded_at = time.time()
+        cells = len(_tuning.get("method_x_source") or {})
+        confused = len(_tuning.get("confused_pairs") or [])
+        log.info("[recognizer] tuning loaded: %d cells, %d confused-pairs, "
+                 "baseline=%.2f%%",
+                 cells, confused,
+                 100 * (_tuning.get("baseline_acceptance") or 0))
+    except Exception:
+        log.exception("[recognizer] tuning load failed")
+
+
+def _tuning_refresh_loop() -> None:
+    """Background thread: refresh the tuning blob periodically."""
+    while True:
+        time.sleep(TUNING_REFRESH_SEC)
+        try:
+            _load_tuning()
+        except Exception:
+            log.exception("[recognizer] periodic tuning refresh failed")
+
+
+def _apply_tuning(c: dict) -> float:
+    """
+    Return the candidate's score multiplied by its tuning weight.
+    Most-specific cell wins: method_x_source > method_weights > 1.0.
+    """
+    with _tuning_lock:
+        t = _tuning
+    if not t:
+        return float(c.get("score", 0))
+    method = c.get("method") or ""
+    source = c.get("source") or ""
+    cell = (t.get("method_x_source") or {}).get(f"{method}|{source}")
+    if cell is None:
+        cell = (t.get("method_weights") or {}).get(method, 1.0)
+    return float(c.get("score", 0)) * float(cell)
 
 
 # ── Image preprocessing ──────────────────────────────────────────────────────
@@ -374,17 +448,23 @@ def _scan_image(img: np.ndarray) -> dict:
     except Exception as exc:
         log.exception("phash pass failed: %s", exc)
 
-    # Sort: OCR exact matches first, then by score desc.
+    # Sort: OCR exact matches first, then by tuning-adjusted score desc.
+    # _apply_tuning() multiplies the raw score by the operator-pick-derived
+    # weight for this (method, source) cell — so methods that consistently
+    # produce accepted picks float to the top automatically.
+    for c in candidates:
+        c["tuned_score"] = _apply_tuning(c)
     candidates.sort(key=lambda c: (c["method"] != "ocr_number",
-                                   -c["score"]))
-    # Dedupe by (source, card_id) keeping the best score.
+                                   -c["tuned_score"]))
+    # Dedupe by (source, card_id) keeping the best tuned score.
     seen: dict[tuple[str, str], dict] = {}
     for c in candidates:
         key = (c["source"], c["card_id"])
-        if key not in seen or seen[key]["score"] < c["score"]:
+        if key not in seen or seen[key]["tuned_score"] < c["tuned_score"]:
             seen[key] = c
     final = sorted(seen.values(),
-                   key=lambda c: (c["method"] != "ocr_number", -c["score"]))[:5]
+                   key=lambda c: (c["method"] != "ocr_number",
+                                  -c["tuned_score"]))[:5]
 
     return {
         "method":     method_used,
@@ -486,5 +566,9 @@ if __name__ == "__main__":
     threading.Thread(target=_load_hash_index, name="hash-init",
                      daemon=True).start()
     threading.Thread(target=_hash_refresh_loop, name="hash-refresh",
+                     daemon=True).start()
+    threading.Thread(target=_load_tuning, name="tuning-init",
+                     daemon=True).start()
+    threading.Thread(target=_tuning_refresh_loop, name="tuning-refresh",
                      daemon=True).start()
     app.run(host="0.0.0.0", port=PORT, threaded=True)

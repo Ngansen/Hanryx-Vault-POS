@@ -23410,6 +23410,12 @@ except Exception as _exc:
     log.warning("[server] price_trends unavailable: %s", _exc)
     _price_trends = None
 
+try:
+    import recognizer_tuning as _rec_tune
+except Exception as _exc:
+    log.warning("[server] recognizer_tuning unavailable: %s", _exc)
+    _rec_tune = None
+
 
 @app.route("/card/scan/log_pick", methods=["POST"])
 def card_scan_log_pick():
@@ -23562,6 +23568,55 @@ def card_trends():
             return jsonify(_price_trends.trends(conn, query, your_name=your_name))
     except Exception as exc:
         log.exception("[trends] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/recognizer/retune", methods=["POST"])
+def admin_recognizer_retune():
+    """
+    Recompute recognizer tuning from card_scan_overrides and persist it.
+    Cheap to call (one INSERT + a few aggregations); safe to wire to cron.
+
+    Request (JSON or query-string):
+        since_ms  — optional, ignore older overrides (default 0 = all time)
+        min_n     — optional, min sample count per cell (default 20)
+
+    Response: the freshly-computed tuning blob (see recognizer_tuning.compute()).
+    """
+    if _rec_tune is None:
+        return jsonify({"error": "recognizer_tuning module not loaded"}), 500
+    body = (request.get_json(silent=True) if request.is_json else None) or {}
+    args = request.values
+    try:
+        since_ms = int(body.get("since_ms") or args.get("since_ms") or 0)
+        min_n = int(body.get("min_n") or args.get("min_n") or 20)
+    except (TypeError, ValueError):
+        since_ms, min_n = 0, 20
+    try:
+        with _closing(_direct_db()) as conn:
+            tuning = _rec_tune.compute(conn, since_ms=since_ms, min_n=min_n)
+            row_id = _rec_tune.persist(conn, tuning)
+            tuning["row_id"] = row_id
+        return jsonify(tuning)
+    except Exception as exc:
+        log.exception("[recognizer-retune] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/recognizer/tuning", methods=["GET"])
+def admin_recognizer_tuning():
+    """
+    Return the most recent tuning blob (or null when no tuning has run yet).
+    The recognizer service polls this every 5 minutes and applies the
+    weights as a per-candidate score multiplier in the sort step.
+    """
+    if _rec_tune is None:
+        return jsonify({"error": "recognizer_tuning module not loaded"}), 500
+    try:
+        with _closing(_direct_db()) as conn:
+            return jsonify(_rec_tune.latest(conn) or {})
+    except Exception as exc:
+        log.exception("[recognizer-tuning] failed")
         return jsonify({"error": str(exc)}), 500
 
 
