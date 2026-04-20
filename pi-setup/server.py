@@ -23404,6 +23404,12 @@ except Exception as _exc:
     log.warning("[server] price_aggregator unavailable: %s", _exc)
     _price_agg = None
 
+try:
+    import price_trends as _price_trends
+except Exception as _exc:
+    log.warning("[server] price_trends unavailable: %s", _exc)
+    _price_trends = None
+
 
 @app.route("/card/scan/log_pick", methods=["POST"])
 def card_scan_log_pick():
@@ -23514,9 +23520,48 @@ def card_price_v2():
                 max_age_sec=max_age,
                 force_refresh=force,
             )
+            # Auto-attach the trend & velocity report when available — costs
+            # one indexed SQL hit and lights up the dashboard's "📈 +18%"
+            # / "🔥 hot" badges without a separate round-trip.
+            if _price_trends is not None:
+                try:
+                    quote["trends"] = _price_trends.trends(conn, query)
+                except Exception as _e:
+                    log.info("[price_v2] trends sidecar failed: %s", _e)
         return jsonify(quote)
     except Exception as exc:
         log.exception("[price_v2] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/card/trends", methods=["GET", "POST"])
+def card_trends():
+    """
+    Standalone price-trend & velocity report.
+
+    Request (JSON or query-string):
+        query      — required, the search string ("Pikachu 25/198")
+        your_name  — optional, name to look up in your own sale_history
+                     (defaults to `query` when omitted)
+
+    Response (see price_trends.trends()):
+        { query, asof, medians:{7d,30d,90d}, trend:{...},
+          velocity:{...}, confidence, sample_size }
+    """
+    if _price_trends is None:
+        return jsonify({"error": "price_trends module not loaded"}), 500
+    body = (request.get_json(silent=True) if request.is_json else None) or {}
+    args = request.values
+    query = (body.get("query") or args.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "missing 'query'"}), 400
+    your_name = body.get("your_name") or args.get("your_name") or None
+
+    try:
+        with _closing(_direct_db()) as conn:
+            return jsonify(_price_trends.trends(conn, query, your_name=your_name))
+    except Exception as exc:
+        log.exception("[trends] failed")
         return jsonify({"error": str(exc)}), 500
 
 
