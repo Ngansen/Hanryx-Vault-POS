@@ -51,6 +51,77 @@ _TIMEOUT = 15
 _RE_PRICE = re.compile(r"([\$£€¥₩])\s*([\d,]+(?:\.\d+)?)")
 _CUR_BY_SYMBOL = {"$": "USD", "£": "GBP", "€": "EUR", "¥": "JPY", "₩": "KRW"}
 
+# ── Lot / bundle / sealed-product exclusions ────────────────────────────────
+# When searching for a single-card price we must keep lots, playsets, sealed
+# product, and bulk wholesale out of the median — they live on a totally
+# different price curve and skew the result high (sealed) or low (bulk).
+#
+# Two-layer defence:
+#   1. Append `-keyword` exclusions to the eBay search URL itself. eBay
+#      supports `-term` as NOT in the search box, so most matching listings
+#      never come back over the wire. Cheap and dramatic.
+#   2. Client-side regex on the title for anything eBay let through. Belt
+#      and suspenders — eBay's NOT operator is occasionally inconsistent on
+#      compound phrases.
+#
+# The list is opinionated for trading-card searches; pass `include_lots=True`
+# to disable both layers when you actually do want lots (e.g. wholesale
+# pricing intelligence).
+EXCLUDE_KEYWORDS: tuple[str, ...] = (
+    "lot", "lots", "playset", "bundle", "sealed", "complete set",
+    "booster box", "booster pack", "etb", "elite trainer box", "case",
+    "x2", "x3", "x4", "x5", "x6", "x10", "x20", "x50", "x100",
+    "factory sealed", "wholesale", "repack", "mystery box", "graded lot",
+    "collection", "binder",
+)
+_RE_TITLE_LOT = re.compile(
+    r"\b("
+    r"lots?|playsets?|bundles?|sealed|complete\s*sets?|"
+    r"booster\s*box(?:es)?|booster\s*packs?|etb|elite\s*trainer\s*box(?:es)?|"
+    r"cases?|x\s*\d{1,3}\b|\b\d{2,3}\s*cards?|"
+    r"factory\s*sealed|wholesale|repacks?|mystery\s*box(?:es)?|"
+    r"graded\s*lots?|collections?|binders?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# ── Shipping cost extraction ────────────────────────────────────────────────
+# eBay shows shipping as a sibling element ("+$4.99 shipping" / "Free
+# shipping" / "Free International Shipping" / "+£3.50 postage"). When the
+# shipping is a numeric add-on we subtract it from the headline price so
+# the median reflects the *item* cost, not item+shipping. "Free shipping"
+# means the seller absorbed it — keep the headline price as-is.
+_RE_SHIPPING = re.compile(
+    r"([\$£€¥₩])\s*([\d,]+(?:\.\d+)?)\s*(?:shipping|postage|delivery)",
+    re.IGNORECASE,
+)
+_RE_FREE_SHIP = re.compile(
+    r"\bfree\s*(?:international\s+)?(?:shipping|postage|delivery)\b",
+    re.IGNORECASE,
+)
+
+
+def _build_search_query(query: str, include_lots: bool) -> str:
+    """Append `-keyword` exclusions to the search string for eBay's NOT op."""
+    if include_lots:
+        return query
+    return query + " " + " ".join(f"-{kw}" for kw in EXCLUDE_KEYWORDS)
+
+
+def _parse_shipping(text: str) -> float:
+    """Return shipping cost as float, or 0.0 for free / unparseable / missing."""
+    if not text:
+        return 0.0
+    if _RE_FREE_SHIP.search(text):
+        return 0.0
+    m = _RE_SHIPPING.search(text)
+    if not m:
+        return 0.0
+    try:
+        return float(m.group(2).replace(",", ""))
+    except ValueError:
+        return 0.0
+
 
 def _parse_price(text: str) -> tuple[float, str] | None:
     if not text:
@@ -87,14 +158,35 @@ def _parse_date(text: str) -> int | None:
 
 
 @cached("ebay_sold")
-def ebay_sold(query: str, *, limit: int = 60, pages: int = 1) -> list[dict]:
-    """Scrape up to `limit` eBay sold listings across `pages` result pages."""
+def ebay_sold(query: str, *, limit: int = 60, pages: int = 1,
+              include_lots: bool = False) -> list[dict]:
+    """
+    Scrape up to `limit` eBay sold listings across `pages` result pages.
+
+    By default, lots / playsets / sealed product / wholesale lots are
+    excluded both server-side (via eBay's `-keyword` NOT operator in the
+    search URL) and client-side (regex on the title). Pass
+    `include_lots=True` to disable both layers.
+
+    Each returned listing includes:
+      - `price`         : the *item* price after shipping subtraction
+      - `price_raw`     : the headline price as eBay displayed it
+      - `shipping`      : numeric shipping cost subtracted (0 = free / N/A)
+      - `currency`, `url`, `image`, `source`, `sold_at`, `title`
+
+    Subtracting shipping matters because eBay's "sold" price field shows
+    the buyer's item-only payment, but the `s-item__price` element on the
+    search page often shows the same price *plus* a separate "+$X.XX
+    shipping" sibling — including that pollutes the median upward.
+    """
     if not query:
         return []
+    search_q = _build_search_query(query, include_lots)
     out: list[dict] = []
+    skipped_lots = 0
     for page in range(1, max(1, pages) + 1):
         url = ("https://www.ebay.com/sch/i.html"
-               f"?_nkw={quote_plus(query)}"
+               f"?_nkw={quote_plus(search_q)}"
                f"&LH_Sold=1&LH_Complete=1&_ipg=120&_sop=13&_pgn={page}")
         try:
             r = requests.get(url, headers=_HDR, timeout=_TIMEOUT)
@@ -124,14 +216,37 @@ def ebay_sold(query: str, *, limit: int = 60, pages: int = 1) -> list[dict]:
             if title.lower() in ("shop on ebay", ""):
                 continue
 
+            # Belt-and-suspenders: drop lot/bundle/sealed/wholesale even when
+            # eBay's NOT operator let one slip through. Cheap regex check.
+            if not include_lots and _RE_TITLE_LOT.search(title):
+                skipped_lots += 1
+                continue
+
             parsed = _parse_price(price_el.get_text(" ", strip=True))
             if not parsed:
                 continue
-            price, currency = parsed
+            price_raw, currency = parsed
 
             # Skip outliers eBay surfaces from "shop other categories"
-            if price <= 0 or price > 100_000:
+            if price_raw <= 0 or price_raw > 100_000:
                 continue
+
+            # Subtract shipping when the listing splits it out separately.
+            # "Free shipping" → keep the headline price (seller absorbed it).
+            # Numeric shipping in the same currency → subtract, but cap at
+            # 90% of the headline so a malformed parse can never zero out
+            # the row (e.g. shipping accidentally read as the item price).
+            ship_el = li.select_one(
+                ".s-item__shipping, .s-item__logisticsCost, "
+                ".s-item__dynamic.s-item__logisticsCost"
+            )
+            shipping = _parse_shipping(
+                ship_el.get_text(" ", strip=True) if ship_el else ""
+            )
+            if shipping > 0 and shipping < price_raw * 0.9:
+                price = round(price_raw - shipping, 2)
+            else:
+                price = price_raw
 
             # Sold-date is in a small <span> near the price
             sold_el = li.select_one(".s-item__caption--signal, .POSITIVE, "
@@ -146,18 +261,21 @@ def ebay_sold(query: str, *, limit: int = 60, pages: int = 1) -> list[dict]:
                        or img_el.get("data-defer-load") or "")
 
             out.append({
-                "title":    title,
-                "price":    price,
-                "currency": currency,
-                "url":      link_el.get("href", "").split("?")[0],
-                "image":    img,
-                "source":   "ebay_sold",
-                "sold_at":  sold_at,
+                "title":     title,
+                "price":     price,
+                "price_raw": price_raw,
+                "shipping":  shipping,
+                "currency":  currency,
+                "url":       link_el.get("href", "").split("?")[0],
+                "image":     img,
+                "source":    "ebay_sold",
+                "sold_at":   sold_at,
             })
             page_added += 1
 
-        log.info("[ebay_sold] %r page %d → %d added (total %d)",
-                 query, page, page_added, len(out))
+        log.info("[ebay_sold] %r page %d → %d added (total %d, "
+                 "%d lot/bundle skipped)",
+                 query, page, page_added, len(out), skipped_lots)
         if page_added == 0 or len(out) >= limit:
             break
 
