@@ -84,13 +84,40 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
     git clone "$REPO_URL" "$REPO_DIR"
 else
     info "Updating existing checkout at $REPO_DIR"
-    git -C "$REPO_DIR" fetch --quiet origin
-    # Stash any local edits (e.g. manual sed patches), pull, then drop the stash
-    if ! git -C "$REPO_DIR" diff --quiet || ! git -C "$REPO_DIR" diff --cached --quiet; then
-        warn "Local uncommitted edits detected — stashing before pull"
-        git -C "$REPO_DIR" stash push -u -m "deploy-all $(date +%FT%T)" || true
+    # If a previous run died mid-rebase / mid-merge, clean it up first.
+    if [[ -d "$REPO_DIR/.git/rebase-merge" || -d "$REPO_DIR/.git/rebase-apply" ]]; then
+        warn "Previous rebase was interrupted — aborting it"
+        git -C "$REPO_DIR" rebase --abort 2>/dev/null || true
     fi
-    git -C "$REPO_DIR" pull --rebase --autostash origin main
+    if [[ -f "$REPO_DIR/.git/MERGE_HEAD" ]]; then
+        warn "Previous merge was interrupted — aborting it"
+        git -C "$REPO_DIR" merge --abort 2>/dev/null || true
+    fi
+
+    git -C "$REPO_DIR" fetch --quiet origin main
+
+    # Stash uncommitted edits with a timestamped tag so they're never lost.
+    if ! git -C "$REPO_DIR" diff --quiet || ! git -C "$REPO_DIR" diff --cached --quiet; then
+        STAMP="deploy-all-$(date +%Y%m%d-%H%M%S)"
+        warn "Uncommitted local edits detected — stashing as '$STAMP' (recover with: git stash list)"
+        git -C "$REPO_DIR" stash push -u -m "$STAMP" || true
+    fi
+
+    # If the Pi has local commits that aren't on origin, save them to a backup
+    # branch (so they're recoverable) then hard-reset to origin/main. This
+    # avoids ever getting stuck in a merge/rebase conflict mid-deploy.
+    AHEAD=$(git -C "$REPO_DIR" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+    if (( AHEAD > 0 )); then
+        BACKUP="backup/pre-deploy-$(date +%Y%m%d-%H%M%S)"
+        warn "Pi has $AHEAD local commit(s) not on origin/main — saving to branch '$BACKUP'"
+        git -C "$REPO_DIR" branch "$BACKUP"
+        git -C "$REPO_DIR" log --oneline origin/main..HEAD | sed 's/^/    /'
+        warn "If you want these on GitHub, push them later with:"
+        warn "    git -C $REPO_DIR push origin $BACKUP"
+    fi
+
+    info "Hard-resetting working tree to origin/main"
+    git -C "$REPO_DIR" reset --hard origin/main
 fi
 
 cd "$REPO_DIR/pi-setup"
