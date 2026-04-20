@@ -631,6 +631,20 @@ class _PgConn:
             raise
         return cur
 
+    def cursor(self, *args, **kwargs):
+        """
+        Passthrough to the wrapped raw connection's .cursor(), defaulting
+        to DictCursor so `with conn.cursor() as cur: cur.execute(...)` works
+        exactly as it would on a bare psycopg2 connection.
+
+        Lets newer modules (price_aggregator, scan_overrides,
+        import_artwork_hashes) use the standard psycopg2 cursor idiom
+        without caring whether they were handed a _PgConn wrapper or a raw
+        connection.
+        """
+        kwargs.setdefault("cursor_factory", psycopg2.extras.DictCursor)
+        return self._conn.cursor(*args, **kwargs)
+
     def commit(self):
         self._conn.commit()
 
