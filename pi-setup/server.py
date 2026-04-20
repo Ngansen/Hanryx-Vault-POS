@@ -10688,6 +10688,7 @@ def admin_market():
           <label for="buyAskInput">Test Asking $</label>
           <input id="buyAskInput" type="number" step="0.01" min="0" placeholder="85.00" inputmode="decimal" />
           <div class="buy-verdict neutral" id="buyVerdict">Enter a seller's price to get an instant verdict</div>
+          <button id="buyKioskBtn" type="button" onclick="pushTransparency()" style="background:#0a0a0a;border:1px solid #4ade80aa;color:#4ade80;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;letter-spacing:.5px;cursor:pointer;text-transform:uppercase" title="Display this pricing breakdown on the customer kiosk">🖥 Show Customer</button>
         </div>
       </div>
 
@@ -11337,12 +11338,34 @@ function _buyQuery() {{
     .map(s => (s || '').trim()).filter(Boolean).join(' ');
 }}
 
+function _currentCondMult() {{
+  const el = document.getElementById('condSelect');
+  const raw = el ? parseFloat(el.value) : 1.0;
+  return (isFinite(raw) && raw > 0) ? raw : 1.0;
+}}
+
+function _currentCondLabel() {{
+  const el = document.getElementById('condSelect');
+  if (!el) return 'NM';
+  const txt = (el.options[el.selectedIndex] || {{}}).text || '';
+  // "Mint NM (100%)" → "NM"; "LP (85%)" → "LP"; etc.
+  const m = txt.match(/\\b(NM|LP|MP|HP|Damaged|DMG|PSA10|PSA9)\\b/i);
+  if (!m) return 'NM';
+  const g = m[1].toUpperCase();
+  return g === 'DAMAGED' ? 'DMG' : g;
+}}
+
 async function loadBuyIntel() {{
   const q = _buyQuery();
   const panel = document.getElementById('buyPanel');
   if (!q) {{ panel.style.display = 'none'; return; }}
+  const params = new URLSearchParams({{
+    query: q,
+    condition_mult: _currentCondMult().toFixed(2),
+    condition: _currentCondLabel(),
+  }});
   try {{
-    const r = await fetch('/card/buy_price?query=' + encodeURIComponent(q));
+    const r = await fetch('/card/buy_price?' + params);
     if (!r.ok) {{ panel.style.display = 'none'; return; }}
     const d = await r.json();
     if (d.error) {{ panel.style.display = 'none'; return; }}
@@ -11353,6 +11376,58 @@ async function loadBuyIntel() {{
     evalBuyVerdict();
   }} catch (e) {{
     panel.style.display = 'none';
+  }}
+}}
+
+// Re-fetch buy targets when the operator changes condition
+(function _wireCondChange() {{
+  const tryWire = () => {{
+    const el = document.getElementById('condSelect');
+    if (!el) {{ setTimeout(tryWire, 200); return; }}
+    el.addEventListener('change', () => {{ if (_ebayName) loadBuyIntel(); }});
+  }};
+  tryWire();
+}})();
+
+async function pushTransparency() {{
+  if (!_buyIntel) {{ toast('Buy data still loading', true); return; }}
+  const btn = document.getElementById('buyKioskBtn');
+  const orig = btn ? btn.textContent : '';
+  if (btn) {{ btn.disabled = true; btn.textContent = '⏳ Pushing…'; }}
+  // Pull card details from whatever the lookup page has rendered
+  const img = document.querySelector('.result-card img, .card-img-main, img[data-card-main]');
+  const payload = {{
+    mode: 'buying',
+    card: {{
+      name:      _ebayName || '',
+      set:       _ebaySet || '',
+      number:    _ebayNumber || '',
+      language:  (document.getElementById('langSelect') || {{}}).value || 'EN',
+      image_url: (img && img.src) || '',
+    }},
+    condition: _buyIntel.condition || null,
+    sold_90d:  _buyIntel.sold_90d  || {{}},
+    buy:       _buyIntel.buy       || {{}},
+    sparkline_svg: (_buyIntel.sparkline && _buyIntel.sparkline.svg) || '',
+  }};
+  try {{
+    const r = await fetch('/admin/kiosk/transparency/push', {{
+      method:  'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body:    JSON.stringify(payload),
+    }});
+    const j = await r.json();
+    if (r.ok && j.ok) {{
+      toast('Sent to customer display');
+      if (btn) btn.textContent = '✓ Sent';
+      setTimeout(() => {{ if (btn) {{ btn.textContent = orig; btn.disabled = false; }} }}, 1400);
+    }} else {{
+      toast('Push failed: ' + (j.error || r.status), true);
+      if (btn) {{ btn.textContent = orig; btn.disabled = false; }}
+    }}
+  }} catch (e) {{
+    toast('Network error: ' + e.message, true);
+    if (btn) {{ btn.textContent = orig; btn.disabled = false; }}
   }}
 }}
 
@@ -23774,7 +23849,9 @@ def card_price_v2():
                     log.info("[price_v2] trends sidecar failed: %s", _e)
             # Buy-side intelligence sidecar: max-buy / fair-buy / steal-buy
             # targets + 90d sparkline + (optionally) overpay verdict if the
-            # quote has a current market price.
+            # quote has a current market price. Condition-aware: the same
+            # condition used to price the sale side is applied here so the
+            # buy ladder auto-shaves for LP/MP/HP/DMG cards in hand.
             if _buy_price is not None:
                 try:
                     asking = None
@@ -23784,6 +23861,7 @@ def card_price_v2():
                             asking = float(v); break
                     quote["buy_intel"] = _buy_price.buy_intelligence(
                         conn, query, asking_price=asking,
+                        condition=(_val("condition", "NM") or "NM"),
                     )
                 except Exception as _e:
                     log.info("[price_v2] buy_intel sidecar failed: %s", _e)
@@ -23856,14 +23934,287 @@ def card_buy_price():
             asking = float(asking_raw)
         except (TypeError, ValueError):
             return jsonify({"error": "asking_price must be numeric"}), 400
+    condition      = body.get("condition") or args.get("condition") or None
+    condition_mult = body.get("condition_mult") or args.get("condition_mult")
+    cmult = None
+    if condition_mult not in (None, ""):
+        try:
+            cmult = float(condition_mult)
+        except (TypeError, ValueError):
+            return jsonify({"error": "condition_mult must be numeric"}), 400
     try:
         with _closing(_direct_db()) as conn:
             return jsonify(_buy_price.buy_intelligence(
                 conn, query, asking_price=asking,
+                condition=condition, condition_mult=cmult,
             ))
     except Exception as exc:
         log.exception("[buy_price] failed")
         return jsonify({"error": str(exc)}), 500
+
+
+# ── Customer Transparency Display ─────────────────────────────────────────
+#
+# A customer-facing kiosk view the operator can push to with one click from
+# the card-lookup page. Shows, in plain language:
+#
+#   "Here's how we arrived at our offer for your card"
+#     · The card (image, name, set)
+#     · Recent sold-price range (last 90 days on eBay)
+#     · The condition we assessed + its market multiplier
+#     · Our fair buy-price offer (with the formula shown)
+#     · The sparkline so the customer sees the trend
+#
+# Backed by Redis — so the kiosk browser can poll /kiosk/transparency/state
+# every 2 seconds and always pick up the latest push, even across restarts
+# of the POS container. A short TTL means the screen auto-reverts to a
+# friendly idle message after the customer walks away.
+
+_KIOSK_TRANSPARENCY_KEY = "hv:kiosk:transparency"
+_KIOSK_TRANSPARENCY_TTL = 600   # 10 min — auto-clear when nobody's around
+
+
+def _kiosk_transparency_save(payload: dict) -> None:
+    """Persist the current transparency snapshot to Redis with a short TTL."""
+    try:
+        r = _redis()
+        if r is None: return
+        r.setex(_KIOSK_TRANSPARENCY_KEY, _KIOSK_TRANSPARENCY_TTL,
+                json.dumps(payload))
+    except Exception as _e:
+        log.info("[transparency] redis save failed: %s", _e)
+
+
+def _kiosk_transparency_load() -> dict | None:
+    try:
+        r = _redis()
+        if r is None: return None
+        blob = r.get(_KIOSK_TRANSPARENCY_KEY)
+        if not blob: return None
+        if isinstance(blob, bytes):
+            blob = blob.decode("utf-8", errors="replace")
+        return json.loads(blob)
+    except Exception as _e:
+        log.info("[transparency] redis load failed: %s", _e)
+        return None
+
+
+@app.route("/admin/kiosk/transparency/push", methods=["POST"])
+def admin_kiosk_transparency_push():
+    """
+    Operator-driven push: send a pricing-transparency snapshot to the
+    customer display. Body (JSON):
+
+        {
+          card:       { name, set, number, image_url, rarity, language },
+          condition:  { label, multiplier },     # optional
+          sold_90d:   { p25, p50, p75, n },      # optional
+          buy:        { steal, fair, max },      # the offer we'll make
+          sparkline_svg: "<svg…/>",              # optional
+          mode:       "buying" | "selling",      # default "buying"
+          headline:   "Our offer for your card"  # optional override
+        }
+
+    The snapshot is cached in Redis for 10 minutes. The kiosk page polls
+    /kiosk/transparency/state every 2 s and re-renders on change.
+    """
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict) or not payload:
+        return jsonify({"error": "JSON body required"}), 400
+    payload["pushed_at"] = int(time.time() * 1000)
+    _kiosk_transparency_save(payload)
+    return jsonify({"ok": True, "pushed_at": payload["pushed_at"]})
+
+
+@app.route("/admin/kiosk/transparency/clear", methods=["POST"])
+def admin_kiosk_transparency_clear():
+    """Revert the customer display to the idle/welcome message."""
+    try:
+        r = _redis()
+        if r is not None:
+            r.delete(_KIOSK_TRANSPARENCY_KEY)
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+
+@app.route("/kiosk/transparency/state", methods=["GET"])
+def kiosk_transparency_state():
+    """JSON poll endpoint for the customer display page."""
+    snap = _kiosk_transparency_load()
+    resp = jsonify(snap or {"empty": True})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/kiosk/transparency", methods=["GET"])
+def kiosk_transparency_display():
+    """
+    Customer-facing transparency page. Designed for a 1080p kiosk /
+    tablet. No auth — this is the whole point (the customer sees it).
+    Poll-based (2 s) so it survives container restarts cleanly without
+    SSE bookkeeping.
+    """
+    # Branding pulled from the same kiosk settings as the main display
+    try:
+        ks   = _load_kiosk_settings()
+        name = ks.get("store_name") or "HanryxVault"
+        acc  = ks.get("accent_color") or "#f59e0b"
+    except Exception:
+        name, acc = "HanryxVault", "#f59e0b"
+    html = """<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pricing Transparency — """ + name + """</title>
+<style>
+ :root{--acc:""" + acc + """}
+ *{box-sizing:border-box}
+ body{margin:0;background:#0a0a0a;color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;overflow:hidden}
+ .hdr{padding:20px 40px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1a1a1a}
+ .brand{font-size:20px;font-weight:900;letter-spacing:1px;color:var(--acc)}
+ .tag{font-size:13px;color:#666;letter-spacing:.5px;text-transform:uppercase}
+ .wrap{padding:40px 60px;max-width:1400px;margin:0 auto}
+ .idle{display:flex;align-items:center;justify-content:center;min-height:70vh;text-align:center}
+ .idle h1{font-size:48px;font-weight:800;margin:0 0 16px;color:#f5f5f5}
+ .idle p{font-size:20px;color:#888;max-width:640px;margin:0 auto;line-height:1.5}
+ .card-row{display:grid;grid-template-columns:280px 1fr;gap:40px;align-items:start;margin-bottom:40px}
+ .card-img{background:#141414;border-radius:18px;padding:10px;border:1px solid #2a2a2a;aspect-ratio:2.5/3.5;display:flex;align-items:center;justify-content:center;overflow:hidden}
+ .card-img img{max-width:100%;max-height:100%;border-radius:10px}
+ .card-img .noimg{color:#333;font-size:14px;text-align:center}
+ .card-info h1{font-size:40px;font-weight:900;margin:0 0 8px;line-height:1.1}
+ .card-info .meta{font-size:16px;color:#888;margin-bottom:24px}
+ .headline{font-size:14px;color:var(--acc);text-transform:uppercase;letter-spacing:2px;font-weight:800;margin-bottom:8px}
+ .offer-big{background:linear-gradient(135deg,#0a1a0f 0%,#0f1f14 100%);border:1px solid #15803d66;border-radius:16px;padding:28px 32px;margin-bottom:28px}
+ .offer-label{font-size:12px;color:#4ade80;text-transform:uppercase;letter-spacing:2px;font-weight:800;margin-bottom:10px}
+ .offer-price{font-size:64px;font-weight:900;color:#4ade80;line-height:1;margin-bottom:10px}
+ .offer-formula{font-size:14px;color:#94a3b8;font-weight:500}
+ .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+ .metric{background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:16px 18px}
+ .metric-lbl{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1.2px;font-weight:800;margin-bottom:6px}
+ .metric-val{font-size:22px;font-weight:900;color:#f5f5f5}
+ .metric-sub{font-size:12px;color:#555;margin-top:4px}
+ .cond-band{display:inline-block;background:#1a1a1a;border:1px solid #2a2a2a;padding:6px 14px;border-radius:20px;font-size:13px;color:#94a3b8;font-weight:700;letter-spacing:.5px}
+ .spark-wrap{background:#141414;border:1px solid #2a2a2a;border-radius:12px;padding:18px 22px;margin-bottom:20px}
+ .spark-hdr{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1.5px;font-weight:800;margin-bottom:12px;display:flex;justify-content:space-between}
+ .spark-wrap svg{width:100%;height:auto;max-height:120px}
+ .footer{margin-top:32px;font-size:12px;color:#444;text-align:center;line-height:1.6}
+ .footer strong{color:#666}
+ .fade-in{animation:fi .35s ease-out}
+ @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+</head><body>
+<div class="hdr">
+  <div class="brand">""" + name + """</div>
+  <div class="tag">Pricing Transparency</div>
+</div>
+<div id="root" class="wrap"></div>
+<script>
+let _lastPush = 0;
+
+function _fmt(v){ return (v==null) ? '—' : '$' + Number(v).toFixed(2); }
+
+function renderIdle(){
+  document.getElementById('root').innerHTML = `
+    <div class="idle fade-in">
+      <div>
+        <h1>Welcome.</h1>
+        <p>Ask our team to scan a card and we'll show you exactly how we priced it — live eBay sales, condition, and our offer broken down, right on this screen.</p>
+      </div>
+    </div>`;
+}
+
+function renderSnap(d){
+  const c = d.card || {};
+  const cond = d.condition || {};
+  const sold = d.sold_90d || {};
+  const buy = d.buy || {};
+  const mode = d.mode || 'buying';
+  const headline = d.headline
+    || (mode === 'selling' ? 'Why this card is priced as it is'
+                           : 'Our offer for your card');
+  const offerPrice = (mode === 'selling')
+    ? (d.sale_price != null ? _fmt(d.sale_price) : _fmt(sold.p50))
+    : _fmt(buy.fair != null ? buy.fair : buy.max);
+  const offerLabel = (mode === 'selling') ? 'Market price' : 'Our fair offer';
+  const formula = (mode === 'selling')
+    ? `Based on the 90-day median of ${sold.n||0} real eBay sales`
+    : (buy.fair != null
+         ? `Typical buylist offer · 55% of median × ${_fmt(1)} × condition ${cond.label||'NM'} (${cond.multiplier!=null?Math.round(cond.multiplier*100)+'%':'—'})`
+         : 'We need a few more recent sales to quote confidently.');
+  const img = c.image_url || c.image || '';
+  const imgHtml = img
+    ? `<img src="${img}" alt="${(c.name||'').replace(/"/g,'&quot;')}">`
+    : `<span class="noimg">No image</span>`;
+  const subtitle = [c.set, c.number, c.language, c.rarity].filter(Boolean).join(' · ');
+
+  document.getElementById('root').innerHTML = `
+    <div class="fade-in">
+      <div class="card-row">
+        <div class="card-img">${imgHtml}</div>
+        <div class="card-info">
+          <div class="headline">${headline}</div>
+          <h1>${c.name || 'Card'}</h1>
+          <div class="meta">${subtitle || '&nbsp;'}</div>
+          <div class="offer-big">
+            <div class="offer-label">${offerLabel}</div>
+            <div class="offer-price">${offerPrice}</div>
+            <div class="offer-formula">${formula}</div>
+          </div>
+          <div class="cond-band">Condition assessed: <strong style="color:#f5f5f5">${cond.label||'NM'}</strong> · market value ${cond.multiplier!=null?Math.round(cond.multiplier*100)+'%':'100%'}</div>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="metric">
+          <div class="metric-lbl">Low Sold (p25)</div>
+          <div class="metric-val">${_fmt(sold.p25)}</div>
+          <div class="metric-sub">bottom quarter of recent sales</div>
+        </div>
+        <div class="metric">
+          <div class="metric-lbl">Median Sold</div>
+          <div class="metric-val">${_fmt(sold.p50)}</div>
+          <div class="metric-sub">the typical recent sale</div>
+        </div>
+        <div class="metric">
+          <div class="metric-lbl">High Sold (p75)</div>
+          <div class="metric-val">${_fmt(sold.p75)}</div>
+          <div class="metric-sub">top quarter of recent sales</div>
+        </div>
+      </div>
+
+      ${d.sparkline_svg ? `
+      <div class="spark-wrap">
+        <div class="spark-hdr"><span>Last 90 Days · Real eBay Sales</span><span>${sold.n||0} sales</span></div>
+        ${d.sparkline_svg}
+      </div>` : ''}
+
+      <div class="footer">
+        <strong>Why we can show you this.</strong> Every card is priced from real
+        eBay completed sales over the last 90 days — not list prices, not
+        guesswork. Outliers are filtered so a single freak listing can't
+        throw the number off. Our offer bakes in condition and a fair
+        margin to keep the shop running.
+      </div>
+    </div>`;
+}
+
+async function tick(){
+  try {
+    const r = await fetch('/kiosk/transparency/state', {cache:'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d && d.empty) { if (_lastPush !== 0) { _lastPush = 0; renderIdle(); } return; }
+    if (d && d.pushed_at && d.pushed_at !== _lastPush) {
+      _lastPush = d.pushed_at;
+      renderSnap(d);
+    }
+  } catch(e) { /* silent — kiosk polls again shortly */ }
+}
+renderIdle();
+tick();
+setInterval(tick, 2000);
+</script>
+</body></html>"""
+    return html
 
 
 @app.route("/admin/recognizer/retune", methods=["POST"])

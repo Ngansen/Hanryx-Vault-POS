@@ -59,6 +59,43 @@ RISK_OVERPAY    = 1.15   # asking ≤ 115% → "overpay" (above → "walk away")
 SPARKLINE_BUCKETS = 12   # ~weekly buckets across 90d
 MIN_SAMPLE_SIZE   = 3    # below this we won't fabricate buy targets
 
+# Condition → value multiplier. Kept in sync with price_aggregator's
+# CONDITION_MULTIPLIERS; imported at runtime so there's a single source of
+# truth. If the import fails (running standalone, tests, etc.) we fall back
+# to this conservative table.
+_CONDITION_FALLBACK: dict[str, float] = {
+    "NM":    1.00,
+    "LP":    0.85,
+    "MP":    0.65,
+    "HP":    0.40,
+    "DMG":   0.25,
+    "PSA10": 4.00,
+    "PSA9":  2.00,
+}
+
+
+def _condition_multiplier(condition: str | None,
+                          explicit_mult: float | None) -> tuple[float, str]:
+    """
+    Resolve the final multiplier + a human-readable condition label.
+
+    Priority: explicit_mult (float) → condition string → NM (1.0).
+    """
+    if explicit_mult is not None:
+        try:
+            m = float(explicit_mult)
+            if m > 0:
+                return m, f"{round(m*100)}%"
+        except (TypeError, ValueError):
+            pass
+    label = (condition or "NM").upper().strip()
+    try:
+        import price_aggregator as _pa  # single source of truth
+        table = getattr(_pa, "CONDITION_MULTIPLIERS", None) or _CONDITION_FALLBACK
+    except Exception:
+        table = _CONDITION_FALLBACK
+    return float(table.get(label, 1.0)), label
+
 
 # ── helpers ───────────────────────────────────────────────────────
 
@@ -207,24 +244,34 @@ def _verdict(asking_price: float | None, max_buy: float | None,
 # ── main entry point ──────────────────────────────────────────────
 
 def buy_intelligence(conn, query: str, *,
-                     asking_price: float | None = None) -> dict:
+                     asking_price: float | None = None,
+                     condition: str | None = None,
+                     condition_mult: float | None = None) -> dict:
     """
     Compute buy targets, trend-adjusted ceiling, and a 90-day sparkline.
 
     Args:
-      query        Search string ("Pikachu 25/198"). Matched LIKE against
-                   ebay_sold_history.query (case-insensitive).
-      asking_price If provided, returns a `verdict` dict telling the
-                   operator whether buying at that price is great / fair
-                   / overpay / walk-away.
+      query          Search string ("Pikachu 25/198"). Matched LIKE against
+                     ebay_sold_history.query (case-insensitive).
+      asking_price   If provided, returns a `verdict` dict telling the
+                     operator whether buying at that price is great / fair
+                     / overpay / walk-away. The asking price is compared
+                     against the CONDITION-ADJUSTED ceiling.
+      condition      NM|LP|MP|HP|DMG|PSA9|PSA10 — looked up in
+                     price_aggregator.CONDITION_MULTIPLIERS. Defaults NM.
+      condition_mult Explicit float multiplier (e.g. 0.85 for LP). Takes
+                     precedence over `condition` when both are supplied.
+                     Useful for custom UIs that want fractional conditions.
 
     Returns dict with:
       query, asof, sample_size, confidence,
-      sold_90d:   {p25, p50, p75, min, max, mean, n}
+      sold_90d:   {p25, p50, p75, min, max, mean, n}    (UNADJUSTED — eBay NM-mix)
       sold_30d:   same, restricted to last 30d
       trend:      {pct_30d_vs_prev, direction}
-      buy:        {steal, fair, max, trend_adjust_pct}
-      verdict:    (only if asking_price supplied)
+      condition:  {label, multiplier}
+      buy_nm:     {steal, fair, max, trend_adjust_pct}   (if NM in hand)
+      buy:        {steal, fair, max, trend_adjust_pct}   (condition-adjusted)
+      verdict:    (only if asking_price supplied, compared vs adjusted max)
       sparkline:  {points: [...12], svg: "<svg.../>"}
     """
     if not query or not query.strip():
@@ -274,24 +321,46 @@ def buy_intelligence(conn, query: str, *,
     else:         confidence = "insufficient"
 
     # Buy ladder — only emit numbers if we have at least MIN_SAMPLE_SIZE.
-    buy = {
-        "steal":            None,
-        "fair":             None,
-        "max":              None,
+    #
+    # Two ladders are computed:
+    #   buy_nm   — assuming the card in hand is NM (useful as a reference).
+    #   buy      — condition-adjusted, which is what the operator should use.
+    #
+    # Conditions worse than NM (LP/MP/HP/DMG) scale all three targets DOWN
+    # proportionally — you can't pay NM-money for an MP card. Graded slabs
+    # (PSA9/PSA10) scale them UP by the same factor, since a PSA10 Charizard
+    # moves at 4× an ungraded one on average.
+    cond_mult, cond_label = _condition_multiplier(condition, condition_mult)
+
+    buy_nm = {
+        "steal": None, "fair": None, "max": None,
         "trend_adjust_pct": 0.0,
         "basis": {
             "p25_trimmed_90d": sold_90d["p25"],
             "p50_trimmed_90d": sold_90d["p50"],
         },
     }
+    buy = {
+        "steal": None, "fair": None, "max": None,
+        "trend_adjust_pct": 0.0,
+    }
     if n >= MIN_SAMPLE_SIZE and sold_90d["p25"] and sold_90d["p50"]:
         adj = 0.0
         if pct_30d is not None:
             adj = _clamp(pct_30d * TREND_INFLUENCE, -TREND_CAP, TREND_CAP)
         mult = 1.0 + adj
-        buy["steal"]            = round(sold_90d["p25"] * STEAL_BUY_FRAC * mult, 2)
-        buy["fair"]             = round(sold_90d["p50"] * FAIR_BUY_FRAC  * mult, 2)
-        buy["max"]              = round(sold_90d["p25"] * MAX_BUY_FRAC   * mult, 2)
+        # NM baseline
+        steal_nm = sold_90d["p25"] * STEAL_BUY_FRAC * mult
+        fair_nm  = sold_90d["p50"] * FAIR_BUY_FRAC  * mult
+        max_nm   = sold_90d["p25"] * MAX_BUY_FRAC   * mult
+        buy_nm["steal"]            = round(steal_nm, 2)
+        buy_nm["fair"]             = round(fair_nm, 2)
+        buy_nm["max"]              = round(max_nm, 2)
+        buy_nm["trend_adjust_pct"] = round(adj, 4)
+        # Condition-adjusted (what to actually pay)
+        buy["steal"]            = round(steal_nm * cond_mult, 2)
+        buy["fair"]             = round(fair_nm  * cond_mult, 2)
+        buy["max"]              = round(max_nm   * cond_mult, 2)
         buy["trend_adjust_pct"] = round(adj, 4)
 
     spark_pts = _bucket_weekly(rows, today)
@@ -315,6 +384,11 @@ def buy_intelligence(conn, query: str, *,
             "median_30d":      med_30,
             "median_prior_30d": round(med_30p, 2) if med_30p else None,
         },
+        "condition": {
+            "label":      cond_label,
+            "multiplier": round(cond_mult, 4),
+        },
+        "buy_nm":    buy_nm,
         "buy":       buy,
         "sparkline": sparkline,
     }
