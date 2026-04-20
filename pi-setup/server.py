@@ -25039,6 +25039,175 @@ def admin_sets():
     return html
 
 
+# ── AI Endpoints (Haggle / Bundle / Counterfeit) ─────────────────────────────
+#
+# Operator-side analysis helpers. All three call OpenAI when OPENAI_API_KEY is
+# set in the environment, otherwise they degrade gracefully to deterministic
+# defaults so the operator UI still gets a usable answer.
+#
+# IMPORTANT: every endpoint is locked behind @require_admin so randos on the
+# shop wifi or the WireGuard subnet cannot drain the OpenAI bill. If we later
+# expose any of these to the tablet, switch that one to @require_api_token.
+
+@app.route("/ai/haggle", methods=["POST"])
+@require_admin
+def ai_haggle():
+    try:
+        data         = request.get_json(force=True) or {}
+        name         = data.get("item_name", "Unknown Item")
+        store_price  = float(data.get("store_price", 0))
+        market_price = float(data.get("market_price", store_price))
+        condition    = data.get("condition", "NM")
+        stock_qty    = int(data.get("stock_qty", 1))
+
+        floor_price    = round(store_price * 0.85, 2)
+        walk_away      = round(store_price * 0.72, 2)
+        reasoning      = f"Market ref ${market_price:.2f}. Store price ${store_price:.2f}. Condition: {condition}. Stock: {stock_qty}."
+        counter_script = f"Best I can do is ${floor_price:.2f} — that keeps us both happy."
+        confidence     = "HIGH" if market_price > 0 else "LOW"
+
+        if _OPENAI_API_KEY:
+            try:
+                import urllib.request as _ur2
+                prompt = (f"You are a card shop POS haggle assistant.\n"
+                          f"Item: {name}\nStore price: ${store_price:.2f}\nMarket: ${market_price:.2f}\n"
+                          f"Condition: {condition}\nStock: {stock_qty} units\n\n"
+                          f'Return JSON only with keys: floor_price (float), walk_away (float), '
+                          f'reasoning (str), counter_script (str), confidence ("HIGH"|"MEDIUM"|"LOW")')
+                body = json.dumps({"model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 300, "temperature": 0.3}).encode()
+                req = _ur2.Request("https://api.openai.com/v1/chat/completions", data=body, method="POST")
+                req.add_header("Authorization", f"Bearer {_OPENAI_API_KEY}")
+                req.add_header("Content-Type", "application/json")
+                with _ur2.urlopen(req, timeout=15) as r:
+                    gpt = json.loads(r.read())
+                ai_text = gpt["choices"][0]["message"]["content"].strip()
+                ai_text = ai_text[ai_text.find("{"):ai_text.rfind("}") + 1]
+                ai_data = json.loads(ai_text)
+                floor_price    = ai_data.get("floor_price",    floor_price)
+                walk_away      = ai_data.get("walk_away",      walk_away)
+                reasoning      = ai_data.get("reasoning",      reasoning)
+                counter_script = ai_data.get("counter_script", counter_script)
+                confidence     = ai_data.get("confidence",     confidence)
+            except Exception as _e:
+                log.warning("[ai_haggle] GPT error: %s", _e)
+
+        return jsonify({"floor_price": floor_price, "walk_away": walk_away,
+                        "reasoning": reasoning, "counter_script": counter_script,
+                        "confidence": confidence})
+    except Exception as e:
+        return jsonify({"floor_price": 0, "walk_away": 0, "reasoning": str(e),
+                        "counter_script": "", "confidence": "LOW"}), 500
+
+
+@app.route("/ai/bundle", methods=["POST"])
+@require_admin
+def ai_bundle():
+    try:
+        data  = request.get_json(force=True) or {}
+        items = data.get("items", [])
+        if len(items) < 2:
+            return jsonify({"has_deal": False, "bundle_price": 0, "savings": 0,
+                            "discount_pct": 0,
+                            "pitch": "Add more items for a bundle deal.",
+                            "confidence": "LOW"})
+
+        total = sum(float(i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
+        count = sum(int(i.get("qty", 1)) for i in items)
+        disc  = 5 if count == 2 else (8 if count == 3 else (10 if count < 6 else 12))
+        bundle_price = round(total * (1 - disc / 100), 2)
+        savings      = round(total - bundle_price, 2)
+        pitch        = f"Take all {count} items for ${bundle_price:.2f} — save ${savings:.2f}!"
+
+        if _OPENAI_API_KEY:
+            try:
+                import urllib.request as _ur3
+                item_list = ", ".join(f"{i.get('name','?')} (${i.get('price',0):.2f})" for i in items)
+                prompt = (f"Bundle deal assistant. Items: {item_list}. Total: ${total:.2f}.\n"
+                          f"Suggest a compelling bundle discount. Return JSON only with keys: "
+                          f'has_deal (bool), bundle_price (float), savings (float), '
+                          f'discount_pct (int), pitch (str), confidence ("HIGH"|"MEDIUM"|"LOW")')
+                body = json.dumps({"model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 200, "temperature": 0.4}).encode()
+                req = _ur3.Request("https://api.openai.com/v1/chat/completions", data=body, method="POST")
+                req.add_header("Authorization", f"Bearer {_OPENAI_API_KEY}")
+                req.add_header("Content-Type", "application/json")
+                with _ur3.urlopen(req, timeout=15) as r:
+                    gpt = json.loads(r.read())
+                ai_text = gpt["choices"][0]["message"]["content"].strip()
+                ai_text = ai_text[ai_text.find("{"):ai_text.rfind("}") + 1]
+                ai_data = json.loads(ai_text)
+                return jsonify({"has_deal": True,
+                                "bundle_price": ai_data.get("bundle_price", bundle_price),
+                                "savings":      ai_data.get("savings",      savings),
+                                "discount_pct": ai_data.get("discount_pct", disc),
+                                "pitch":        ai_data.get("pitch",        pitch),
+                                "confidence":   ai_data.get("confidence",   "MEDIUM")})
+            except Exception as _e:
+                log.warning("[ai_bundle] GPT error: %s", _e)
+
+        return jsonify({"has_deal": True, "bundle_price": bundle_price,
+                        "savings": savings, "discount_pct": disc,
+                        "pitch": pitch, "confidence": "MEDIUM"})
+    except Exception as e:
+        return jsonify({"has_deal": False, "bundle_price": 0, "savings": 0,
+                        "discount_pct": 0, "pitch": str(e),
+                        "confidence": "LOW"}), 500
+
+
+@app.route("/ai/counterfeit", methods=["POST"])
+@require_admin
+def ai_counterfeit():
+    try:
+        data      = request.get_json(force=True) or {}
+        image_b64 = data.get("image_b64", "")
+        card_name = data.get("card_name", "unknown card")
+
+        if not image_b64:
+            return jsonify({"verdict": "UNAVAILABLE", "confidence": 0.0,
+                            "details": "No image provided.", "flags": []}), 400
+
+        verdict, confidence = "NEEDS_REVIEW", 0.5
+        details, flags      = "Manual inspection recommended.", []
+
+        if _OPENAI_API_KEY:
+            try:
+                import urllib.request as _ur4
+                prompt = (f"You are an expert counterfeit Pokemon card detector.\n"
+                          f"Analyse this card image ({card_name}).\n"
+                          f'Return JSON only with keys: verdict ("AUTHENTIC"|"LIKELY_FAKE"|"FAKE"|"NEEDS_REVIEW"), '
+                          f'confidence (0.0-1.0), details (str), flags (list of str)')
+                body = json.dumps({"model": "gpt-4o",
+                    "messages": [{"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/jpeg;base64,{image_b64}",
+                                       "detail": "high"}}
+                    ]}], "max_tokens": 400}).encode()
+                req = _ur4.Request("https://api.openai.com/v1/chat/completions", data=body, method="POST")
+                req.add_header("Authorization", f"Bearer {_OPENAI_API_KEY}")
+                req.add_header("Content-Type", "application/json")
+                with _ur4.urlopen(req, timeout=30) as r:
+                    gpt = json.loads(r.read())
+                ai_text = gpt["choices"][0]["message"]["content"].strip()
+                ai_text = ai_text[ai_text.find("{"):ai_text.rfind("}") + 1]
+                ai_data = json.loads(ai_text)
+                verdict    = ai_data.get("verdict",    verdict)
+                confidence = float(ai_data.get("confidence", confidence))
+                details    = ai_data.get("details",    details)
+                flags      = ai_data.get("flags",      flags)
+            except Exception as _e:
+                log.warning("[ai_counterfeit] GPT error: %s", _e)
+
+        return jsonify({"verdict": verdict, "confidence": confidence,
+                        "details": details, "flags": flags})
+    except Exception as e:
+        return jsonify({"verdict": "UNAVAILABLE", "confidence": 0.0,
+                        "details": str(e), "flags": []}), 500
+
+
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
