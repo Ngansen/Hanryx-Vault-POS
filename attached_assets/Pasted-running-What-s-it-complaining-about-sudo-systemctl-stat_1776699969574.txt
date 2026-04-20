@@ -1,0 +1,63 @@
+running? What's it complaining about?
+sudo systemctl status hanryx-pos --no-pager | head -20
+
+# What containers are actually live?
+sudo docker ps
+
+# Where do the live containers think their compose file is?
+sudo docker inspect $(sudo docker ps -q) --format '{{.Name}} compose-file={{index .Config.Labels "com.docker.compose.project.config_files"}} workdir={{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null
+
+# And the volumes (so we know what data to preserve)
+sudo docker volume ls
+× hanryx-pos.service - HanryxVault POS — Docker Compose
+     Loaded: loaded (/etc/systemd/system/hanryx-pos.service; enabled; preset: enabled)
+     Active: failed (Result: exit-code) since Sun 2026-04-19 02:31:06 GMT; 1 day 13h ago
+ Invocation: 56ad81618ae146d18b9a6e5c64ab372d
+        CPU: 7ms
+
+Apr 19 02:31:06 hanryxvault systemd[1]: Starting hanryx-pos.service - HanryxVault POS — Docker Compose...
+Apr 19 02:31:06 hanryxvault (docker)[2189]: hanryx-pos.service: Changing to the requested working directory failed: Permission denied
+Apr 19 02:31:06 hanryxvault (docker)[2189]: hanryx-pos.service: Failed at step CHDIR spawning /usr/bin/docker: Permission denied
+Apr 19 02:31:06 hanryxvault systemd[1]: hanryx-pos.service: Control process exited, code=exited, status=200/CHDIR
+Apr 19 02:31:06 hanryxvault systemd[1]: hanryx-pos.service: Failed with result 'exit-code'.
+Apr 19 02:31:06 hanryxvault systemd[1]: Failed to start hanryx-pos.service - HanryxVault POS — Docker Compose.
+CONTAINER ID   IMAGE                      COMMAND                  CREATED        STATUS                    PORTS                                         NAMES
+77f9e4143a31   pi-setup-pos               "/entrypoint.sh"         3 hours ago    Up 3 hours (healthy)      0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp   pi-setup-pos-1
+4a83544fd0ea   pi-setup-recognizer        "python -u server.py"    3 hours ago    Up 3 hours (healthy)      8081/tcp                                      pi-setup-recognizer-1
+178d12155c39   edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   11 hours ago   Up 11 hours (healthy)     5432/tcp                                      pi-setup-pgbouncer-1
+f0882eb46226   pi-setup-storefront        "docker-entrypoint.sh"   11 hours ago   Up 11 hours (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   pi-setup-storefront-1
+6299eef2ef7e   pi-setup-pokeapi           "/docker-entrypoint.…"   14 hours ago   Up 14 hours (healthy)     80/tcp                                        pi-setup-pokeapi-1
+1acd688d2d6f   pgvector/pgvector:pg16     "docker-entrypoint.s…"   21 hours ago   Up 21 hours (healthy)     5432/tcp                                      pi-setup-db-1
+4c604735ebe7   redis:7-alpine             "docker-entrypoint.s…"   37 hours ago   Up 37 hours (healthy)     6379/tcp                                      pi-setup-redis-1
+/pi-setup-pos-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-recognizer-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-pgbouncer-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-storefront-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-pokeapi-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-db-1 compose-file=/home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml workdir=/home/ngansen/Hanryx-Vault-POS/pi-setup
+/pi-setup-redis-1 compose-file=/home/ngansen/hanryx-vault-pos/pi-setup/docker-compose.yml workdir=/home/ngansen/hanryx-vault-pos/pi-setup
+DRIVER    VOLUME NAME
+local     0d3eb0ddf820692f34ae830fcc7e9b864dad4b1f3ae8f7a02b28a9c87849d95d
+local     1da9638e93d7180b600b4213d72b582e64d0d9b99e71e57d85ba0eca54398315
+local     1f59058c653a30ccad47d52c9f5358a099441ef730468f307efd41b805b537a9
+local     3d2f45a9b1bca6f152337ce09aafacd04f49a8f1499887c4ca8f03d573cba260
+local     3d7576bb0c9a473cd720631714951b9464a40999c240c68a84561414ce7a6e4f
+local     5f26817a82486d29256ee71e7b57177f5e9d295cbc79ffe69df9e96bed9ae9b7
+local     6f603df433f1b372cd1a89eecb7d25e7c403430ebf6555e19192c95428fb85fd
+local     7ae6658b32d6b1cd12af743b682b6502e1b6c3dc21ed4f19fd84626eea7d9627
+local     7e833eda118ed92569350dab6034bad3e108392bd58a15218a3e81af646b720f
+local     686a8288eb9f628855e0a30c548292fb81759396513f0b87f188c7d90933de3b
+local     72875ea28f267b8cc0715730d1318faaa7375956fee9e42a493787ade8327a5d
+local     974804e4b05b98c177185d966441c218c0e9211a1c404404824af7deb0ad7dbc
+local     b713c11a1051bb73d90445069d074c82bed36c320f4298df118157b8ea2e6a9d
+local     c40084bcec6e35aa86f3eb251d21a1e2d8dd440a6c8f6c4050a7a1e7f7e57ff8
+local     c78233bb2615a3531739d8b7582cdb9ef50ee0caaf5701e955fc30a9e3f3f993
+local     cb3df29e9a2b207b5cba774778354c403c118a10da7d594f8d13f00ec3d5b459
+local     d3f6e965e662f94f1b17ede4761d0a953885277722e00058ca438dd62ee081b7
+local     d70dd961a050bd6b861786826430acedd03e083dd5b9e3220f19a60a417aa5ec
+local     fd699b4d58d1b45c3e1d61a5a41d1fb2edcefb6c0173fef1696c41a9dded99b1
+local     pi-setup_card-images
+local     pi-setup_pgdata
+local     pi-setup_pokeapi-data
+local     pi-setup_pos-data
+ngansen@hanryxvault:~ $ 
