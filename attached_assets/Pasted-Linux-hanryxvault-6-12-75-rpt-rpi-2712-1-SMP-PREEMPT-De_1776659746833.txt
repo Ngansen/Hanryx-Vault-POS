@@ -1,0 +1,477 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Mon Apr 20 04:21:29 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ curl -fsSL https://raw.githubusercontent.com/Ngansen/Hanryx-Vault-POS/main/pi-setup/deploy-all.sh | bash
+[i] Auto-detected role: MAIN
+
+────────────────────────────────────────────────────
+▸ 1/6 — Sync repo from GitHub
+────────────────────────────────────────────────────
+[i] Updating existing checkout at /home/ngansen/Hanryx-Vault-POS
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+Auto-merging pi-setup/server.py
+CONFLICT (content): Merge conflict in pi-setup/server.py
+error: could not apply 55710c7... fix: kiosk poll dispatches state directly instead of waiting for SSE
+hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
+hint: You can instead skip this commit: run "git rebase --skip".
+hint: To abort and get back to the state before "git rebase", run "git rebase --abort".
+hint: Disable this message with "git config advice.mergeConflict false"
+Could not apply 55710c7... fix: kiosk poll dispatches state directly instead of waiting for SSE
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS
+git rebase --abort
+# See what local-only commits the Pi has that aren't on origin yet:
+git log --oneline origin/main..HEAD
+# Save them to a backup branch in case you need them later:
+git branch backup/pi-local-$(date +%s)
+# Then take origin's version cleanly:
+git fetch origin
+git reset --hard origin/main
+# Now re-run deploy-all:
+bash pi-setup/deploy-all.sh
+55710c7 (HEAD -> main) fix: kiosk poll dispatches state directly instead of waiting for SSE
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (1/1), done.
+remote: Total 4 (delta 3), reused 4 (delta 3), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.25 KiB | 1.25 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   22bb746..3b77d4a  main       -> origin/main
+HEAD is now at 3b77d4a fix(deploy-all): never get stuck on rebase/merge conflicts
+[i] Auto-detected role: MAIN
+
+────────────────────────────────────────────────────
+▸ 1/6 — Sync repo from GitHub
+────────────────────────────────────────────────────
+[i] Updating existing checkout at /home/ngansen/Hanryx-Vault-POS
+[i] Hard-resetting working tree to origin/main
+HEAD is now at 3b77d4a fix(deploy-all): never get stuck on rebase/merge conflicts
+[✓] Repo synced @ 3b77d4a
+
+────────────────────────────────────────────────────
+▸ 2/6 — Verify Docker is installed
+────────────────────────────────────────────────────
+[✓] Docker OK (29.3.1)
+
+────────────────────────────────────────────────────
+▸ 3/6 — Re-bake & restart containers
+────────────────────────────────────────────────────
+[i] Building updated images (recognizer pin fix, kiosk fit-script, payment fix)…
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] Building 6.6s (20/20) FINISHED                
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 520B               0.0s
+ => [internal] load build definition from D  0.0s
+ => => transferring dockerfile: 1.30kB       0.0s
+ => [internal] load metadata for docker.io/  0.6s
+ => [internal] load .dockerignore            0.0s
+ => => transferring context: 193B            0.0s
+ => [internal] load build context            0.0s
+ => => transferring context: 1.04MB          0.0s
+ => [builder 1/6] FROM docker.io/library/py  0.1s
+ => => resolve docker.io/library/python:3.1  0.1s
+ => CACHED [builder 2/6] WORKDIR /app        0.0s
+ => CACHED [stage-1 3/9] RUN apt-get update  0.0s
+ => CACHED [stage-1 4/9] RUN groupadd -r ha  0.0s
+ => CACHED [builder 3/6] RUN apt-get update  0.0s
+ => CACHED [builder 4/6] COPY requirements.  0.0s
+ => CACHED [builder 5/6] RUN python -m venv  0.0s
+ => CACHED [builder 6/6] RUN pip install --  0.0s
+ => CACHED [stage-1 5/9] COPY --from=builde  0.0s
+ => [stage-1 6/9] COPY . .                   0.4s
+ => [stage-1 7/9] RUN mkdir -p /app/card-im  2.0s
+ => [stage-1 8/9] COPY entrypoint.sh /entry  1.0s
+ => [stage-1 9/9] RUN chmod +x /entrypoint.  0.4s
+ => exporting to image                       1.5s
+ => => exporting layers                      0.9s
+ => => exporting manifest sha256:dfe80670c2  0.1s
+ => => exporting config sha256:4e5842c8c702  0.1s
+ => => exporting attestation manifest sha25  0.1s
+ => => exporting manifest list sha256:862ac  0.0s
+ => => naming to docker.io/library/pi-setup  0.0s
+ => => unpacking to docker.io/library/pi-se  0.2s
+ => resolving provenance for metadata file   0.0s
+[+] build 1/1
+ ✔ Image pi-setup-pos Built                   6.7s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] Building 62.3s (10/11)                        
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 570B               0.0s
+ => [internal] load build definition from D  0.0s
+ => => transferring dockerfile: 1.97kB       0.0s
+ => [internal] load metadata for docker.io/  0.2s
+ => [internal] load .dockerignore            0.0s
+ => => transferring context: 2B              0.0s
+ => [1/6] FROM docker.io/library/python:3.1  0.1s
+ => => resolve docker.io/library/python:3.1  0.1s
+ => [internal] load build context            0.0s
+ => => transferring context: 217B            0.0s
+ => CACHED [2/6] RUN apt-get update && apt-  0.0s
+ => CACHED [3/6] WORKDIR /app                0.0s
+ => [4/6] COPY requirements.txt /app/requir  0.3s
+ => ERROR [5/6] RUN pip install --extra-in  61.4s
+------                                            
+ > [5/6] RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt:                                   
+2.984 Looking in indexes: https://pypi.org/simple, https://download.pytorch.org/whl/cpu
+4.149 Collecting torch==2.2.2
+4.579   Downloading https://download-r2.pytorch.org/whl/cpu/torch-2.2.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (86.6 MB)
+16.92      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 86.6/86.6 MB 5.7 MB/s eta 0:00:00
+17.55 Collecting torchvision==0.17.2
+17.74   Downloading torchvision-0.17.2-cp311-cp311-manylinux2014_aarch64.whl.metadata (6.6 kB)
+18.03 Collecting filelock (from torch==2.2.2)
+18.07   Downloading filelock-3.29.0-py3-none-any.whl.metadata (2.0 kB)
+18.27 Collecting typing-extensions>=4.8.0 (from torch==2.2.2)
+18.31   Downloading https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+18.59 Collecting sympy (from torch==2.2.2)
+18.63   Downloading sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+19.01 Collecting networkx (from torch==2.2.2)
+19.04   Downloading networkx-3.6.1-py3-none-any.whl.metadata (6.8 kB)
+19.26 Collecting jinja2 (from torch==2.2.2)
+19.29   Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+19.58 Collecting fsspec (from torch==2.2.2)
+19.62   Downloading fsspec-2026.3.0-py3-none-any.whl.metadata (10 kB)
+20.92 Collecting numpy (from torchvision==0.17.2)
+20.96   Downloading numpy-2.4.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (6.6 kB)
+22.17 Collecting pillow!=8.3.*,>=5.3.0 (from torchvision==0.17.2)
+22.20   Downloading pillow-12.2.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (8.8 kB)
+22.68 Collecting MarkupSafe>=2.0 (from jinja2->torch==2.2.2)
+22.73   Downloading https://download.pytorch.org/whl/markupsafe-3.0.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
+23.00 Collecting mpmath<1.4,>=1.1.0 (from sympy->torch==2.2.2)
+23.02   Downloading mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)
+23.11 Downloading torchvision-0.17.2-cp311-cp311-manylinux2014_aarch64.whl (14.0 MB)
+25.27    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14.0/14.0 MB 7.3 MB/s eta 0:00:00
+25.34 Downloading pillow-12.2.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.4 MB)
+26.23    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.4/6.4 MB 7.2 MB/s eta 0:00:00
+26.26 Downloading https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+26.27    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.6/44.6 kB 4.0 MB/s eta 0:00:00
+26.29 Downloading filelock-3.29.0-py3-none-any.whl (39 kB)
+26.33 Downloading fsspec-2026.3.0-py3-none-any.whl (202 kB)
+26.35    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 202.6/202.6 kB 7.6 MB/s eta 0:00:00
+26.39 Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl (134 kB)
+26.41    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.9/134.9 kB 10.0 MB/s eta 0:00:00
+26.44 Downloading networkx-3.6.1-py3-none-any.whl (2.1 MB)
+26.72    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 7.5 MB/s eta 0:00:00
+26.75 Downloading numpy-2.4.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (16.0 MB)
+28.76    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.0/16.0 MB 8.9 MB/s eta 0:00:00
+28.79 Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+29.56    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 8.2 MB/s eta 0:00:00
+29.59 Downloading https://download.pytorch.org/whl/markupsafe-3.0.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (24 kB)
+29.62 Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
+29.68    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 10.5 MB/s eta 0:00:00
+30.05 Installing collected packages: mpmath, typing-extensions, sympy, pillow, numpy, networkx, MarkupSafe, fsspec, filelock, jinja2, torch, torchvision
+52.48 Successfully installed MarkupSafe-3.0.3 filelock-3.29.0 fsspec-2026.3.0 jinja2-3.1.6 mpmath-1.3.0 networkx-3.6.1 numpy-2.4.4 pillow-12.2.0 sympy-1.14.0 torch-2.2.2 torchvision-0.17.2 typing-extensions-4.15.0
+52.48 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+53.94 Collecting flask>=3.0.0 (from -r /app/requirements.txt (line 1))
+54.11   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+54.19 Collecting gunicorn>=21.2.0 (from -r /app/requirements.txt (line 2))
+54.21   Downloading gunicorn-25.3.0-py3-none-any.whl.metadata (5.5 kB)
+54.23 Requirement already satisfied: pillow>=10.0.0 in /usr/local/lib/python3.11/site-packages (from -r /app/requirements.txt (line 3)) (12.2.0)
+54.38 Collecting opencv-python-headless>=4.9.0 (from -r /app/requirements.txt (line 4))
+54.41   Downloading opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl.metadata (19 kB)
+54.42 Requirement already satisfied: numpy>=1.26.0 in /usr/local/lib/python3.11/site-packages (from -r /app/requirements.txt (line 5)) (2.4.4)
+54.48 Collecting requests>=2.31.0 (from -r /app/requirements.txt (line 6))
+54.51   Downloading requests-2.33.1-py3-none-any.whl.metadata (4.8 kB)
+54.55 Collecting pokemon-card-recognizer==0.0.1.3.8.7 (from -r /app/requirements.txt (line 7))
+54.61   Downloading pokemon_card_recognizer-0.0.1.3.8.7-py3-none-any.whl.metadata (4.9 kB)
+54.66 Collecting bidict (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+54.71   Downloading bidict-0.23.1-py3-none-any.whl.metadata (8.7 kB)
+54.78 Collecting ocr-ops (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+54.83   Downloading ocr_ops-0.0.0.4.3.1-py3-none-any.whl.metadata (1.5 kB)
+54.88 Collecting ordered-set (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+54.90   Downloading ordered_set-4.1.0-py3-none-any.whl.metadata (5.3 kB)
+55.11 Collecting pandas (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+55.13   Downloading pandas-3.0.2-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl.metadata (79 kB)
+55.16      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 79.5/79.5 kB 3.1 MB/s eta 0:00:00
+55.53 INFO: pip is looking at multiple versions of pokemon-card-recognizer to determine which version is compatible with other requirements. This could take a while.
+55.53 ERROR: Cannot install -r /app/requirements.txt (line 7) and pillow>=10.0.0 because these package versions have conflicting dependencies.
+55.53 
+55.53 The conflict is caused by:
+55.53     The user requested pillow>=10.0.0
+55.53     pokemon-card-recognizer 0.0.1.3.8.7 depends on pillow==9.5.0
+55.53 
+55.53 To fix this you could try to:
+55.53 1. loosen the range of package versions you've specified
+55.53 2. remove package versions to allow pip attempt to solve the dependency conflict
+55.53 
+55.53 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
+------
+[+] build 0/1
+ ⠙ Image pi-setup-recognizer Building        62.4s
+Dockerfile:38
+
+--------------------
+
+  37 |     # then the recogniser package itself.
+
+  38 | >>> RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+
+  39 | >>>         torch==2.2.2 torchvision==0.17.2 \
+
+  40 | >>>     && pip install -r /app/requirements.txt
+
+  41 |     
+
+--------------------
+
+failed to solve: process "/bin/sh -c pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt" did not complete successfully: exit code: 1
+
+[!] Recognizer build failed — continuing without it. Retry later with:
+[!]     sudo docker compose build --no-cache recognizer
+[i] Bringing the stack up …
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] Building 12.2s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 12.4s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 12.5s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 12.7s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 12.8s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.0s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.1s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.3s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.4s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.6s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.7s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 13.9s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.0s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.2s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.3s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.5s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.6s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.8s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 14.9s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.1s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.2s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.4s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.5s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.7s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 15.8s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.0s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.1s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.3s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.4s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.6s (9/11)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+[+] Building 16.6s (9/11)                         
+ => [internal] load metadata for docker.io/  0.4s
+ => [internal] load .dockerignore            0.0s
+ => => transferring context: 2B              0.0s
+[+] Building 60.3s (10/11)                        
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 1.97kB             0.0s
+ => [internal] load build definition from D  0.0s
+ => => transferring dockerfile: 1.97kB       0.0s
+ => [internal] load metadata for docker.io/  0.4s
+ => [internal] load .dockerignore            0.0s
+ => => transferring context: 2B              0.0s
+ => [internal] load build context            0.0s
+ => => transferring context: 67B             0.0s
+ => [1/6] FROM docker.io/library/python:3.1  0.1s
+ => => resolve docker.io/library/python:3.1  0.1s
+ => CACHED [2/6] RUN apt-get update && apt-  0.0s
+ => CACHED [3/6] WORKDIR /app                0.0s
+ => CACHED [4/6] COPY requirements.txt /app  0.0s 
+ => ERROR [5/6] RUN pip install --extra-in  59.5s 
+------                                            
+ > [5/6] RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt:                                   
+2.949 Looking in indexes: https://pypi.org/simple, https://download.pytorch.org/whl/cpu
+4.381 Collecting torch==2.2.2
+4.981   Downloading https://download-r2.pytorch.org/whl/cpu/torch-2.2.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (86.6 MB)
+15.94      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 86.6/86.6 MB 8.7 MB/s eta 0:00:00
+16.55 Collecting torchvision==0.17.2
+16.78   Downloading torchvision-0.17.2-cp311-cp311-manylinux2014_aarch64.whl.metadata (6.6 kB)
+17.09 Collecting filelock (from torch==2.2.2)
+17.12   Downloading filelock-3.29.0-py3-none-any.whl.metadata (2.0 kB)
+17.33 Collecting typing-extensions>=4.8.0 (from torch==2.2.2)
+17.36   Downloading https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+17.62 Collecting sympy (from torch==2.2.2)
+17.66   Downloading sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+18.01 Collecting networkx (from torch==2.2.2)
+18.05   Downloading networkx-3.6.1-py3-none-any.whl.metadata (6.8 kB)
+18.27 Collecting jinja2 (from torch==2.2.2)
+18.30   Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+18.58 Collecting fsspec (from torch==2.2.2)
+18.62   Downloading fsspec-2026.3.0-py3-none-any.whl.metadata (10 kB)
+19.87 Collecting numpy (from torchvision==0.17.2)
+19.91   Downloading numpy-2.4.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (6.6 kB)
+21.04 Collecting pillow!=8.3.*,>=5.3.0 (from torchvision==0.17.2)
+21.08   Downloading pillow-12.2.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (8.8 kB)
+21.59 Collecting MarkupSafe>=2.0 (from jinja2->torch==2.2.2)
+21.62   Downloading https://download.pytorch.org/whl/markupsafe-3.0.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
+21.89 Collecting mpmath<1.4,>=1.1.0 (from sympy->torch==2.2.2)
+21.92   Downloading mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)
+21.97 Downloading torchvision-0.17.2-cp311-cp311-manylinux2014_aarch64.whl (14.0 MB)
+23.71    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14.0/14.0 MB 8.7 MB/s eta 0:00:00
+23.75 Downloading pillow-12.2.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.4 MB)
+24.52    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.4/6.4 MB 8.3 MB/s eta 0:00:00
+24.56 Downloading https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+24.56    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.6/44.6 kB 6.7 MB/s eta 0:00:00
+24.60 Downloading filelock-3.29.0-py3-none-any.whl (39 kB)
+24.63 Downloading fsspec-2026.3.0-py3-none-any.whl (202 kB)
+24.65    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 202.6/202.6 kB 11.7 MB/s eta 0:00:00
+24.68 Downloading https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl (134 kB)
+24.70    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.9/134.9 kB 8.9 MB/s eta 0:00:00
+24.74 Downloading networkx-3.6.1-py3-none-any.whl (2.1 MB)
+24.98    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 9.0 MB/s eta 0:00:00
+25.01 Downloading numpy-2.4.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (16.0 MB)
+26.89    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.0/16.0 MB 8.6 MB/s eta 0:00:00
+26.93 Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+27.75    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 7.6 MB/s eta 0:00:00
+27.80 Downloading https://download.pytorch.org/whl/markupsafe-3.0.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (24 kB)
+27.83 Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
+27.89    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 11.0 MB/s eta 0:00:00
+28.23 Installing collected packages: mpmath, typing-extensions, sympy, pillow, numpy, networkx, MarkupSafe, fsspec, filelock, jinja2, torch, torchvision
+50.53 Successfully installed MarkupSafe-3.0.3 filelock-3.29.0 fsspec-2026.3.0 jinja2-3.1.6 mpmath-1.3.0 networkx-3.6.1 numpy-2.4.4 pillow-12.2.0 sympy-1.14.0 torch-2.2.2 torchvision-0.17.2 typing-extensions-4.15.0
+50.53 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+51.75 Collecting flask>=3.0.0 (from -r /app/requirements.txt (line 1))
+51.95   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+52.01 Collecting gunicorn>=21.2.0 (from -r /app/requirements.txt (line 2))
+52.04   Downloading gunicorn-25.3.0-py3-none-any.whl.metadata (5.5 kB)
+52.05 Requirement already satisfied: pillow>=10.0.0 in /usr/local/lib/python3.11/site-packages (from -r /app/requirements.txt (line 3)) (12.2.0)
+52.18 Collecting opencv-python-headless>=4.9.0 (from -r /app/requirements.txt (line 4))
+52.22   Downloading opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl.metadata (19 kB)
+52.24 Requirement already satisfied: numpy>=1.26.0 in /usr/local/lib/python3.11/site-packages (from -r /app/requirements.txt (line 5)) (2.4.4)
+52.30 Collecting requests>=2.31.0 (from -r /app/requirements.txt (line 6))
+52.33   Downloading requests-2.33.1-py3-none-any.whl.metadata (4.8 kB)
+52.38 Collecting pokemon-card-recognizer==0.0.1.3.8.7 (from -r /app/requirements.txt (line 7))
+52.43   Downloading pokemon_card_recognizer-0.0.1.3.8.7-py3-none-any.whl.metadata (4.9 kB)
+52.48 Collecting bidict (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+52.52   Downloading bidict-0.23.1-py3-none-any.whl.metadata (8.7 kB)
+52.55 Collecting ocr-ops (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+52.60   Downloading ocr_ops-0.0.0.4.3.1-py3-none-any.whl.metadata (1.5 kB)
+52.64 Collecting ordered-set (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+52.68   Downloading ordered_set-4.1.0-py3-none-any.whl.metadata (5.3 kB)
+52.89 Collecting pandas (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+52.92   Downloading pandas-3.0.2-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl.metadata (79 kB)
+52.97      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 79.5/79.5 kB 2.0 MB/s eta 0:00:00
+53.35 INFO: pip is looking at multiple versions of pokemon-card-recognizer to determine which version is compatible with other requirements. This could take a while.
+53.35 ERROR: Cannot install -r /app/requirements.txt (line 7) and pillow>=10.0.0 because these package versions have conflicting dependencies.
+53.35 
+53.35 The conflict is caused by:
+53.35     The user requested pillow>=10.0.0
+53.35     pokemon-card-recognizer 0.0.1.3.8.7 depends on pillow==9.5.0
+53.35 
+53.35 To fix this you could try to:
+53.35 1. loosen the range of package versions you've specified
+53.35 2. remove package versions to allow pip attempt to solve the dependency conflict
+53.35 
+53.35 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
+------
+[+] up 0/4
+ ⠙ Image pi-setup-recognizer Building        60.4s
+ ⠙ Image pi-setup-pokeapi    Building        60.4s
+ ⠙ Image pi-setup-storefront Building        60.4s
+ ⠙ Image pi-setup-pos        Building        60.4s
+Dockerfile:38
+
+--------------------
+
+  37 |     # then the recogniser package itself.
+
+  38 | >>> RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+
+  39 | >>>         torch==2.2.2 torchvision==0.17.2 \
+
+  40 | >>>     && pip install -r /app/requirements.txt
+
+  41 |     
+
+--------------------
+
+failed to solve: process "/bin/sh -c pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt" did not complete successfully: exit code: 1
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
