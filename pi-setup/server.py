@@ -23428,6 +23428,12 @@ except Exception as _exc:
     log.warning("[server] sets_browser unavailable: %s", _exc)
     _sets_browser = None
 
+try:
+    import set_alias_sync as _set_alias_sync
+except Exception as _exc:
+    log.warning("[server] set_alias_sync unavailable: %s", _exc)
+    _set_alias_sync = None
+
 
 @app.route("/card/scan/log_pick", methods=["POST"])
 def card_scan_log_pick():
@@ -23692,6 +23698,23 @@ _LANG_FLAGS = {
 }
 
 
+@app.route("/admin/sets/sync", methods=["POST", "GET"])
+@require_admin
+def admin_sets_sync():
+    """
+    Pull the latest set list from pokemontcg.io and merge into aliases.
+
+    POST  → run sync (respects 24h cooldown unless ?force=1)
+    GET   → just return current sync status
+    """
+    if _set_alias_sync is None:
+        return jsonify({"error": "set_alias_sync unavailable"}), 503
+    if request.method == "GET":
+        return jsonify(_set_alias_sync.status())
+    force = request.args.get("force") in ("1", "true", "yes")
+    return jsonify(_set_alias_sync.sync_now(force=force))
+
+
 @app.route("/admin/sets", methods=["GET"])
 @require_admin
 def admin_sets():
@@ -23741,8 +23764,9 @@ def admin_sets():
   <div class="search-row">
     <input id="q" type="text" placeholder="Set name, prod code, commodity code (e.g. 'Twilight Masquerade', 'svp', 'A2a')…" />
     <button id="go">Search</button>
+    <button id="syncBtn" title="Pull the latest set list from pokemontcg.io" style="background:#1e3a5f;color:#bfdbfe">⟳ Sync sets</button>
   </div>
-  <div class="hint">Searches Korean, Simplified-Chinese, Japanese (full + Pocket) and Multi-TCG (MTG/OnePiece/Lorcana/DBS) tables in one shot. Tip: use the short prod-code (e.g. <code>svp</code>) to match across all languages at once.</div>
+  <div class="hint">Searches Korean, Simplified-Chinese, Japanese (full + Pocket) and Multi-TCG (MTG/OnePiece/Lorcana/DBS) tables in one shot. Tip: use the short prod-code (e.g. <code>svp</code>) to match across all languages at once. <span id="syncStatus" style="color:#475569;margin-left:8px"></span></div>
   <div id="summary" class="summary"></div>
   <div id="results"></div>
 </div>
@@ -23818,6 +23842,40 @@ def admin_sets():
   }}
   btn.addEventListener('click', search);
   qEl.addEventListener('keydown', function(e){{ if (e.key === 'Enter') search(); }});
+  var sBtn = document.getElementById('syncBtn');
+  var sStat = document.getElementById('syncStatus');
+  function fmtAge(s) {{
+    if (s == null) return 'never';
+    if (s < 60) return s+'s ago';
+    if (s < 3600) return Math.round(s/60)+'m ago';
+    if (s < 86400) return Math.round(s/3600)+'h ago';
+    return Math.round(s/86400)+'d ago';
+  }}
+  function refreshStatus() {{
+    fetch('/admin/sets/sync', {{method:'GET'}}).then(r=>r.json()).then(j=>{{
+      if (j && j.synced_exists) {{
+        sStat.textContent = 'Last sync: '+fmtAge(j.age_seconds)+' · '+(j.last_count||0)+' sets';
+      }} else {{
+        sStat.textContent = 'No sync yet — click ⟳ to pull from pokemontcg.io';
+      }}
+    }}).catch(()=>{{}});
+  }}
+  sBtn.addEventListener('click', function(){{
+    sBtn.disabled = true;
+    sStat.textContent = 'Syncing…';
+    fetch('/admin/sets/sync?force=1', {{method:'POST'}}).then(r=>r.json()).then(j=>{{
+      sBtn.disabled = false;
+      if (j.ok && !j.skipped) {{
+        sStat.innerHTML = '<span style="color:#4ade80">✓ Synced '+j.written+' sets</span>';
+      }} else if (j.skipped) {{
+        sStat.textContent = 'Cooldown — try with force or wait '+Math.round(j.next_eligible_in/3600)+'h';
+      }} else {{
+        sStat.innerHTML = '<span style="color:#ef4444">✗ '+esc(j.error||'failed')+'</span>';
+      }}
+      setTimeout(refreshStatus, 1500);
+    }}).catch(e=>{{ sBtn.disabled=false; sStat.textContent='Error: '+e; }});
+  }});
+  refreshStatus();
   var initial = {initial_q_js};
   if (initial) {{ qEl.value = initial; search(); }}
 }})();
@@ -23835,6 +23893,11 @@ if __name__ == "__main__":
     threading.Thread(target=_prewarm_all_pricing_bg,    daemon=True, name="pricing-prewarm").start()
     threading.Thread(target=_prewarm_lang_all_bg,       daemon=True, name="lang-prewarm").start()
     threading.Thread(target=_receipt_replay_worker,     daemon=True, name="receipt-replay").start()
+    if _set_alias_sync is not None:
+        try:
+            _set_alias_sync.maybe_sync_in_background()
+        except Exception as _exc:
+            log.warning("[server] set_alias_sync boot trigger failed: %s", _exc)
     _cleanup_scan_queue()
     log.info("[server] Starting HanryxVault POS — Enterprise Edition — http://0.0.0.0:8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

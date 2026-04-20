@@ -141,21 +141,29 @@ _CACHE_LOADED_AT: float = 0.0
 _RELOAD_INTERVAL = 60.0  # re-scan disk every minute, cheap
 
 
-def _alias_file_path() -> str:
-    """Resolve the on-disk override file. $HV/data/set_aliases.json."""
+def _data_dir() -> str:
     base = os.environ.get("HV") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, "data", "set_aliases.json")
+    return os.path.join(base, "data")
 
 
-def _load_disk_overrides() -> list[dict]:
-    p = _alias_file_path()
-    if not os.path.exists(p):
+def _alias_file_path() -> str:
+    """Operator-editable override file. $HV/data/set_aliases.json."""
+    return os.path.join(_data_dir(), "set_aliases.json")
+
+
+def _synced_file_path() -> str:
+    """Auto-discovered file from set_alias_sync.py. $HV/data/set_aliases_synced.json."""
+    return os.path.join(_data_dir(), "set_aliases_synced.json")
+
+
+def _load_json_clusters(path: str) -> list[dict]:
+    if not os.path.exists(path):
         return []
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, list):
-            log.warning("[set_aliases] override file is not a JSON list, ignoring")
+            log.warning("[set_aliases] %s is not a JSON list, ignoring", path)
             return []
         clean = []
         for entry in data:
@@ -167,8 +175,18 @@ def _load_disk_overrides() -> list[dict]:
                 })
         return clean
     except Exception as exc:
-        log.warning("[set_aliases] failed to load %s: %s", p, exc)
+        log.warning("[set_aliases] failed to load %s: %s", path, exc)
         return []
+
+
+def _load_disk_overrides() -> list[dict]:
+    """Operator-edited file."""
+    return _load_json_clusters(_alias_file_path())
+
+
+def _load_synced() -> list[dict]:
+    """Auto-discovered file (pokemontcg.io)."""
+    return _load_json_clusters(_synced_file_path())
 
 
 def _build_index() -> dict:
@@ -179,8 +197,13 @@ def _build_index() -> dict:
       "clusters": [ {name, tokens:[...]}, ... ],
       "lookup":   { lowercase_token: cluster_index, ... }
     }
+
+    Precedence (earlier wins on token-lookup ties): bundled curated >
+    operator override > auto-synced. This keeps hand-tuned JP/KR
+    cross-language linkage authoritative even after a sync rewrites
+    English-side metadata.
     """
-    clusters = list(_BUNDLED) + _load_disk_overrides()
+    clusters = list(_BUNDLED) + _load_disk_overrides() + _load_synced()
     lookup: dict[str, int] = {}
     for i, cl in enumerate(clusters):
         for t in cl.get("tokens", []):
