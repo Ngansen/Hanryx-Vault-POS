@@ -8950,6 +8950,7 @@ def _admin_nav(active: str = "dashboard") -> str:
     pages = [
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("market",    "/admin/market",      "📈", "Market"),
+        ("sets",      "/admin/sets",        "🗂️", "Sets"),
         ("ai-insights","/admin/ai-insights",  "🧠", "AI Insights"),
         ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
         ("fake-detector", "/admin/fake-detector", "🔍", "Fake Detect"),
@@ -10465,6 +10466,11 @@ def admin_market():
 <div class="wrap">
   <h1>📈 Market Price Intelligence</h1>
   <p class="subtitle">Search any Pokémon card for live TCGPlayer prices, condition multipliers &amp; language variant pricing.</p>
+
+  <div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <span style="font-size:12px;color:#94a3b8">🗂️ Looking for every printing of a set across Korean / Chinese / Japanese / English?</span>
+    <a href="/admin/sets" style="background:#1e3a5f;color:#bfdbfe;text-decoration:none;font-size:12px;font-weight:700;padding:6px 12px;border-radius:6px">Open Sets Browser →</a>
+  </div>
 
   <div class="search-row">
     <input type="text" id="cardInput" placeholder="e.g. Charizard Holo Base Set  or  sv1-1" autocomplete="off">
@@ -23416,6 +23422,12 @@ except Exception as _exc:
     log.warning("[server] recognizer_tuning unavailable: %s", _exc)
     _rec_tune = None
 
+try:
+    import sets_browser as _sets_browser
+except Exception as _exc:
+    log.warning("[server] sets_browser unavailable: %s", _exc)
+    _sets_browser = None
+
 
 @app.route("/card/scan/log_pick", methods=["POST"])
 def card_scan_log_pick():
@@ -23618,6 +23630,185 @@ def admin_recognizer_tuning():
     except Exception as exc:
         log.exception("[recognizer-tuning] failed")
         return jsonify({"error": str(exc)}), 500
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  Cross-language set browser (admin) — looks up every printing of a set
+#  across cards_kr / cards_chs / cards_jpn / cards_jpn_pocket / cards_multi
+# ════════════════════════════════════════════════════════════════════════════
+@app.route("/admin/sets/list", methods=["GET"])
+@require_admin
+def admin_sets_list():
+    """JSON typeahead — every set we know about, optionally filtered."""
+    if _sets_browser is None:
+        return jsonify({"error": "sets_browser unavailable"}), 503
+    q = (request.args.get("q") or "").strip()
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 200), 500))
+    except ValueError:
+        limit = 200
+    with _PgConn() as conn:
+        rows = _sets_browser.list_sets(conn, q=q or None, limit=limit)
+    return jsonify({"sets": rows, "count": len(rows)})
+
+
+@app.route("/admin/sets/cards", methods=["GET"])
+@require_admin
+def admin_sets_cards():
+    """JSON — every card belonging to a given set across all language tables."""
+    if _sets_browser is None:
+        return jsonify({"error": "sets_browser unavailable"}), 503
+    set_q = (request.args.get("set") or "").strip()
+    if not set_q:
+        return jsonify({"error": "missing 'set' query parameter"}), 400
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 600), 2000))
+    except ValueError:
+        limit = 600
+    with _PgConn() as conn:
+        cards = _sets_browser.cards_in_set(conn, set_q, limit=limit)
+    # Group by language for the UI's convenience.
+    grouped: dict[str, list] = {}
+    for c in cards:
+        grouped.setdefault(str(c.get("language") or "?"), []).append(c)
+    return jsonify({
+        "query":   set_q,
+        "count":   len(cards),
+        "by_lang": {k: len(v) for k, v in grouped.items()},
+        "cards":   cards,
+        "grouped": grouped,
+    })
+
+
+_LANG_FLAGS = {
+    "kr": "🇰🇷", "chs": "🇨🇳", "jpn": "🇯🇵", "jpn_pocket": "🇯🇵",
+    "Pokemon": "🌐", "MTG": "🎴", "OnePiece": "🏴‍☠️",
+    "Lorcana": "✨", "DBS": "🐉",
+}
+
+
+@app.route("/admin/sets", methods=["GET"])
+@require_admin
+def admin_sets():
+    """HTML browser — type a set, see every printing across every language."""
+    nav = _admin_nav("sets")
+    initial_q = (request.args.get("set") or "").strip()
+    initial_q_js = json.dumps(initial_q)
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HanryxVault — Sets Browser</title>
+<style>
+{_ADMIN_BASE_CSS}
+  .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
+  .search-row input{{flex:1;min-width:240px;background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;color:#e0e0e0;font-size:15px;outline:none;transition:.2s}}
+  .search-row input:focus{{border-color:#f59e0b}}
+  .search-row button{{background:#f59e0b;border:none;border-radius:8px;padding:0 22px;color:#000;font-weight:700;font-size:14px;cursor:pointer;transition:.15s}}
+  .search-row button:hover{{background:#fbbf24}}
+  .hint{{font-size:11px;color:#444;margin-bottom:18px}}
+  .summary{{display:none;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#aaa;flex-wrap:wrap;gap:10px;align-items:center}}
+  .summary.visible{{display:flex}}
+  .pill{{background:#1a1a1a;border:1px solid #333;border-radius:14px;padding:4px 10px;font-size:11px;color:#bbb}}
+  .pill .n{{color:#f59e0b;font-weight:800;margin-left:4px}}
+  .lang-section{{background:#0f0f0f;border:1px solid #1e1e1e;border-radius:12px;margin-bottom:18px;overflow:hidden}}
+  .lang-hdr{{background:#141414;padding:10px 14px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px}}
+  .lang-hdr h3{{margin:0;font-size:14px;color:#fff;font-weight:700;letter-spacing:.5px}}
+  .lang-hdr .flag{{font-size:18px}}
+  .lang-hdr .ct{{font-size:11px;color:#666;margin-left:auto}}
+  .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:14px}}
+  .card{{background:#141414;border:1px solid #222;border-radius:10px;padding:8px;text-align:center;cursor:pointer;transition:.12s}}
+  .card:hover{{border-color:#f59e0b;transform:translateY(-1px)}}
+  .card img{{width:100%;height:160px;object-fit:contain;border-radius:6px;background:#0a0a0a;margin-bottom:6px}}
+  .card .nm{{font-size:11px;color:#ddd;font-weight:600;line-height:1.25;min-height:28px;overflow:hidden}}
+  .card .ne{{font-size:10px;color:#666;margin-top:2px;line-height:1.2;min-height:12px;overflow:hidden}}
+  .card .meta{{font-size:9px;color:#555;margin-top:4px;display:flex;justify-content:space-between}}
+  .card .rar{{color:#f59e0b;font-weight:700}}
+  .empty{{text-align:center;color:#444;padding:60px 20px;font-size:14px}}
+  .loading{{text-align:center;color:#888;padding:40px;font-size:13px}}
+</style>
+</head>
+<body>
+{nav}
+<div class="container">
+  <h1 style="margin-top:0">🗂️ Sets Browser <span style="font-size:13px;color:#555;font-weight:400">— every printing across every language</span></h1>
+  <div class="search-row">
+    <input id="q" type="text" placeholder="Set name, prod code, commodity code (e.g. 'Twilight Masquerade', 'svp', 'A2a')…" />
+    <button id="go">Search</button>
+  </div>
+  <div class="hint">Searches Korean, Simplified-Chinese, Japanese (full + Pocket) and Multi-TCG (MTG/OnePiece/Lorcana/DBS) tables in one shot. Tip: use the short prod-code (e.g. <code>svp</code>) to match across all languages at once.</div>
+  <div id="summary" class="summary"></div>
+  <div id="results"></div>
+</div>
+<script>
+(function(){{
+  var qEl = document.getElementById('q');
+  var btn = document.getElementById('go');
+  var sumEl = document.getElementById('summary');
+  var resEl = document.getElementById('results');
+  var FLAGS = {json.dumps(_LANG_FLAGS)};
+  var LABEL = {{
+    kr: 'Korean', chs: 'Simplified Chinese',
+    jpn: 'Japanese (full TCG)', jpn_pocket: 'Japanese TCG Pocket',
+    Pokemon: 'Pokémon (English)', MTG: 'Magic: The Gathering',
+    OnePiece: 'One Piece', Lorcana: 'Lorcana', DBS: 'Dragon Ball Super'
+  }};
+  function esc(s){{ return String(s||'').replace(/[&<>"]/g, c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+  function render(data) {{
+    var grouped = data.grouped || {{}};
+    var langs = Object.keys(grouped).sort();
+    if (!langs.length) {{
+      sumEl.classList.remove('visible');
+      resEl.innerHTML = '<div class="empty">No cards found for that set across any language.</div>';
+      return;
+    }}
+    var pills = langs.map(function(l){{
+      return '<span class="pill">'+(FLAGS[l]||'•')+' '+(LABEL[l]||l)+'<span class="n">'+grouped[l].length+'</span></span>';
+    }}).join('');
+    sumEl.innerHTML = '<strong style="color:#f59e0b">'+data.count+'</strong> cards · '+pills;
+    sumEl.classList.add('visible');
+    var html = '';
+    langs.forEach(function(l){{
+      var rows = grouped[l];
+      html += '<div class="lang-section"><div class="lang-hdr"><span class="flag">'+(FLAGS[l]||'🏳')+'</span><h3>'+(LABEL[l]||l)+'</h3><span class="ct">'+rows.length+' cards</span></div><div class="grid">';
+      rows.forEach(function(c){{
+        var img = c.image_url ? '<img src="'+esc(c.image_url)+'" loading="lazy" onerror="this.style.opacity=0.15">' : '<img src="" onerror="this.style.opacity=0.15">';
+        var num = c.card_number ? '#'+esc(c.card_number) : '';
+        html += '<div class="card" onclick="openMarket('+JSON.stringify(c.name||'')+')">'
+              + img
+              + '<div class="nm">'+esc(c.name||'?')+'</div>'
+              + (c.name_en && c.name_en !== c.name ? '<div class="ne">'+esc(c.name_en)+'</div>' : '<div class="ne"></div>')
+              + '<div class="meta"><span>'+num+'</span><span class="rar">'+esc(c.rarity||'')+'</span></div>'
+              + '</div>';
+      }});
+      html += '</div></div>';
+    }});
+    resEl.innerHTML = html;
+  }}
+  window.openMarket = function(name) {{
+    if (!name) return;
+    window.open('/admin/market?q='+encodeURIComponent(name), '_blank');
+  }};
+  function search() {{
+    var q = qEl.value.trim();
+    if (!q) return;
+    history.replaceState(null, '', '/admin/sets?set='+encodeURIComponent(q));
+    sumEl.classList.remove('visible');
+    resEl.innerHTML = '<div class="loading">Searching all language tables…</div>';
+    fetch('/admin/sets/cards?set='+encodeURIComponent(q)+'&limit=800')
+      .then(r => r.json())
+      .then(render)
+      .catch(e => {{ resEl.innerHTML = '<div class="empty">Error: '+esc(e.message||e)+'</div>'; }});
+  }}
+  btn.addEventListener('click', search);
+  qEl.addEventListener('keydown', function(e){{ if (e.key === 'Enter') search(); }});
+  var initial = {initial_q_js};
+  if (initial) {{ qEl.value = initial; search(); }}
+}})();
+</script>
+</body></html>"""
+    return html
 
 
 if __name__ == "__main__":
