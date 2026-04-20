@@ -121,6 +121,11 @@ services:
       EBAY_APP_ID:  ${EBAY_APP_ID:-}
       EBAY_CERT_ID: ${EBAY_CERT_ID:-}
 
+      # pokemontcg.io API key (for the TCGplayer-price proxy in
+      # tcgplayer_proxy.py). Optional — works without one, but a key bumps
+      # the rate limit from 1k/day to 20k/day. Get one free at dev.pokemontcg.io.
+      POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
+
       # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
       # The Flask server prefers this URL and only falls back to pokeapi.co
       # if the local mirror is unreachable.
