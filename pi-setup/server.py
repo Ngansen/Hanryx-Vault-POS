@@ -2981,6 +2981,18 @@ def init_db():
             log.info("[init_db] skipped trigram stmt (%s): %s",
                      stmt.split()[3] if len(stmt.split()) > 3 else "ext", _trgm_exc)
 
+    # ── Pull-logic infrastructure tables (delta sync, gap detection, image
+    #     cache).  Each module is best-effort: a failure here just disables
+    #     the corresponding feature without blocking startup.
+    for _mod_name in ("source_state", "import_gaps", "image_lazy"):
+        try:
+            _mod = __import__(_mod_name)
+            _mod.ensure_schema(db)
+        except Exception as _mod_exc:
+            try: db.rollback()
+            except Exception: pass
+            log.info("[init_db] %s.ensure_schema skipped: %s", _mod_name, _mod_exc)
+
     # ── Trigger Korean card import (idempotent — only runs if table empty) ──
     if os.environ.get("KR_IMPORT_ON_BOOT", "1") == "1":
         try:
@@ -8979,6 +8991,7 @@ def _admin_nav(active: str = "dashboard") -> str:
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("market",    "/admin/market",      "📈", "Market"),
         ("sets",      "/admin/sets",        "🗂️", "Sets"),
+        ("imports",   "/admin/imports",     "🚚", "Imports"),
         ("ai-insights","/admin/ai-insights",  "🧠", "AI Insights"),
         ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
         ("fake-detector", "/admin/fake-detector", "🔍", "Fake Detect"),
@@ -23741,6 +23754,244 @@ def admin_sets_sync():
         return jsonify(_set_alias_sync.status())
     force = request.args.get("force") in ("1", "true", "yes")
     return jsonify(_set_alias_sync.sync_now(force=force))
+
+
+# ---------------------------------------------------------------------------
+# /admin/imports — pull-logic dashboard (gap detector + backfill queue +
+#                  source-of-truth provenance + circuit-breaker health)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/imports/gaps", methods=["GET"])
+@require_admin
+def admin_imports_gaps():
+    """JSON gap report: which clusters are missing cards in which language."""
+    try:
+        import import_gaps
+    except Exception as exc:
+        return jsonify({"error": f"import_gaps unavailable: {exc}"}), 503
+    with _PgConn() as conn:
+        if request.args.get("refresh") in ("1", "true", "yes"):
+            try: import_gaps.refresh_set_totals(conn)
+            except Exception as exc:
+                return jsonify({"error": f"refresh failed: {exc}"}), 502
+        return jsonify({
+            "gaps": import_gaps.all_gaps(conn),
+            "jobs": import_gaps.suggest_backfill_jobs(conn),
+        })
+
+
+@app.route("/admin/imports/backfill", methods=["POST"])
+@require_admin
+def admin_imports_backfill():
+    """Operator-triggered enqueue of suggested backfill jobs."""
+    try:
+        import import_gaps, cluster_backfill
+    except Exception as exc:
+        return jsonify({"error": f"backfill unavailable: {exc}"}), 503
+    with _PgConn() as conn:
+        jobs = import_gaps.suggest_backfill_jobs(conn, max_jobs=100)
+    n = cluster_backfill.schedule_jobs(jobs)
+    return jsonify({"queued": n, "status": cluster_backfill.status()})
+
+
+@app.route("/admin/imports/queue", methods=["GET"])
+@require_admin
+def admin_imports_queue():
+    try:
+        import cluster_backfill
+        return jsonify(cluster_backfill.status())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/admin/sources/health", methods=["GET"])
+@require_admin
+def admin_sources_health():
+    """Per-host rate-limit + circuit-breaker snapshot for the admin page."""
+    out = {}
+    try:
+        import http_client
+        out["hosts"] = http_client.health_snapshot()
+    except Exception as exc:
+        out["hosts_error"] = str(exc)
+    try:
+        import source_state
+        with _PgConn() as conn:
+            out["recent_runs"] = source_state.recent_runs(conn, limit=30)
+    except Exception as exc:
+        out["runs_error"] = str(exc)
+    return jsonify(out)
+
+
+@app.route("/admin/sources/breaker/<host>/reset", methods=["POST"])
+@require_admin
+def admin_sources_breaker_reset(host):
+    try:
+        import http_client
+        ok = http_client.reset_breaker(host)
+        return jsonify({"ok": ok, "host": host})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/admin/imports", methods=["GET"])
+@require_admin
+def admin_imports_page():
+    """Operator dashboard: gaps, backfill queue, source health."""
+    nav = _admin_nav("imports")
+    css = _admin_css()
+    body = """
+<style>
+  body{background:#0b0b0b;color:#e8e8e8;font-family:system-ui,sans-serif;margin:0}
+  .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+  h1{margin:8px 0 18px;font-size:20px;color:#f59e0b}
+  h2{margin:22px 0 8px;font-size:15px;color:#fbbf24;border-bottom:1px solid #222;padding-bottom:4px}
+  .card{background:#141414;border:1px solid #222;border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  button{background:#1e3a5f;color:#bfdbfe;border:1px solid #2a4a72;
+         padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer}
+  button:hover{background:#27497a}
+  button.danger{background:#5f1e1e;color:#fecaca;border-color:#722a2a}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #1e1e1e;vertical-align:top}
+  th{color:#888;font-weight:500}
+  .pill{display:inline-block;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:600}
+  .ok{background:#14532d;color:#86efac}
+  .warn{background:#713f12;color:#fde68a}
+  .err{background:#7f1d1d;color:#fecaca}
+  .mono{font-family:ui-monospace,monospace;font-size:11px;color:#9ca3af}
+  .empty{color:#666;font-style:italic;padding:8px 0}
+</style>
+<div class="wrap">
+  <h1>🚚 Imports — pull-logic dashboard</h1>
+
+  <div class="card">
+    <div class="row">
+      <button onclick="loadGaps(true)">🔄 Refresh totals from upstream</button>
+      <button onclick="loadGaps(false)">↻ Recompute gaps</button>
+      <button onclick="runBackfill()">▶ Queue suggested backfills</button>
+      <button onclick="loadHealth()">🩺 Reload source health</button>
+      <span id="status" class="mono"></span>
+    </div>
+  </div>
+
+  <h2>Coverage gaps</h2>
+  <div class="card" id="gaps-card"><div class="empty">Loading…</div></div>
+
+  <h2>Backfill queue</h2>
+  <div class="card" id="queue-card"><div class="empty">Loading…</div></div>
+
+  <h2>Source health (rate limits + circuit breakers)</h2>
+  <div class="card" id="health-card"><div class="empty">Loading…</div></div>
+
+  <h2>Recent import runs</h2>
+  <div class="card" id="runs-card"><div class="empty">Loading…</div></div>
+</div>
+
+<script>
+function setStatus(s){ document.getElementById('status').textContent = s || ''; }
+function pill(state){
+  var c = state==='closed' || state==='ok' ? 'ok'
+        : state==='half_open' || state==='running' ? 'warn' : 'err';
+  return '<span class="pill '+c+'">'+state+'</span>';
+}
+
+function loadGaps(refresh){
+  setStatus('loading gaps' + (refresh?' (refreshing totals)':'') + '…');
+  fetch('/admin/imports/gaps' + (refresh?'?refresh=1':'')).then(r=>r.json()).then(j=>{
+    setStatus('');
+    var g = j.gaps || [];
+    if(!g.length){
+      document.getElementById('gaps-card').innerHTML =
+        '<div class="empty">No gaps detected. Click "Refresh totals from upstream" first.</div>';
+      return;
+    }
+    var rows = g.map(c => {
+      var langs = Object.keys(c.by_lang).map(l => {
+        var v = c.by_lang[l];
+        var bad = v.missing_count > 0;
+        return '<span class="pill '+(bad?'warn':'ok')+'">'+l+': '+v.have+'/'+c.expected+'</span>';
+      }).join(' ');
+      return '<tr><td><b>'+c.cluster+'</b></td><td>'+c.expected+'</td>'
+           + '<td>'+c.total_missing+'</td><td>'+langs+'</td></tr>';
+    }).join('');
+    document.getElementById('gaps-card').innerHTML =
+      '<table><thead><tr><th>Cluster</th><th>Expected</th><th>Total missing</th>'
+      +'<th>Per language</th></tr></thead><tbody>'+rows+'</tbody></table>';
+
+    var jobs = j.jobs || [];
+    if(!jobs.length){
+      document.getElementById('queue-card').innerHTML =
+        '<div class="empty">No suggested backfill jobs.</div>';
+    } else {
+      var jrows = jobs.map(jb =>
+        '<tr><td>'+jb.cluster+'</td><td>'+jb.language+'</td>'
+        +'<td>'+jb.have+'/'+jb.expected+'</td>'
+        +'<td>'+jb.missing_count+'</td>'
+        +'<td><span class="pill '+(jb.priority==='high'?'ok':'warn')+'">'+jb.priority+'</span></td></tr>'
+      ).join('');
+      document.getElementById('queue-card').innerHTML =
+        '<table><thead><tr><th>Cluster</th><th>Lang</th><th>Have</th>'
+        +'<th>Missing</th><th>Priority</th></tr></thead><tbody>'+jrows+'</tbody></table>';
+    }
+  }).catch(e=>{
+    setStatus('gap load failed: '+e);
+  });
+}
+
+function runBackfill(){
+  if(!confirm('Queue all suggested backfill jobs?')) return;
+  setStatus('queuing backfill…');
+  fetch('/admin/imports/backfill',{method:'POST'}).then(r=>r.json()).then(j=>{
+    setStatus('queued '+(j.queued||0)+' jobs');
+    loadHealth();
+  });
+}
+
+function loadHealth(){
+  fetch('/admin/sources/health').then(r=>r.json()).then(j=>{
+    var hosts = j.hosts || {};
+    var hrows = Object.keys(hosts).sort().map(h => {
+      var v = hosts[h];
+      return '<tr><td class="mono">'+h+'</td>'
+           + '<td>'+pill(v.circuit_state||'closed')
+           + (v.circuit_opens_in ? ' <span class="mono">'+v.circuit_opens_in+'s</span>' : '')+'</td>'
+           + '<td>'+(v.tokens||0).toFixed(1)+' / '+(v.capacity||0)+'</td>'
+           + '<td>'+(v.refill_seconds||0).toFixed(2)+'s</td>'
+           + '<td>'+(v.total_ok||0)+' ok / '+(v.total_err||0)+' err</td>'
+           + '<td><button class="danger" onclick="resetBreaker(\\''+h+'\\')">reset</button></td></tr>';
+    }).join('');
+    document.getElementById('health-card').innerHTML = hrows
+      ? '<table><thead><tr><th>Host</th><th>Breaker</th><th>Tokens</th>'
+       +'<th>Refill</th><th>Counters</th><th></th></tr></thead><tbody>'+hrows+'</tbody></table>'
+      : '<div class="empty">No HTTP traffic recorded yet.</div>';
+
+    var runs = j.recent_runs || [];
+    var rrows = runs.map(r =>
+      '<tr><td class="mono">'+(new Date((r.started_at||0)*1000).toLocaleString())+'</td>'
+      +'<td>'+r.source+'</td>'
+      +'<td>'+pill(r.ok===true?'ok':r.ok===false?'err':'running')+'</td>'
+      +'<td>'+(r.rows_inserted||0)+' new / '+(r.rows_updated||0)+' upd / '+(r.rows_skipped||0)+' skip</td>'
+      +'<td>'+(r.errors||0)+'</td><td class="mono">'+(r.notes||'')+'</td></tr>'
+    ).join('');
+    document.getElementById('runs-card').innerHTML = rrows
+      ? '<table><thead><tr><th>Started</th><th>Source</th><th>Status</th>'
+       +'<th>Rows</th><th>Errs</th><th>Notes</th></tr></thead><tbody>'+rrows+'</tbody></table>'
+      : '<div class="empty">No import runs recorded yet.</div>';
+  });
+}
+
+function resetBreaker(h){
+  fetch('/admin/sources/breaker/'+encodeURIComponent(h)+'/reset',{method:'POST'})
+    .then(r=>r.json()).then(()=>loadHealth());
+}
+
+loadGaps(false);
+loadHealth();
+setInterval(loadHealth, 15000);
+</script>
+"""
+    return f"<!doctype html><html><head><title>Imports — HanryxVault</title>{css}</head><body>{nav}{body}</body></html>"
 
 
 @app.route("/admin/sets", methods=["GET"])

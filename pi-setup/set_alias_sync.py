@@ -176,6 +176,18 @@ def sync_now(force: bool = False) -> dict:
     })
     _save_state(state)
 
+    # Auto-backfill: any clusters that didn't exist in the previous synced
+    # snapshot get a targeted import queued so we don't have to wait for a
+    # full re-import to surface a brand-new set.
+    try:
+        import cluster_backfill
+        bf = cluster_backfill.schedule_for_new(clusters)
+        if bf.get("enqueued"):
+            log.info("[set_alias_sync] queued %s backfill jobs (new clusters: %s)",
+                     bf.get("enqueued"), bf.get("new_clusters"))
+    except Exception as exc:
+        log.info("[set_alias_sync] cluster_backfill skipped: %s", exc)
+
     # Invalidate the in-memory alias cache so the new entries are live
     # on the very next /admin/sets/cards request — no restart needed.
     try:

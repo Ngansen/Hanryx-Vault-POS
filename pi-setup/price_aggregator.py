@@ -116,7 +116,21 @@ def _percentile(sorted_vals: list[float], p: float) -> float:
 
 
 def _aggregate(listings_usd: list[dict]) -> dict:
-    """Compute median/IQR/volatility from a flat list of USD-normalized rows."""
+    """
+    Compute median/IQR/volatility from a flat list of USD-normalized rows.
+
+    Delegates to ``price_weighting.aggregate`` (smart aggregator that
+    weights by source reliability, listing recency, and per-source
+    sample count, plus rejects sources whose median lies far outside
+    the cross-source consensus).  Falls back to the legacy trimmed
+    median if the weighting module is unavailable.
+    """
+    try:
+        import price_weighting
+        return price_weighting.aggregate(listings_usd)
+    except Exception as exc:
+        log.info("[agg] price_weighting unavailable, using trimmed median: %s", exc)
+
     vals = [r["price_usd"] for r in listings_usd
             if r.get("price_usd") is not None and r["price_usd"] > 0]
     if not vals:
