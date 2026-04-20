@@ -10489,6 +10489,38 @@ def admin_market():
   .trend-up{{background:#0f2a0f;color:#4ade80}}
   .trend-down{{background:#2a0f0f;color:#f87171}}
   .trend-flat{{background:#1e1e1e;color:#94a3b8}}
+  /* buy intelligence panel */
+  .buy-panel{{background:linear-gradient(135deg,#0a1a0f 0%,#0f1f14 100%);border:1px solid #15803d44;border-radius:12px;padding:16px 18px;margin-bottom:20px}}
+  .buy-hdr{{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
+  .buy-title{{font-size:13px;font-weight:800;color:#4ade80;letter-spacing:.5px;text-transform:uppercase}}
+  .buy-conf{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#1a1a1a;color:#94a3b8;border:1px solid #2a2a2a}}
+  .buy-conf.high{{color:#4ade80;border-color:#15803d44}}
+  .buy-conf.medium{{color:#fbbf24;border-color:#78350f66}}
+  .buy-conf.low{{color:#f59e0b;border-color:#78350f66}}
+  .buy-conf.insufficient{{color:#f87171;border-color:#7f1d1d66}}
+  .buy-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}}
+  @media(max-width:540px){{.buy-grid{{grid-template-columns:1fr}}}}
+  .bcard{{background:#0a0a0a;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;text-align:center}}
+  .bcard-label{{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-weight:700}}
+  .bcard-price{{font-size:20px;font-weight:900;margin-bottom:2px}}
+  .bcard-note{{font-size:10px;color:#555}}
+  .bcard.steal .bcard-price{{color:#22c55e}}
+  .bcard.fair  .bcard-price{{color:#4ade80}}
+  .bcard.max   .bcard-price{{color:#eab308}}
+  .bcard.empty .bcard-price{{color:#333;font-size:16px}}
+  .buy-spark{{background:#0a0a0a;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;margin-bottom:14px}}
+  .buy-spark-hdr{{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:700}}
+  .buy-spark svg{{display:block;width:100%;max-width:100%;height:auto}}
+  .buy-ask{{background:#0a0a0a;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
+  .buy-ask label{{font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.8px}}
+  .buy-ask input{{background:#000;border:1px solid #2a2a2a;color:#f5f5f5;padding:8px 10px;border-radius:6px;font-size:15px;font-weight:700;width:110px;font-family:inherit}}
+  .buy-ask input:focus{{outline:none;border-color:#4ade80}}
+  .buy-verdict{{font-size:13px;font-weight:800;padding:6px 12px;border-radius:6px;flex:1;min-width:200px;text-align:center}}
+  .buy-verdict.great{{background:#0f2a0f;color:#4ade80;border:1px solid #15803d}}
+  .buy-verdict.fair{{background:#0f2a1a;color:#86efac;border:1px solid #166534}}
+  .buy-verdict.overpay{{background:#2a1f0f;color:#fbbf24;border:1px solid #92400e}}
+  .buy-verdict.walk{{background:#2a0f0f;color:#f87171;border:1px solid #b91c1c}}
+  .buy-verdict.neutral{{background:#141414;color:#666;border:1px solid #2a2a2a}}
   /* chart */
   .chart-wrap{{position:relative;height:200px;margin-bottom:20px}}
   /* sold listings */
@@ -10636,6 +10668,28 @@ def admin_market():
     <div id="ebayBody" style="display:none">
       <!-- Period summary cards -->
       <div class="period-row" id="periodRow"></div>
+
+      <!-- Buy intelligence panel (max-buy / fair / steal + sparkline + verdict) -->
+      <div class="buy-panel" id="buyPanel" style="display:none">
+        <div class="buy-hdr">
+          <span style="font-size:16px">💰</span>
+          <span class="buy-title">Best Buy Intelligence <span style="font-size:10px;color:#555;font-weight:500;text-transform:none;letter-spacing:0">· trend-adjusted from 90d sold</span></span>
+          <span class="buy-conf" id="buyConf"></span>
+        </div>
+        <div class="buy-grid" id="buyGrid"></div>
+        <div class="buy-spark">
+          <div class="buy-spark-hdr">
+            <span>90-Day Price Thread</span>
+            <span id="buySparkMeta"></span>
+          </div>
+          <div id="buySparkSvg"></div>
+        </div>
+        <div class="buy-ask">
+          <label for="buyAskInput">Test Asking $</label>
+          <input id="buyAskInput" type="number" step="0.01" min="0" placeholder="85.00" inputmode="decimal" />
+          <div class="buy-verdict neutral" id="buyVerdict">Enter a seller's price to get an instant verdict</div>
+        </div>
+      </div>
 
       <!-- Price trend chart -->
       <div class="chart-wrap">
@@ -11267,10 +11321,129 @@ function renderEbaySection(d) {{
       }}).join('')
     : '<div style="color:#444;font-size:12px;padding:12px 0;text-align:center">No sold listings found</div>';
 
+  // ── Buy Intelligence panel ────────────────────────────────────────────────
+  loadBuyIntel();
+
   // ── Show body ─────────────────────────────────────────────────────────────
   document.getElementById('ebayLoading').style.display = 'none';
   document.getElementById('ebayBody').style.display    = 'block';
 }}
+
+// ── Buy Intelligence (max / fair / steal + sparkline + verdict) ──────────────
+let _buyIntel = null;   // last payload from /card/buy_price
+
+function _buyQuery() {{
+  return [_ebayName, _ebayVariant, _ebayNumber, _ebaySet]
+    .map(s => (s || '').trim()).filter(Boolean).join(' ');
+}}
+
+async function loadBuyIntel() {{
+  const q = _buyQuery();
+  const panel = document.getElementById('buyPanel');
+  if (!q) {{ panel.style.display = 'none'; return; }}
+  try {{
+    const r = await fetch('/card/buy_price?query=' + encodeURIComponent(q));
+    if (!r.ok) {{ panel.style.display = 'none'; return; }}
+    const d = await r.json();
+    if (d.error) {{ panel.style.display = 'none'; return; }}
+    _buyIntel = d;
+    renderBuyIntel(d);
+    panel.style.display = 'block';
+    // Re-evaluate any asking price the operator already typed
+    evalBuyVerdict();
+  }} catch (e) {{
+    panel.style.display = 'none';
+  }}
+}}
+
+function _fmtBuy(v) {{
+  return (v == null) ? '—' : '$' + Number(v).toFixed(2);
+}}
+
+function renderBuyIntel(d) {{
+  // Confidence chip
+  const confEl = document.getElementById('buyConf');
+  const conf = (d.confidence || 'insufficient');
+  const n    = d.sample_size || 0;
+  confEl.textContent = (conf === 'insufficient')
+    ? `${{n}} sold · too few`
+    : `${{conf.toUpperCase()}} · ${{n}} sold`;
+  confEl.className = 'buy-conf ' + conf;
+
+  // Target cards
+  const buy = d.buy || {{}};
+  const trendAdj = (buy.trend_adjust_pct || 0) * 100;
+  const adjNote = trendAdj > 0.5 ? `+${{trendAdj.toFixed(1)}}% (rising)`
+                : trendAdj < -0.5 ? `${{trendAdj.toFixed(1)}}% (falling)`
+                : 'flat market';
+  const cards = [
+    {{k:'steal', lbl:'Steal Buy',   note:'50% of p25 sold · flip-grade',     v:buy.steal}},
+    {{k:'fair',  lbl:'Fair Buy',    note:'55% of median · typical buylist',  v:buy.fair}},
+    {{k:'max',   lbl:'Max — Don\\u0027t Pay Above', note:'75% of p25 · walk-away ceiling', v:buy.max}},
+  ];
+  document.getElementById('buyGrid').innerHTML = cards.map(c => {{
+    const cls = (c.v == null) ? c.k + ' empty' : c.k;
+    const price = (c.v == null) ? 'Need 3+ sold' : _fmtBuy(c.v);
+    return `<div class="bcard ${{cls}}">
+      <div class="bcard-label">${{c.lbl}}</div>
+      <div class="bcard-price">${{price}}</div>
+      <div class="bcard-note">${{c.note}}</div>
+    </div>`;
+  }}).join('');
+
+  // Sparkline
+  const spark = d.sparkline || {{}};
+  document.getElementById('buySparkSvg').innerHTML = spark.svg || '';
+  const p90 = d.sold_90d || {{}};
+  const low  = p90.p25 != null ? '$' + p90.p25.toFixed(2) : '—';
+  const mid  = p90.p50 != null ? '$' + p90.p50.toFixed(2) : '—';
+  const high = p90.p75 != null ? '$' + p90.p75.toFixed(2) : '—';
+  document.getElementById('buySparkMeta').textContent =
+    `p25 ${{low}} · median ${{mid}} · p75 ${{high}} · ${{adjNote}}`;
+}}
+
+function evalBuyVerdict() {{
+  const el = document.getElementById('buyVerdict');
+  const raw = document.getElementById('buyAskInput').value;
+  if (!raw || !_buyIntel || !_buyIntel.buy) {{
+    el.className = 'buy-verdict neutral';
+    el.textContent = 'Enter a seller\\u0027s price to get an instant verdict';
+    return;
+  }}
+  const ask = parseFloat(raw);
+  if (!isFinite(ask) || ask <= 0) {{
+    el.className = 'buy-verdict neutral';
+    el.textContent = 'Invalid price';
+    return;
+  }}
+  const buy = _buyIntel.buy;
+  if (buy.max == null) {{
+    el.className = 'buy-verdict neutral';
+    el.textContent = 'Not enough sold data to score this price';
+    return;
+  }}
+  const ratio = ask / buy.max;
+  const overFair = (buy.fair && buy.fair > 0) ? (ask - buy.fair) / buy.fair : null;
+  let band, label;
+  if (ratio <= 0.85)      {{ band = 'great';   label = '🟢 Great deal'; }}
+  else if (ratio <= 1.00) {{ band = 'fair';    label = '🟢 Fair — OK to buy'; }}
+  else if (ratio <= 1.15) {{ band = 'overpay'; label = '🟡 Slight overpay — negotiate'; }}
+  else                    {{ band = 'walk';    label = '🔴 Walk away — over ceiling'; }}
+  const overTxt = overFair == null ? ''
+    : ` · ${{(overFair*100>=0?'+':'')}}${{(overFair*100).toFixed(0)}}% vs fair ${{_fmtBuy(buy.fair)}}`;
+  el.className = 'buy-verdict ' + band;
+  el.textContent = `${{label}} · ceiling ${{_fmtBuy(buy.max)}}${{overTxt}}`;
+}}
+
+// Wire the input once — panel re-renders reuse the same node
+(function _wireBuyAsk() {{
+  const tryWire = () => {{
+    const inp = document.getElementById('buyAskInput');
+    if (!inp) {{ setTimeout(tryWire, 200); return; }}
+    inp.addEventListener('input', evalBuyVerdict);
+  }};
+  tryWire();
+}})();
 </script>
 </body>
 </html>"""
