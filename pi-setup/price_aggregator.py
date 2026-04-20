@@ -155,6 +155,18 @@ def _fan_out(query: str, game: str) -> tuple[list[dict], list[str]]:
     except Exception as exc:
         log.info("[agg] ebay_sold skipped: %s", exc)
 
+    # TCGplayer pricing via pokemontcg.io (no API key needed; pokemontcg.io
+    # rebroadcasts TCGplayer's official price feed). Pokémon-only.
+    if game.lower().startswith("pokemon"):
+        try:
+            from tcgplayer_proxy import tcgplayer_via_pokemontcg
+            rows = tcgplayer_via_pokemontcg(query, limit=20)
+            if rows:
+                listings.extend(rows)
+                used.append("tcgplayer")
+        except Exception as exc:
+            log.info("[agg] tcgplayer skipped: %s", exc)
+
     # Asian + EU sources
     try:
         from price_scrapers import naver_shopping, tcgkorea, snkrdunk, cardmarket
