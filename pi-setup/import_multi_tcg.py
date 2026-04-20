@@ -322,3 +322,75 @@ if __name__ == "__main__":
             print(json.dumps(IMPORTERS[g](conn, force=args.force), indent=2))
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Targeted backfill hook for cluster_backfill.
+#
+# The multi-TCG importer covers MTG / OnePiece / Lorcana / DBS — none of
+# which share set-code namespaces with Pokémon.  Since alias-sync runs
+# Pokémon-only (pokemontcg.io), we short-circuit unless the operator
+# explicitly asks for a multi-TCG refresh via the existing routes.
+# ---------------------------------------------------------------------------
+_MULTI_GAME_TOKENS = {
+    "mtg": ("mtg",),
+    "onepiece": ("op", "op01", "op02", "op03", "op04", "op05",
+                 "op06", "op07", "op08", "op09", "op10", "st"),
+    "lorcana": ("ttot", "rofi", "ink", "azs", "rfb"),
+    "dbs": ("bt", "ub", "fb", "sd", "tb"),
+}
+
+
+def _games_matching(set_codes: list[str]) -> list[str]:
+    sc = {c.lower() for c in set_codes}
+    matched: list[str] = []
+    for game, prefixes in _MULTI_GAME_TOKENS.items():
+        if any(any(c.startswith(p) for p in prefixes) for c in sc):
+            matched.append(game)
+    return matched
+
+
+def backfill_codes(db_conn, set_codes: list[str]) -> dict:
+    """
+    Detect which multi-TCG games (if any) the requested set codes
+    belong to and refresh only those.  No-op when codes look Pokémon.
+    """
+    games = _games_matching(set_codes)
+    if not games:
+        return {"ok": True, "skipped": True,
+                "reason": "no multi-tcg game matched these codes"}
+
+    try:
+        import source_state
+        run_id = source_state.begin_run(
+            db_conn, source="multi_tcg",
+            notes="backfill " + "+".join(games) + ": "
+                  + ",".join(set_codes[:10])
+                  + ("…" if len(set_codes) > 10 else ""),
+        )
+    except Exception:
+        run_id = None
+
+    runners = {"mtg": import_mtg, "onepiece": import_onepiece,
+               "lorcana": import_lorcana, "dbs": import_dbs}
+    try:
+        before = cards_count(db_conn)
+        for g in games:
+            try:
+                runners[g](db_conn, force=False)
+            except Exception as exc:
+                log = __import__("logging").getLogger("import_multi_tcg")
+                log.warning("[multi_tcg] backfill %s failed: %s", g, exc)
+        after = cards_count(db_conn)
+        added = max(0, after - before)
+        if run_id is not None:
+            source_state.end_run(db_conn, run_id, ok=True,
+                                 rows_seen=after, rows_inserted=added)
+        return {"ok": True, "added": added, "total": after,
+                "games": games, "set_codes": set_codes}
+    except Exception as exc:
+        if run_id is not None:
+            try: source_state.end_run(db_conn, run_id, ok=False,
+                                      errors=1, notes=str(exc)[:300])
+            except Exception: pass
+        return {"ok": False, "error": str(exc)}

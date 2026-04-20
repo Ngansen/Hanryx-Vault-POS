@@ -143,3 +143,39 @@ if __name__ == "__main__":
         print(json.dumps(import_pocket_cards(conn, force=args.force), indent=2))
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Targeted backfill hook for cluster_backfill.
+# ---------------------------------------------------------------------------
+def backfill_codes(db_conn, set_codes: list[str]) -> dict:
+    """
+    Re-run the JP Pocket import.  The whole import is a single HTTP
+    fetch + UPSERT (<2s) so we always do a full refresh; ``set_codes``
+    is recorded for the operator's audit trail.
+    """
+    try:
+        import source_state
+        run_id = source_state.begin_run(
+            db_conn, source="jpn_pocket_cards",
+            notes=("backfill: " + ",".join(set_codes[:10])
+                   + ("…" if len(set_codes) > 10 else "")),
+        )
+    except Exception:
+        run_id = None
+    try:
+        before = cards_count(db_conn)
+        import_pocket_cards(db_conn, force=False)
+        after = cards_count(db_conn)
+        added = max(0, after - before)
+        if run_id is not None:
+            source_state.end_run(db_conn, run_id, ok=True,
+                                 rows_seen=after, rows_inserted=added)
+        return {"ok": True, "added": added, "total": after,
+                "set_codes": set_codes}
+    except Exception as exc:
+        if run_id is not None:
+            try: source_state.end_run(db_conn, run_id, ok=False,
+                                      errors=1, notes=str(exc)[:300])
+            except Exception: pass
+        return {"ok": False, "error": str(exc)}

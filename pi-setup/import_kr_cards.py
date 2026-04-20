@@ -364,3 +364,40 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2))
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Targeted backfill hook for cluster_backfill.
+# ---------------------------------------------------------------------------
+def backfill_codes(db_conn, set_codes: list[str]) -> dict:
+    """
+    Re-run the Korean import (UPSERT-safe, idempotent) and record the
+    run in source_runs.  ``set_codes`` is logged for visibility; the
+    PokeScraper_3.0 source is a bulk pull, so per-set filtering at
+    parse time would not reduce upstream cost.
+    """
+    try:
+        import source_state
+        run_id = source_state.begin_run(
+            db_conn, source="kr_cards",
+            notes=("backfill: " + ",".join(set_codes[:10])
+                   + ("…" if len(set_codes) > 10 else "")),
+        )
+    except Exception:
+        run_id = None
+    try:
+        before = kr_cards_count(db_conn)
+        import_korean_cards(db_conn, force=False)
+        after = kr_cards_count(db_conn)
+        added = max(0, after - before)
+        if run_id is not None:
+            source_state.end_run(db_conn, run_id, ok=True,
+                                 rows_seen=after, rows_inserted=added)
+        return {"ok": True, "added": added, "total": after,
+                "set_codes": set_codes}
+    except Exception as exc:
+        if run_id is not None:
+            try: source_state.end_run(db_conn, run_id, ok=False,
+                                      errors=1, notes=str(exc)[:300])
+            except Exception: pass
+        return {"ok": False, "error": str(exc)}

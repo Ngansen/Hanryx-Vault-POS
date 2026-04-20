@@ -299,3 +299,35 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2))
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Targeted backfill hook for cluster_backfill.
+# ---------------------------------------------------------------------------
+def backfill_codes(db_conn, set_codes: list[str]) -> dict:
+    """Re-run the Chinese import (UPSERT-safe) and record it in source_runs."""
+    try:
+        import source_state
+        run_id = source_state.begin_run(
+            db_conn, source="chs_cards",
+            notes=("backfill: " + ",".join(set_codes[:10])
+                   + ("…" if len(set_codes) > 10 else "")),
+        )
+    except Exception:
+        run_id = None
+    try:
+        before = chs_cards_count(db_conn)
+        import_chinese_cards(db_conn, force=False)
+        after = chs_cards_count(db_conn)
+        added = max(0, after - before)
+        if run_id is not None:
+            source_state.end_run(db_conn, run_id, ok=True,
+                                 rows_seen=after, rows_inserted=added)
+        return {"ok": True, "added": added, "total": after,
+                "set_codes": set_codes}
+    except Exception as exc:
+        if run_id is not None:
+            try: source_state.end_run(db_conn, run_id, ok=False,
+                                      errors=1, notes=str(exc)[:300])
+            except Exception: pass
+        return {"ok": False, "error": str(exc)}
