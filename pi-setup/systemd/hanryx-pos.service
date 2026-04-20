@@ -1,0 +1,17 @@
+[Unit]
+Description=HanryxVault POS — Docker Compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ngansen/Hanryx-Vault-POS/pi-setup
+ExecStartPre=/usr/bin/git -C /home/ngansen/Hanryx-Vault-POS pull --ff-only
+ExecStart=/usr/bin/docker compose -f /home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml stop
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
