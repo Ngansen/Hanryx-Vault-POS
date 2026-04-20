@@ -23338,6 +23338,139 @@ def _receipt_replay_worker():
             _t.sleep(30)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Day 2 — Scan-override training-data logger
+# Day 3 — Multi-source price aggregator (eBay-sold + trimmed median + condition)
+# Both modules are self-bootstrapping (CREATE TABLE IF NOT EXISTS on import).
+# ─────────────────────────────────────────────────────────────────────────────
+try:
+    import scan_overrides as _scan_overrides
+except Exception as _exc:
+    log.warning("[server] scan_overrides unavailable: %s", _exc)
+    _scan_overrides = None
+
+try:
+    import price_aggregator as _price_agg
+except Exception as _exc:
+    log.warning("[server] price_aggregator unavailable: %s", _exc)
+    _price_agg = None
+
+
+@app.route("/card/scan/log_pick", methods=["POST"])
+def card_scan_log_pick():
+    """
+    Tablet calls this every time the recognizer returned candidates and the
+    operator made a choice (accepted top-1, picked another, rejected all,
+    or typed manually). See TABLET_API.md for the request shape.
+    """
+    if _scan_overrides is None:
+        return jsonify({"error": "scan_overrides module not loaded"}), 500
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON object body required"}), 400
+    try:
+        with _direct_db() as conn:
+            _scan_overrides.bootstrap(conn)
+            new_id = _scan_overrides.log_pick(conn, payload)
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as exc:
+        log.exception("[scan_overrides] log_pick failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/scan-overrides/stats", methods=["GET"])
+def admin_scan_overrides_stats():
+    """Accuracy/volume report broken down by recognizer method + source."""
+    if _scan_overrides is None:
+        return jsonify({"error": "scan_overrides module not loaded"}), 500
+    try:
+        since_ms = int(request.args.get("since_ms") or 0)
+    except ValueError:
+        since_ms = 0
+    try:
+        with _direct_db() as conn:
+            _scan_overrides.bootstrap(conn)
+            return jsonify(_scan_overrides.stats(conn, since_ms=since_ms))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/scan-overrides/export", methods=["GET"])
+def admin_scan_overrides_export():
+    """CSV export of all override events — labeled data for retraining."""
+    if _scan_overrides is None:
+        return ("scan_overrides module not loaded", 500,
+                {"Content-Type": "text/plain"})
+    try:
+        since_ms = int(request.args.get("since_ms") or 0)
+        limit = int(request.args.get("limit") or 10_000)
+    except ValueError:
+        since_ms, limit = 0, 10_000
+    try:
+        with _direct_db() as conn:
+            _scan_overrides.bootstrap(conn)
+            csv_blob = _scan_overrides.export_csv(conn, since_ms=since_ms,
+                                                  limit=limit)
+        return (csv_blob, 200, {
+            "Content-Type": "text/csv",
+            "Content-Disposition":
+                'attachment; filename="card_scan_overrides.csv"',
+        })
+    except Exception as exc:
+        return (str(exc), 500, {"Content-Type": "text/plain"})
+
+
+@app.route("/card/price/v2", methods=["POST", "GET"])
+def card_price_v2():
+    """
+    Multi-source price quote with eBay-sold + trimmed median + condition.
+
+    Request (JSON or query-string):
+        query        — required, the search string ("Pikachu 25/198" etc.)
+        game         — Pokemon | Magic | Lorcana | OnePiece | DBS  (default: Pokemon)
+        condition    — NM | LP | MP | HP | DMG | PSA10 | PSA9      (default: NM)
+        card_id      — optional, used as cache key for precise lookups
+        source       — optional, hint for the cache key (kr/chs/jpn/multi)
+        max_age_sec  — optional, cache TTL override (default 21600 = 6h)
+        force_refresh — optional, bypass cache when truthy
+
+    Response: see price_aggregator.get_quote() docstring.
+    """
+    if _price_agg is None:
+        return jsonify({"error": "price_aggregator not loaded"}), 500
+    body = (request.get_json(silent=True) if request.is_json else None) or {}
+    args = request.values
+    query = (body.get("query") or args.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "missing 'query'"}), 400
+
+    def _val(name, default=None):
+        return body.get(name) if name in body else args.get(name, default)
+
+    try:
+        max_age = int(_val("max_age_sec") or _price_agg.DEFAULT_TTL_SEC)
+    except (TypeError, ValueError):
+        max_age = _price_agg.DEFAULT_TTL_SEC
+    force = str(_val("force_refresh") or "").lower() in ("1", "true", "yes")
+
+    try:
+        with _direct_db() as conn:
+            quote = _price_agg.get_quote(
+                conn,
+                query=query,
+                game=_val("game", "Pokemon") or "Pokemon",
+                condition=_val("condition", "NM") or "NM",
+                card_id=_val("card_id") or None,
+                source=_val("source") or None,
+                max_age_sec=max_age,
+                force_refresh=force,
+            )
+        return jsonify(quote)
+    except Exception as exc:
+        log.exception("[price_v2] failed")
+        return jsonify({"error": str(exc)}), 500
+
+
 if __name__ == "__main__":
     init_db()
     _load_tokens_from_db()
