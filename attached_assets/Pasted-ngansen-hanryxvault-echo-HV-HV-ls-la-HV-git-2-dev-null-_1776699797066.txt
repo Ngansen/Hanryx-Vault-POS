@@ -1,0 +1,41 @@
+ngansen@hanryxvault:~ $ echo "HV=[$HV]"
+ls -la "$HV/.git" 2>/dev/null && echo "is a repo" || echo "NOT a repo"
+ls /opt/hanryx-pos/.git 2>/dev/null && echo "/opt has repo"
+find /home /opt -maxdepth 4 -name pi-setup -type d 2>/dev/null
+HV=[]
+NOT a repo
+/home/ngansen/hanryx-vault-pos/pi-setup
+/home/ngansen/Hanryx-Vault-POS/pi-setup
+ngansen@hanryxvault:~ $ # Which dir does systemd run?
+systemctl cat hanryx-pos | grep -E "WorkingDirectory|ExecStart"
+
+# Which dirs are git repos?
+ls -la /home/ngansen/Hanryx-Vault-POS/.git /home/ngansen/hanryx-vault-pos/.git 2>/dev/null | grep -E "^total|^d"
+
+# Compare server.py size between the two (tells us which has been getting edits)
+wc -l /home/ngansen/Hanryx-Vault-POS/pi-setup/server.py /home/ngansen/hanryx-vault-pos/pi-setup/server.py
+WorkingDirectory=/root/hanryx-vault-pos
+ExecStartPre=/usr/bin/docker compose -f /root/hanryx-vault-pos/pi-setup/docker-compose.yml pull --quiet
+ExecStart=/usr/bin/docker compose -f /root/hanryx-vault-pos/pi-setup/docker-compose.yml up -d
+total 104
+drwxrwxr-x   8 ngansen ngansen  4096 Apr 19 17:03 .
+drwxrwxr-x   9 ngansen ngansen  4096 Apr 18 23:20 ..
+drwxrwxr-x   2 ngansen ngansen  4096 Apr  3 01:29 branches
+drwxrwxr-x   2 ngansen ngansen  4096 Apr  3 01:29 hooks
+drwxrwxr-x   2 ngansen ngansen  4096 Apr  3 01:29 info
+drwxrwxr-x   3 ngansen ngansen  4096 Apr  3 01:29 logs
+drwxrwxr-x 226 ngansen ngansen  4096 Apr 19 17:03 objects
+drwxrwxr-x   5 ngansen ngansen  4096 Apr 18 23:20 refs
+total 112
+drwxrwxr-x   8 ngansen ngansen  4096 Apr 20 13:11 .
+drwxrwxr-x   8 ngansen ngansen  4096 Apr 19 17:52 ..
+drwxrwxr-x   2 ngansen ngansen  4096 Apr 19 17:51 branches
+drwxrwxr-x   2 ngansen ngansen  4096 Apr 19 17:51 hooks
+drwxrwxr-x   2 ngansen ngansen  4096 Apr 19 17:51 info
+drwxrwxr-x   3 ngansen ngansen  4096 Apr 19 17:52 logs
+drwxrwxr-x 114 ngansen ngansen  4096 Apr 20 13:11 objects
+drwxrwxr-x   5 ngansen ngansen  4096 Apr 19 17:52 refs
+  23487 /home/ngansen/Hanryx-Vault-POS/pi-setup/server.py
+  21771 /home/ngansen/hanryx-vault-pos/pi-setup/server.py
+  45258 total
+ngansen@hanryxvault:~
