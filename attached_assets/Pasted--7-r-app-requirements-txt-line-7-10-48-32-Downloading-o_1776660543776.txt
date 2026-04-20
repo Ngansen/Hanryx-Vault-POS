@@ -1,0 +1,48 @@
+.7->-r /app/requirements.txt (line 7))
+#10 48.32   Downloading ordered_set-4.1.0-py3-none-any.whl.metadata (5.3 kB)
+#10 48.56 Collecting pandas (from pokemon-card-recognizer==0.0.1.3.8.7->-r /app/requirements.txt (line 7))
+#10 48.59   Downloading pandas-3.0.2-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl.metadata (79 kB)
+#10 48.62      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 79.5/79.5 kB 2.9 MB/s eta 0:00:00
+#10 49.00 INFO: pip is looking at multiple versions of pokemon-card-recognizer to determine which version is compatible with other requirements. This could take a while.
+#10 49.00 ERROR: Cannot install -r /app/requirements.txt (line 7) and pillow>=10.0.0 because these package versions have conflicting dependencies.
+#10 49.00 
+#10 49.00 The conflict is caused by:
+#10 49.00     The user requested pillow>=10.0.0
+#10 49.00     pokemon-card-recognizer 0.0.1.3.8.7 depends on pillow==9.5.0
+#10 49.00 
+#10 49.00 To fix this you could try to:
+#10 49.00 1. loosen the range of package versions you've specified
+#10 49.00 2. remove package versions to allow pip attempt to solve the dependency conflict
+#10 49.00 
+#10 49.00 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
+#10 ERROR: process "/bin/sh -c pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt" did not complete successfully: exit code: 1
+------
+ > [5/6] RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt:
+49.00 
+49.00 The conflict is caused by:
+49.00     The user requested pillow>=10.0.0
+49.00     pokemon-card-recognizer 0.0.1.3.8.7 depends on pillow==9.5.0
+49.00 
+49.00 To fix this you could try to:
+49.00 1. loosen the range of package versions you've specified
+49.00 2. remove package versions to allow pip attempt to solve the dependency conflict
+49.00 
+49.00 ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
+------
+Dockerfile:38
+
+--------------------
+
+  37 |     # then the recogniser package itself.
+
+  38 | >>> RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+
+  39 | >>>         torch==2.2.2 torchvision==0.17.2 \
+
+  40 | >>>     && pip install -r /app/requirements.txt
+
+  41 |     
+
+--------------------
+
+failed to solve: process "/bin/sh -c pip install --extra-index-url https://download.pytorch.org/whl/cpu         torch==2.2.2 torchvision==0.17.2     && pip install -r /app/requirements.txt" did not complete successfully: exit code: 1
