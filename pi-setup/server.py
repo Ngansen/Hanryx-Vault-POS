@@ -2306,7 +2306,46 @@ def _calculate_final_price(base: float, language: str = "English",
     return _round_price(p)
 
 
+def _db_auth_preflight(max_wait_s: int = 30):
+    """Fail-fast DB auth probe. Distinguishes auth errors (exit immediately,
+    operator intervention required) from transient connect errors (retry until
+    timeout). Prevents the silent /health 500 loop seen when DB volume password
+    drifts out of sync with the app's credentials.
+    """
+    import sys, time as _t
+    deadline = _t.time() + max_wait_s
+    last_err = None
+    while _t.time() < deadline:
+        try:
+            conn = _direct_db()
+            try:
+                conn.execute("SELECT 1")
+            finally:
+                try: conn.close()
+                except Exception: pass
+            log.info("[init] DB auth preflight OK")
+            return
+        except psycopg2.OperationalError as e:
+            msg = str(e).lower()
+            last_err = e
+            if "password authentication failed" in msg or "role" in msg and "does not exist" in msg:
+                log.error("[init] FATAL DB AUTH FAILURE: %s", e)
+                log.error("[init] DB volume credentials are out of sync with app config.")
+                log.error("[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> "
+                          "-c \"ALTER USER <user> WITH PASSWORD '<pwd>';\"")
+                sys.exit(2)
+            log.warning("[init] DB not ready yet (%s) — retrying", e.__class__.__name__)
+            _t.sleep(2)
+        except Exception as e:
+            last_err = e
+            log.warning("[init] DB preflight unexpected error: %s — retrying", e)
+            _t.sleep(2)
+    log.error("[init] FATAL: DB unreachable after %ss: %s", max_wait_s, last_err)
+    sys.exit(3)
+
+
 def init_db():
+    _db_auth_preflight()
     db = _direct_db()
 
     # Enable pgvector extension (no-op if already installed or not available)
@@ -19780,6 +19819,13 @@ def kiosk_payment_processing():
     with _kiosk_cart_lock:
         _kiosk_cart["payment_processing"] = True
         _kiosk_cart["paid"] = False
+        # Force mode to a non-idle screen so the dispatcher routes to
+        # renderCart() (which handles the payment_processing branch).
+        # Without this, if mode was "idle" the kiosk short-circuits to
+        # goIdle() and the payment view never appears.
+        if _kiosk_cart.get("mode") in (None, "", "idle", "standby", "thankyou"):
+            _kiosk_cart["mode"] = "checkout"
+        _kiosk_cart["active"] = True
         if "total" in data:
             _kiosk_cart["total"] = _safe_float(data["total"], 0)
         snapshot = dict(_kiosk_cart)
@@ -21750,6 +21796,11 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
   /* ── SSE dispatcher ── */
   function onData(s){{
+    /* Payment / paid screens take priority over whatever mode the cart is in.
+       Without this, /kiosk/payment-processing (which doesn't change mode)
+       would be ignored when mode==="idle" and the customer would never see
+       the "Processing payment" or "Thank you" views. */
+    if(s.payment_processing || s.paid){{ renderCart(s); return; }}
     if(s.mode==="standby"){{ goStandby(); return; }}
     if(s.mode==="trade"){{ renderTrade(s); return; }}
     if(s.mode==="lookup"){{ renderLookup(s); return; }}
@@ -21871,12 +21922,16 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
         .then(function(r){{ return r.json(); }})
         .then(function(d){{
           var sig = _computeKioskSig(d);
-          // Only reload if BOTH the sig has changed AND SSE has been silent
-          // for >3 s — prevents reloading while SSE is actively delivering
-          // updates (e.g. during price-confirm flash, trade-in, etc.)
-          // NOTE: _lastSseMsg is updated only by SSE onmessage, not here.
-          var sseSilent = (Date.now() - _lastSseMsg) > 8000;
-          if(sig !== _kiosk_sig && sseSilent){{ window.location.reload(); return; }}
+          // Polling is a TRUE fallback delivery mechanism — if the sig has
+          // moved on, dispatch the new state directly via onData() instead of
+          // waiting for SSE.  SSE delivery can silently break (cross-worker
+          // broadcasts, proxy buffering, gunicorn worker churn) while the
+          // EventSource still appears connected, so we can never trust SSE
+          // alone.  No more sseSilent gate, no more page reloads.
+          if(sig !== _kiosk_sig){{
+            _kiosk_sig = sig;
+            try{{ onData(d); }}catch(err){{ console.warn("[kiosk poll]", err); }}
+          }}
           _busy = false;
           setTimeout(_sigPoll, 500);
         }})
@@ -22039,6 +22094,40 @@ html,body{{height:100%;overflow:hidden;background:{bg};color:#fff;
 
 {_yt_init_js}
 {_yt_mute_js}
+</script>
+<script>
+/* ── Fit-to-screen for sub-1024px panels ─────────────────────────────────────
+   The kiosk page is designed for ≥1024px wide. On the satellite's 800×480
+   touch panel (or any narrow display), proportionally scale the entire body
+   down so nothing wraps or gets clipped. Layout stays pixel-perfect, just
+   smaller. No effect on screens ≥ 1024px.
+─────────────────────────────────────────────────────────────────────────── */
+(function(){{
+  var DESIGN_W = 1024;
+  function fit(){{
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    if (vw >= DESIGN_W) {{
+      document.body.style.transform = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+      document.body.style.transformOrigin = '';
+      return;
+    }}
+    var s = vw / DESIGN_W;
+    document.body.style.transformOrigin = 'top left';
+    document.body.style.transform       = 'scale(' + s + ')';
+    document.body.style.width           = DESIGN_W + 'px';
+    /* Inflate logical height so the scaled body still fills the viewport. */
+    document.body.style.height          = (vh / s) + 'px';
+  }}
+  fit();
+  window.addEventListener('resize', fit);
+  /* Also re-fit after orientation change & after fonts/images load,
+     since wrap behaviour can shift the effective viewport. */
+  window.addEventListener('orientationchange', fit);
+  window.addEventListener('load', fit);
+}})();
 </script>
 </body>
 </html>"""

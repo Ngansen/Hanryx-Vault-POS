@@ -80,10 +80,28 @@ get_geom() {
 
 LEFT_GEOM=$(get_geom "$LEFT_OUTPUT")
 RIGHT_GEOM=$(get_geom "$RIGHT_OUTPUT")
-read -r LW LH LX LY <<<"${LEFT_GEOM:-1920 1080 0 0}"
+
+# Fallback: ask X for the screen dimensions if xrandr parsing failed.
+# This catches small touch panels (10.1" = 1280x800, 7" = 1024x600) where
+# the 1920x1080 default would render off-screen and look "cropped".
+if [[ -z "$LEFT_GEOM" ]] && command -v xdpyinfo &>/dev/null; then
+    SCREEN_DIM=$(xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $2}' | head -1)
+    if [[ "$SCREEN_DIM" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+        LEFT_GEOM="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} 0 0"
+        echo "[kiosk] xrandr geom missing — using xdpyinfo screen dims: $SCREEN_DIM"
+    fi
+fi
+
+read -r LW LH LX LY <<<"${LEFT_GEOM:-0 0 0 0}"
 read -r RW RH RX RY <<<"${RIGHT_GEOM:-0 0 0 0}"
 echo "[kiosk] Left  output=$LEFT_OUTPUT  geom=${LW}x${LH}+${LX}+${LY}  url=$KIOSK_LEFT_URL"
 echo "[kiosk] Right output=$RIGHT_OUTPUT geom=${RW}x${RH}+${RX}+${RY}  url=$KIOSK_RIGHT_URL"
+
+# How many actual displays are we driving?
+DISPLAY_COUNT=0
+(( LW > 0 )) && (( DISPLAY_COUNT++ ))
+(( RW > 0 )) && (( DISPLAY_COUNT++ ))
+echo "[kiosk] Driving $DISPLAY_COUNT display(s)"
 
 # ── Wait for POS server ──────────────────────────────────────────────────────
 echo "[kiosk] Waiting for POS server at $HEALTH_URL …"
@@ -142,12 +160,34 @@ launch_window() {
     sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$profile/Default/Preferences" 2>/dev/null || true
     sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/'  "$profile/Default/Preferences" 2>/dev/null || true
 
-    "$CHROMIUM" "${COMMON_FLAGS[@]}" \
-        --user-data-dir="$profile" \
-        --window-position="${x},${y}" \
-        --window-size="${w},${h}" \
-        --start-fullscreen \
-        --app="$url" &
+    # Single-display setups (the satellite Pi with the 10.1" panel) use
+    # --kiosk: chromium auto-fits the actual screen at native resolution.
+    # This avoids the --window-size + --start-fullscreen interaction that
+    # rendered the page at the wrong viewport on small touch panels and
+    # showed only part of the kiosk UI.
+    #
+    # Multi-display setups MUST use --window-position + --window-size
+    # because --kiosk grabs the whole virtual screen and you can't pin a
+    # window to a specific monitor that way.
+    if (( DISPLAY_COUNT <= 1 )); then
+        "$CHROMIUM" "${COMMON_FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --kiosk \
+            --app="$url" &
+    else
+        # Multi-display: --app gives borderless chrome, explicit
+        # --window-position + --window-size pin the window to the right
+        # monitor. Do NOT add --start-fullscreen here — it makes chromium
+        # snap the window to whatever it considers "primary" (ignoring
+        # --window-position) and then squeezes the rendered viewport into
+        # that monitor's resolution, which on the 10.1" + 5" satellite
+        # setup made the 10.1" show only a corner of the page.
+        "$CHROMIUM" "${COMMON_FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --window-position="${x},${y}" \
+            --window-size="${w},${h}" \
+            --app="$url" &
+    fi
 }
 
 # ── Launch one window per detected monitor ──────────────────────────────────
