@@ -16444,9 +16444,11 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
     Includes variant in the query when it adds information not already present
     in the card name — e.g. "Charizard" + "Rainbow Rare" → distinct results
     from just "Charizard", while "Charizard VMAX" + "VMAX" skips the duplicate.
+
+    If the EBAY_APP_ID Finding-API key isn't set we fall back to the keyless
+    HTML-scraper in ebay_sold.py so the dashboard still gets data without
+    requiring an eBay developer account.
     """
-    if not _EBAY_APP_ID:
-        return []
     name    = (card.get("name") or "").strip()
     number  = (card.get("number") or "").strip()
     set_n   = (card.get("set") or "").strip()
@@ -16459,6 +16461,37 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
 
     query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
 
+    # ── No Finding-API key? Use the keyless HTML scraper. ──────────────
+    if not _EBAY_APP_ID:
+        try:
+            from ebay_sold import ebay_sold as _scrape
+            rows = _scrape(query, limit=180, pages=3)
+        except Exception as exc:
+            log.info("[ebay] keyless scraper failed: %s — %s", query, exc)
+            return []
+        items: list[dict] = []
+        seen: set[str] = set()
+        for r in rows:
+            key = f"{(r.get('title') or '')[:60]}:{r.get('price')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            sd = None
+            sa = r.get("sold_at")
+            if isinstance(sa, (int, float)) and sa > 0:
+                try:
+                    sd = datetime.date.fromtimestamp(sa / 1000.0)
+                except Exception:
+                    sd = None
+            items.append({
+                "title":     r.get("title") or "",
+                "price":     float(r.get("price") or 0),
+                "sold_date": sd,
+            })
+        log.info("[ebay] keyless scraper %r → %d rows", query, len(items))
+        return items
+
+    # ── Normal Finding-API path (3 pages in parallel) ──────────────────
     futs  = [_worker_pool.submit(_ebay_finding_page, query, p) for p in range(1, 4)]
     pages = [f.result(timeout=20) for f in futs]
 
