@@ -7586,9 +7586,16 @@ def admin_trade_in_list():
       <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th></th></tr></thead>
       <tbody id="ti-items-body"><tr><td colspan='5' style='color:#666'>No items yet</td></tr></tbody>
     </table>
-    <div style="display:flex;justify-content:space-between;align-items:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
-      <button class="btn-gold" id="ti-complete-btn" onclick="completeTi()" style="background:#4ade80;color:#000;font-size:15px">✅ Complete Trade-In (Add to Inventory)</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-gold" id="ti-send-tablet-btn" onclick="sendOfferToTablet()" style="background:#0ea5e9;color:#000;font-size:14px">📲 Send Offer to Tablet</button>
+        <span id="ti-offer-status" style="font-size:13px;font-weight:700;color:#888;min-width:170px;text-align:center;padding:6px 12px;border-radius:6px;background:#1a1a1a;border:1px solid #2a2a2a">Not sent yet</span>
+        <button class="btn-gold" id="ti-complete-btn" onclick="completeTi()" disabled style="background:#374151;color:#666;font-size:15px;cursor:not-allowed">✅ Complete &amp; Add to Inventory</button>
+      </div>
+    </div>
+    <div style="margin-top:8px;text-align:right">
+      <label style="font-size:12px;color:#666;cursor:pointer"><input type="checkbox" id="ti-force-override" onchange="updateCompleteBtn()" style="vertical-align:middle"> Override (tablet unavailable / signed paper)</label>
     </div>
     <div id="ti-msg" style="margin-top:10px;font-size:13px;color:#aaa"></div>
   </div>
@@ -7688,13 +7695,90 @@ async function removeTiItem(itemId) {{
   renderTiItems();
 }}
 
+// ── Send-to-Tablet two-stage flow ────────────────────────────────────────
+let _offerPollTimer = null;
+let _offerStatus    = 'none';   // none | pending | accepted | rejected
+
+function _setOfferPill(status) {{
+  _offerStatus = status;
+  const el = document.getElementById('ti-offer-status');
+  if (!el) return;
+  const map = {{
+    none:     ['Not sent yet',           '#888', '#1a1a1a', '#2a2a2a'],
+    pending:  ['⏳ Awaiting customer…',  '#facc15', '#1a1604', '#854d0e'],
+    accepted: ['✅ Customer accepted',    '#4ade80', '#0a1f12', '#15803d'],
+    rejected: ['❌ Customer declined',    '#f87171', '#1f0a0a', '#7f1d1d'],
+  }};
+  const [txt, fg, bg, bd] = map[status] || map.none;
+  el.textContent = txt;
+  el.style.color = fg;
+  el.style.background = bg;
+  el.style.borderColor = bd;
+  updateCompleteBtn();
+}}
+
+function updateCompleteBtn() {{
+  const btn = document.getElementById('ti-complete-btn');
+  if (!btn) return;
+  const force = document.getElementById('ti-force-override').checked;
+  const ok = (_offerStatus === 'accepted') || force;
+  btn.disabled = !ok;
+  if (ok) {{
+    btn.style.background = '#4ade80'; btn.style.color = '#000'; btn.style.cursor = 'pointer';
+  }} else {{
+    btn.style.background = '#374151'; btn.style.color = '#666'; btn.style.cursor = 'not-allowed';
+  }}
+}}
+
+function _stopOfferPoll() {{ if (_offerPollTimer) {{ clearInterval(_offerPollTimer); _offerPollTimer = null; }} }}
+
+function _startOfferPoll() {{
+  _stopOfferPoll();
+  _offerPollTimer = setInterval(async () => {{
+    if (!_activeTiId) {{ _stopOfferPoll(); return; }}
+    try {{
+      const r = await fetch('/admin/trade-in/' + _activeTiId + '/offer-status');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.status && d.status !== _offerStatus) _setOfferPill(d.status);
+      if (d.status === 'accepted' || d.status === 'rejected') _stopOfferPoll();
+    }} catch(_) {{}}
+  }}, 1500);
+}}
+
+async function sendOfferToTablet() {{
+  if (!_activeTiId || !_activeTiItems.length) {{ alert('Add at least one item first'); return; }}
+  const btn = document.getElementById('ti-send-tablet-btn');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Sending…';
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/send-to-tablet', {{method:'POST'}});
+  btn.disabled = false; btn.textContent = orig;
+  if (!d) return;
+  if (d.error) {{ alert(d.error); return; }}
+  _setOfferPill('pending');
+  _startOfferPoll();
+}}
+
 async function completeTi() {{
   if (!_activeTiId || !_activeTiItems.length) {{ alert('Add at least one item first'); return; }}
-  if (!confirm('Complete this trade-in? All accepted cards will be added to your POS inventory.')) return;
-  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/complete', {{method:'POST'}});
+  const force = document.getElementById('ti-force-override').checked;
+  if (_offerStatus !== 'accepted' && !force) {{
+    alert('Send the offer to the tablet first and wait for the customer to accept (or check Override).');
+    return;
+  }}
+  const verb = force ? 'OVERRIDE — complete this trade-in without tablet acceptance?'
+                     : 'Complete this trade-in? All accepted cards will be added to your POS inventory.';
+  if (!confirm(verb)) return;
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/complete', {{
+    method:  'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body:    JSON.stringify({{force: force}}),
+  }});
   if (!d) return;
   const msg = document.getElementById('ti-msg');
   if (d.error) {{ msg.textContent = '❌ ' + d.error; msg.style.color='#f87171'; return; }}
+  _stopOfferPoll();
+  _setOfferPill('none');
+  document.getElementById('ti-force-override').checked = false;
   msg.textContent = '✅ Done! ' + d.added + ' card(s) added to inventory.';
   msg.style.color = '#4ade80';
   setTimeout(() => location.reload(), 1500);
@@ -7752,6 +7836,176 @@ def admin_trade_in_get(ti_id):
         "notes":       ti["notes"],
         "items":       [dict(i) for i in items],
     })
+
+
+# ── Tablet trade-in offer channel ─────────────────────────────────────────
+#
+# When the operator finishes pricing a trade-in on the 10.1" Main Pi screen,
+# they hit "📲 Send Offer to Tablet". The full offer is written to Redis;
+# the Expo APK on the customer's tablet polls /tablet/trade/current every
+# 2 s, displays the line items + total, and lets the customer ACCEPT or
+# REJECT. The operator's modal polls /admin/trade-in/<id>/offer-status to
+# know when the customer has decided — only then does the Complete button
+# unlock (operator can still force-override for edge cases).
+#
+# Single-tablet store, so a single Redis key is fine. TTL 1 h keeps the
+# screen from getting stuck on a stale offer if everyone walks away.
+
+_TABLET_OFFER_KEY = "hv:tablet:trade:current"
+_TABLET_OFFER_TTL = 3600
+
+
+def _tablet_offer_build_payload(ti_id: int) -> dict | None:
+    """Read the trade-in + accepted items from the DB, shape a payload the
+    tablet can render directly (no further joins needed on the device)."""
+    try:
+        db = get_db()
+        ti = db.execute("SELECT * FROM trade_ins WHERE id=%s", (ti_id,)).fetchone()
+        if not ti:
+            return None
+        items = db.execute(
+            "SELECT * FROM trade_in_items WHERE trade_in_id=%s AND accepted=1 ORDER BY id",
+            (ti_id,),
+        ).fetchall()
+        cash_total   = float(ti["total_value"] or 0)
+        credit_total = round(cash_total * 1.20, 2)
+        return {
+            "ti_id":        ti["id"],
+            "reference":    ti["reference"],
+            "customer":     ti["customer"] or "Customer",
+            "items":        [{
+                "id":         it["id"],
+                "name":       it["name"],
+                "qr_code":    it["qr_code"],
+                "condition":  it["condition"],
+                "offer":      float(it["offered_price"] or 0),
+                "market":     float(it["market_price"]  or 0),
+            } for it in items],
+            "item_count":   len(items),
+            "total_cash":   cash_total,
+            "total_credit": credit_total,
+        }
+    except Exception:
+        log.exception("[tablet] build payload failed for ti=%s", ti_id)
+        return None
+
+
+def _tablet_offer_save(payload: dict) -> None:
+    try:
+        r = _redis()
+        if r is None: return
+        r.setex(_TABLET_OFFER_KEY, _TABLET_OFFER_TTL, json.dumps(payload))
+    except Exception:
+        log.info("[tablet] redis save failed", exc_info=True)
+
+
+def _tablet_offer_load() -> dict | None:
+    try:
+        r = _redis()
+        if r is None: return None
+        blob = r.get(_TABLET_OFFER_KEY)
+        if not blob: return None
+        if isinstance(blob, bytes):
+            blob = blob.decode("utf-8", errors="replace")
+        return json.loads(blob)
+    except Exception:
+        log.info("[tablet] redis load failed", exc_info=True)
+        return None
+
+
+def _tablet_offer_clear() -> None:
+    try:
+        r = _redis()
+        if r is not None:
+            r.delete(_TABLET_OFFER_KEY)
+    except Exception:
+        pass
+
+
+def _tablet_offer_set_status(ti_id: int, status: str) -> dict | None:
+    """Mutate the cached offer's status in-place (accepted | rejected)."""
+    snap = _tablet_offer_load()
+    if not snap or int(snap.get("ti_id", 0)) != int(ti_id):
+        return None
+    snap["status"]     = status
+    snap["decided_at"] = int(time.time() * 1000)
+    _tablet_offer_save(snap)
+    return snap
+
+
+@app.route("/admin/trade-in/<int:ti_id>/send-to-tablet", methods=["POST"])
+@require_admin
+def admin_trade_in_send_to_tablet(ti_id):
+    """Operator pushes the current offer to the tablet for customer sign-off."""
+    payload = _tablet_offer_build_payload(ti_id)
+    if not payload:
+        return jsonify({"error": "Trade-in not found or has no accepted items"}), 404
+    if not payload["items"]:
+        return jsonify({"error": "Add at least one accepted item before sending"}), 400
+    payload["status"]     = "pending"
+    payload["sent_at"]    = int(time.time() * 1000)
+    payload["decided_at"] = None
+    _tablet_offer_save(payload)
+    # Mirror to the customer kiosk so the small screen also shows the offer
+    try:
+        _kiosk_transparency_save({
+            "mode":    "trade_offer",
+            "headline": "Our offer for your trade-in",
+            "card":    {"name": f"{payload['item_count']} card(s) · {payload['reference']}",
+                        "set":  payload["customer"],
+                        "image_url": ""},
+            "buy":     {"fair": payload["total_cash"], "max": payload["total_credit"]},
+            "sold_90d": {},
+            "condition": {"label": "—", "multiplier": 1.0},
+            "pushed_at": payload["sent_at"],
+        })
+    except Exception:
+        pass
+    return jsonify({"ok": True, "sent_at": payload["sent_at"]})
+
+
+@app.route("/admin/trade-in/<int:ti_id>/offer-status", methods=["GET"])
+@require_admin
+def admin_trade_in_offer_status(ti_id):
+    """Operator modal polls this to know when the customer has decided."""
+    snap = _tablet_offer_load()
+    if not snap or int(snap.get("ti_id", 0)) != int(ti_id):
+        return jsonify({"status": "none"})
+    return jsonify({
+        "status":     snap.get("status", "pending"),
+        "sent_at":    snap.get("sent_at"),
+        "decided_at": snap.get("decided_at"),
+    })
+
+
+@app.route("/tablet/trade/current", methods=["GET"])
+@require_api_token
+def tablet_trade_current():
+    """Tablet poll endpoint — returns the active offer or {empty:true}."""
+    snap = _tablet_offer_load()
+    resp = jsonify(snap or {"empty": True})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/tablet/trade/<int:ti_id>/accept", methods=["POST"])
+@require_api_token
+def tablet_trade_accept(ti_id):
+    """Customer (via tablet) accepts the offer."""
+    snap = _tablet_offer_set_status(ti_id, "accepted")
+    if snap is None:
+        return jsonify({"error": "Offer not found or expired"}), 404
+    return jsonify({"ok": True, "status": "accepted"})
+
+
+@app.route("/tablet/trade/<int:ti_id>/reject", methods=["POST"])
+@require_api_token
+def tablet_trade_reject(ti_id):
+    """Customer (via tablet) rejects the offer."""
+    snap = _tablet_offer_set_status(ti_id, "rejected")
+    if snap is None:
+        return jsonify({"error": "Offer not found or expired"}), 404
+    return jsonify({"ok": True, "status": "rejected"})
 
 
 def _kiosk_push_trade(ti_id, complete=False, cancelled=False):
@@ -7848,6 +8102,22 @@ def admin_trade_in_complete(ti_id):
     if not items:
         return jsonify({"error": "No accepted items in this trade-in"}), 400
 
+    # ── Customer-consent gate ─────────────────────────────────────────────
+    # If an offer was ever sent to the tablet, the customer must have
+    # accepted it before we finalize. Operator can override with
+    # {"force": true} for edge cases (e.g. tablet dead, customer signed
+    # paper). Trade-ins that never went through the tablet at all skip
+    # this check (back-compat with the original flow).
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get("force"))
+    snap  = _tablet_offer_load()
+    if (snap and int(snap.get("ti_id", 0)) == int(ti_id)
+            and snap.get("status") != "accepted" and not force):
+        return jsonify({
+            "error":  "Customer has not accepted the offer on the tablet yet.",
+            "status": snap.get("status", "pending"),
+        }), 409
+
     added = 0
     for it in items:
         db.execute("""
@@ -7874,6 +8144,24 @@ def admin_trade_in_complete(ti_id):
     db.commit()
     _invalidate_inventory()
     threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"complete": True}, daemon=True).start()
+    # Final receipt → customer transparency screen + clear the tablet
+    try:
+        cash_total   = float(ti["total_value"] or 0)
+        credit_total = round(cash_total * 1.20, 2)
+        _kiosk_transparency_save({
+            "mode":      "trade_complete",
+            "headline":  "Trade complete — thank you!",
+            "card":      {"name": f"{added} card(s) accepted",
+                          "set":  ti["customer"] or "",
+                          "image_url": ""},
+            "buy":       {"fair": cash_total, "max": credit_total},
+            "sold_90d":  {},
+            "condition": {"label": "—", "multiplier": 1.0},
+            "pushed_at": int(time.time() * 1000),
+        })
+    except Exception:
+        pass
+    _tablet_offer_clear()
     return jsonify({"ok": True, "added": added})
 
 
@@ -7886,6 +8174,7 @@ def admin_trade_in_cancel(ti_id):
     )
     db.commit()
     threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"cancelled": True}, daemon=True).start()
+    _tablet_offer_clear()
     return jsonify({"ok": True})
 
 
