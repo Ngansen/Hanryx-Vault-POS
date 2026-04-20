@@ -8041,6 +8041,111 @@ def _kiosk_push_trade(ti_id, complete=False, cancelled=False):
         log.exception("[kiosk] trade broadcast failed")
 
 
+@app.route("/admin/market/quick-trade-in", methods=["POST"])
+@require_admin
+def admin_market_quick_trade_in():
+    """One-click: from the Market page, push the currently-shown card straight
+    to the customer tablet as a trade-in offer.
+
+    Auto-creates a Walk-in trade-in if none is open, computes a fair-buy offer
+    from the displayed market price (market * 0.55, the FAIR_BUY_FRAC default),
+    inserts the item, refreshes the kiosk display, and writes the offer to
+    Redis so the tablet picks it up on its next 2s poll.
+
+    Body JSON: {name, market_price, condition?, qr_code?, set?, number?}
+    Returns:   {ok, ti_id, reference, offer, market, total_cash, item_count}
+    """
+    data         = request.get_json(silent=True) or {}
+    name         = (data.get("name") or "").strip()[:200]
+    market_price = _safe_float(data.get("market_price"), 0)
+    condition    = (data.get("condition") or "NM").strip()[:8]
+    qr_code      = (data.get("qr_code") or "").strip()[:80]
+    set_name     = (data.get("set") or "").strip()[:100]
+    number       = (data.get("number") or "").strip()[:20]
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if market_price <= 0:
+        return jsonify({"error": "market_price must be > 0"}), 400
+
+    # Fair-buy offer: 55% of condition-adjusted market price (matches
+    # buy_price.FAIR_BUY_FRAC default). Operator can override later.
+    offered_price = round(market_price * 0.55, 2)
+
+    # Auto-generate a QR if none given so the tablet has a stable line id.
+    if not qr_code:
+        qr_code = f"MKT-{int(time.time() * 1000)}"
+
+    # Friendly display name = "Charizard ex 199 — Obsidian Flames"
+    display_name = name
+    if number and number not in display_name:
+        display_name = f"{display_name} {number}"
+    if set_name and set_name.lower() not in display_name.lower():
+        display_name = f"{display_name} — {set_name}"
+
+    db = get_db()
+
+    # Find the most recent open Walk-in trade-in, else create a new one.
+    ti = db.execute(
+        "SELECT * FROM trade_ins WHERE status='open' "
+        "ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    if not ti:
+        ref = _trade_in_ref()
+        row = db.execute(
+            "INSERT INTO trade_ins (reference, customer, notes) "
+            "VALUES (%s,%s,%s) RETURNING id, reference",
+            (ref, "Walk-in", "Created from Market quick-push")
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Failed to create trade-in"}), 500
+        ti_id     = row["id"]
+        reference = row["reference"]
+    else:
+        ti_id     = ti["id"]
+        reference = ti["reference"]
+
+    db.execute(
+        "INSERT INTO trade_in_items "
+        "(trade_in_id, qr_code, name, condition, offered_price, market_price) "
+        "VALUES (%s,%s,%s,%s,%s,%s)",
+        (ti_id, qr_code, display_name, condition, offered_price, market_price)
+    )
+    total = db.execute(
+        "SELECT COALESCE(SUM(offered_price),0) FROM trade_in_items "
+        "WHERE trade_in_id=%s AND accepted=1",
+        (ti_id,)
+    ).fetchone()[0]
+    db.execute("UPDATE trade_ins SET total_value=%s WHERE id=%s", (total, ti_id))
+    db.commit()
+
+    item_count = db.execute(
+        "SELECT COUNT(*) FROM trade_in_items WHERE trade_in_id=%s AND accepted=1",
+        (ti_id,)
+    ).fetchone()[0]
+
+    # Push to satellite kiosk display (existing channel).
+    threading.Thread(target=_kiosk_push_trade, args=(ti_id,), daemon=True).start()
+
+    # Push to customer tablet (Redis-backed offer channel).
+    payload = _tablet_offer_build_payload(ti_id)
+    if payload:
+        payload["status"]      = "pending"
+        payload["pushed_at"]   = int(time.time() * 1000)
+        _tablet_offer_save(payload)
+
+    return jsonify({
+        "ok":          True,
+        "ti_id":       ti_id,
+        "reference":   reference,
+        "offer":       offered_price,
+        "market":      market_price,
+        "total_cash":  float(total),
+        "item_count":  int(item_count),
+        "tablet_pushed": payload is not None,
+    })
+
+
 @app.route("/admin/trade-in/<int:ti_id>/add-item", methods=["POST"])
 @require_admin
 def admin_trade_in_add_item(ti_id):
@@ -10937,6 +11042,7 @@ def admin_market():
 
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn-add" id="btnAdd" onclick="addToInventory()">+ Add to Inventory</button>
+          <button class="btn-add" id="btnQuickTrade" onclick="quickTradeInToTablet()" style="background:#0ea5e9;color:#000">📲 Trade-In → Tablet</button>
           <button class="btn-gold" onclick="location.href='/admin'" style="background:#1a1a2a;color:#aaa;border:1px solid #333">↩ Dashboard</button>
         </div>
       </div>
@@ -11427,6 +11533,43 @@ function addToInventory() {{
   }};
   sessionStorage.setItem('prefillData', JSON.stringify(pre));
   location.href = '/admin#add-product';
+}}
+
+// ── Quick Trade-In → Tablet (one-click from Market) ───────────────────────
+async function quickTradeInToTablet() {{
+  if (!_lastData) {{ toast('Pick a card first', true); return; }}
+  const d        = _lastData;
+  const t        = d.tcgData || {{}};
+  const condM    = parseFloat(condD.value) || 1;
+  const rawPrice = Object.values(_rawTiers)[0] || d.suggestedPrice
+                 || (t.tcgplayer && t.tcgplayer.marketPrice) || d.price || 0;
+  const market   = parseFloat((rawPrice * condM).toFixed(2));
+  if (!market || market <= 0) {{ toast('No market price available for this card', true); return; }}
+
+  const btn = document.getElementById('btnQuickTrade');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Pushing…';
+  try {{
+    const r = await fetch('/admin/market/quick-trade-in', {{
+      method:  'POST',
+      headers: {{'Content-Type':'application/json'}},
+      body:    JSON.stringify({{
+        name:         d.name || t.name || '',
+        market_price: market,
+        condition:    condD.value || 'NM',
+        qr_code:      d.tcgId || _selId || '',
+        set:          (t.set && t.set.name) || d.setCode || '',
+        number:       t.number || d.number || '',
+      }}),
+    }});
+    const j = await r.json();
+    if (!r.ok || j.error) {{ toast(j.error || ('Server ' + r.status), true); return; }}
+    toast('✓ Pushed to tablet · offer $' + j.offer.toFixed(2) + ' · ' + j.reference + ' (' + j.item_count + ' item' + (j.item_count===1?'':'s') + ')');
+  }} catch(e) {{
+    toast('Network error — ' + e.message, true);
+  }} finally {{
+    btn.disabled = false; btn.textContent = old;
+  }}
 }}
 
 function toast(msg, err=false) {{
