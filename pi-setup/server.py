@@ -23766,7 +23766,11 @@ def admin_sets():
     var pills = langs.map(function(l){{
       return '<span class="pill">'+(FLAGS[l]||'•')+' '+(LABEL[l]||l)+'<span class="n">'+grouped[l].length+'</span></span>';
     }}).join('');
-    sumEl.innerHTML = '<strong style="color:#f59e0b">'+data.count+'</strong> cards · '+pills;
+    var truncNote = '';
+    langs.forEach(function(l){{
+      if (grouped[l].length >= 400) truncNote = ' <span style="color:#fbbf24;font-weight:700">⚠ some languages capped at 400 — narrow your search</span>';
+    }});
+    sumEl.innerHTML = '<strong style="color:#f59e0b">'+data.count+'</strong> cards · '+pills+truncNote;
     sumEl.classList.add('visible');
     var html = '';
     langs.forEach(function(l){{
@@ -23796,7 +23800,7 @@ def admin_sets():
     history.replaceState(null, '', '/admin/sets?set='+encodeURIComponent(q));
     sumEl.classList.remove('visible');
     resEl.innerHTML = '<div class="loading">Searching all language tables…</div>';
-    fetch('/admin/sets/cards?set='+encodeURIComponent(q)+'&limit=800')
+    fetch('/admin/sets/cards?set='+encodeURIComponent(q)+'&limit=2000')
       .then(r => r.json())
       .then(render)
       .catch(e => {{ resEl.innerHTML = '<div class="empty">Error: '+esc(e.message||e)+'</div>'; }});
