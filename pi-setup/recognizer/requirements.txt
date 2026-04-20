@@ -1,7 +1,11 @@
 flask>=3.0.0
 gunicorn>=21.2.0
-pillow==9.5.0
+pillow>=10.0.0
 opencv-python-headless>=4.9.0
 numpy>=1.26.0
 requests>=2.31.0
-pokemon-card-recognizer==0.0.1.3.8.7
+
+# Hybrid recognizer pipeline (replaces pokemon-card-recognizer / torch stack):
+pytesseract>=0.3.10
+ImageHash>=4.3.1
+psycopg2-binary>=2.9.9

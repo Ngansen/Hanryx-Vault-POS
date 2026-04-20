@@ -199,8 +199,23 @@ import_if_empty() {
 }
 import_if_empty cards_kr          import_kr_cards.py        || true
 import_if_empty cards_chs         import_chs_cards.py       || true
+import_if_empty cards_jpn         import_jpn_cards.py       || true
 import_if_empty cards_jpn_pocket  import_jpn_pocket_cards.py || true
 import_if_empty cards_multi       import_multi_tcg.py       || true
+
+# Build the recognizer's perceptual-hash index in the background. Skips
+# already-hashed cards, so safe to launch on every deploy.
+HASH_COUNT=$($DB_EXEC "SELECT COUNT(*) FROM card_hashes" 2>/dev/null || echo 0)
+info "card_hashes index currently has $HASH_COUNT row(s)"
+if sudo docker exec pi-setup-pos-1 test -f /app/import_artwork_hashes.py 2>/dev/null; then
+    info "Launching artwork-hash importer in background (resumable, ~minutes-hours)"
+    sudo docker exec -d pi-setup-pos-1 \
+        python /app/import_artwork_hashes.py 2>/dev/null || \
+        warn "Artwork hash importer failed to launch — run manually with:"
+        warn "  sudo docker exec -it pi-setup-pos-1 python import_artwork_hashes.py"
+else
+    warn "import_artwork_hashes.py not found in pos image — rebuild pos to include it"
+fi
 
 echo
 hr
