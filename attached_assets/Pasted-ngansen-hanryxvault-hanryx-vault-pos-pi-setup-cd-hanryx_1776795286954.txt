@@ -1,0 +1,34 @@
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ cd ~/hanryx-vault-pos/pi-setup
+
+# 1. Temporarily allow passwordless local connections
+docker exec pi-setup-db-1 bash -c \
+  "sed -i.bak -E 's/(scram-sha-256|md5|password)/trust/g' /var/lib/postgresql/data/pg_hba.conf"
+
+# 2. Reload Postgres so the change takes effect (no restart needed)
+docker exec pi-setup-db-1 su -c "pg_ctl reload -D /var/lib/postgresql/data" postgres
+
+# 3. Log in as vaultpos (no password thanks to trust) and reset its password
+docker exec pi-setup-db-1 psql -U vaultpos -d postgres \
+  -c "ALTER USER vaultpos WITH PASSWORD 'Norwood02docker compose logs --tail=15 pospospick up the wo
+server signaled
+ALTER ROLE
+server signaled
+[+] restart 0/2
+ ⠴ Container pi-setup-pgbouncer-1 Restarting  2.5s
+ ⠴ Container pi-setup-pos-1       Restarting  2.5s
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+pos-1  | [2026-04-21 18:13:29 +0000] [8] [INFO] DB schema initialised successfully
+pos-1  | [2026-04-21 18:13:29 +0000] [8] [INFO] Listening at: http://0.0.0.0:8080 (8)
+pos-1  | [2026-04-21 18:13:29 +0000] [8] [INFO] Using worker: gevent
+pos-1  | [2026-04-21 18:13:29 +0000] [13] [INFO] Booting worker with pid: 13
+pos-1  | [2026-04-21 18:13:29 +0000] [13] [INFO] [bg] pricing-prewarm disabled via env
+pos-1  | [2026-04-21 18:13:29 +0000] [13] [INFO] [bg] lang-prewarm disabled via env
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] daily refresh scheduler started"}
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 58 cards"}
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 58 products — skipping auto-sync"}
+pos-1  | {"ts":"2026-04-21T18:13:29","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+pos-1  | [2026-04-21 18:13:29 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+pos-1  | 127.0.0.1 - - [21/Apr/2026:18:13:32 +0000] "GET /health HTTP/1.1" 200 313 "-" "curl/7.88.1"
+pos-1  | 172.18.0.1 - - [21/Apr/2026:18:13:39 +0000] "GET /health HTTP/1.1" 200 313 "http://localhost:8080/admin" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ 
