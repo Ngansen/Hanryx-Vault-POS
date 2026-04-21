@@ -16945,7 +16945,17 @@ def _build_price_model(items: list) -> dict:
     n      = len(prices)
     q1     = prices[n // 4]
     q3     = prices[(n * 3) // 4]
-    median = prices[n // 2]
+    # Trimmed median: drop top & bottom 20 % before taking the centre.
+    # IQR removal above already handles wild outliers; this extra trim
+    # protects against the soft right-skew typical of TCG singles
+    # (e.g. one PSA-graded ringer in a sample of raws). Only applied
+    # when sample is large enough that trimming still leaves >=3 points.
+    if n >= 5:
+        trim   = max(1, int(n * 0.20))
+        core   = prices[trim : n - trim]
+        median = core[len(core) // 2] if core else prices[n // 2]
+    else:
+        median = prices[n // 2]
     avg    = sum(prices) / n
 
     return {
@@ -17834,6 +17844,53 @@ def api_pricing_cache_delete(query_path):
     except Exception:
         pass
     return jsonify({"ok": True, "invalidated": query})
+
+
+# ── GET /api/v1/enrich/<game> ────────────────────────────────────────────────
+
+@app.route("/api/v1/enrich/<game>", methods=["GET"])
+@require_api_token
+def api_enrich(game):
+    """
+    Canonical card lookup via free public APIs:
+      • pokemon  → api.pokemontcg.io  (English Pokémon)
+      • mtg      → api.scryfall.com   (Magic: The Gathering)
+
+    Other games (onepiece, lorcana, dbs) currently return 404 — no
+    free canonical API exists for them at time of writing. Fall back
+    to operator-pick training when enrichment is unavailable.
+
+    Query params:
+      name     — card name (required)
+      number   — collector number (optional, Pokémon only)
+      set      — set code (optional, MTG only)
+
+    Returns the canonical {game, name, set, set_code, number, rarity,
+    image, source} dict or {error: "not_found"} with HTTP 404.
+    """
+    try:
+        from card_enrich import enrich as _enrich
+    except Exception as e:
+        log.warning("[enrich] module load failed: %s", e)
+        return jsonify({"error": "enrich_unavailable"}), 503
+
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name_required"}), 400
+
+    number   = request.args.get("number") or None
+    set_code = request.args.get("set")    or None
+
+    result = _enrich(
+        game     = game,
+        name     = name,
+        number   = number,
+        set_code = set_code,
+        redis_client = _redis(),
+    )
+    if not result:
+        return jsonify({"error": "not_found", "game": game, "name": name}), 404
+    return jsonify(result)
 
 
 # ── GET /api/v1/pricing/history ───────────────────────────────────────────────
