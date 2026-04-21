@@ -8244,6 +8244,24 @@ def _kiosk_push_trade(ti_id, complete=False, cancelled=False):
 @app.route("/admin/market/quick-trade-in", methods=["POST"])
 @require_admin
 def admin_market_quick_trade_in():
+    import traceback as _tb
+    try:
+        return _admin_market_quick_trade_in_impl()
+    except Exception as _e:
+        _tb_str = _tb.format_exc()
+        app.logger.error("quick-trade-in CRASH: %s\n%s", _e, _tb_str)
+        print("=" * 70, flush=True)
+        print("QUICK-TRADE-IN TRACEBACK:", flush=True)
+        print(_tb_str, flush=True)
+        print("=" * 70, flush=True)
+        return jsonify({
+            "error":     str(_e),
+            "exception": type(_e).__name__,
+            "traceback": _tb_str.splitlines()[-12:],
+        }), 500
+
+
+def _admin_market_quick_trade_in_impl():
     """One-click: from the Market page, push the currently-shown card straight
     to the customer tablet as a trade-in offer.
 
