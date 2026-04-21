@@ -1,0 +1,36 @@
+cp
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ grep -E '^POSTGRES_(USER|PASSWORD|DB)=' .env
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ cd ~/hanryx-vault-pos/pi-setup
+Line 2 — press Enter:
+
+grep -E '^POSTGRES_(USER|PASSWORD|DB)=' .env
+Line 3 — press Enter:
+
+docker compose ps
+-bash: Line: command not found
+-bash: Line: command not found
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED        STATUS                          PORTS
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           13 hours ago   Up 13 hours (healthy)           5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    37 hours ago   Up 37 hours (healthy)           5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      41 hours ago   Up 41 hours (healthy)           80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          6 hours ago    Restarting (2) 18 seconds ago   
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   26 hours ago   Up 26 hours (healthy)           8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        2 days ago     Up 2 days (healthy)             6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   37 hours ago   Up 37 hours (unhealthy)         0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $ cd ~/hanryx-vault-pos/pi-setup
+Line 2 — press Enter:
+
+grep -E '^POSTGRES_(USER|PASSWORD|DB)=' .env
+Line 3 — press Enter:
+
+docker compose ps
+-bash: Line: command not found
+-bash: Line: command not found
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED        STATUS                          PORTS
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           13 hours ago   Up 13 hours (healthy)           5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    37 hours ago   Up 37 hours (healthy)           5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      41 hours ago   Up 41 hours (healthy)           80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          6 hours ago    Restarting (2) 35 seconds ago   
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   26 hours ago   Up 26 hours (healthy)           8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        2 days ago     Up 2 days (healthy)             6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   37 hours ago   Up 37 hours (unhealthy)         0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
