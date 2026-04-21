@@ -796,6 +796,38 @@ def _redis():
         return _redis_client_obj
 
 
+# ---------------------------------------------------------------------------
+# Server-side sessions (Redis-backed)
+# ---------------------------------------------------------------------------
+# Default Flask sessions are signed cookies — those alone DO survive a
+# container restart, BUT login state is implemented via session keys (e.g.
+# `session["admin"]=True`). Several deploy hooks rotate SESSION_SECRET at
+# startup, which invalidates every cookie and logs every operator out.
+#
+# By moving session storage to Redis (which is a separate, persistent
+# container that we never `--force-recreate`), the session ID in the cookie
+# stays valid across pos-container redeploys. Operator stays logged in.
+#
+# Falls back gracefully to the default cookie store if Redis is unreachable
+# OR if flask-session is not installed (e.g. fresh dev checkout).
+try:
+    from flask_session import Session as _FlaskSession
+    _session_redis = _redis()
+    if _session_redis is not None:
+        app.config["SESSION_TYPE"]               = "redis"
+        app.config["SESSION_REDIS"]              = _session_redis
+        app.config["SESSION_PERMANENT"]          = True
+        app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 7  # 7 days
+        app.config["SESSION_USE_SIGNER"]         = True
+        app.config["SESSION_KEY_PREFIX"]         = "hv:sess:"
+        _FlaskSession(app)
+        log.info("[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)")
+    else:
+        log.warning("[session] Redis unreachable — falling back to default cookie sessions (operators will be logged out on container restart)")
+except ImportError:
+    log.warning("[session] flask-session not installed — using default cookie sessions. `pip install flask-session` to fix.")
+
+
 def _rcache_get(key: str):
     """Get a JSON-encoded value from Redis. Returns None on miss or error."""
     try:

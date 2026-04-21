@@ -36,6 +36,10 @@ orjson>=3.9.0
 # Redis — cross-worker pub/sub for SSE and shared L2 cache
 redis>=5.0.0
 
+# Server-side Flask sessions backed by Redis — survives container restarts
+# so operators don't get logged out every time we `docker compose recreate`
+flask-session>=0.8.0
+
 # Intelligent pricing engine — eBay sold-listing scraper
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
