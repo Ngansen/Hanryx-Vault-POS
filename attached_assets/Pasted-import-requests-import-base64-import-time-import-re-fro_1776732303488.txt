@@ -1,0 +1,244 @@
+import requests
+import base64
+import time
+import re
+from datetime import datetime, timedelta
+from statistics import median
+from flask import Flask, jsonify
+
+# ==============================
+# 🔑 CONFIG
+# ==============================
+CLIENT_ID = "YOUR_EBAY_CLIENT_ID"
+CLIENT_SECRET = "YOUR_EBAY_CLIENT_SECRET"
+
+SEARCH_QUERIES = [
+    "pokemon charizard",
+    "pokemon pikachu",
+    "pokemon ex",
+    "pokemon gx",
+    "pokemon holo",
+    "pokemon psa"
+]
+
+# ==============================
+# 🔐 EBAY AUTH
+# ==============================
+def get_token():
+    url = "https://api.ebay.com/identity/v1/oauth2/token"
+    creds = f"{CLIENT_ID}:{CLIENT_SECRET}"
+    encoded = base64.b64encode(creds.encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {encoded}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    data = {
+        "grant_type": "client_credentials",
+        "scope": "https://api.ebay.com/oauth/api_scope"
+    }
+
+    return requests.post(url, headers=headers, data=data).json()["access_token"]
+
+# ==============================
+# 🧠 HELPERS
+# ==============================
+def parse_date(d):
+    return datetime.strptime(d, "%Y-%m-%dT%H:%M:%S.%fZ")
+
+def is_english(title):
+    t = title.lower()
+    return not any(x in t for x in ["japanese", "korean", "chinese"])
+
+def parse_card(title):
+    t = title.lower()
+
+    grade_match = re.search(r'psa\s?(\d+)', t)
+    grade = f"PSA {grade_match.group(1)}" if grade_match else "RAW"
+
+    num_match = re.search(r'(\d+/\d+)', title)
+    number = num_match.group(1) if num_match else None
+
+    words = title.split()
+    name = None
+
+    for i, w in enumerate(words):
+        if w.lower() == "pokemon" and i + 1 < len(words):
+            name = words[i + 1]
+            break
+
+    return name, number, grade
+
+# ==============================
+# 🔎 MATCH TO REAL CARD (TCG API)
+# ==============================
+def match_card(name, number):
+    if not name:
+        return None
+
+    url = "https://api.pokemontcg.io/v2/cards"
+
+    query = f'name:"{name}"'
+    if number:
+        query += f' number:"{number.split("/")[0]}"'
+
+    params = {"q": query, "pageSize": 1}
+
+    try:
+        res = requests.get(url, params=params).json()
+        cards = res.get("data", [])
+        if cards:
+            c = cards[0]
+            return {
+                "card_id": c["id"],
+                "name": c["name"],
+                "set": c["set"]["name"],
+                "number": c["number"],
+                "image": c["images"]["small"]
+            }
+    except:
+        pass
+
+    return None
+
+# ==============================
+# 📦 FETCH EBAY SALES
+# ==============================
+def fetch_sales():
+    token = get_token()
+
+    url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    data = []
+
+    for q in SEARCH_QUERIES:
+        for page in range(2):
+            params = {
+                "q": q,
+                "filter": "soldItems:true",
+                "limit": 100,
+                "offset": page * 100
+            }
+
+            res = requests.get(url, headers=headers, params=params).json()
+
+            for item in res.get("itemSummaries", []):
+                title = item.get("title", "")
+
+                if not is_english(title):
+                    continue
+
+                name, number, grade = parse_card(title)
+                if not name:
+                    continue
+
+                match = match_card(name, number)
+                if not match:
+                    continue
+
+                price = float(item["price"]["value"])
+                date = parse_date(item["itemEndDate"])
+
+                data.append({
+                    "card_id": match["card_id"],
+                    "name": match["name"],
+                    "set": match["set"],
+                    "number": match["number"],
+                    "grade": grade,
+                    "price": price,
+                    "date": date
+                })
+
+            time.sleep(1)
+
+    return data
+
+# ==============================
+# 📊 BUILD PRICES (30/60/90)
+# ==============================
+def build_prices(data):
+    now = datetime.utcnow()
+
+    buckets = {
+        "30d": now - timedelta(days=30),
+        "60d": now - timedelta(days=60),
+        "90d": now - timedelta(days=90)
+    }
+
+    grouped = {}
+
+    for d in data:
+        key = (d["card_id"], d["grade"])
+
+        if key not in grouped:
+            grouped[key] = {
+                "meta": d,
+                "sales": []
+            }
+
+        grouped[key]["sales"].append(d)
+
+    output = []
+
+    for key, val in grouped.items():
+        result = {
+            "card_id": key[0],
+            "name": val["meta"]["name"],
+            "set": val["meta"]["set"],
+            "number": val["meta"]["number"],
+            "grade": key[1]
+        }
+
+        for label, cutoff in buckets.items():
+            prices = [
+                x["price"] for x in val["sales"]
+                if x["date"] >= cutoff
+            ]
+
+            if len(prices) < 3:
+                result[label] = None
+                continue
+
+            prices.sort()
+            trim = int(len(prices) * 0.2)
+            trimmed = prices[trim:len(prices)-trim] if len(prices) > 5 else prices
+
+            result[label] = round(median(trimmed), 2)
+
+        output.append(result)
+
+    return output
+
+# ==============================
+# 🌐 LIVE API
+# ==============================
+app = Flask(__name__)
+
+CACHE = []
+
+@app.route("/refresh")
+def refresh():
+    global CACHE
+    raw = fetch_sales()
+    CACHE = build_prices(raw)
+    return {"status": "refreshed", "count": len(CACHE)}
+
+@app.route("/cards")
+def all_cards():
+    return jsonify(CACHE)
+
+@app.route("/card/<card_id>")
+def get_card(card_id):
+    for c in CACHE:
+        if c["card_id"] == card_id:
+            return jsonify(c)
+    return {"error": "not found"}, 404
+
+# ==============================
+# 🚀 START SERVER
+# ==============================
+if __name__ == "__main__":
+    print("🔥 Starting Pokémon POS Pricing API...")
+    app.run(port=5000)
