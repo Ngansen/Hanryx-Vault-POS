@@ -12096,6 +12096,19 @@ async function pushTransparency() {{
       headers: {{'Content-Type': 'application/json'}},
       body:    JSON.stringify(payload),
     }});
+    if (r.redirected && r.url.includes('/login')) {{
+      if (confirm('Your session has expired. Click OK to log in again.')) {{
+        window.location.href = '/admin/login';
+      }}
+      if (btn) {{ btn.textContent = orig; btn.disabled = false; }}
+      return;
+    }}
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) {{
+      toast('Server returned non-JSON (' + r.status + ') — try refreshing the page', true);
+      if (btn) {{ btn.textContent = orig; btn.disabled = false; }}
+      return;
+    }}
     const j = await r.json();
     if (r.ok && j.ok) {{
       toast('Sent to customer display');
