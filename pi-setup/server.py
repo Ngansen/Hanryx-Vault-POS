@@ -8139,6 +8139,14 @@ def admin_trade_in_send_to_tablet(ti_id):
     payload["sent_at"]    = int(time.time() * 1000)
     payload["decided_at"] = None
     _tablet_offer_save(payload)
+    # Forward to cloud so tablet can reach Replit if local Pi is unreachable
+    _cloud_url = os.getenv("CLOUD_URL", "https://updated-hanryx-vault-pos-system.replit.app")
+    def _fwd_to_cloud():
+        try:
+            _requests.post(f"{_cloud_url}/tablet/trade/push", json=payload, timeout=8)
+        except Exception:
+            pass
+    threading.Thread(target=_fwd_to_cloud, daemon=True).start()
     # Mirror to the customer kiosk so the small screen also shows the offer
     try:
         _kiosk_transparency_save({
