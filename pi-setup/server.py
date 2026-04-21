@@ -17034,6 +17034,84 @@ def _ebay_app_token() -> str:
             return ""
 
 
+# Active-asking → estimated-sold ratio. eBay sold prices on TCG singles
+# typically clear at ~78–82% of asking; 0.80 is the safe centre.
+_EBAY_ACTIVE_TO_SOLD_RATIO = 0.80
+
+
+def _ebay_browse_active_page(query: str, page: int) -> list[dict]:
+    """
+    Fallback when the legacy Finding API's `findCompletedItems` op is rate-
+    limited (eBay throttles non-partner apps to ~5 calls/day) or returns
+    nothing. Hits the modern, unrestricted Browse API for ACTIVE listings
+    and applies _EBAY_ACTIVE_TO_SOLD_RATIO to estimate sold prices.
+
+    Each returned dict carries `_estimated: True` so callers/UI can show
+    a distinct badge ("asking-derived" vs true sold).
+    """
+    if not _EBAY_APP_ID or not _EBAY_CERT_ID:
+        return []
+    token = _ebay_app_token()
+    if not token:
+        return []
+    try:
+        r = _requests.get(
+            "https://api.ebay.com/buy/browse/v1/item_summary/search",
+            headers={
+                "Authorization":          f"Bearer {token}",
+                "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+            },
+            params={
+                "q":            query,
+                "category_ids": "183050",   # Pokémon Individual Cards
+                "limit":        100,
+                "offset":       (max(page, 1) - 1) * 100,
+                "filter":       "buyingOptions:{FIXED_PRICE|AUCTION}",
+            },
+            timeout=12,
+        )
+        r.raise_for_status()
+        items = (r.json() or {}).get("itemSummaries", []) or []
+    except Exception as _e:
+        log.debug("[ebay] browse fallback page %d failed: %s", page, _e)
+        return []
+
+    today = datetime.date.today()
+    out: list[dict] = []
+    for it in items:
+        try:
+            title = (it.get("title") or "").strip()
+            if not title:
+                continue
+            raw_price = (it.get("price") or {}).get("value")
+            if raw_price is None:
+                continue
+            raw = float(raw_price)
+            if raw <= 0:
+                continue
+            est = round(raw * _EBAY_ACTIVE_TO_SOLD_RATIO, 2)
+            # Spread synthetic "sold dates" using listing creation date so
+            # period buckets (7d/30d/90d) aren't all dumped into today.
+            d_str = it.get("itemCreationDate") or ""
+            try:
+                sold_date = (
+                    datetime.datetime.fromisoformat(d_str.replace("Z", "+00:00")).date()
+                    if d_str else today
+                )
+            except Exception:
+                sold_date = today
+            out.append({
+                "title":            title,
+                "price":            est,
+                "sold_date":        sold_date,
+                "_estimated":       True,
+                "_raw_active_price": raw,
+            })
+        except Exception:
+            continue
+    return out
+
+
 def _ebay_finding_page(query: str, page: int) -> list[dict]:
     """
     Fetch one page of eBay completed/sold listings via the Finding API.
@@ -17109,6 +17187,18 @@ def _ebay_finding_page(query: str, page: int) -> list[dict]:
             results.append({"title": title, "price": price, "sold_date": sold_date})
         except Exception:
             continue
+
+    # If sold-listings call returned nothing (rate-limited at ~5/day, or
+    # genuinely no completed sales), fall back to active listings × 0.80
+    # so the panel isn't left empty. Only fall back on page 1 — the Browse
+    # API is paginated independently.
+    if not results and page == 1:
+        fb = _ebay_browse_active_page(query, page)
+        if fb:
+            log.info("[ebay] findCompletedItems empty/rate-limited for %r — "
+                     "fell back to Browse API (%d active listings)", query, len(fb))
+        return fb
+
     return results
 
 
@@ -17811,6 +17901,15 @@ def api_pricing_history():
         matched = _filter_and_score(sales, card)
         if matched:
             _bg(_store_ebay_sales_bg, query, matched)
+
+    # If any item came from the Browse-API fallback (active asking × 0.80),
+    # flag the response so the UI shows an "asking-derived" badge.
+    if matched:
+        est_count = sum(1 for m in matched if m.get("_estimated"))
+        if est_count == len(matched):
+            data_source = "live_asking_x080"
+        elif est_count:
+            data_source = "live_mixed"
 
     # Build period models
     periods = {
