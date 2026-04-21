@@ -1,0 +1,62 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ grep -n -A 30 'pos:' ~/Hanryx-Vault-POS/pi-setup/docker-compose.yml | head -60
+52:      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+53-      POOL_MODE:         transaction
+54-      MAX_CLIENT_CONN:   200
+55-      DEFAULT_POOL_SIZE: 20
+56-      MIN_POOL_SIZE:     5
+57-      RESERVE_POOL_SIZE: 5
+58-      SERVER_RESET_QUERY: DISCARD ALL
+59-      LOG_CONNECTIONS:   "0"
+60-      LOG_DISCONNECTIONS: "0"
+61-    depends_on:
+62-      db:
+63-        condition: service_healthy
+64-    healthcheck:
+65-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || true"]
+66-      interval: 10s
+67-      timeout: 5s
+68-      retries: 5
+69-    mem_limit: 64m
+70-    logging:
+71-      driver: json-file
+72-      options:
+73-        max-size: "5m"
+74-        max-file: "3"
+75-
+76-  # ── Flask POS server ──────────────────────────────────────────────────────────
+77-  # Handles: tablet POS (proxied via satellite Pi), admin dashboard, scan queue
+78-  # Network: Main Pi (home) ← Tailscale ← Satellite Pi (shop) ← LAN ← Tablet
+79-  # Accessible on Tailscale as 'hanryxvault' at port 8080
+80:  pos:
+81-    build: .
+82-    restart: unless-stopped
+83-    ports:
+84-      - "8080:8080"
+85-    environment:
+86:      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+87-      REDIS_URL:        redis://redis:6379/0
+88-      FLASK_ENV:        production
+89-      PYTHONUNBUFFERED: "1"
+90-
+91-      SESSION_SECRET:   ${SESSION_SECRET:-change-me-on-the-pi}
+92-      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-hanryxvault}
+93-
+94-      # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
+95-      GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
+96-
+97-      # Disable background prewarm threads.  These walk the inventory and call
+98-      # eBay continuously to pre-cache prices, which exhausts the 5000/day
+99-      # Finding API quota in hours and breaks live sold-listings lookups.
+100-      # Keep "1" (disabled) — pricing is cached on demand when you actually
+101-      # search a card in the UI.  Set to "0" only if you have a higher quota.
+102-      DISABLE_BG_PRICING_PREWARM: "1"
+103-      DISABLE_BG_LANG_PREWARM:    "1"
+104-      DISABLE_BG_PRICE_REFRESH:   "1"
+105-
+106-      # Storefront cloud sync — remove if you don't run the storefront service
+107-      CLOUD_INVENTORY_SOURCES: ${CLOUD_INVENTORY_SOURCES:-}
+108-
+109-      # Inventory-Scanner live API (fastest sync — set to your deployed scanner URL)
+110-      # INVENTORY_SCANNER_URL: https://your-scanner.replit.app/api/inventory
+111-
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
