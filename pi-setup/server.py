@@ -17846,6 +17846,50 @@ def api_pricing_cache_delete(query_path):
     return jsonify({"ok": True, "invalidated": query})
 
 
+# ── GET /api/v1/cert/psa/<cert_number> ───────────────────────────────────────
+
+@app.route("/api/v1/cert/psa/<cert_number>", methods=["GET"])
+@require_api_token
+def api_cert_psa(cert_number):
+    """
+    PSA cert authentication. Operator scans/types the cert number from a
+    PSA slab (8 digits, printed under the barcode); we hit PSA's public
+    API and return the canonical card identity + grade.
+
+    Requires PSA_API_TOKEN in the environment. Free token from
+    https://www.psacard.com/publicapi.
+
+    Cert records are immutable so we cache 30 days; not-found 1 hour.
+
+    Returns 200 with normalised cert dict, 404 when cert not found,
+    503 when token missing or upstream unreachable, 400 on bad format.
+    """
+    try:
+        from psa_cert import lookup_cert
+    except Exception as e:
+        log.warning("[psa] module load failed: %s", e)
+        return jsonify({"error": "psa_unavailable"}), 503
+
+    result = lookup_cert(cert_number, redis_client=_redis())
+
+    if result is None:
+        return jsonify({"error": "not_found", "cert_number": cert_number}), 404
+
+    if isinstance(result, dict) and result.get("error"):
+        err = result["error"]
+        status = {
+            "no_token":        503,   # PSA_API_TOKEN not configured on this Pi
+            "bad_token":       503,   # token present but rejected by PSA
+            "rate_limited":    429,
+            "upstream":        502,
+            "parse":           502,
+            "bad_cert_format": 400,
+        }.get(err, 502)
+        return jsonify(result), status
+
+    return jsonify(result)
+
+
 # ── GET /api/v1/enrich/<game> ────────────────────────────────────────────────
 
 @app.route("/api/v1/enrich/<game>", methods=["GET"])
