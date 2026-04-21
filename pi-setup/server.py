@@ -100,6 +100,7 @@ import re
 import subprocess
 import threading
 import time as _time
+import time   # plain alias — many call sites use bare time.time()
 from concurrent.futures import ThreadPoolExecutor as _TPE
 import urllib.parse
 import base64
