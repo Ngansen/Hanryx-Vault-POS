@@ -7629,6 +7629,7 @@ def admin_trade_in_list():
       <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn-gold" id="ti-send-tablet-btn" onclick="sendOfferToTablet()" style="background:#0ea5e9;color:#000;font-size:14px">📲 Send Offer to Tablet</button>
+        <span id="ti-tablet-heartbeat" title="Last time the customer tablet checked in" style="font-size:12px;font-weight:700;color:#888;min-width:135px;text-align:center;padding:6px 10px;border-radius:6px;background:#1a1a1a;border:1px solid #2a2a2a">📱 Tablet — checking…</span>
         <span id="ti-offer-status" style="font-size:13px;font-weight:700;color:#888;min-width:170px;text-align:center;padding:6px 12px;border-radius:6px;background:#1a1a1a;border:1px solid #2a2a2a">Not sent yet</span>
         <button class="btn-gold" id="ti-complete-btn" onclick="completeTi()" disabled style="background:#374151;color:#666;font-size:15px;cursor:not-allowed">✅ Complete &amp; Add to Inventory</button>
       </div>
@@ -7844,6 +7845,59 @@ function _startOfferPoll() {{
   }}, 1500);
 }}
 
+// ── Tablet heartbeat ─────────────────────────────────────────────────
+// Polls /api/v1/tablet/heartbeat every 4s and updates the badge next to
+// the Send Offer button. Lets the operator see at a glance whether the
+// customer tablet is alive *before* hitting Send (avoids the "I sent the
+// offer but the tablet shows nothing" confusion).
+let _tabletHbTimer = null;
+function _renderTabletHb(d) {{
+  const el = document.getElementById('ti-tablet-heartbeat');
+  if (!el) return;
+  if (!d || d.last_poll_at_ms == null) {{
+    el.textContent = '📱 Tablet — never';
+    el.style.background = '#2a1a1a';
+    el.style.borderColor = '#7f1d1d';
+    el.style.color = '#fca5a5';
+    return;
+  }}
+  const s = d.seconds_ago;
+  const label = s < 60 ? (s + 's ago')
+              : s < 3600 ? (Math.floor(s/60) + 'm ago')
+              : 'long time ago';
+  if (d.alive) {{
+    el.textContent = '📱 Tablet ✓ ' + label;
+    el.style.background = '#0a1f10';
+    el.style.borderColor = '#166534';
+    el.style.color = '#4ade80';
+  }} else {{
+    el.textContent = '📱 Tablet ⚠ ' + label;
+    el.style.background = '#2a1f0a';
+    el.style.borderColor = '#854d0e';
+    el.style.color = '#facc15';
+  }}
+}}
+async function _pollTabletHb() {{
+  try {{
+    const r = await fetch('/api/v1/tablet/heartbeat', {{cache:'no-store'}});
+    if (!r.ok) {{ _renderTabletHb(null); return; }}
+    const ct = (r.headers.get('content-type')||'').toLowerCase();
+    if (!ct.includes('json')) {{ _renderTabletHb(null); return; }}
+    _renderTabletHb(await r.json());
+  }} catch(_) {{ _renderTabletHb(null); }}
+}}
+function _startTabletHb() {{
+  if (_tabletHbTimer) return;
+  _pollTabletHb();
+  _tabletHbTimer = setInterval(_pollTabletHb, 4000);
+}}
+// Start as soon as the page is interactive — cheap endpoint, no auth
+if (document.readyState === 'loading') {{
+  document.addEventListener('DOMContentLoaded', _startTabletHb);
+}} else {{
+  _startTabletHb();
+}}
+
 async function sendOfferToTablet() {{
   if (!_activeTiId || !_activeTiItems.length) {{ alert('Add at least one item first'); return; }}
   const btn = document.getElementById('ti-send-tablet-btn');
@@ -7949,8 +8003,48 @@ def admin_trade_in_get(ti_id):
 # Single-tablet store, so a single Redis key is fine. TTL 1 h keeps the
 # screen from getting stuck on a stale offer if everyone walks away.
 
-_TABLET_OFFER_KEY = "hv:tablet:trade:current"
-_TABLET_OFFER_TTL = 3600
+_TABLET_OFFER_KEY     = "hv:tablet:trade:current"
+_TABLET_OFFER_TTL     = 3600
+_TABLET_HEARTBEAT_KEY = "hv:tablet:last_poll_at"   # unix ms of most recent tablet GET
+_TABLET_HEARTBEAT_TTL = 600                        # 10 min — long enough to detect "tablet unplugged"
+
+
+def _tablet_heartbeat_touch() -> None:
+    """Record that the tablet APK just polled us. Cheap; called on every
+    tablet GET. Lets the operator's trade-in modal show 'Tablet ✓ 2s ago'
+    so we know the device is alive *before* we hit Send Offer."""
+    try:
+        r = _redis()
+        if r is None: return
+        r.setex(_TABLET_HEARTBEAT_KEY, _TABLET_HEARTBEAT_TTL,
+                str(int(time.time() * 1000)))
+    except Exception:
+        pass  # heartbeat is best-effort; never block a tablet poll
+
+
+def _tablet_heartbeat_status() -> dict:
+    """Return {alive, last_poll_at_ms, seconds_ago} for UI badges."""
+    try:
+        r = _redis()
+        if r is None:
+            return {"alive": False, "last_poll_at_ms": None, "seconds_ago": None,
+                    "reason": "redis-unavailable"}
+        v = r.get(_TABLET_HEARTBEAT_KEY)
+        if not v:
+            return {"alive": False, "last_poll_at_ms": None, "seconds_ago": None,
+                    "reason": "no-poll-yet"}
+        if isinstance(v, bytes):
+            v = v.decode("utf-8", errors="replace")
+        last_ms = int(v)
+        secs = int(time.time() - last_ms / 1000.0)
+        return {
+            "alive":           secs <= 15,   # tablet polls every ~2s; 15s = stale
+            "last_poll_at_ms": last_ms,
+            "seconds_ago":     max(0, secs),
+        }
+    except Exception:
+        return {"alive": False, "last_poll_at_ms": None, "seconds_ago": None,
+                "reason": "error"}
 
 
 def _tablet_offer_build_payload(ti_id: int) -> dict | None:
@@ -8080,10 +8174,18 @@ def admin_trade_in_offer_status(ti_id):
 @require_api_token
 def tablet_trade_current():
     """Tablet poll endpoint — returns the active offer or {empty:true}."""
+    _tablet_heartbeat_touch()        # operator UI uses this to know tablet is alive
     snap = _tablet_offer_load()
     resp = jsonify(snap or {"empty": True})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.route("/api/v1/tablet/heartbeat", methods=["GET"])
+def api_tablet_heartbeat():
+    """How long since the tablet APK last polled? Used by the trade-in
+    modal to show 'Tablet ✓ 2s' / 'Tablet ⚠ 47s' / 'Tablet — never'."""
+    return jsonify(_tablet_heartbeat_status())
 
 
 @app.route("/tablet/trade/<int:ti_id>/accept", methods=["POST"])
@@ -17593,16 +17695,30 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
     if variant and variant.lower() not in name.lower():
         variant_part = variant
 
-    query = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+    query        = " ".join(filter(None, [name, variant_part, number, set_n, "pokemon"])).strip()
+    broad_query  = " ".join(filter(None, [name, variant_part, "pokemon"])).strip()
+    use_broader  = (broad_query and broad_query != query)
+
+    # Threshold: if the strict query returns fewer than this many sales we
+    # also run the broad query and merge — gives the period models enough
+    # data points to be statistically meaningful instead of "No sales data".
+    BROADER_FALLBACK_THRESHOLD = 5
 
     # ── No Finding-API key? Use the keyless HTML scraper. ──────────────
     if not _EBAY_APP_ID:
-        try:
-            from ebay_sold import ebay_sold as _scrape
-            rows = _scrape(query, limit=180, pages=3)
-        except Exception as exc:
-            log.info("[ebay] keyless scraper failed: %s — %s", query, exc)
-            return []
+        from ebay_sold import ebay_sold as _scrape
+        def _scrape_safe(q):
+            try:
+                return _scrape(q, limit=180, pages=3)
+            except Exception as exc:
+                log.info("[ebay] keyless scraper failed: %s — %s", q, exc)
+                return []
+        rows = _scrape_safe(query)
+        if len(rows) < BROADER_FALLBACK_THRESHOLD and use_broader:
+            extra = _scrape_safe(broad_query)
+            log.info("[ebay] strict %r → %d rows, broadening to %r → +%d rows",
+                     query, len(rows), broad_query, len(extra))
+            rows = rows + extra
         items: list[dict] = []
         seen: set[str] = set()
         for r in rows:
@@ -17622,7 +17738,7 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
                 "price":     float(r.get("price") or 0),
                 "sold_date": sd,
             })
-        log.info("[ebay] keyless scraper %r → %d rows", query, len(items))
+        log.info("[ebay] keyless scraper %r → %d unique rows", query, len(items))
         return items
 
     # ── Normal Finding-API path (3 pages in parallel) ──────────────────
@@ -17637,6 +17753,25 @@ def _fetch_ebay_sales(card: dict) -> list[dict]:
             if key not in seen:
                 seen.add(key)
                 items.append(item)
+
+    # ── Broaden if the strict query returned almost nothing ────────────
+    # Common cause: the card's number is mis-OCR'd ("199" vs "199/197") or
+    # eBay sellers omit the set name. Dropping number+set widens the net.
+    if len(items) < BROADER_FALLBACK_THRESHOLD and use_broader:
+        log.info("[ebay] strict %r → %d items, broadening to %r",
+                 query, len(items), broad_query)
+        bfuts  = [_worker_pool.submit(_ebay_finding_page, broad_query, p) for p in range(1, 4)]
+        bpages = [f.result(timeout=20) for f in bfuts]
+        added  = 0
+        for page in bpages:
+            for item in _parse_ebay_page(page):
+                key = f"{item['title'][:60]}:{item['price']}"
+                if key not in seen:
+                    seen.add(key)
+                    items.append(item)
+                    added += 1
+        log.info("[ebay] broader query added %d items (total now %d)",
+                 added, len(items))
     return items
 
 
