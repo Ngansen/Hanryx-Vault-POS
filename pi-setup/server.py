@@ -11666,6 +11666,20 @@ async function quickTradeInToTablet() {{
         number:       t.number || d.number || '',
       }}),
     }});
+    // Detect session-expiry redirects: Flask returns the /admin/login HTML
+    // when the cookie is invalid, which would otherwise blow up r.json()
+    // with a confusing "JSON.parse: unexpected character" error.
+    if (r.redirected && r.url.includes('/login')) {{
+      if (confirm('Your session has expired. Click OK to log in again.')) {{
+        window.location.href = '/admin/login';
+      }}
+      return;
+    }}
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) {{
+      toast('Server returned non-JSON (' + r.status + ') — try refreshing the page', true);
+      return;
+    }}
     const j = await r.json();
     if (!r.ok || j.error) {{ toast(j.error || ('Server ' + r.status), true); return; }}
     toast('✓ Pushed to tablet · offer $' + j.offer.toFixed(2) + ' · ' + j.reference + ' (' + j.item_count + ' item' + (j.item_count===1?'':'s') + ')');
@@ -11722,6 +11736,15 @@ async function loadEbayHistory(forceRefresh) {{
 
   try {{
     const r = await fetch('/api/v1/pricing/history?' + params);
+    if (r.redirected && r.url.includes('/login')) {{
+      ebayError('Session expired — refresh the page and log in');
+      return;
+    }}
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) {{
+      ebayError('Server returned non-JSON (' + r.status + ') — try refreshing');
+      return;
+    }}
     if (!r.ok) {{ ebayError('Server returned ' + r.status); return; }}
     const d = await r.json();
     if (d.error) {{ ebayError(d.error); return; }}
@@ -11896,6 +11919,18 @@ async function loadReference(ourMarket) {{
 
   try {{
     const r = await fetch('/api/v1/reference/tcgpl?' + params);
+    if (r.redirected && r.url.includes('/login')) {{
+      document.getElementById('refLoading').textContent = '⚠ Session expired — refresh and log in';
+      document.getElementById('refLoading').style.color = '#f87171';
+      return;
+    }}
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('application/json')) {{
+      document.getElementById('refLoading').textContent =
+        '⚠ Reference unavailable — non-JSON response (' + r.status + ')';
+      document.getElementById('refLoading').style.color = '#f87171';
+      return;
+    }}
     const d = await r.json();
     if (!r.ok || d.error) {{
       document.getElementById('refLoading').textContent =
