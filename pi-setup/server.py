@@ -7577,10 +7577,17 @@ def admin_trade_in_list():
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
       <input id="ti-qr" type="text" placeholder="QR Code / Card Code" style="flex:1;min-width:160px">
       <input id="ti-name" type="text" placeholder="Card Name" style="flex:2;min-width:180px">
-      <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option></select>
+      <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option><option>PSA 10</option><option>PSA 9</option><option>PSA 8</option><option>PSA 7</option></select>
       <input id="ti-offered" type="number" step="0.01" placeholder="$ Offer" style="width:90px">
       <input id="ti-market" type="number" step="0.01" placeholder="$ Market" style="width:90px">
       <button class="btn-gold" onclick="addTiItem()" style="background:#4ade80;color:#000">+ Add</button>
+    </div>
+    <!-- PSA cert authentication row — slabbed cards: scan/type cert # → autofill name + grade + suggest 80% offer -->
+    <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 14px 0;padding:8px 12px;background:#0a0a0a;border:1px solid #1f2937;border-radius:6px">
+      <span style="font-size:12px;color:#60a5fa;font-weight:700;letter-spacing:.5px">🛡 PSA SLAB</span>
+      <input id="ti-cert" type="text" placeholder="Cert # (e.g. 84229301)" style="flex:1;min-width:140px;background:#000;color:#e0e0e0;border:1px solid #1f2937;padding:6px 10px;border-radius:4px;font-family:monospace">
+      <button type="button" onclick="lookupPsaCert()" style="background:#1e3a8a;color:#dbeafe;border:1px solid #3b82f6;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">🔍 Authenticate</button>
+      <span id="ti-cert-msg" style="font-size:11px;color:#888;flex:2;min-width:140px"></span>
     </div>
     <table id="ti-items-table" style="margin-bottom:16px">
       <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th></th></tr></thead>
@@ -7683,8 +7690,67 @@ async function addTiItem() {{
   if (d.error) {{ alert(d.error); return; }}
   _activeTiItems = d.items;
   renderTiItems();
-  ['ti-qr','ti-name','ti-offered','ti-market'].forEach(id => document.getElementById(id).value = '');
+  ['ti-qr','ti-name','ti-offered','ti-market','ti-cert'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ti-cert-msg').textContent = '';
+  document.getElementById('ti-cert-msg').style.color = '#888';
 }}
+
+// ── PSA cert authentication ──────────────────────────────────────────────
+// Operator scans/types a PSA cert # → we hit /api/v1/cert/psa/<cert> → autofill
+// name + grade. If a market $ is then entered, the offer is auto-suggested at
+// 80 % of market (vs. 55 % on raw cards) — but the operator can still edit
+// the offered amount up or down before clicking + Add.
+async function lookupPsaCert() {{
+  const cert = (document.getElementById('ti-cert').value || '').trim();
+  const msg  = document.getElementById('ti-cert-msg');
+  if (!cert) {{ msg.textContent = 'Enter a cert # first'; msg.style.color = '#f87171'; return; }}
+  msg.textContent = '⏳ Authenticating with PSA…'; msg.style.color = '#facc15';
+  try {{
+    const r = await fetch('/api/v1/cert/psa/' + encodeURIComponent(cert));
+    const d = await r.json();
+    if (!r.ok || d.error) {{
+      msg.textContent = '❌ ' + (d.error || ('PSA returned ' + r.status));
+      msg.style.color = '#f87171';
+      return;
+    }}
+    const subject = d.subject || d.brand_title || d.card_name || '';
+    const grade   = d.grade || d.card_grade || '';
+    const popG    = d.population_higher != null ? (' · pop higher: ' + d.population_higher) : '';
+    if (subject) document.getElementById('ti-name').value = subject;
+    if (grade) {{
+      const opt = 'PSA ' + String(grade).trim();
+      const sel = document.getElementById('ti-cond');
+      let found = false;
+      for (let i=0; i<sel.options.length; i++) {{
+        if (sel.options[i].value === opt || sel.options[i].text === opt) {{ sel.selectedIndex = i; found = true; break; }}
+      }}
+      if (!found) {{ const o = document.createElement('option'); o.text = opt; sel.add(o); sel.value = opt; }}
+    }}
+    if (!document.getElementById('ti-qr').value.trim()) {{
+      document.getElementById('ti-qr').value = 'PSA-' + cert;
+    }}
+    msg.textContent = '✅ Authenticated · ' + (subject || 'unknown') + (grade ? (' · PSA ' + grade) : '') + popG;
+    msg.style.color = '#4ade80';
+  }} catch(e) {{
+    msg.textContent = '❌ Network error: ' + e.message;
+    msg.style.color = '#f87171';
+  }}
+}}
+
+// When a PSA cert has been authenticated and the operator types a market $,
+// auto-suggest 80 % of market into the offer field (operator can still edit).
+document.addEventListener('DOMContentLoaded', () => {{
+  const m = document.getElementById('ti-market');
+  if (m) m.addEventListener('input', () => {{
+    const certVal = (document.getElementById('ti-cert').value || '').trim();
+    const condVal = document.getElementById('ti-cond').value || '';
+    const slabbed = certVal && condVal.startsWith('PSA');
+    if (!slabbed) return;
+    const mv = parseFloat(m.value);
+    if (!isFinite(mv) || mv <= 0) return;
+    document.getElementById('ti-offered').value = (mv * 0.80).toFixed(2);
+  }});
+}});
 
 async function removeTiItem(itemId) {{
   if (!_activeTiId) return;
@@ -10926,6 +10992,23 @@ def admin_market():
   .listing-price{{font-size:13px;font-weight:800;color:#f59e0b;white-space:nowrap}}
   .listing-date{{color:#555;font-size:11px;margin-left:10px;white-space:nowrap}}
   .iqr-note{{font-size:10px;color:#444;margin-top:10px;text-align:right}}
+  /* reference cross-check (tcgpricelookup.com) */
+  .ref-section{{display:none;background:#0a1426;border:1px solid #1e3a5f;border-radius:14px;padding:18px 22px;margin-top:16px}}
+  .ref-section.visible{{display:block}}
+  .ref-hdr{{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}}
+  .ref-title{{font-size:13px;font-weight:800;color:#bfdbfe;letter-spacing:.4px;flex:1}}
+  .ref-src{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:#1e3a5f;color:#93c5fd}}
+  .ref-loading{{color:#475569;font-size:12px;padding:10px 0;text-align:center}}
+  .ref-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}}
+  @media(max-width:720px){{.ref-grid{{grid-template-columns:repeat(2,1fr)}}}}
+  .ref-card{{background:#020617;border:1px solid #1e3a5f;border-radius:8px;padding:10px 12px;text-align:center}}
+  .ref-label{{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;font-weight:700}}
+  .ref-price{{font-size:18px;font-weight:900;color:#bfdbfe}}
+  .ref-meta{{font-size:10px;color:#475569;margin-top:2px}}
+  .ref-foot{{font-size:11px;color:#64748b;text-align:center;border-top:1px solid #1e3a5f;padding-top:8px;margin-top:6px}}
+  .ref-agree-high{{color:#4ade80}}
+  .ref-agree-mid{{color:#facc15}}
+  .ref-agree-low{{color:#f87171}}
 </style>
 </head>
 <body>
@@ -11098,6 +11181,27 @@ def admin_market():
         <span id="iqrBounds" style="color:#444;font-size:10px"></span>
       </div>
       <div class="listings-wrap" id="listingsWrap"></div>
+    </div>
+  </div>
+
+  <!-- ── Reference price strip (tcgpricelookup.com) ───────────────────────── -->
+  <!-- Independent secondary source. Renders next to our eBay panel so the   -->
+  <!-- operator gets agreement / disagreement signal at a glance.            -->
+  <div class="ref-section" id="refSection">
+    <div class="ref-hdr">
+      <span style="font-size:16px">🔄</span>
+      <span class="ref-title">Reference Cross-Check <span style="font-size:11px;color:#555;font-weight:400">(tcgpricelookup.com · independent source)</span></span>
+      <span class="ref-src" id="refSrc"></span>
+    </div>
+    <div class="ref-loading" id="refLoading">Looking up reference price…</div>
+    <div id="refBody" style="display:none">
+      <div class="ref-grid">
+        <div class="ref-card"><div class="ref-label">Their TCGplayer Market</div><div class="ref-price" id="refTcg">—</div><div class="ref-meta" id="refTcgMeta"></div></div>
+        <div class="ref-card"><div class="ref-label">Their eBay 30d Avg</div><div class="ref-price" id="refEbay">—</div><div class="ref-meta" id="refEbayMeta"></div></div>
+        <div class="ref-card"><div class="ref-label">Their PSA 10 Avg</div><div class="ref-price" id="refPsa10">—</div><div class="ref-meta" id="refPsa10Meta"></div></div>
+        <div class="ref-card"><div class="ref-label">Agreement vs Our 30d</div><div class="ref-price" id="refAgree">—</div><div class="ref-meta" id="refAgreeMeta"></div></div>
+      </div>
+      <div class="ref-foot" id="refFoot"></div>
     </div>
   </div>
 
@@ -11760,6 +11864,115 @@ function renderEbaySection(d) {{
   // ── Show body ─────────────────────────────────────────────────────────────
   document.getElementById('ebayLoading').style.display = 'none';
   document.getElementById('ebayBody').style.display    = 'block';
+
+  // ── Reference cross-check (tcgpricelookup.com) ──────────────────────────
+  // Pass our 30d median market so the reference panel can compute agreement.
+  const our30d = (pr['30d'] && pr['30d'].median != null) ? pr['30d'].median : null;
+  loadReference(our30d);
+}}
+
+// ── Reference cross-check panel (tcgpricelookup.com) ─────────────────────
+// Fires after the eBay panel renders. Pulls TCGplayer / eBay / PSA10 prices
+// from an INDEPENDENT source so the operator can sanity-check our numbers.
+// Game is inferred from the Market page context (Pokémon for now); we pass
+// name + number, plus our 30d market for an agreement band.
+async function loadReference(ourMarket) {{
+  const sec = document.getElementById('refSection');
+  if (!_ebayName) {{ sec.classList.remove('visible'); return; }}
+  sec.classList.add('visible');
+  document.getElementById('refLoading').style.display = 'block';
+  document.getElementById('refLoading').textContent   = 'Looking up reference price…';
+  document.getElementById('refLoading').style.color   = '#475569';
+  document.getElementById('refBody').style.display    = 'none';
+  document.getElementById('refSrc').textContent       = '';
+
+  const params = new URLSearchParams({{
+    game:   'pokemon',
+    name:   _ebayName,
+    number: _ebayNumber || '',
+    set:    _ebaySet    || '',
+  }});
+  if (ourMarket != null && isFinite(ourMarket)) params.set('our_market', String(ourMarket));
+
+  try {{
+    const r = await fetch('/api/v1/reference/tcgpl?' + params);
+    const d = await r.json();
+    if (!r.ok || d.error) {{
+      document.getElementById('refLoading').textContent =
+        '⚠ Reference unavailable — ' + (d.error || ('HTTP ' + r.status));
+      document.getElementById('refLoading').style.color = '#f87171';
+      return;
+    }}
+    renderReference(d, ourMarket);
+  }} catch(e) {{
+    document.getElementById('refLoading').textContent = '⚠ Network error: ' + e.message;
+    document.getElementById('refLoading').style.color = '#f87171';
+  }}
+}}
+
+function renderReference(d, ourMarket) {{
+  const fmt = v => (v != null && isFinite(v)) ? ('$' + Number(v).toFixed(2)) : '—';
+  const tcg    = (d.tcgplayer || {{}});
+  const ebay   = (d.ebay      || {{}});
+  const graded = (d.graded    || {{}});
+
+  document.getElementById('refSrc').textContent = '● ' + (d.source || 'tcgpricelookup');
+
+  document.getElementById('refTcg').textContent     = fmt(tcg.market);
+  document.getElementById('refTcgMeta').textContent =
+    (tcg.low != null && tcg.high != null) ? ('low ' + fmt(tcg.low) + ' · high ' + fmt(tcg.high)) : '';
+
+  document.getElementById('refEbay').textContent     = fmt(ebay.avg_30d);
+  document.getElementById('refEbayMeta').textContent =
+    (ebay.avg_7d != null) ? ('7d ' + fmt(ebay.avg_7d)) : 'tier-gated';
+
+  // PSA 10 may live under several keys depending on tier shape — try each.
+  const psa10 = graded.psa_10 || graded.psa10 || (graded.psa && graded.psa['10']) || null;
+  document.getElementById('refPsa10').textContent     = fmt(psa10);
+  document.getElementById('refPsa10Meta').textContent = (psa10 == null) ? 'tier-gated' : 'graded slab';
+
+  // Agreement band — server returns delta_vs_our + agreement when our_market sent.
+  const agreeEl     = document.getElementById('refAgree');
+  const agreeMetaEl = document.getElementById('refAgreeMeta');
+  if (d.delta_vs_our != null && d.agreement) {{
+    const pct = (d.delta_vs_our * 100).toFixed(1);
+    const cls = d.agreement === 'high' ? 'ref-agree-high'
+              : d.agreement === 'mid'  ? 'ref-agree-mid'
+              : 'ref-agree-low';
+    agreeEl.className   = 'ref-price ' + cls;
+    agreeEl.textContent = (d.delta_vs_our >= 0 ? '+' : '') + pct + '%';
+    agreeMetaEl.textContent =
+      d.agreement === 'high' ? '✓ sources agree — green light' :
+      d.agreement === 'mid'  ? '~ moderate spread — verify' :
+                                '✗ wide spread — manual review';
+  }} else if (ourMarket != null && tcg.market != null) {{
+    const delta = (tcg.market - ourMarket) / ourMarket;
+    const pct   = (delta * 100).toFixed(1);
+    const abs   = Math.abs(delta);
+    const cls   = abs <= 0.10 ? 'ref-agree-high' : abs <= 0.25 ? 'ref-agree-mid' : 'ref-agree-low';
+    agreeEl.className   = 'ref-price ' + cls;
+    agreeEl.textContent = (delta >= 0 ? '+' : '') + pct + '%';
+    agreeMetaEl.textContent =
+      abs <= 0.10 ? '✓ within 10% — high confidence' :
+      abs <= 0.25 ? '~ within 25% — moderate'        :
+                    '✗ over 25% spread — verify card variant';
+  }} else {{
+    agreeEl.className   = 'ref-price';
+    agreeEl.textContent = '—';
+    agreeMetaEl.textContent = 'no comparable price';
+  }}
+
+  // Footer: card identity + last-update timestamp from the reference.
+  const idBits = [];
+  if (d.set)     idBits.push(d.set);
+  if (d.variant) idBits.push(d.variant);
+  if (d.rarity)  idBits.push(d.rarity);
+  let foot = (d.name || _ebayName) + (idBits.length ? ' · ' + idBits.join(' · ') : '');
+  if (d.last_update) foot += ' · updated ' + d.last_update.replace('T',' ').split('.')[0];
+  document.getElementById('refFoot').textContent = foot;
+
+  document.getElementById('refLoading').style.display = 'none';
+  document.getElementById('refBody').style.display    = 'block';
 }}
 
 // ── Buy Intelligence (max / fair / steal + sparkline + verdict) ──────────────
