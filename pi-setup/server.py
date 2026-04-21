@@ -17846,6 +17846,74 @@ def api_pricing_cache_delete(query_path):
     return jsonify({"ok": True, "invalidated": query})
 
 
+# ── GET /api/v1/reference/tcgpl ──────────────────────────────────────────────
+
+@app.route("/api/v1/reference/tcgpl", methods=["GET"])
+@require_api_token
+def api_reference_tcgpl():
+    """
+    Reference-only price lookup via tcgpricelookup.com.
+
+    NOT used in buylist computation — strictly a sidebar/sanity-check
+    rendered next to our own model so the operator can spot-check.
+
+    Query params:
+      name        — card name (required)
+      number      — collector number (optional)
+      game        — internal game slug (pokemon, mtg, onepiece, lorcana, ...)
+      our_market  — our computed market price (optional; if given, the
+                    response includes delta_vs_our as a 0..1 fraction)
+
+    Returns 200 with normalised reference dict, 404 when not found, 503
+    when TCGPL_API_KEY missing or upstream unreachable, 429 on quota,
+    400 on missing name.
+
+    Korean Pokémon and Dragon Ball Super are not covered by this service
+    — those calls return 404.
+    """
+    try:
+        from tcg_price_lookup import search_card, compute_delta
+    except Exception as e:
+        log.warning("[tcgpl] module load failed: %s", e)
+        return jsonify({"error": "tcgpl_unavailable"}), 503
+
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name_required"}), 400
+
+    number = request.args.get("number") or None
+    game   = request.args.get("game")   or None
+
+    try:
+        our_market = float(request.args.get("our_market") or 0) or None
+    except (TypeError, ValueError):
+        our_market = None
+
+    result = search_card(name, game=game, number=number, redis_client=_redis())
+
+    if result is None:
+        return jsonify({"error": "not_found", "name": name, "game": game}), 404
+
+    if isinstance(result, dict) and result.get("error"):
+        err = result["error"]
+        status = {
+            "no_token":     503,
+            "bad_token":    503,
+            "rate_limited": 429,
+            "upstream":     502,
+        }.get(err, 502)
+        return jsonify(result), status
+
+    if our_market is not None:
+        delta = compute_delta(result, our_market)
+        if delta is not None:
+            result["delta_vs_our"] = delta
+            result["agreement"]    = "high" if delta < 0.10 else (
+                                     "medium" if delta < 0.25 else "low")
+
+    return jsonify(result)
+
+
 # ── GET /api/v1/cert/psa/<cert_number> ───────────────────────────────────────
 
 @app.route("/api/v1/cert/psa/<cert_number>", methods=["GET"])
