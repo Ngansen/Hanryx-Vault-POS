@@ -8359,6 +8359,7 @@ def _admin_market_quick_trade_in_impl():
     if payload:
         payload["status"]      = "pending"
         payload["pushed_at"]   = int(time.time() * 1000)
+        payload["sent_at"]     = payload["pushed_at"]   # tablet dedup key wants sent_at
         _tablet_offer_save(payload)
 
     return jsonify({
@@ -25177,6 +25178,7 @@ def admin_kiosk_transparency_push():
     if not isinstance(payload, dict) or not payload:
         return jsonify({"error": "JSON body required"}), 400
     payload["pushed_at"] = int(time.time() * 1000)
+    payload["sent_at"]   = payload["pushed_at"]   # tablet dedup key wants sent_at
     _kiosk_transparency_save(payload)
     return jsonify({"ok": True, "pushed_at": payload["pushed_at"]})
 
