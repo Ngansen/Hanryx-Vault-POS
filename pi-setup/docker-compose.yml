@@ -94,11 +94,6 @@ services:
       # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
       GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
 
-      # eBay Production keys — Finding API (sold listings) + Browse API fallback.
-      # Paid for by quota; if missing, the eBay Sold History panel is empty.
-      EBAY_APP_ID:      ${EBAY_APP_ID:-}
-      EBAY_CERT_ID:     ${EBAY_CERT_ID:-}
-
       # PSA Public API — cert authentication on PSA slabs.
       # Free token from https://www.psacard.com/publicapi
       PSA_API_TOKEN:    ${PSA_API_TOKEN:-}
