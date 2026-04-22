@@ -18414,6 +18414,66 @@ def api_cert_psa(cert_number):
     return jsonify(result)
 
 
+# ── GET /api/v1/cert/cgc/<cert_number> ───────────────────────────────────────
+
+@app.route("/api/v1/cert/cgc/<cert_number>", methods=["GET"])
+@require_api_token
+def api_cert_cgc(cert_number):
+    """
+    CGC (Certified Guaranty Company) cert lookup. Mirrors the PSA route.
+
+    CGC has no public REST API for cards; we scrape their public cert
+    verification page (https://www.cgccards.com/certlookup/<cert>/).
+    Best-effort — if their HTML changes shape we return 502 'parse'.
+
+    Cached 30 days for hits, 1 hour for misses, just like PSA.
+    """
+    try:
+        from cgc_cert import lookup_cert as cgc_lookup
+    except Exception as e:
+        log.warning("[cgc] module load failed: %s", e)
+        return jsonify({"error": "cgc_unavailable"}), 503
+
+    result = cgc_lookup(cert_number, redis_client=_redis())
+
+    if result is None:
+        return jsonify({"error": "not_found", "cert_number": cert_number}), 404
+
+    if isinstance(result, dict) and result.get("error"):
+        err = result["error"]
+        status = {
+            "rate_limited":    429,
+            "upstream":        502,
+            "parse":           502,
+            "bad_cert_format": 400,
+        }.get(err, 502)
+        return jsonify(result), status
+
+    return jsonify(result)
+
+
+# ── GET /api/v1/cert/<service>/<cert_number> — unified router ────────────────
+
+@app.route("/api/v1/cert/<service>/<cert_number>", methods=["GET"])
+@require_api_token
+def api_cert_unified(service, cert_number):
+    """
+    Convenience route so frontends can hit one URL and pick the service:
+      /api/v1/cert/psa/12345678
+      /api/v1/cert/cgc/87654321
+
+    Falls through to the explicit per-service handlers above; this only
+    catches unknown services with a clean 404.
+    """
+    svc = (service or "").lower().strip()
+    if svc == "psa":
+        return api_cert_psa(cert_number)
+    if svc == "cgc":
+        return api_cert_cgc(cert_number)
+    return jsonify({"error": "unknown_service",
+                    "supported": ["psa", "cgc"]}), 404
+
+
 # ── GET /api/v1/enrich/<game> ────────────────────────────────────────────────
 
 @app.route("/api/v1/enrich/<game>", methods=["GET"])
