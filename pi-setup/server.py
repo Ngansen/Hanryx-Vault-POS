@@ -497,11 +497,15 @@ def require_api_token(fn):
         # LAN bypass — local Pi hardware always trusted
         if _is_lan(request.remote_addr):
             return fn(*args, **kwargs)
-        # JWT check
+        # JWT check — accept Authorization: Bearer, X-API-KEY (tablet), or ?token=
         auth = request.headers.get("Authorization", "")
         token = ""
         if auth.startswith("Bearer "):
             token = auth[7:].strip()
+        if not token:
+            token = (request.headers.get("X-API-KEY", "")
+                     or request.headers.get("X-API-Token", "")
+                     or request.headers.get("X-Api-Token", "")).strip()
         if not token:
             token = request.args.get("token", "") or (request.get_json(silent=True) or {}).get("token", "")
         if token and _verify_jwt(token):
