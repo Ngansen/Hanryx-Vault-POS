@@ -1,0 +1,24 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue Apr 21 21:13:47 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/hanryx-vault-pos/pi-setup
+docker compose ps                                          # is pos still up?
+docker compose logs --tail=80 pos | grep -iE "error|trace|exception" | tail -20
+docker compose exec pos curl -sS http://localhost:8080/admin/inventory/search?q=mew | head -c 500
+echo ""
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED        STATUS                    PORTS
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           20 hours ago   Up 20 hours (healthy)     5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    44 hours ago   Up 7 hours (healthy)      5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      2 days ago     Up 2 days (healthy)       80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          4 hours ago    Up 4 hours (healthy)      0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   33 hours ago   Up 33 hours (healthy)     8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        2 days ago     Up 2 days (healthy)       6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   44 hours ago   Up 44 hours (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+Method not allowed
+ngansen@hanryxvault:~/hanryx-vault-pos/pi-setup $  
