@@ -1,0 +1,120 @@
+Tablet ↔ Pi Contract Verification — Full Analysis
+Source file: hanryx-tablet/app/src/main/java/com/hanryxvault/tablet/MainActivity.kt (786 lines, single file — no separate network module)
+
+1. /tablet/trade/current — Polling Loop
+Request (lines 114–119):
+
+val req = Request.Builder()
+    .url("$serverUrl/tablet/trade/current")
+    .header("X-API-KEY", apiToken)       // ← header name is X-API-KEY (not X-API-Token)
+    .header("Cache-Control", "no-store")
+    .get().build()
+val resp = withContext(Dispatchers.IO) { http.newCall(req).execute() }
+Response parsing (lines 151–180):
+
+val obj = runCatching { gson.fromJson(body, JsonObject::class.java) }.getOrNull() ?: JsonObject()
+when {
+    obj.has("empty") && obj["empty"].asBoolean -> {
+        if (screen !is TabletScreen.Idle) screen = TabletScreen.Idle    // ✅ empty→Idle fix confirmed
+    }
+    obj.has("status") -> {
+        val status  = obj["status"].asString
+        val sentAt  = obj["sent_at"]?.asLong ?: 0L
+        val tiId    = obj["ti_id"]?.asInt ?: 0
+        val offerKey = "${tiId}_${sentAt}"                               // composite dedup key
+        when (status) {
+            "accepted", "rejected" -> { /* splash 3s then Idle */ }
+            "pending" -> {
+                if (offerKey != lastOfferKey) {
+                    val offer = gson.fromJson(body, TradeOffer::class.java)  // full Gson deserialise
+                    screen = TabletScreen.Offer(offer)
+                }
+            }
+        }
+    }
+}
+Response DTOs the tablet expects:
+
+data class TradeOffer(
+    val ti_id: Int,
+    val reference: String,
+    val customer: String,
+    val items: List<TradeItem>,
+    val item_count: Int,
+    val total_cash: Double,
+    val total_credit: Double,
+    val status: String,           // "pending" | "accepted" | "rejected"
+    val sent_at: Long,
+    val decided_at: Long?,
+)
+data class TradeItem(
+    val id: Int,
+    val name: String,
+    val qr_code: String,
+    val condition: String,        // "NM" | "LP" | "MP" | "HP" | "DMG"
+    val offer: Double,            // cash buy price
+    val market: Double,
+)
+Server response confirmed to match (lines 2001–2008 server.py):
+
+self._json(200, {
+    "ti_id": row[0], "reference": row[1], "customer": row[2],
+    "items": items, "item_count": row[4],
+    "total_cash": row[5], "total_credit": row[6],
+    "status": row[7], "sent_at": row[8], "decided_at": row[9],
+})
+✅ Field names match exactly. items is stored as JSON in the DB and returned parsed.
+
+2. /ai/haggle, /ai/bundle, /ai/counterfeit
+❌ The tablet app does NOT call any of these endpoints. The tablet is purely a trade-in offer viewer. All three AI features live entirely in the POS phone app (hanryx-pos). No changes needed on the tablet for those.
+
+3. Polling-loop empty → Idle Fix
+✅ Correctly applied. The fix is at line 153–155:
+
+obj.has("empty") && obj["empty"].asBoolean -> {
+    if (screen !is TabletScreen.Idle) screen = TabletScreen.Idle
+}
+The tablet uses Gson's JsonObject (not Android's org.json.JSONObject), so there is no optBoolean — obj["empty"].asBoolean is the equivalent. The guard obj.has("empty") prevents a crash when empty is absent. Works correctly.
+
+4. What triggers each AI call — N/A for tablet
+The tablet has no AI call sites. For reference, in the POS phone app:
+
+Haggle — onHaggle lambda on each CartItemRow, fires POSIntent.RequestHaggle(...)
+Bundle — LaunchedEffect watching cartItems.size >= 3 in the cart panel fires POSIntent.RequestBundleDeal automatically
+Counterfeit — "Auth" button in the left sidebar (showCounterfeitCamera = true) opens CounterfeitScannerDialog
+5. Server URL — ⚠️ HARDCODED LOCAL IP
+Line 93:
+
+var serverUrl by remember { mutableStateOf(
+    prefs.getString("serverUrl", "http://192.168.86.36:8080") ?: "http://192.168.86.36:8080"
+) }
+The default is the local LAN IP 192.168.86.36, not the Tailscale IP 100.125.5.34. This only matters for the default — if the user has already saved the Tailscale IP in settings it's persisted in SharedPreferences under key "serverUrl" and survives restarts. But a fresh install or settings reset will default to LAN-only.
+
+Recommended fix for the tablet agent: Change the default in two places:
+
+// Line 93 — change both occurrences of 192.168.86.36 to 100.125.5.34
+var serverUrl by remember { mutableStateOf(
+    prefs.getString("serverUrl", "http://100.125.5.34:8080") ?: "http://100.125.5.34:8080"
+) }
+6. Additional Bugs Found
+Bug A — Cloud fallback missing auth header (lines 128–132):
+
+val cloudReq = Request.Builder()
+    .url("$cloudUrl/tablet/trade/current")
+    .header("Cache-Control", "no-store")
+    // ❌ X-API-KEY header is NOT sent to cloud
+    .get().build()
+The Pi request sends X-API-KEY but the cloud fallback doesn't. If the Replit cloud server ever enforces token auth on this endpoint, the tablet will get a 401 from cloud and display authError = true (incorrectly blaming the token). Should add .header("X-API-KEY", apiToken) to the cloud request builder too.
+
+Bug B — Server has NO auth check on /tablet/trade/current:
+The server's tablet_trade_current_get() handler reads straight from the DB with no token validation — the X-API-KEY header the tablet sends is accepted but never verified. This means the endpoint is currently open to anyone who knows the URL. This is probably intentional for now (the offer data is low-sensitivity), but worth flagging.
+
+Summary for the tablet agent
+Item	Status
+/tablet/trade/current request fields	✅ Match server exactly
+Response DTO field names	✅ All match
+empty → Idle fix	✅ Correctly applied with Gson
+sent_at composite dedup key	✅ In place
+/ai/haggle, /ai/bundle, /ai/counterfeit	N/A — tablet doesn't call these
+Default server URL	⚠️ Still LAN IP — change default to 100.125.5.34
+Cloud fallback missing auth header	⚠️ Bug — add X-API-KEY to cloud request
