@@ -1,0 +1,272 @@
+What to tell the Pi agent
+All imports are already standard library — no new pip install needed. The Pi server just needs these 3 changes:
+
+Step 1 — Add 3 routes inside do_POST
+Find the do_POST routing block and add these before the else: self.send_error(404) line:
+
+elif self.path == "/ai/haggle":
+    self.ai_haggle_post()
+elif self.path == "/ai/bundle":
+    self.ai_bundle_post()
+elif self.path == "/ai/counterfeit":
+    self.ai_counterfeit_post()
+Step 2 — Add the 3 handler methods as class methods
+Paste these anywhere inside the handler class (e.g. after the last existing def method):
+
+ai_haggle_post — Smart Haggle Assistant
+
+def ai_haggle_post(self):
+    """POST /ai/haggle — Smart haggle assistant. Returns floor price + reasoning."""
+    try:
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length).decode()) if length else {}
+        card_name = body.get("name", "")
+        market_price = float(body.get("market_price", 0))
+        store_price = float(body.get("store_price", 0))
+        stock_qty = int(body.get("stock_qty", 1))
+        condition = body.get("condition", "NM")
+        trend_direction = body.get("trend_direction", "STABLE")
+        trend_pct = float(body.get("trend_pct", 0))
+        if not card_name or market_price <= 0:
+            self._json(400, {"error": "name and market_price required"})
+            return
+        real_mkt_for_fallback = market_price
+        if real_mkt_for_fallback <= 0 or abs(real_mkt_for_fallback - store_price) < 0.01:
+            try:
+                cached_fb = self.server._price_cache.get(card_name.lower().strip())
+                if cached_fb and cached_fb.get("weighted_avg", 0) > 0:
+                    real_mkt_for_fallback = cached_fb["weighted_avg"]
+            except Exception:
+                pass
+        cond_mult = {"NM": 1.0, "LP": 0.85, "MP": 0.70, "HP": 0.55, "DMG": 0.40}.get(condition.upper(), 1.0)
+        adj_market = real_mkt_for_fallback * cond_mult
+        if stock_qty <= 1:
+            floor_pct = 0.90
+        elif stock_qty <= 2:
+            floor_pct = 0.85
+        elif stock_qty <= 4:
+            floor_pct = 0.80
+        else:
+            floor_pct = 0.75
+        if trend_direction == "UP":
+            floor_pct = min(floor_pct + 0.05, 0.95)
+        elif trend_direction == "DOWN":
+            floor_pct = max(floor_pct - 0.05, 0.65)
+        if not _OPENAI_KEY or not _OPENAI_BASE:
+            floor = round(adj_market * floor_pct, 2)
+            walk = round(adj_market * (floor_pct - 0.08), 2)
+            cond_note = f" ({condition} condition, {int(cond_mult*100)}% of NM)" if condition != "NM" else ""
+            stock_note = "Hold firm — low stock." if stock_qty <= 2 else "Room to negotiate — plenty in stock."
+            self._json(200, {
+                "floor_price": floor,
+                "reasoning": f"Market: ${real_mkt_for_fallback:.2f}{cond_note}. Floor ${floor:.2f} ({int(floor_pct*100)}%). {stock_note}",
+                "walk_away": walk,
+                "counter_script": f"I can do ${floor:.2f} — that's already below market for this card.",
+                "confidence": "MEDIUM"
+            })
+            return
+        real_market = market_price
+        if real_market <= 0 or abs(real_market - store_price) < 0.01:
+            try:
+                cached = self.server._price_cache.get(card_name.lower().strip())
+                if cached and cached.get("weighted_avg", 0) > 0:
+                    real_market = cached["weighted_avg"]
+            except Exception:
+                pass
+        prompt = (
+            f"You are a shrewd trading card dealer at a card show. A customer wants to negotiate on this card.\n\n"
+            f"Card: {card_name}\n"
+            f"Condition: {condition}\n"
+            f"Your sticker/asking price: ${store_price:.2f}\n"
+            f"Current market value (TCGPlayer + eBay last 3 sold average): ${real_market:.2f}\n"
+            f"Copies in stock: {stock_qty}\n"
+            f"30-day trend: {trend_direction} {abs(trend_pct):.0f}%\n\n"
+            f"Reply ONLY with valid JSON:\n"
+            f"{{\"floor_price\": <float>, \"walk_away\": <float>, "
+            f"\"reasoning\": \"1-2 sentence advice\", "
+            f"\"counter_script\": \"What to say to the customer\", "
+            f"\"confidence\": \"HIGH|MEDIUM|LOW\"}}"
+        )
+        request_body = json.dumps({
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 200,
+            "temperature": 0.3
+        }).encode()
+        req = urllib.request.Request(f"{_OPENAI_BASE}/chat/completions", data=request_body, method="POST")
+        req.add_header("Authorization", f"Bearer {_OPENAI_KEY}")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+        content = data["choices"][0]["message"]["content"].strip()
+        m = re.search(r'\{.*\}', content, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group(0))
+            self._json(200, {
+                "floor_price": round(float(parsed.get("floor_price", market_price * 0.75)), 2),
+                "walk_away": round(float(parsed.get("walk_away", market_price * 0.60)), 2),
+                "reasoning": str(parsed.get("reasoning", "")),
+                "counter_script": str(parsed.get("counter_script", "")),
+                "confidence": str(parsed.get("confidence", "MEDIUM"))
+            })
+        else:
+            self._json(200, {"floor_price": round(market_price * 0.75, 2), "walk_away": round(market_price * 0.60, 2), "reasoning": content[:200], "counter_script": "", "confidence": "LOW"})
+    except Exception as e:
+        print(f"[ai_haggle] error: {e} — using smart fallback", flush=True)
+        cm = {"NM": 1.0, "LP": 0.85, "MP": 0.70, "HP": 0.55, "DMG": 0.40}.get(condition.upper(), 1.0)
+        am = market_price * cm
+        fp = 0.90 if stock_qty <= 1 else (0.85 if stock_qty <= 2 else (0.80 if stock_qty <= 4 else 0.75))
+        floor = round(am * fp, 2)
+        walk = round(am * (fp - 0.08), 2)
+        self._json(200, {
+            "floor_price": floor,
+            "walk_away": walk,
+            "reasoning": f"Market: ${market_price:.2f}. Floor ${floor:.2f} ({int(fp*100)}%).",
+            "counter_script": f"I can do ${floor:.2f} — that's already below market.",
+            "confidence": "MEDIUM"
+        })
+ai_bundle_post — Bundle Deal Suggestions
+
+def ai_bundle_post(self):
+    """POST /ai/bundle — Suggest a bundle discount for 3+ cart items."""
+    try:
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length).decode()) if length else {}
+        items = body.get("items", [])
+        if len(items) < 3:
+            self._json(200, {"has_deal": False, "reason": "Need 3+ items for a bundle deal"})
+            return
+        total_retail = sum(float(i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
+        total_market = sum(float(i.get("market_price", 0) or i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
+        item_count = sum(int(i.get("qty", 1)) for i in items)
+        if not _OPENAI_KEY or not _OPENAI_BASE:
+            discount_pct = min(5 + (item_count - 3) * 2, 20)
+            bundle_price = round(total_retail * (1 - discount_pct / 100), 2)
+            savings = round(total_retail - bundle_price, 2)
+            self._json(200, {
+                "has_deal": True,
+                "bundle_price": bundle_price,
+                "savings": savings,
+                "discount_pct": discount_pct,
+                "pitch": f"Bundle all {item_count} for ${bundle_price:.2f} — saves ${savings:.2f}!",
+                "confidence": "LOW"
+            })
+            return
+        items_desc = "\n".join([f"- {i.get('name','?')} x{i.get('qty',1)}: ${float(i.get('price',0)):.2f} (market ${float(i.get('market_price',0) or i.get('price',0)):.2f})" for i in items[:10]])
+        prompt = (
+            f"You are a card show dealer. A customer is buying {item_count} items:\n{items_desc}\n"
+            f"Total retail: ${total_retail:.2f}\nTotal market value: ${total_market:.2f}\n\n"
+            f"Suggest a bundle deal. Rules: 5-20% off retail, more items = bigger discount, never below 70% of market.\n"
+            f"Reply ONLY with valid JSON:\n"
+            f"{{\"bundle_price\": <float>, \"discount_pct\": <int>, "
+            f"\"pitch\": \"Short sentence to say to the customer\", "
+            f"\"confidence\": \"HIGH|MEDIUM|LOW\"}}"
+        )
+        request_body = json.dumps({
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 150,
+            "temperature": 0.4
+        }).encode()
+        req = urllib.request.Request(f"{_OPENAI_BASE}/chat/completions", data=request_body, method="POST")
+        req.add_header("Authorization", f"Bearer {_OPENAI_KEY}")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+        content = data["choices"][0]["message"]["content"].strip()
+        m = re.search(r'\{.*\}', content, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group(0))
+            bp = round(float(parsed.get("bundle_price", total_retail * 0.9)), 2)
+            savings = round(total_retail - bp, 2)
+            self._json(200, {
+                "has_deal": True,
+                "bundle_price": bp,
+                "savings": savings,
+                "discount_pct": int(parsed.get("discount_pct", 10)),
+                "pitch": str(parsed.get("pitch", "")),
+                "confidence": str(parsed.get("confidence", "MEDIUM"))
+            })
+        else:
+            bp = round(total_retail * 0.9, 2)
+            self._json(200, {"has_deal": True, "bundle_price": bp, "savings": round(total_retail - bp, 2), "discount_pct": 10, "pitch": f"Take all {item_count} for ${bp:.2f}!", "confidence": "LOW"})
+    except Exception as e:
+        print(f"[ai_bundle] error: {e} — using fallback", flush=True)
+        bp = round(total_retail * 0.90, 2)
+        self._json(200, {
+            "has_deal": True,
+            "bundle_price": bp,
+            "savings": round(total_retail - bp, 2),
+            "discount_pct": 10,
+            "pitch": f"Bundle deal: all {item_count} cards for ${bp:.2f} — save 10%!",
+            "confidence": "MEDIUM"
+        })
+ai_counterfeit_post — Counterfeit Detection
+
+def ai_counterfeit_post(self):
+    """POST /ai/counterfeit — Analyze a card image for authenticity using GPT-4o Vision."""
+    try:
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length).decode()) if length else {}
+        image_b64 = body.get("image_b64", "")
+        card_name = body.get("name", "")
+        if not image_b64:
+            self._json(400, {"error": "image_b64 required"})
+            return
+        if not _OPENAI_KEY or not _OPENAI_BASE:
+            self._json(503, {"error": "AI not configured — cannot perform counterfeit check"})
+            return
+        name_hint = f" The card is claimed to be '{card_name}'." if card_name else ""
+        prompt = (
+            "You are a professional trading card authenticator (Pokémon, Magic, Yu-Gi-Oh)."
+            f"{name_hint} Analyze this card image for signs of being counterfeit or legitimate.\n\n"
+            "Check: font consistency, color saturation, holo pattern, border alignment, "
+            "print quality, card stock sheen, set symbol accuracy.\n\n"
+            "Reply ONLY with valid JSON:\n"
+            "{\"verdict\": \"LIKELY_AUTHENTIC|SUSPICIOUS|LIKELY_FAKE\", "
+            "\"confidence\": <float 0.0-1.0>, "
+            "\"findings\": [\"finding 1\", ...], "
+            "\"red_flags\": [\"flag 1\", ...], "
+            "\"recommendation\": \"1-sentence action to take\"}"
+        )
+        request_body = json.dumps({
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                {"type": "text", "text": prompt}
+            ]}],
+            "max_tokens": 300,
+            "temperature": 0.1
+        }).encode()
+        req = urllib.request.Request(f"{_OPENAI_BASE}/chat/completions", data=request_body, method="POST")
+        req.add_header("Authorization", f"Bearer {_OPENAI_KEY}")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+        content = data["choices"][0]["message"]["content"].strip()
+        m = re.search(r'\{.*\}', content, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group(0))
+            self._json(200, {
+                "verdict": str(parsed.get("verdict", "SUSPICIOUS")),
+                "confidence": round(float(parsed.get("confidence", 0.5)), 2),
+                "findings": list(parsed.get("findings", [])),
+                "red_flags": list(parsed.get("red_flags", [])),
+                "recommendation": str(parsed.get("recommendation", ""))
+            })
+        else:
+            self._json(200, {"verdict": "SUSPICIOUS", "confidence": 0.3, "findings": [content[:200]], "red_flags": [], "recommendation": "Could not parse AI response — inspect manually."})
+    except Exception as e:
+        print(f"[ai_counterfeit] error: {e}", flush=True)
+        self._json(200, {
+            "verdict": "UNAVAILABLE",
+            "confidence": 0.0,
+            "findings": ["AI vision service temporarily unavailable. Please inspect the card manually."],
+            "red_flags": [],
+            "recommendation": "Check texture, holo pattern, and weight manually."
+        })
+Notes for the Pi agent
+The Pi server needs _OPENAI_KEY and _OPENAI_BASE environment variables set — these come from the OpenAI integration the same way they're set on Replit
+All three methods use only standard library (json, re, urllib.request) — nothing to install
+Haggle and Bundle both have a full offline fallback that uses math-only pricing if AI isn't configured, so they'll still work on the Pi even without an API key
+Counterfeit requires the API key and returns a 503 gracefully if not configured
