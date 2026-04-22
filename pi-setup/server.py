@@ -18474,6 +18474,255 @@ def api_cert_unified(service, cert_number):
                     "supported": ["psa", "cgc"]}), 404
 
 
+# ── POST /ai/haggle, /ai/bundle, /ai/counterfeit ─────────────────────────────
+# Tablet-side AI assist endpoints. All three degrade to deterministic
+# fallbacks when OPENAI_API_KEY is missing, so the tablet UI never hangs.
+
+_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def _openai_chat(model: str, messages: list, max_tokens: int,
+                 temperature: float, timeout: int = 12) -> dict | None:
+    """Thin wrapper around OpenAI chat completions. Returns None on failure."""
+    if not _OPENAI_API_KEY:
+        return None
+    try:
+        r = _requests.post(
+            f"{_OPENAI_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {_OPENAI_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "model":       model,
+                "messages":    messages,
+                "max_tokens":  max_tokens,
+                "temperature": temperature,
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        log.warning("[ai] openai call failed: %s", e)
+        return None
+
+
+def _extract_json(text: str) -> dict | None:
+    import re as _re
+    m = _re.search(r"\{.*\}", text or "", _re.DOTALL)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+@app.route("/ai/haggle", methods=["POST"])
+@require_api_token
+def ai_haggle():
+    """
+    Smart Haggle Assistant — given a card + market context, return the
+    floor price the operator should hold to and a one-line counter script.
+    Falls back to a deterministic stock-aware formula if OpenAI is absent.
+    """
+    body = request.get_json(silent=True) or {}
+    card_name       = (body.get("name") or "").strip()
+    market_price    = float(body.get("market_price")    or 0)
+    store_price     = float(body.get("store_price")     or 0)
+    stock_qty       = int(  body.get("stock_qty")       or 1)
+    condition       = (body.get("condition")            or "NM").upper()
+    trend_direction = (body.get("trend_direction")      or "STABLE").upper()
+    trend_pct       = float(body.get("trend_pct")       or 0)
+
+    if not card_name or market_price <= 0:
+        return jsonify({"error": "name and market_price required"}), 400
+
+    cond_mult = {"NM": 1.0, "LP": 0.85, "MP": 0.70, "HP": 0.55, "DMG": 0.40}.get(condition, 1.0)
+    if   stock_qty <= 1: floor_pct = 0.90
+    elif stock_qty <= 2: floor_pct = 0.85
+    elif stock_qty <= 4: floor_pct = 0.80
+    else:                floor_pct = 0.75
+    if   trend_direction == "UP":   floor_pct = min(floor_pct + 0.05, 0.95)
+    elif trend_direction == "DOWN": floor_pct = max(floor_pct - 0.05, 0.65)
+    adj_market = market_price * cond_mult
+
+    def _fallback() -> dict:
+        floor = round(adj_market * floor_pct, 2)
+        walk  = round(adj_market * (floor_pct - 0.08), 2)
+        cond_note  = f" ({condition} → {int(cond_mult*100)}% of NM)" if condition != "NM" else ""
+        stock_note = "Hold firm — low stock." if stock_qty <= 2 else "Room to negotiate — plenty in stock."
+        return {
+            "floor_price":    floor,
+            "walk_away":      walk,
+            "reasoning":      f"Market: ${market_price:.2f}{cond_note}. Floor ${floor:.2f} ({int(floor_pct*100)}%). {stock_note}",
+            "counter_script": f"I can do ${floor:.2f} — that's already below market for this card.",
+            "confidence":     "MEDIUM",
+        }
+
+    if not _OPENAI_API_KEY:
+        return jsonify(_fallback())
+
+    prompt = (
+        f"You are a shrewd trading-card dealer at a card show. A customer wants to negotiate.\n\n"
+        f"Card: {card_name}\nCondition: {condition}\nSticker price: ${store_price:.2f}\n"
+        f"Market value (TCGPlayer + last-3 eBay sold avg): ${market_price:.2f}\n"
+        f"Copies in stock: {stock_qty}\n30-day trend: {trend_direction} {abs(trend_pct):.0f}%\n\n"
+        f"Reply ONLY with valid JSON:\n"
+        f'{{"floor_price": <float>, "walk_away": <float>, '
+        f'"reasoning": "1-2 sentence advice", '
+        f'"counter_script": "What to say to the customer", '
+        f'"confidence": "HIGH|MEDIUM|LOW"}}'
+    )
+    data = _openai_chat("gpt-4o-mini",
+                        [{"role": "user", "content": prompt}],
+                        max_tokens=200, temperature=0.3)
+    if not data:
+        return jsonify(_fallback())
+    try:
+        content = data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return jsonify(_fallback())
+    parsed = _extract_json(content)
+    if not parsed:
+        return jsonify({**_fallback(), "reasoning": content[:200], "confidence": "LOW"})
+    return jsonify({
+        "floor_price":    round(float(parsed.get("floor_price", market_price * 0.75)), 2),
+        "walk_away":      round(float(parsed.get("walk_away",  market_price * 0.60)), 2),
+        "reasoning":      str(parsed.get("reasoning", "")),
+        "counter_script": str(parsed.get("counter_script", "")),
+        "confidence":     str(parsed.get("confidence", "MEDIUM")),
+    })
+
+
+@app.route("/ai/bundle", methods=["POST"])
+@require_api_token
+def ai_bundle():
+    """Bundle Deal Suggestion — needs 3+ cart items."""
+    body  = request.get_json(silent=True) or {}
+    items = body.get("items") or []
+    if len(items) < 3:
+        return jsonify({"has_deal": False, "reason": "Need 3+ items for a bundle deal"})
+
+    total_retail = sum(float(i.get("price", 0))        * int(i.get("qty", 1)) for i in items)
+    total_market = sum(float(i.get("market_price") or i.get("price", 0)) * int(i.get("qty", 1)) for i in items)
+    item_count   = sum(int(i.get("qty", 1)) for i in items)
+
+    def _fallback() -> dict:
+        discount_pct  = min(5 + (item_count - 3) * 2, 20)
+        bundle_price  = round(total_retail * (1 - discount_pct / 100), 2)
+        savings       = round(total_retail - bundle_price, 2)
+        return {
+            "has_deal":     True,
+            "bundle_price": bundle_price,
+            "savings":      savings,
+            "discount_pct": discount_pct,
+            "pitch":        f"Bundle all {item_count} for ${bundle_price:.2f} — saves ${savings:.2f}!",
+            "confidence":   "LOW",
+        }
+
+    if not _OPENAI_API_KEY:
+        return jsonify(_fallback())
+
+    items_desc = "\n".join(
+        f"- {i.get('name', '?')} x{i.get('qty', 1)}: ${float(i.get('price', 0)):.2f} "
+        f"(market ${float(i.get('market_price') or i.get('price', 0)):.2f})"
+        for i in items[:10]
+    )
+    prompt = (
+        f"You are a card-show dealer. A customer is buying {item_count} items:\n{items_desc}\n"
+        f"Total retail: ${total_retail:.2f}\nTotal market value: ${total_market:.2f}\n\n"
+        f"Suggest a bundle. Rules: 5-20% off retail, more items = bigger discount, "
+        f"never below 70% of market.\n"
+        f"Reply ONLY with valid JSON:\n"
+        f'{{"bundle_price": <float>, "discount_pct": <int>, '
+        f'"pitch": "Short sentence to say", "confidence": "HIGH|MEDIUM|LOW"}}'
+    )
+    data = _openai_chat("gpt-4o-mini",
+                        [{"role": "user", "content": prompt}],
+                        max_tokens=150, temperature=0.4)
+    if not data:
+        return jsonify(_fallback())
+    try:
+        content = data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return jsonify(_fallback())
+    parsed = _extract_json(content)
+    if not parsed:
+        return jsonify(_fallback())
+    bp      = round(float(parsed.get("bundle_price", total_retail * 0.9)), 2)
+    savings = round(total_retail - bp, 2)
+    return jsonify({
+        "has_deal":     True,
+        "bundle_price": bp,
+        "savings":      savings,
+        "discount_pct": int(parsed.get("discount_pct", 10)),
+        "pitch":        str(parsed.get("pitch", "")),
+        "confidence":   str(parsed.get("confidence", "MEDIUM")),
+    })
+
+
+@app.route("/ai/counterfeit", methods=["POST"])
+@require_api_token
+def ai_counterfeit():
+    """
+    Counterfeit Detection — analyse a base64-JPEG card image with GPT-4o
+    Vision. Hard 503 if no OPENAI key (no useful local fallback exists).
+    """
+    body       = request.get_json(silent=True) or {}
+    image_b64  = (body.get("image_b64") or "").strip()
+    card_name  = (body.get("name")      or "").strip()
+    if not image_b64:
+        return jsonify({"error": "image_b64 required"}), 400
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "AI not configured — cannot perform counterfeit check"}), 503
+
+    name_hint = f" The card is claimed to be '{card_name}'." if card_name else ""
+    prompt = (
+        "You are a professional trading-card authenticator (Pokémon, Magic, Yu-Gi-Oh, OnePiece)."
+        f"{name_hint} Analyse this card image for signs of being counterfeit or legitimate.\n\n"
+        "Check: font consistency, color saturation, holo pattern, border alignment, "
+        "print quality, card-stock sheen, set-symbol accuracy.\n\n"
+        "Reply ONLY with valid JSON:\n"
+        '{"verdict": "LIKELY_AUTHENTIC|SUSPICIOUS|LIKELY_FAKE", '
+        '"confidence": <float 0.0-1.0>, '
+        '"findings": ["finding 1", ...], '
+        '"red_flags": ["flag 1", ...], '
+        '"recommendation": "1-sentence action to take"}'
+    )
+    data = _openai_chat(
+        "gpt-4o",
+        [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            {"type": "text",      "text":  prompt},
+        ]}],
+        max_tokens=300, temperature=0.1, timeout=30,
+    )
+    if not data:
+        return jsonify({"error": "ai_upstream_failed"}), 502
+    try:
+        content = data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return jsonify({"error": "ai_bad_shape"}), 502
+    parsed = _extract_json(content)
+    if not parsed:
+        return jsonify({
+            "verdict":        "SUSPICIOUS",
+            "confidence":     0.5,
+            "findings":       [content[:200]],
+            "red_flags":      [],
+            "recommendation": "AI response could not be parsed — manual inspection recommended.",
+        })
+    return jsonify({
+        "verdict":        str(parsed.get("verdict", "SUSPICIOUS")),
+        "confidence":     float(parsed.get("confidence", 0.5)),
+        "findings":       list(parsed.get("findings",  []) or []),
+        "red_flags":      list(parsed.get("red_flags", []) or []),
+        "recommendation": str(parsed.get("recommendation", "")),
+    })
+
+
 # ── GET /api/v1/enrich/<game> ────────────────────────────────────────────────
 
 @app.route("/api/v1/enrich/<game>", methods=["GET"])
