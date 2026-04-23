@@ -1,0 +1,207 @@
+Here are the exact full code blocks for the Pi agent — copy-paste verbatim.
+
+1. Schema — replace the tablet_current_offer CREATE TABLE block
+conn.execute("""
+    CREATE TABLE IF NOT EXISTS tablet_current_offer (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        ti_id           INTEGER NOT NULL DEFAULT 0,
+        reference       TEXT NOT NULL DEFAULT '',
+        customer        TEXT NOT NULL DEFAULT '',
+        items_json      TEXT NOT NULL DEFAULT '[]',
+        item_count      INTEGER NOT NULL DEFAULT 0,
+        total_cash      REAL NOT NULL DEFAULT 0,
+        total_credit    REAL NOT NULL DEFAULT 0,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        sent_at         INTEGER NOT NULL DEFAULT 0,
+        decided_at      INTEGER,
+        outgoing_items_json TEXT NOT NULL DEFAULT '[]'
+    )
+""")
+# Migrate existing tables that pre-date the outgoing_items_json column.
+try:
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(tablet_current_offer)").fetchall()]
+    if "outgoing_items_json" not in cols:
+        conn.execute("ALTER TABLE tablet_current_offer ADD COLUMN outgoing_items_json TEXT NOT NULL DEFAULT '[]'")
+except Exception as _e:
+    log.warning(f"[tablet] outgoing_items_json migration skipped: {_e}")
+2. GET /tablet/trade/current
+def tablet_trade_current_get(self):
+    """GET /tablet/trade/current — returns the latest mirrored offer or empty."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT ti_id, reference, customer, items_json, item_count, "
+            "total_cash, total_credit, status, sent_at, decided_at, "
+            "outgoing_items_json "
+            "FROM tablet_current_offer WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        if not row or row[0] == 0:
+            self._json(200, {"empty": True})
+            return
+        items = json.loads(row[3] or "[]")
+        outgoing = []
+        try:
+            outgoing = json.loads(row[10] or "[]")
+        except Exception:
+            outgoing = []
+        self._json(200, {
+            "ti_id": row[0], "reference": row[1], "customer": row[2],
+            "items": items, "item_count": row[4],
+            "total_cash": row[5], "total_credit": row[6],
+            "status": row[7], "sent_at": row[8], "decided_at": row[9],
+            "outgoing_items": outgoing,
+        })
+    except Exception as e:
+        log.exception("[tablet] current GET error")
+        self._json(500, {"error": str(e)})
+3. POST /tablet/trade/push
+def tablet_trade_push_post(self):
+    """POST /tablet/trade/push — Pi forwards the compiled offer here so the
+    tablet can fall back to cloud when the Pi is unreachable."""
+    length = int(self.headers.get("Content-Length", 0))
+    body   = self.rfile.read(length) if length else b""
+    try:
+        data = json.loads(body)
+    except Exception:
+        self._json(400, {"error": "invalid JSON"}); return
+    required = {"ti_id", "reference", "customer", "items",
+                "item_count", "total_cash", "total_credit", "sent_at"}
+    if not required.issubset(data):
+        self._json(400, {"error": "missing fields"}); return
+    try:
+        conn = _db()
+        outgoing_items = data.get("outgoing_items") if isinstance(data.get("outgoing_items"), list) else []
+        conn.execute("""
+            INSERT INTO tablet_current_offer
+                (id, ti_id, reference, customer, items_json, item_count,
+                 total_cash, total_credit, status, sent_at, decided_at, outgoing_items_json)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                ti_id=excluded.ti_id, reference=excluded.reference,
+                customer=excluded.customer, items_json=excluded.items_json,
+                item_count=excluded.item_count, total_cash=excluded.total_cash,
+                total_credit=excluded.total_credit, status='pending',
+                sent_at=excluded.sent_at, decided_at=NULL,
+                outgoing_items_json=excluded.outgoing_items_json
+        """, (
+            int(data["ti_id"]), str(data["reference"]), str(data["customer"]),
+            json.dumps(data["items"]), int(data["item_count"]),
+            float(data["total_cash"]), float(data["total_credit"]),
+            int(data["sent_at"]), json.dumps(outgoing_items),
+        ))
+        conn.commit()
+        conn.close()
+        self._json(200, {"ok": True})
+    except Exception as e:
+        log.exception("[tablet] push POST error")
+        self._json(500, {"error": str(e)})
+4. POST /tablet/trade/<ti_id>/modify
+def tablet_trade_modify_post(self):
+    """POST /tablet/trade/<ti_id>/modify — customer-side edits (deletions and
+    price reductions on the tablet) sync to the server so the admin POS sees
+    what the customer actually agreed to. Best-effort; updates pending row only."""
+    m = re.match(r'^/tablet/trade/(\d+)/modify$', self.path)
+    if not m:
+        self._json(404, {"error": "bad path"}); return
+    ti_id = int(m.group(1))
+    length = int(self.headers.get("Content-Length", 0))
+    body   = self.rfile.read(length) if length else b""
+    try:
+        data = json.loads(body)
+    except Exception:
+        self._json(400, {"error": "invalid JSON"}); return
+    items       = data.get("items") if isinstance(data.get("items"), list) else []
+    item_count  = int(data.get("item_count") or len(items))
+    total_cash  = float(data.get("total_cash") or 0.0)
+    total_credit = float(data.get("total_credit") or 0.0)
+    outgoing_items = data.get("outgoing_items") if isinstance(data.get("outgoing_items"), list) else None
+    try:
+        conn = _db()
+        cur = conn.execute(
+            "SELECT status FROM tablet_current_offer WHERE ti_id=?", (ti_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            self._json(404, {"error": "offer not found", "ti_id": ti_id}); return
+        if row[0] != "pending":
+            conn.close()
+            self._json(409, {"error": f"offer already {row[0]}"}); return
+        if outgoing_items is None:
+            conn.execute("""
+                UPDATE tablet_current_offer
+                   SET items_json=?, item_count=?, total_cash=?, total_credit=?
+                 WHERE ti_id=? AND status='pending'
+            """, (json.dumps(items), item_count, total_cash, total_credit, ti_id))
+        else:
+            conn.execute("""
+                UPDATE tablet_current_offer
+                   SET items_json=?, item_count=?, total_cash=?, total_credit=?,
+                       outgoing_items_json=?
+                 WHERE ti_id=? AND status='pending'
+            """, (json.dumps(items), item_count, total_cash, total_credit,
+                  json.dumps(outgoing_items), ti_id))
+        conn.commit()
+        conn.close()
+        log.info(f"[tablet] modify ti_id={ti_id} cards={item_count} cash=${total_cash:.2f}")
+        self._json(200, {"ok": True, "status": "pending"})
+    except Exception as e:
+        log.exception("[tablet] modify POST error")
+        self._json(500, {"error": str(e)})
+5. POST /admin/trade-in/<id>/send-to-tablet
+def admin_trade_send_to_tablet_post(self):
+    """POST /admin/trade-in/<id>/send-to-tablet — cloud fallback endpoint.
+    When Pi is offline, the POS phone falls back here with a pre-compiled offer."""
+    length = int(self.headers.get("Content-Length", 0))
+    body   = self.rfile.read(length) if length else b""
+    try:
+        data = json.loads(body)
+    except Exception:
+        self._json(400, {"error": "invalid JSON"}); return
+    required = {"ti_id", "items", "total_cash", "total_credit", "sent_at"}
+    if not required.issubset(data):
+        self._json(400, {"error": "missing required fields"}); return
+    try:
+        conn = _db()
+        now_ms     = int(data["sent_at"]) or int(time.time() * 1000)
+        ti_id      = int(data["ti_id"])
+        reference  = str(data.get("reference") or f"TI-{ti_id:04d}")
+        customer   = str(data.get("customer") or "Walk-in")
+        items      = data["items"] if isinstance(data["items"], list) else []
+        item_count = int(data.get("item_count") or len(items))
+        total_cash  = float(data["total_cash"])
+        total_credit = float(data["total_credit"])
+        outgoing_items = data.get("outgoing_items") if isinstance(data.get("outgoing_items"), list) else []
+        conn.execute("""
+            INSERT INTO tablet_current_offer
+                (id, ti_id, reference, customer, items_json, item_count,
+                 total_cash, total_credit, status, sent_at, decided_at, outgoing_items_json)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                ti_id=excluded.ti_id, reference=excluded.reference,
+                customer=excluded.customer, items_json=excluded.items_json,
+                item_count=excluded.item_count, total_cash=excluded.total_cash,
+                total_credit=excluded.total_credit, status='pending',
+                sent_at=excluded.sent_at, decided_at=NULL,
+                outgoing_items_json=excluded.outgoing_items_json
+        """, (ti_id, reference, customer, json.dumps(items), item_count,
+              total_cash, total_credit, now_ms, json.dumps(outgoing_items)))
+        conn.commit()
+        conn.close()
+        self._json(200, {
+            "ok": True, "ti_id": ti_id, "reference": reference,
+            "item_count": item_count, "total_cash": total_cash,
+            "total_credit": total_credit, "sent_at": now_ms,
+        })
+    except Exception as e:
+        log.exception("[tablet] send-to-tablet POST error")
+        self._json(500, {"error": str(e)})
+Wire format reminder for outgoing_items array
+[
+  { "id": 1, "name": "Charizard ex 199/197", "qr_code": "SV3-199",
+    "condition": "NM", "offer": 89.99, "market": 89.99 }
+]
+offer and market both equal the price the customer pays for that store-inventory card.
+
+That's everything the Pi needs.
