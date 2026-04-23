@@ -1,0 +1,898 @@
+package com.hanryxvault.tablet
+
+import android.content.SharedPreferences
+import android.os.Bundle
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+
+// ── Data classes ──────────────────────────────────────────────────────────────
+
+data class TradeItem(
+    val id: Int = 0,
+    val name: String = "",
+    val qr_code: String = "",
+    val condition: String = "",
+    val offer: Double = 0.0,
+    val market: Double = 0.0,
+)
+
+data class TradeOffer(
+    val ti_id: Int = 0,
+    val reference: String = "",
+    val customer: String = "",
+    val items: List<TradeItem> = emptyList(),
+    val item_count: Int = 0,
+    val total_cash: Double = 0.0,
+    val total_credit: Double = 0.0,
+    val status: String = "pending",
+    val sent_at: Long = 0L,
+    val decided_at: Long? = null,
+    val outgoing_items: List<TradeItem> = emptyList(),
+)
+
+// ── Screens ───────────────────────────────────────────────────────────────────
+
+sealed class TabletScreen {
+    object Idle : TabletScreen()
+    data class Offer(val offer: TradeOffer) : TabletScreen()
+    data class Result(val accepted: Boolean) : TabletScreen()
+}
+
+// ── Activity ──────────────────────────────────────────────────────────────────
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val prefs = getSharedPreferences("tablet_settings", MODE_PRIVATE)
+        setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                HanryxTabletApp(prefs)
+            }
+        }
+    }
+}
+
+// ── Root composable ───────────────────────────────────────────────────────────
+
+@Composable
+fun HanryxTabletApp(prefs: SharedPreferences) {
+    val gson = remember { Gson() }
+    // Tight timeouts so a flaky Pi falls back to cloud quickly instead of stalling the UI.
+    val http = remember { OkHttpClient.Builder().connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS).readTimeout(2, java.util.concurrent.TimeUnit.SECONDS).callTimeout(3, java.util.concurrent.TimeUnit.SECONDS).build() }
+    val scope = rememberCoroutineScope()
+
+    val cloudFallbackDefault = "https://updated-hanryx-vault-pos-system.replit.app"
+    var serverUrl  by remember { mutableStateOf(prefs.getString("serverUrl", "http://100.125.5.34:8080") ?: "http://100.125.5.34:8080") }
+    var cloudUrl   by remember { mutableStateOf(prefs.getString("cloudUrl", cloudFallbackDefault) ?: cloudFallbackDefault) }
+    var apiToken   by remember { mutableStateOf(prefs.getString("apiToken", "") ?: "") }
+
+    var screen         by remember { mutableStateOf<TabletScreen>(TabletScreen.Idle) }
+    var showSettings   by remember { mutableStateOf(false) }
+    var showAcceptModal by remember { mutableStateOf(false) }
+    var authError      by remember { mutableStateOf(false) }
+    var networkError   by remember { mutableStateOf(false) }
+    var usingCloud     by remember { mutableStateOf(false) }
+    var lastOfferKey   by remember { mutableStateOf("") }
+    var lastSplashFor  by remember { mutableStateOf(0L) }
+
+    // ── Polling loop: tries Pi first, falls back to cloud if Pi is unreachable ──
+    LaunchedEffect(serverUrl, cloudUrl, apiToken, showSettings) {
+        if (showSettings) return@LaunchedEffect
+        while (isActive) {
+            var resp: okhttp3.Response? = null
+            var activeUrl = serverUrl
+            // Try primary (Pi) URL
+            try {
+                val req = Request.Builder()
+                    .url("$serverUrl/tablet/trade/current")
+                    .header("X-API-KEY", apiToken)
+                    .header("Cache-Control", "no-store")
+                    .get().build()
+                resp = withContext(Dispatchers.IO) { http.newCall(req).execute() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                resp = null
+            }
+            // If Pi unreachable and cloud URL is different, try cloud
+            if (resp == null && cloudUrl.isNotBlank() && cloudUrl.trimEnd('/') != serverUrl.trimEnd('/')) {
+                try {
+                    val cloudReq = Request.Builder()
+                        .url("$cloudUrl/tablet/trade/current")
+                        .header("X-API-KEY", apiToken)
+                        .header("Cache-Control", "no-store")
+                        .get().build()
+                    resp = withContext(Dispatchers.IO) { http.newCall(cloudReq).execute() }
+                    activeUrl = cloudUrl
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    resp = null
+                }
+            }
+            if (resp == null) {
+                networkError = true
+            } else {
+                when {
+                    resp.code == 401 -> { authError = true; networkError = false }
+                    !resp.isSuccessful -> networkError = true
+                    else -> {
+                        authError = false
+                        networkError = false
+                        usingCloud = activeUrl.trimEnd('/') != serverUrl.trimEnd('/')
+                        val body = resp.body?.string() ?: "{}"
+                        val obj = runCatching { gson.fromJson(body, JsonObject::class.java) }.getOrNull() ?: JsonObject()
+                        when {
+                            obj.has("empty") && obj["empty"].asBoolean -> {
+                                if (screen !is TabletScreen.Idle) screen = TabletScreen.Idle
+                            }
+                            obj.has("status") -> {
+                                val status = obj["status"].asString
+                                // Composite key: ti_id + sent_at prevents the sentAt==0 edge case
+                                val sentAt = obj["sent_at"]?.asLong ?: 0L
+                                val tiId   = obj["ti_id"]?.asInt ?: 0
+                                val offerKey = "${tiId}_${sentAt}"
+                                when (status) {
+                                    "accepted", "rejected" -> {
+                                        if (sentAt != lastSplashFor) {
+                                            lastSplashFor = sentAt
+                                            screen = TabletScreen.Result(status == "accepted")
+                                            delay(3000)
+                                            screen = TabletScreen.Idle
+                                        }
+                                    }
+                                    "pending" -> {
+                                        // Show the offer when:
+                                        //   (a) it's a NEW offer key (admin pushed something new), OR
+                                        //   (b) the tablet is currently Idle while a pending offer exists
+                                        //       on the server — covers sleep/wake, app restart, and the
+                                        //       case where a previous decision splash returned us to Idle
+                                        //       but the admin re-armed the same offer. This is what makes
+                                        //       the tablet stop requiring a second push to repopulate.
+                                        val isNewOffer = offerKey != lastOfferKey
+                                        val isIdle = screen is TabletScreen.Idle
+                                        if (isNewOffer || isIdle) {
+                                            val offer = runCatching { gson.fromJson(body, TradeOffer::class.java) }.getOrNull()
+                                            if (offer != null) {
+                                                lastOfferKey = offerKey
+                                                screen = TabletScreen.Offer(offer)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            delay(800)  // Poll ~every 800ms for near-real-time consistency with the Pi
+        }
+    }
+
+    fun postDecision(tiId: Int, accept: Boolean, onDone: (Boolean) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val url = "$serverUrl/tablet/trade/$tiId/${if (accept) "accept" else "reject"}"
+                val body = "{}".toRequestBody("application/json".toMediaType())
+                val req = Request.Builder().url(url).header("X-API-KEY", apiToken).post(body).build()
+                http.newCall(req).execute().isSuccessful
+            }.getOrDefault(false)
+            withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // ── Main screen content ───────────────────────────────────────────────
+        when (val s = screen) {
+            is TabletScreen.Idle -> IdleScreen(
+                authError = authError,
+                usingCloud = usingCloud,
+                onSettings = { showSettings = true }
+            )
+            is TabletScreen.Offer -> OfferScreen(
+                offer = s.offer,
+                onAccept = { showAcceptModal = true },
+                onReject = {
+                    val tiId = s.offer.ti_id
+                    postDecision(tiId, false) { _ ->
+                        screen = TabletScreen.Result(false)
+                        scope.launch { delay(3000); screen = TabletScreen.Idle }
+                    }
+                },
+                onSettings = { showSettings = true }
+            )
+            is TabletScreen.Result -> ResultScreen(accepted = s.accepted)
+        }
+
+        // ── Auth error banner (top) ───────────────────────────────────────────
+        AnimatedVisibility(
+            visible = authError,
+            enter = slideInVertically(),
+            exit = slideOutVertically(),
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+        ) {
+            Surface(color = Color(0xFFB71C1C)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Error, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Token invalid — open Settings to fix", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { showSettings = true }) {
+                        Text("Open Settings", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // ── Network reconnecting badge (top) ─────────────────────────────────
+        AnimatedVisibility(
+            visible = networkError && !authError,
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
+        ) {
+            Surface(color = Color(0xFFE65100), shape = RoundedCornerShape(20.dp)) {
+                Row(
+                    Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Reconnecting…", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    // ── Accept confirmation modal ─────────────────────────────────────────────
+    if (showAcceptModal && screen is TabletScreen.Offer) {
+        val offer = (screen as TabletScreen.Offer).offer
+        AlertDialog(
+            onDismissRequest = { showAcceptModal = false },
+            title = { Text("Confirm Trade Acceptance", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Accept ${"%.2f".format(offer.total_cash)} cash or ${"%.2f".format(offer.total_credit)} store credit for ${offer.item_count} card${if (offer.item_count != 1) "s" else ""}?",
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val tiId = (screen as? TabletScreen.Offer)?.offer?.ti_id ?: return@Button
+                        showAcceptModal = false
+                        postDecision(tiId, true) { _ ->
+                            screen = TabletScreen.Result(true)
+                            scope.launch { delay(3000); screen = TabletScreen.Idle }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
+                ) {
+                    Text("Confirm Accept", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showAcceptModal = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Settings dialog ───────────────────────────────────────────────────────
+    if (showSettings) {
+        SettingsDialog(
+            initialUrl = serverUrl,
+            initialCloudUrl = cloudUrl,
+            initialToken = apiToken,
+            http = http,
+            onSave = { url, cloud, token ->
+                serverUrl = url
+                cloudUrl = cloud
+                apiToken = token
+                prefs.edit()
+                    .putString("serverUrl", url)
+                    .putString("cloudUrl", cloud)
+                    .putString("apiToken", token)
+                    .apply()
+                authError = false
+                networkError = false
+                showSettings = false
+            },
+            onDismiss = { showSettings = false }
+        )
+    }
+}
+
+// ── Idle screen ───────────────────────────────────────────────────────────────
+
+@Composable
+fun IdleScreen(authError: Boolean, usingCloud: Boolean = false, onSettings: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        Column(
+            Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "HanryxVault",
+                fontSize = 56.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFFFFD700),
+                letterSpacing = 2.sp
+            )
+            Text(
+                "POS",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Light,
+                color = Color(0xFFFFD700).copy(alpha = 0.7f),
+                letterSpacing = 8.sp
+            )
+            Spacer(Modifier.height(32.dp))
+            Text(
+                if (authError) "Token error — tap ⚙ to fix" else "Waiting for the next trade-in…",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 20.sp,
+                textAlign = TextAlign.Center
+            )
+            if (usingCloud) {
+                Spacer(Modifier.height(16.dp))
+                Surface(
+                    color = Color(0xFF1565C0).copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text(
+                        "☁  Connected via cloud (Pi offline)",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+        IconButton(
+            onClick = onSettings,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(52.dp)
+        ) {
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = "Settings",
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+// ── Offer screen ──────────────────────────────────────────────────────────────
+
+@Composable
+fun OfferScreen(
+    offer: TradeOffer,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0D0D0D))
+    ) {
+        // Header
+        Surface(color = Color(0xFF111128), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Review Your Trade Offer",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        "${offer.reference} · ${offer.customer}",
+                        color = Color(0xFFB0B0B0),
+                        fontSize = 13.sp
+                    )
+                }
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Default.Settings, null, tint = Color.White.copy(alpha = 0.3f))
+                }
+            }
+        }
+
+        // Scrollable item list
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (offer.items.isNotEmpty()) {
+                item {
+                    Text(
+                        "WHAT YOU'RE TRADING IN",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                    )
+                }
+                items(offer.items) { item ->
+                    TradeItemRow(item)
+                }
+            }
+            if (offer.outgoing_items.isNotEmpty()) {
+                item {
+                    Text(
+                        "WHAT YOU'LL RECEIVE FROM STORE",
+                        color = Color(0xFF2196F3),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    )
+                }
+                items(offer.outgoing_items) { item ->
+                    OutgoingItemRow(item)
+                }
+            }
+        }
+
+        // Sticky totals card
+        val outgoingTotal = offer.outgoing_items.sumOf { it.offer }
+        val netCash = (offer.total_cash - outgoingTotal).coerceAtLeast(0.0)
+        val netCredit = (offer.total_credit - outgoingTotal).coerceAtLeast(0.0)
+        val customerOwes = (outgoingTotal - offer.total_cash).coerceAtLeast(0.0)
+
+        Surface(
+            color = Color(0xFF111128),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                if (offer.outgoing_items.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Trade-in value", color = Color(0xFFB0B0B0), fontSize = 13.sp)
+                        Text("$${"%,.2f".format(offer.total_cash)}", color = Color(0xFF4CAF50), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Store items (you receive)", color = Color(0xFFB0B0B0), fontSize = 13.sp)
+                        Text("$${"%,.2f".format(outgoingTotal)}", color = Color(0xFF2196F3), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider(color = Color(0xFF333366), thickness = 0.5.dp, modifier = Modifier.padding(bottom = 10.dp))
+                }
+                Text(
+                    if (customerOwes > 0.0) "You'll pay (cash):" else "You'll receive:",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+                if (customerOwes > 0.0) {
+                    TotalBox(
+                        label = "CASH DUE",
+                        amount = customerOwes,
+                        accentColor = Color(0xFFFF7043),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TotalBox(
+                            label = "CASH",
+                            amount = netCash,
+                            accentColor = Color(0xFF4CAF50),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TotalBox(
+                            label = "STORE CREDIT",
+                            amount = netCredit,
+                            accentColor = Color(0xFF2196F3),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Sticky action bar
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(88.dp)
+                .background(Color(0xFF0D0D0D))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Button(
+                onClick = onReject,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("REJECT", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, letterSpacing = 2.sp)
+            }
+            Button(
+                onClick = onAccept,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("ACCEPT", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, letterSpacing = 2.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun TradeItemRow(item: TradeItem) {
+    Surface(
+        color = Color(0xFF1C1C1C),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(item.name, fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp)
+                Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ConditionBadge(item.condition)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Market ${"%.2f".format(item.market)}",
+                        color = Color(0xFF9E9E9E),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+            Text(
+                "$${"%.2f".format(item.offer)}",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF4CAF50)
+            )
+        }
+    }
+}
+
+@Composable
+fun OutgoingItemRow(item: TradeItem) {
+    Surface(
+        color = Color(0xFF0F1A2E),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth(),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2196F3).copy(alpha = 0.3f))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(color = Color(0xFF2196F3).copy(alpha = 0.18f), shape = RoundedCornerShape(4.dp)) {
+                Text(
+                    "STORE",
+                    color = Color(0xFF64B5F6),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.name, fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "From store inventory",
+                    color = Color(0xFF9E9E9E),
+                    fontSize = 12.sp
+                )
+            }
+            Text(
+                "$${"%.2f".format(item.offer)}",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF64B5F6)
+            )
+        }
+    }
+}
+
+@Composable
+fun ConditionBadge(condition: String) {
+    val bgColor = when (condition.uppercase()) {
+        "NM" -> Color(0xFF1B5E20)
+        "LP" -> Color(0xFF1565C0)
+        "MP" -> Color(0xFFE65100)
+        "HP" -> Color(0xFFB71C1C)
+        else -> Color(0xFF424242)
+    }
+    Surface(color = bgColor, shape = RoundedCornerShape(4.dp)) {
+        Text(
+            condition.uppercase(),
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+@Composable
+fun TotalBox(label: String, amount: Double, accentColor: Color, modifier: Modifier) {
+    Surface(
+        color = accentColor.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.6f)),
+        modifier = modifier
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "$${"%.2f".format(amount)}",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = accentColor
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = accentColor.copy(alpha = 0.8f),
+                letterSpacing = 1.5.sp
+            )
+        }
+    }
+}
+
+// ── Result splash ─────────────────────────────────────────────────────────────
+
+@Composable
+fun ResultScreen(accepted: Boolean) {
+    val gradient = if (accepted)
+        Brush.verticalGradient(listOf(Color(0xFF1A3A1A), Color(0xFF2E7D32)))
+    else
+        Brush.verticalGradient(listOf(Color(0xFF1A1A1A), Color(0xFF3A3A3A)))
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(gradient)
+    ) {
+        Column(
+            Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                if (accepted) "✓" else "✗",
+                fontSize = 112.sp,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                if (accepted) "Thank you!" else "Offer Declined",
+                fontSize = 44.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                if (accepted)
+                    "Hand the cards to the cashier to complete the trade."
+                else
+                    "The cashier will be with you shortly.",
+                fontSize = 18.sp,
+                color = Color.White.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 60.dp)
+            )
+        }
+    }
+}
+
+// ── Settings dialog ───────────────────────────────────────────────────────────
+
+@Composable
+fun SettingsDialog(
+    initialUrl: String,
+    initialCloudUrl: String = "https://updated-hanryx-vault-pos-system.replit.app",
+    initialToken: String,
+    http: OkHttpClient,
+    onSave: (String, String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var url by remember { mutableStateOf(initialUrl) }
+    var cloudUrlField by remember { mutableStateOf(initialCloudUrl) }
+    var token by remember { mutableStateOf(initialToken) }
+    var healthMsg by remember { mutableStateOf("") }
+    var authMsg by remember { mutableStateOf("") }
+    var testing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.65f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1C1C2E)
+        ) {
+            Column(
+                Modifier.padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "Settings",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Pi Server URL (primary)") },
+                    placeholder = { Text("http://192.168.86.36:8080", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = cloudUrlField,
+                    onValueChange = { cloudUrlField = it },
+                    label = { Text("Cloud Fallback URL") },
+                    placeholder = { Text("https://updated-hanryx-vault-pos-system.replit.app", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("API Token") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                // Test connection row
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            testing = true
+                            healthMsg = ""
+                            authMsg = ""
+                            scope.launch(Dispatchers.IO) {
+                                // Test /health
+                                val hOk = runCatching {
+                                    http.newCall(Request.Builder().url("${url.trim()}/health").get().build()).execute().also { it.close() }.isSuccessful
+                                }.getOrDefault(false)
+                                withContext(Dispatchers.Main) {
+                                    healthMsg = if (hOk) "✓  /health OK" else "✗  /health failed"
+                                }
+                                // Test /tablet/trade/current with auth
+                                val aResp = runCatching {
+                                    http.newCall(
+                                        Request.Builder()
+                                            .url("${url.trim()}/tablet/trade/current")
+                                            .header("X-API-KEY", token.trim())
+                                            .get().build()
+                                    ).execute().also { it.close() }
+                                }.getOrNull()
+                                withContext(Dispatchers.Main) {
+                                    authMsg = when (aResp?.code) {
+                                        null -> "✗  Auth request failed"
+                                        401 -> "✗  Auth failed (bad token)"
+                                        200 -> "✓  Auth OK"
+                                        else -> "✗  Auth HTTP ${aResp.code}"
+                                    }
+                                    testing = false
+                                }
+                            }
+                        }
+                    ) {
+                        if (testing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Test Connection")
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (healthMsg.isNotEmpty()) {
+                            Text(
+                                healthMsg,
+                                fontSize = 13.sp,
+                                color = if (healthMsg.startsWith("✓")) Color(0xFF4CAF50) else Color(0xFFEF5350)
+                            )
+                        }
+                        if (authMsg.isNotEmpty()) {
+                            Text(
+                                authMsg,
+                                fontSize = 13.sp,
+                                color = if (authMsg.startsWith("✓")) Color(0xFF4CAF50) else Color(0xFFEF5350)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { onSave(url.trim(), cloudUrlField.trim(), token.trim()) },
+                        enabled = url.isNotBlank()
+                    ) {
+                        Text("Save")
+                    }
+                }
+            }
+        }
+    }
+}
+
