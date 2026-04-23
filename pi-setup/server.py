@@ -8259,11 +8259,17 @@ def tablet_trade_modify(ti_id):
     if snap.get("status") != "pending":
         return jsonify({"error": f"offer already {snap.get('status')}"}), 409
 
+    now_ms = int(time.time() * 1000)
     snap["items"]        = items
     snap["item_count"]   = int(body.get("item_count") or len(items))
     snap["total_cash"]   = float(body.get("total_cash")   or 0.0)
     snap["total_credit"] = float(body.get("total_credit") or 0.0)
-    snap["modified_at"]  = int(time.time() * 1000)
+    snap["modified_at"]  = now_ms
+    # Bump sent_at too so tablet clients keying on `${ti_id}_${sent_at}`
+    # detect the modification without needing a contract change. The original
+    # send timestamp is preserved in `modified_at` semantics: callers that
+    # want "first sent" can still treat sent_at == modified_at as unmodified.
+    snap["sent_at"]      = now_ms
 
     out = body.get("outgoing_items")
     if isinstance(out, list):
