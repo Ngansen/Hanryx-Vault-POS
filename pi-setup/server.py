@@ -9218,6 +9218,11 @@ def _load_printer_conf() -> dict:
         "printer_path":   None,
         "printer_type":   "auto",
         "printer_usb_path": "/dev/usb/lp0",
+        # ── Ethernet/network ESC/POS printers (e.g. MUNBYN P047) ─────────────
+        # Set printer_network_host=192.168.x.y in pi-setup/printer.conf to use
+        # the printer over LAN/Tailscale. Port defaults to 9100 (RAW/JetDirect).
+        "printer_network_host": os.environ.get("PRINTER_NETWORK_HOST"),
+        "printer_network_port": int(os.environ.get("PRINTER_NETWORK_PORT", "9100")),
         "receipt_header":   "HanryxVault",
         "receipt_subheader": "Trading Card Shop",
         "receipt_footer":   "hanryxvault.cards",
@@ -9335,8 +9340,26 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     return bytes(out)
 
 
+def _print_over_network(host: str, port: int, payload: bytes, timeout: float = 5.0) -> bool:
+    """Send raw ESC/POS bytes to a network thermal printer (RAW/JetDirect, port 9100).
+    Used by MUNBYN P047 and most modern Ethernet receipt printers."""
+    import socket
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout) as sock:
+            sock.sendall(payload)
+            # Most ESC/POS printers don't respond — just close cleanly.
+            try:
+                sock.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+        return True
+    except Exception as e:
+        log.error("[print] network send to %s:%s failed: %s", host, port, e)
+        return False
+
+
 def _do_print(sale: dict):
-    """Background-thread print job — tries BT/USB/CUPS in order."""
+    """Background-thread print job — tries Network → BT/USB → CUPS in order."""
     fh, path, conf = _open_printer()
 
     # Merge rich receipt settings (store name, instagram, footer, etc.)
@@ -9349,6 +9372,18 @@ def _do_print(sale: dict):
 
     try:
         receipt_bytes = _format_receipt(sale, conf)
+
+        # ── Preferred path: Ethernet/network printer (MUNBYN P047 etc.) ─────
+        net_host = conf.get("printer_network_host")
+        net_port = conf.get("printer_network_port") or 9100
+        if net_host:
+            if _print_over_network(net_host, net_port, receipt_bytes):
+                log.info("[print] Receipt sent to %s:%s", net_host, net_port)
+                if fh:
+                    try: fh.close()
+                    except Exception: pass
+                return
+            log.warning("[print] network printer %s:%s unreachable — falling back to local devices", net_host, net_port)
 
         if fh is not None:
             fh.write(receipt_bytes)

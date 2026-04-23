@@ -142,6 +142,14 @@ services:
       # Pokémon-card-recognizer service (separate container, see below).
       RECOGNIZER_BASE_URL: ${RECOGNIZER_BASE_URL:-http://recognizer:8081}
 
+      # ── Receipt printer (MUNBYN P047 / any ESC/POS thermal) ───────────────
+      # Ethernet path (preferred): set PRINTER_NETWORK_HOST in pi-setup/.env
+      # to the printer's static LAN IP. Default port 9100 (RAW/JetDirect).
+      # USB path is auto-detected via the device mount below — leave unset
+      # if you're using USB only.
+      PRINTER_NETWORK_HOST: ${PRINTER_NETWORK_HOST:-}
+      PRINTER_NETWORK_PORT: ${PRINTER_NETWORK_PORT:-9100}
+
       # Folder where PokeScraper_3.0 CSVs are dropped (bind-mounted below).
       JPN_DATA_DIR: /app/data/jp_pokellector
 
@@ -162,6 +170,14 @@ services:
       - /opt/hanryxvault/kiosk/videos:/app/kiosk-videos:ro
       # PokeScraper_3.0 CSV drop folder (read-only).  See data/jp_pokellector/README.md.
       - ./data/jp_pokellector:/app/data/jp_pokellector:ro
+    # ── USB receipt printer passthrough (MUNBYN P047, etc.) ────────────────
+    # If you connect the printer via USB (instead of Ethernet), uncomment
+    # the lines below AND make sure the printer is plugged in BEFORE running
+    # `docker compose up` — Docker fails to start if the device file is
+    # missing on the host. For Ethernet printers, leave this commented and
+    # set PRINTER_NETWORK_HOST in pi-setup/.env instead.
+    # devices:
+    #   - "/dev/usb/lp0:/dev/usb/lp0"
     depends_on:
       db:
         condition: service_healthy
