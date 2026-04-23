@@ -8078,9 +8078,10 @@ def _tablet_offer_build_payload(ti_id: int) -> dict | None:
                 "offer":      float(it["offered_price"] or 0),
                 "market":     float(it["market_price"]  or 0),
             } for it in items],
-            "item_count":   len(items),
-            "total_cash":   cash_total,
-            "total_credit": credit_total,
+            "item_count":     len(items),
+            "total_cash":     cash_total,
+            "total_credit":   credit_total,
+            "outgoing_items": [],   # populated by send-to-tablet body for swap trade-ins
         }
     except Exception:
         log.exception("[tablet] build payload failed for ti=%s", ti_id)
@@ -8142,6 +8143,12 @@ def admin_trade_in_send_to_tablet(ti_id):
     payload["status"]     = "pending"
     payload["sent_at"]    = int(time.time() * 1000)
     payload["decided_at"] = None
+    # Allow caller to attach outgoing_items (cards customer is buying as part
+    # of a swap). Default stays empty for normal trade-ins.
+    body = request.get_json(silent=True) or {}
+    out  = body.get("outgoing_items")
+    if isinstance(out, list):
+        payload["outgoing_items"] = out
     _tablet_offer_save(payload)
     # Forward to cloud so tablet can reach Replit if local Pi is unreachable
     _cloud_url = os.getenv("CLOUD_URL", "https://updated-hanryx-vault-pos-system.replit.app")
@@ -8219,6 +8226,53 @@ def tablet_trade_reject(ti_id):
     if snap is None:
         return jsonify({"error": "Offer not found or expired"}), 404
     return jsonify({"ok": True, "status": "rejected"})
+
+
+@app.route("/tablet/trade/<int:ti_id>/modify", methods=["POST"])
+@require_api_token
+def tablet_trade_modify(ti_id):
+    """
+    Customer-side edits on the tablet (delete cards, lower offered prices)
+    sync back here so the operator sees what the customer actually agreed to.
+
+    Updates the Redis snapshot only — does NOT touch the underlying
+    trade_in_items rows. The operator reconciles at finalize time.
+    Only succeeds while status='pending'.
+
+    Body (all fields optional except items):
+      {
+        "items":          [TradeItem, ...],
+        "item_count":     <int>           (defaults to len(items)),
+        "total_cash":     <float>,
+        "total_credit":   <float>,
+        "outgoing_items": [TradeItem, ...] (optional)
+      }
+    """
+    body = request.get_json(silent=True) or {}
+    items = body.get("items")
+    if not isinstance(items, list):
+        return jsonify({"error": "items[] required"}), 400
+
+    snap = _tablet_offer_load()
+    if not snap or int(snap.get("ti_id", 0)) != int(ti_id):
+        return jsonify({"error": "offer not found", "ti_id": ti_id}), 404
+    if snap.get("status") != "pending":
+        return jsonify({"error": f"offer already {snap.get('status')}"}), 409
+
+    snap["items"]        = items
+    snap["item_count"]   = int(body.get("item_count") or len(items))
+    snap["total_cash"]   = float(body.get("total_cash")   or 0.0)
+    snap["total_credit"] = float(body.get("total_credit") or 0.0)
+    snap["modified_at"]  = int(time.time() * 1000)
+
+    out = body.get("outgoing_items")
+    if isinstance(out, list):
+        snap["outgoing_items"] = out
+
+    _tablet_offer_save(snap)
+    log.info("[tablet] modify ti=%s items=%d cash=$%.2f",
+             ti_id, snap["item_count"], snap["total_cash"])
+    return jsonify({"ok": True, "status": "pending"})
 
 
 def _kiosk_push_trade(ti_id, complete=False, cancelled=False):
