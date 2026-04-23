@@ -1,0 +1,99 @@
+
+Here's the exact contract the tablet needs to implement against the Pi server.
+
+Base URL & Auth (already in place)
+Base URL: http://hanryxvault-2:8080 (Tailscale: http://100.125.5.34:8080)
+Cloud fallback: https://updated-hanryx-vault-pos-system.replit.app
+Auth header: X-API-KEY: <token> on every request (LAN traffic is auto-bypassed; Tailscale/cloud requires it)
+Content type: application/json on every POST
+1. GET /tablet/trade/current
+Poll this every 1–2 seconds while the tablet is idle. Returns the offer the operator pushed.
+
+Empty response (no active offer):
+
+{ "empty": true }
+Active offer response:
+
+{
+  "ti_id": 7,
+  "reference": "TI-0007",
+  "customer": "Walk-in",
+  "items": [
+    {
+      "id": 42,
+      "name": "Charizard ex 199/197",
+      "qr_code": "SV3-199",
+      "condition": "NM",
+      "offer": 75.00,
+      "market": 89.99
+    }
+  ],
+  "item_count": 1,
+  "total_cash": 75.00,
+  "total_credit": 90.00,
+  "status": "pending",
+  "sent_at": 1745432100000,
+  "decided_at": null,
+  "outgoing_items": [
+    {
+      "id": 1,
+      "name": "Pikachu V 043/100",
+      "qr_code": "SWSH-043",
+      "condition": "NM",
+      "offer": 19.99,
+      "market": 19.99
+    }
+  ],
+  "modified_at": 1745432155000
+}
+Notes for the tablet:
+
+outgoing_items is the NEW field. It's the list of store-inventory cards the customer is buying as part of a swap trade-in. offer and market both equal the price the customer pays for that card. Display these as a separate "You're buying" section under the trade-in items. Field is always present; usually [].
+Dedup key for "is this a new offer?" should remain "${ti_id}_${sent_at}" (the sent_at fix is already in place).
+modified_at is optional — only present if the operator (or another tablet client) has called /modify on this offer. Tablet can ignore it, or use it to detect "the offer changed under me."
+status is one of: "pending" | "accepted" | "rejected". Once not pending, stop showing the offer; clear the screen.
+2. POST /tablet/trade/<ti_id>/accept
+Customer taps Accept.
+
+Body: none (empty {} is fine)
+200: { "ok": true, "status": "accepted" }
+404: { "error": "Offer not found or expired" }
+3. POST /tablet/trade/<ti_id>/reject
+Customer taps Reject.
+
+Body: none
+200: { "ok": true, "status": "rejected" }
+404: { "error": "Offer not found or expired" }
+4. POST /tablet/trade/<ti_id>/modify (NEW)
+Customer-side edits — call this when the customer deletes a card from the offer or lowers the offered price on a card before accepting. Updates the server's snapshot so the operator sees what the customer actually agreed to.
+
+Request body:
+
+{
+  "items": [
+    {
+      "id": 42,
+      "name": "Charizard ex 199/197",
+      "qr_code": "SV3-199",
+      "condition": "NM",
+      "offer": 70.00,
+      "market": 89.99
+    }
+  ],
+  "item_count": 1,
+  "total_cash": 70.00,
+  "total_credit": 84.00,
+  "outgoing_items": []
+}
+Field rules:
+
+items (required, array) — the full remaining list of incoming items after edits. Send the same object shape you received from /tablet/trade/current. To delete a card, just leave it out of the array.
+item_count (optional, int) — defaults to len(items) if omitted.
+total_cash (optional, float) — recompute on the tablet from the edited items and send.
+total_credit (optional, float) — typically total_cash * 1.20.
+outgoing_items (optional, array) — only include if the customer also edited the buy-side. Omit entirely to leave server-side unchanged.
+Responses:
+
+200: { "ok": true, "status": "pending" } — snapshot updated; offer is still awaiting accept/reject.
+400: { "error": "items[] required" } — body missing or items not an array.
+404: { "error": "offer not found", "ti_id": <n> } — no current offer, or ti_id do
