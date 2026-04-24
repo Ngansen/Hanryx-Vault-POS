@@ -1,0 +1,67 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose ps pos
+docker compose logs pos --tail=60
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.
+NAME             IMAGE          COMMAND            SERVICE   CREATED         STATUS                          PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       4 minutes ago   Restarting (3) 31 seconds ago
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | [2026-04-24 04:26:34 +0000] [13] [ERROR] Exception in worker process
+pos-1  | Traceback (most recent call last):
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 713, in spawn_worker
+pos-1  |     worker.init_process()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py", line 143, in init_process
+pos-1  |     super().init_process()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 136, in init_process
+pos-1  |     self.load_wsgi()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 148, in load_wsgi
+pos-1  |     self.wsgi = self.app.wsgi()
+pos-1  |                 ^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1  |     self.callable = self.load()
+pos-1  |                     ^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1  |     return self.load_wsgiapp()
+pos-1  |            ^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1  |     return util.import_app(self.app_uri)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1  |     mod = importlib.import_module(module)
+pos-1  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+pos-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1  |   File "/app/server.py", line 26328, in <module>
+pos-1  |     @app.route("/admin/ai/haggle", methods=["POST"])
+pos-1  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 362, in decorator
+pos-1  |     self.add_url_rule(rule, endpoint, f, **options)
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 47, in wrapper_func
+pos-1  |     return f(self, *args, **kwargs)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/flask/sansio/app.py", line 657, in add_url_rule
+pos-1  |     raise AssertionError(
+pos-1  | AssertionError: View function mapping is overwriting an existing endpoint function: ai_haggle
+pos-1  | View function mapping is overwriting an existing endpoint function: ai_haggle
+pos-1  | [2026-04-24 04:26:34 +0000] [13] [INFO] Worker exiting (pid: 13)
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"WARNING","logger":"hanryxvault","msg":"[worker] submit failed for _pokeapi_fetch_and_store: cannot schedule new futures after interpreter shutdown"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"WARNING","logger":"hanryxvault","msg":"[worker] submit failed for _pokeapi_fetch_and_store: cannot schedule new futures after interpreter shutdown"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:26:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:26:34 +0000] [8] [ERROR] Worker (pid:13) exited with code 3.
+pos-1  | [2026-04-24 04:26:34 +0000] [8] [ERROR] Shutting down: Master
+pos-1  | [2026-04-24 04:26:34 +0000] [8] [ERROR] Reason: Worker failed to boot.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
