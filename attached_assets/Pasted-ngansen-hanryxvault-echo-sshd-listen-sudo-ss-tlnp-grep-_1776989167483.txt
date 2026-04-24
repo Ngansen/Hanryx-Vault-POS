@@ -1,0 +1,30 @@
+ngansen@hanryxvault:~ $ echo "=== sshd listen ===" && sudo ss -tlnp | grep :22; \
+echo "=== ufw ===" && sudo ufw status; \
+echo "=== nft ===" && sudo nft list ruleset 2>/dev/null | grep -E 'dport (22|ssh)|policy'
+=== sshd listen ===
+LISTEN 0      128                       0.0.0.0:22         0.0.0.0:*    users:(("sshd",pid=2055203,fd=6))                        
+LISTEN 0      128                          [::]:22            [::]:*    users:(("sshd",pid=2055203,fd=7))                        
+=== ufw ===
+sudo: ufw: command not found
+=== nft ===
+                type filter hook prerouting priority raw; policy accept;
+                type filter hook output priority raw; policy accept;
+                type filter hook input priority filter; policy accept;
+                type filter hook forward priority filter; policy drop;
+                type filter hook output priority filter; policy accept;
+                type nat hook prerouting priority dstnat; policy accept;
+                type nat hook input priority srcnat; policy accept;
+                type nat hook output priority dstnat; policy accept;
+                type nat hook postrouting priority srcnat; policy accept;
+                type filter hook input priority filter; policy accept;
+                type filter hook forward priority filter; policy accept;
+                type filter hook output priority filter; policy accept;
+                type nat hook prerouting priority dstnat; policy accept;
+                type nat hook input priority srcnat; policy accept;
+                type nat hook output priority dstnat; policy accept;
+                type nat hook postrouting priority srcnat; policy accept;
+                type filter hook prerouting priority mangle; policy accept;
+                type route hook output priority mangle; policy accept;
+                type filter hook prerouting priority mangle; policy accept;
+                type route hook output priority mangle; policy accept;
+ngansen@hanryxvault:~
