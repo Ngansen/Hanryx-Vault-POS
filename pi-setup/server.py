@@ -26325,7 +26325,7 @@ def admin_sets():
 # shop wifi or the WireGuard subnet cannot drain the OpenAI bill. If we later
 # expose any of these to the tablet, switch that one to @require_api_token.
 
-@app.route("/ai/haggle", methods=["POST"])
+@app.route("/admin/ai/haggle", methods=["POST"])
 @require_admin
 def ai_haggle():
     try:
@@ -26377,7 +26377,7 @@ def ai_haggle():
                         "counter_script": "", "confidence": "LOW"}), 500
 
 
-@app.route("/ai/bundle", methods=["POST"])
+@app.route("/admin/ai/bundle", methods=["POST"])
 @require_admin
 def ai_bundle():
     try:
@@ -26433,7 +26433,7 @@ def ai_bundle():
                         "confidence": "LOW"}), 500
 
 
-@app.route("/ai/counterfeit", methods=["POST"])
+@app.route("/admin/ai/counterfeit", methods=["POST"])
 @require_admin
 def ai_counterfeit():
     try:
