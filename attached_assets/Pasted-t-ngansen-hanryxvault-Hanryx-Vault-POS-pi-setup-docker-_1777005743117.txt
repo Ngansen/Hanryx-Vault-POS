@@ -1,0 +1,111 @@
+t
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose ps pos
+docker compose logs pos --tail=80
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.
+NAME             IMAGE          COMMAND            SERVICE   CREATED         STATUS                          PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       2 minutes ago   Restarting (2) 15 seconds ago
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.
+pos-1  | [2026-04-24 04:39:33 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:34","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:39:36 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:37","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:39:40 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:39:40","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:39:40","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:41","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:39:45 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:46","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:39:54 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:39:54","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:39:54","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:39:55","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:40:09 +0000] [7] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:40:09","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:40:36 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:40:37","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+pos-1  | [2026-04-24 04:41:30 +0000] [8] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-24T04:41:30","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-24T04:41:30","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+pos-1  | {"ts":"2026-04-24T04:41:31","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose run --rm pos sh -c "grep -n 'def admin_ai_haggle\|def ai_haggle' /app/server.py"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.
+[+]  2/2t 2/22
+ ✔ Container pi-setup-redis-1 Running                                       0.0s
+ ✔ Container pi-setup-db-1    Running                                       0.0s
+Container pi-setup-db-1 Waiting
+Container pi-setup-redis-1 Waiting
+Container pi-setup-db-1 Healthy
+Container pi-setup-redis-1 Healthy
+Container pi-setup-pos-run-b292ea2e33e7 Creating
+pos Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded.
+Container pi-setup-pos-run-b292ea2e33e7 Created
+[2026-04-24 04:42:02 +0000] [8] [INFO] Starting gunicorn 25.3.0
+{"ts":"2026-04-24T04:42:03","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-24T04:42:03","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-24T04:42:03","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-24T04:42:03","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+{"ts":"2026-04-24T04:42:03","level":"ERROR","logger":"hanryxvault","msg":"[init] FATAL DB AUTH FAILURE: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+{"ts":"2026-04-24T04:42:03","level":"ERROR","logger":"hanryxvault","msg":"[init] DB volume credentials are out of sync with app config."}
+{"ts":"2026-04-24T04:42:03","level":"ERROR","logger":"hanryxvault","msg":"[init] Fix: docker exec -u postgres <db-container> psql -U <user> -d <db> -c \"ALTER USER <user> WITH PASSWORD '<pwd>';\""}
+{"ts":"2026-04-24T04:42:03","level":"WARNING","logger":"hanryxvault","msg":"[pokeapi] db load failed: FATAL:  password authentication failed for user \"vaultpos\"\n"}
+{"ts":"2026-04-24T04:42:03","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 0 species"}
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
