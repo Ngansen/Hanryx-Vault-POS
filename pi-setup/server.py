@@ -26327,7 +26327,7 @@ def admin_sets():
 
 @app.route("/admin/ai/haggle", methods=["POST"])
 @require_admin
-def ai_haggle():
+def admin_ai_haggle():
     try:
         data         = request.get_json(force=True) or {}
         name         = data.get("item_name", "Unknown Item")
@@ -26379,7 +26379,7 @@ def ai_haggle():
 
 @app.route("/admin/ai/bundle", methods=["POST"])
 @require_admin
-def ai_bundle():
+def admin_ai_bundle():
     try:
         data  = request.get_json(force=True) or {}
         items = data.get("items", [])
@@ -26435,7 +26435,7 @@ def ai_bundle():
 
 @app.route("/admin/ai/counterfeit", methods=["POST"])
 @require_admin
-def ai_counterfeit():
+def admin_ai_counterfeit():
     try:
         data      = request.get_json(force=True) or {}
         image_b64 = data.get("image_b64", "")
