@@ -1,0 +1,79 @@
+ssh ngansen@100.85.79.40
+PING 100.85.79.40 (100.85.79.40) 56(84) bytes of data.
+64 bytes from 100.85.79.40: icmp_seq=1 ttl=64 time=164 ms
+64 bytes from 100.85.79.40: icmp_seq=2 ttl=64 time=88.4 ms
+64 bytes from 100.85.79.40: icmp_seq=3 ttl=64 time=19.4 ms
+
+--- 100.85.79.40 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2004ms
+rtt min/avg/max/mdev = 19.362/90.521/163.791/58.981 ms
+The authenticity of host '100.85.79.40 (100.85.79.40)' can't be established.
+ED25519 key fingerprint is SHA256:471MF43/n1J34TyaGYG3Ev+qqEZYwTfGggbyR2jqHA0.
+This host key is known by the following other names/addresses:
+    ~/.ssh/known_hosts:1: [hashed name]
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '100.85.79.40' (ED25519) to the list of known hosts.
+ngansen@100.85.79.40's password:
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu Apr 23 23:51:05 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ # Kill the AP if it exists
+sudo nmcli connection show | grep -i hanryx
+sudo nmcli connection down HanryxVault-AP 2>/dev/null
+sudo nmcli connection delete HanryxVault-AP 2>/dev/null
+
+# Reconnect to home Wi-Fi (replace SSID and password with yours)
+sudo nmcli device wifi list
+sudo nmcli device wifi connect "YourHomeWiFiName" password "YourHomePassword"
+
+# Verify
+ip addr show wlan0
+ping -c 3 1.1.1.1
+tailscale status
+[sudo] password for ngansen:
+IN-USE  BSSID              SSID                MODE   CHAN  RATE        SIGNAL >
+        D8:6C:63:F0:85:9C  setup859C0          Infra  1     130 Mbit/s  84     >
+        9C:4F:5F:8E:85:18  TheGansenHousehold  Infra  1     130 Mbit/s  82     >
+        9E:4F:5F:8E:85:18  Gansen Guest        Infra  1     130 Mbit/s  80     >
+        D8:6C:63:F5:9F:21  TheGansenHousehold  Infra  6     130 Mbit/s  74     >
+        DA:6C:63:F5:9F:20  Gansen Guest        Infra  6     130 Mbit/s  72     >
+*       9C:4F:5F:8E:85:14  TheGansenHousehold  Infra  149   270 Mbit/s  64     >
+        9E:4F:5F:8E:85:15  592B8A4D            Mesh   149   270 Mbit/s  60     >
+        9E:4F:5F:8E:85:14  Gansen Guest        Infra  149   270 Mbit/s  60     >
+        9C:4F:5F:6C:C6:0E  TheGansenHousehold  Infra  11    130 Mbit/s  59     >
+        DA:6C:63:F5:9F:1C  Gansen Guest        Infra  149   270 Mbit/s  59     >
+        9E:4F:5F:6C:C6:0C  Gansen Guest        Infra  11    130 Mbit/s  57     >
+        D8:6C:63:F5:9F:1D  TheGansenHousehold  Infra  149   270 Mbit/s  57     >
+        D8:6C:63:F0:85:98  setup859C0          Infra  36    270 Mbit/s  52     >
+        9C:4F:5F:6C:C6:0A  TheGansenHousehold  Infra  149   270 Mbit/s  34     >
+        9E:4F:5F:6C:C6:08  Gansen Guest        Infra  149   270 Mbit/s  34     >
+        F8:3E:B0:09:30:F9  TMJMA               Infra  48    540 Mbit/s  24     >
+Error: No network with SSID 'YourHomeWiFiName' found.
+3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 88:a2:9e:40:13:aa brd ff:ff:ff:ff:ff:ff
+    inet 192.168.86.22/24 brd 192.168.86.255 scope global dynamic noprefixroute wlan0
+       valid_lft 83602sec preferred_lft 83602sec
+    inet6 fd95:dd56:48d9:3756:8aa2:9eff:fe40:13aa/64 scope global dynamic mngtmpaddr proto kernel_ra
+       valid_lft 1754sec preferred_lft 1754sec
+    inet6 fe80::8aa2:9eff:fe40:13aa/64 scope link proto kernel_ll
+       valid_lft forever preferred_lft forever
+PING 1.1.1.1 (1.1.1.1) 56(84) bytes of data.
+64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=25.7 ms
+64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=30.9 ms
+64 bytes from 1.1.1.1: icmp_seq=3 ttl=57 time=26.5 ms
+
+--- 1.1.1.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2004ms
+rtt min/avg/max/mdev = 25.676/27.717/30.936/2.302 ms
+100.85.79.40    hanryxvault-sat  ngansen84@  linux    -                         
+100.89.6.91     desktop-ah0ahak  ngansen84@  windows  -                         
+100.125.5.34    hanryxvault-2    ngansen84@  linux    active; direct 192.168.86.36:41641, tx 99920 rx 93480
+100.79.94.15    hanryxvault      ngansen84@  linux    offline, last seen 27d ago
+100.119.98.95   iphone172        ngansen84@  iOS      -                         
+100.118.170.69  noahs-tab-a11    ngansen84@  android  offline, last seen 3d ago 
