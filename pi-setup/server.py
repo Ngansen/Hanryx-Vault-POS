@@ -9449,10 +9449,22 @@ def print_receipt():
 
 @app.route("/print/status", methods=["GET"])
 def print_status():
-    """Returns which printer device is currently available."""
-    _, path, conf = _open_printer()
+    """Returns which printer device is currently available.
+
+    IMPORTANT: USB lp devices like /dev/usb/lp0 are exclusive — only one
+    process can have them open at a time. If we leak the file handle here
+    (even briefly until GC), concurrent print jobs or other gunicorn workers
+    will get EBUSY and the route will start reporting 'cups' incorrectly.
+    Close the handle synchronously the moment we have it.
+    """
+    fh, path, conf = _open_printer()
+    if fh is not None:
+        try:
+            fh.close()
+        except Exception:
+            pass
     return jsonify({
-        "printer_available": path is not None,
+        "printer_available": path is not None and path != "cups",
         "printer_path":      path,
         "bt_mac":            conf.get("printer_bt_mac"),
     })
