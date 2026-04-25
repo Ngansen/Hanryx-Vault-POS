@@ -171,13 +171,18 @@ services:
       # PokeScraper_3.0 CSV drop folder (read-only).  See data/jp_pokellector/README.md.
       - ./data/jp_pokellector:/app/data/jp_pokellector:ro
     # ── USB receipt printer passthrough (MUNBYN P047, etc.) ────────────────
-    # If you connect the printer via USB (instead of Ethernet), uncomment
-    # the lines below AND make sure the printer is plugged in BEFORE running
+    # If you connect the printer via USB (instead of Ethernet), keep the lines
+    # below uncommented AND make sure the printer is plugged in BEFORE running
     # `docker compose up` — Docker fails to start if the device file is
-    # missing on the host. For Ethernet printers, leave this commented and
-    # set PRINTER_NETWORK_HOST in pi-setup/.env instead.
-    # devices:
-    #   - "/dev/usb/lp0:/dev/usb/lp0"
+    # missing on the host. For Ethernet printers, comment them out and set
+    # PRINTER_NETWORK_HOST in pi-setup/.env instead.
+    devices:
+      - "/dev/usb/lp0:/dev/usb/lp0"
+    # The /dev/usb/lp0 device is owned by root:lp on the host. The container
+    # runs as the unprivileged 'hanryx' user, so we add gid 7 (lp on Debian /
+    # Raspberry Pi OS) so the user can open the device for writing receipts.
+    group_add:
+      - "7"
     depends_on:
       db:
         condition: service_healthy
