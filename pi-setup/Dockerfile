@@ -36,7 +36,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -r hanryx && useradd -r -g hanryx -d /app -s /sbin/nologin hanryx
+# Create hanryx user, AND ensure the lp group (gid 7, owner of /dev/usb/lp0
+# on Raspberry Pi OS) exists inside the container with hanryx as a member.
+# Baking this at build time means gunicorn (which runs as hanryx via
+# entrypoint.sh `su`) can open the USB receipt printer with no runtime
+# user-management commands required, regardless of whether the host's lp gid
+# happens to be 7. The runtime safety net in entrypoint.sh covers exotic
+# hosts where gid != 7.
+RUN groupadd -r hanryx \
+    && (getent group lp >/dev/null 2>&1 || groupadd -g 7 lp) \
+    && useradd -r -g hanryx -G lp -d /app -s /sbin/nologin hanryx
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
