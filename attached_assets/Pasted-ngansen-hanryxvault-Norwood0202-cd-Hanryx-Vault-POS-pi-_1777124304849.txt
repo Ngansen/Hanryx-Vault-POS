@@ -1,0 +1,91 @@
+ngansen@hanryxvault:Norwood0202 $ cd ~/Hanryx-Vault-POS/pi-setup
+git pull
+
+# Recreate so the new device mount + lp group take effect
+docker compose up -d --force-recreate pos
+
+# Wait for it
+for i in $(seq 1 12); do
+  if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+    echo "POS UP after $((i*5))s"; break
+  fi
+  sleep 5
+done
+
+# Verify the device is now visible inside the container
+:1.00,"totalAmount":1.00,"paymentMethod":"CASH"}'"
+remote: Enumerating objects: 12, done.
+remote: Counting objects: 100% (12/12), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 8 (delta 6), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (8/8), 1.87 KiB | 45.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   bdf15a5..b735d8a  main       -> origin/main
+Updating bdf15a5..b735d8a
+Fast-forward
+ pi-setup/docker-compose.yml | 17 ++++++++++-----
+ pi-setup/server.py          | 12 ++++++++++
+ 2 files changed, 23 insertions(+), 6 deletions(-)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 4/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         9.4s[+] up 2/4... Waiting                         9.4s ⠹ Contain... Waiting                         9.5s[+] up 2/4... Waiting                         9.5s ⠸ Contain... Waiting                         9.6s[+] up 2/4... Waiting                         9.6s ⠼ Contain... Waiting                         9.7s[+] up 2/4... Waiting                         9.7s ⠴ Contain... Waiting                         9.8s[+] up 3/4... Waiting                         9.8s ✔ Contain... Healthy                         9.8s[+] up 3/4... Healthy                         9.8s ✔ Contain... Healthy                        9.8ss[+] up 4/4... Healthy                        9.8s  ✔ Contain... Healthy                        9.8ss ✔ Contain... Healthy                        9.8s  ✔ Contain... Started                        10.1s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+POS UP after 10s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+crw-rw---- 1 root lp 180, 0 Apr 25 13:31 /dev/usb/lp0
+{"bt_mac":null,"printer_available":true,"printer_path":"cups"}
+{"ok":true,"queued":true}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Confirm git pull picked up the new compose lines (should show 'devices:' and 'group_add:' uncommented)
+grep -nE "devices:|group_add:|/dev/usb/lp0|^      - \"7\"" docker-compose.yml
+
+# 2. What user/groups is the container running as? 
+#    Want to see uid=999(hanryx) gid=999(hanryx) groups=999(hanryx),7
+docker compose exec pos id
+
+# 3. Can the container actually open the device for writing?
+docker compose exec pos sh -c 'python3 -c "
+import os
+curl -s http://localhost:8080/print/status\n\\n\\n
+179:    devices:
+180:      - "/dev/usb/lp0:/dev/usb/lp0"
+181:    # The /dev/usb/lp0 device is owned by root:lp on the host. The container
+184:    group_add:
+185:      - "7"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+uid=0(root) gid=0(root) groups=0(root),7(lp)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+exists: True
+readable: True
+writable: True
+OPEN+WRITE OK
+{"bt_mac":null,"printer_available":true,"printer_path":"cups"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "
+import sys, os
+sys.path.insert(0, '/app')
+from server import _open_printer, _load_printer_conf
+print('CONF:', _load_printer_conf())
+print('lp0 exists:', os.path.exists('/dev/usb/lp0'))
+fh, path, conf = _open_printer()
+print('RESULT path:', path)
+print('RESULT fh  :', fh)
+if fh:
+    fh.close()
+    print('--> Device opened successfully — server should return this path')
+else:
+    print('--> Device NOT opened — falling back to cups')
+"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-04-25T13:37:40","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-25T13:37:40","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-25T13:37:40","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-25T13:37:40","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+CONF: {'printer_path': None, 'printer_type': 'auto', 'printer_usb_path': '/dev/usb/lp0', 'printer_network_host': '', 'printer_network_port': 9100, 'receipt_header': 'HanryxVault', 'receipt_subheader': 'Trading Card Shop', 'receipt_footer': 'hanryxvault.cards'}
+lp0 exists: True
+RESULT path: /dev/usb/lp0
+RESULT fh  : <_io.BufferedWriter name='/dev/usb/lp0'>
+--> Device opened successfully — server should return this path
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
