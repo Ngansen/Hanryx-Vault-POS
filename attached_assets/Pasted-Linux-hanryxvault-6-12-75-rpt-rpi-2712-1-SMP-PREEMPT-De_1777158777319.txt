@@ -1,0 +1,223 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+ngansen@hanryxvault:~ $ cat > /tmp/pos-rebuild.sh << 'SCRIPT'
+#!/bin/bash
+# HanryxVault POS — comprehensive rebuild & validation.
+# Validates every fix from commits bdf15a5 → 26c6e40, with safety checks
+# for every prior gotcha (DB password, lp group, Tailscale, satellite).
+
+set -e
+LOG=/tmp/pos-rebuild-$(date +%s).log
+exec > >(tee -a "$LOG") 2>&1
+
+PASS=0; FAIL=0; WARN=0
+ok()    { echo "  [OK]    $*"; PASS=$((PASS+1)); } 
+fail()  { echo "  [FAIL]  $*"; FAIL=$((FAIL+1)); } 
+warn()  { echo "  [WARN]  $*"; WARN=$((WARN+1)); }/tmp/pos-rebuild.shebuild.shl check(s) failed. Sen
+
+== PHASE 1/4 : PRE-FLIGHT (no destructive actions yet) ==
+
+[1.1] .env DB_PASSWORD set (the blank-password trap)
+  [OK]    .env DB_PASSWORD present
+
+[1.2] Postgres reachable with current .env credentials
+  [OK]    postgres (db service) accepts current .env credentials
+
+[1.3] Inventory + sales baseline
+  [OK]    inventory=61  sales=2
+
+[1.4] USB printer detected on host
+Bus 003 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+  [OK]    USB printer device on bus
+
+[1.5] /dev/usb/lp0 character device on host
+crw-rw---- 1 root lp 180, 0 Apr 25 04:40 /dev/usb/lp0
+  [OK]    lp0 owned by gid 7 — matches container's baked lp group
+
+[1.6] Tailscale snapshot BEFORE rebuild
+  [OK]    Tailscale IP: 100.125.5.34  (expect 100.125.5.34)
+
+[1.7] Disk space (build needs ~2 GB)
+  [OK]    15G free
+
+[1.8] Containers running BEFORE
+time="2026-04-25T22:54:47Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+NAME                    STATUS
+pi-setup-db-1           Up 10 hours (healthy)
+pi-setup-pgbouncer-1    Up 18 hours (healthy)
+pi-setup-pokeapi-1      Up 18 hours (healthy)
+pi-setup-pos-1          Up 9 hours (healthy)
+pi-setup-recognizer-1   Up 18 hours (healthy)
+pi-setup-redis-1        Up 18 hours (healthy)
+pi-setup-storefront-1   Up 18 hours (unhealthy)
+
+== PHASE 2/4 : PULL + BUILD + RECREATE (only pos) ==
+
+[2.1] git pull --rebase
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   4841a43..26c6e40  main       -> origin/main
+Updating 4841a43..26c6e40
+Fast-forward
+ pi-setup/Dockerfile    | 11 ++++++++++-
+ pi-setup/entrypoint.sh | 17 +++++++++++++++++
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+[2.2] docker compose build pos  (db/redis/tailscale untouched)
+time="2026-04-25T22:54:48Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+ Image pi-setup-pos Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 520B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.84kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim-bookworm
+#3 DONE 0.6s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 193B done
+#4 DONE 0.0s
+
+#5 [builder 1/6] FROM docker.io/library/python:3.11-slim-bookworm@sha256:ee710afcfb733f4a750d9be683cf054b5cd247b6c5f5237a6849ea568b90ab15
+#5 resolve docker.io/library/python:3.11-slim-bookworm@sha256:ee710afcfb733f4a750d9be683cf054b5cd247b6c5f5237a6849ea568b90ab15 0.0s done
+#5 DONE 0.1s
+
+#6 [builder 2/6] WORKDIR /app
+#6 CACHED
+
+#7 [stage-1 3/9] RUN apt-get update && apt-get install -y --no-install-recommends     libpq5     postgresql-client     git     tesseract-ocr     tesseract-ocr-eng     tesseract-ocr-kor     tesseract-ocr-jpn     tesseract-ocr-chi-sim     curl     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [stage-1 4/9] RUN groupadd -r hanryx     && (getent group lp >/dev/null 2>&1 || groupadd -g 7 lp)     && useradd -r -g hanryx -G lp -d /app -s /sbin/nologin hanryx
+#8 ...
+
+#9 [internal] load build context
+#9 transferring context: 7.13kB done
+#9 DONE 0.0s
+
+#10 [builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     gcc     git     libpq-dev     tesseract-ocr     tesseract-ocr-eng     tesseract-ocr-kor     tesseract-ocr-jpn     tesseract-ocr-chi-sim     libtesseract-dev     && rm -rf /var/lib/apt/lists/*
+#10 CACHED
+
+#11 [builder 4/6] COPY requirements.txt .
+#11 CACHED
+
+#12 [builder 5/6] RUN python -m venv /opt/venv
+#12 CACHED
+
+#13 [builder 6/6] RUN pip install --no-cache-dir -r requirements.txt
+#13 CACHED
+
+#8 [stage-1 4/9] RUN groupadd -r hanryx     && (getent group lp >/dev/null 2>&1 || groupadd -g 7 lp)     && useradd -r -g hanryx -G lp -d /app -s /sbin/nologin hanryx
+#8 DONE 0.8s
+
+#14 [stage-1 5/9] COPY --from=builder /opt/venv /opt/venv
+
+
+#14 DONE 282.5s
+
+#15 [stage-1 6/9] COPY . .
+#15 DONE 0.5s
+
+#16 [stage-1 7/9] RUN mkdir -p /app/card-images /app/data /data &&     chown -R hanryx:hanryx /app /data
+#16 DONE 1.3s
+
+#17 [stage-1 8/9] COPY entrypoint.sh /entrypoint.sh
+#17 DONE 0.3s
+
+#18 [stage-1 9/9] RUN chmod +x /entrypoint.sh
+#18 DONE 0.5s
+
+#19 exporting to image
+#19 exporting layers
+
+
+#19 exporting layers 304.0s done
+#19 exporting manifest sha256:74cdf8cbae2e2cbc595fce97cb3b8b73f19819271cd0df4702674794a5acc691 0.0s done
+#19 exporting config sha256:22f6897cd09746888202d32e5719458bd28cb1dd320a45f1f98153d47e8f6576 0.0s done
+#19 exporting attestation manifest sha256:d3db642b60ff89e1944b2badec22b759317741d63662af1166958e1b9a476764
+#19 exporting attestation manifest sha256:d3db642b60ff89e1944b2badec22b759317741d63662af1166958e1b9a476764 0.1s done
+#19 exporting manifest list sha256:487755d3bb81bb911cfd4afbd900e075c842f0091befb46762dc69a7a69ce7af 0.0s done
+#19 naming to docker.io/library/pi-setup-pos:latest
+#19 naming to docker.io/library/pi-setup-pos:latest done
+#19 unpacking to docker.io/library/pi-setup-pos:latest
+#19 unpacking to docker.io/library/pi-setup-pos:latest 161.7s done
+#19 DONE 465.9s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image pi-setup-pos Built 
+
+[2.3] docker compose up -d --no-deps --force-recreate pos
+time="2026-04-25T23:07:21Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+ Container pi-setup-pos-1 Recreate 
+ pos Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container pi-setup-pos-1 Recreated 
+ Container pi-setup-pos-1 Starting 
+ Container pi-setup-pos-1 Started 
+
+[2.4] Wait for /healthz (max 90s)
+time="2026-04-25T23:09:21Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:04 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:05 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:05 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:06 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:06 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:06 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:07 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:07 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:07 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:08 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:08 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:08 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:09 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:09 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:09 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:10 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:10 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:10 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:11 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:11 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:11 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 127.0.0.1 - - [25/Apr/2026:23:09:11 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/7.88.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:12 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:12 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:12 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:13 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:13 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:13 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:14 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:14 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:14 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:15 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:15 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:16 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:16 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:16 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:17 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:17 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:17 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:18 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:18 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:18 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:19 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:19 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:19 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:20 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:20 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:20 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [25/Apr/2026:23:09:21 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:23:09:21 +0000] "GET /healthz HTTP/1.1" 404 322 "-" "curl/8.14.1"
+  [ABORT] pos not healthy in 90s
+Log: /tmp/pos-rebuild-1777157686.log
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ 
