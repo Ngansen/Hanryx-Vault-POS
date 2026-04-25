@@ -9208,6 +9208,9 @@ _PR_LEFT         = _ESC + b'a\x00'
 _PR_DOUBLE       = _ESC + b'!\x30'       # double width + double height
 _PR_NORMAL       = _ESC + b'!\x00'
 _PR_CUT          = _GS  + b'V\x42\x00'  # partial cut + feed
+# Cash drawer kick — ESC p m t1 t2.  m=0 (pin 2, the standard RJ11 drawer pin),
+# t1=25, t2=250  →  ~50 ms pulse, plenty for any star/epson-compatible drawer.
+_PR_KICK_DRAWER  = _ESC + b'p\x00\x19\xfa'
 _PR_LF           = b'\n'
 _PR_DIVIDER_WIDE = b'-' * 42 + b'\n'    # 80 mm paper (42 chars)
 _PR_DIVIDER_NARR = b'-' * 32 + b'\n'    # 58 mm paper (32 chars)
@@ -9332,6 +9335,15 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     out += f"{footer.decode()}\n".encode()
     out += b"Thank you!\n"
     out += _PR_NORMAL + _PR_LEFT
+
+    # Cash drawer kick — fires on every sale unless the tablet explicitly
+    # disables it via the in-app toggle (sends kickDrawer:false in the
+    # /print/receipt payload). Default True so curl-tests also pop the drawer.
+    kick = sale.get("kickDrawer")
+    if kick is None:
+        kick = sale.get("kick_drawer", True)
+    if kick:
+        out += _PR_KICK_DRAWER
 
     # Feed + cut
     out += _PR_LF * 4
