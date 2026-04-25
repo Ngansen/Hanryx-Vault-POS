@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos grep -A8 "def print_status" /app/server.py | head -20
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+def print_status():
+    """Returns which printer device is currently available.
+
+    IMPORTANT: USB lp devices like /dev/usb/lp0 are exclusive — only one
+    process can have them open at a time. If we leak the file handle here
+    (even briefly until GC), concurrent print jobs or other gunicorn workers
+    will get EBUSY and the route will start reporting 'cups' incorrectly.
+    Close the handle synchronously the moment we have it.
+    """
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -s http://localhost:8080/print/status; echo
+curl -X POST http://localhost:8080/print/receipt \ 
+  -H "Content-Type: application/json" \
+  -d '{"items":[{"name":"Final Test","quantity":1,"unitPrice":1.00,"lineTotal":1.00}],"subtotal":1.00,"totalAmount":1.00,"paymentMethod":"CASH"}'; echo
+{"bt_mac":null,"printer_available":false,"printer_path":"cups"}
+
+{"ok":true,"queued":true}
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -s http://localhost:8080/print/status; echo
+{"bt_mac":null,"printer_available":false,"printer_path":"cups"}
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -X POST http://localhost:8080/print/receipt \ 
+  -H "Content-Type: application/json" \
+  -d '{"items":[{"name":"FINAL","quantity":1,"unitPrice":1.00,"lineTotal":1.00}],"subtotal":1.00,"totalAmount":1.00,"paymentMethod":"CASH"}'
+{"ok":true,"queued":true}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos su -s /bin/sh hanryx -c 'id'
+curl -s http://localhost:8080/print/status; echo
+docker compose logs --tail=40 pos | grep -iE 'print|lp0|cups|EACCES|denied'
+ls -la /dev/usb/lp0
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+uid=999(hanryx) gid=999(hanryx) groups=999(hanryx)
+{"bt_mac":null,"printer_available":false,"printer_path":"cups"}
+
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  | 172.18.0.1 - - [25/Apr/2026:13:53:28 +0000] "GET /print/status HTTP/1.1" 200 64 "-" "curl/8.14.1"
+crw-rw---- 1 root lp 180, 0 Apr 25 04:40 /dev/usb/lp0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
