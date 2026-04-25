@@ -1,0 +1,34 @@
+ngansen@hanryxvault:Norwood0202 $ docker compose ps pos
+echo "---"
+curl -fsS http://localhost:8080/health && echo " — UP" || echo " — DOWN"
+echo "---"
+docker compose logs pos --tail=20
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME             IMAGE          COMMAND            SERVICE   CREATED         STATUS                   PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       3 minutes ago   Up 3 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+---
+{"db_size_mb":98.53,"inventory":61,"local_sales":2,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1777122399842,"total_sales":2,"uptime_s":199,"version":"2.0","wal_size_mb":0.0}
+ — UP
+---
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:34 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:34 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:34 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:35 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:36 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:36 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:36 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:36 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:37 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:37 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:38 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:38 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:39 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:39 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 127.0.0.1 - - [25/Apr/2026:13:06:39 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/7.88.1"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:40 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:40 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:40 +0000] "GET /scan/pending HTTP/1.1" 200 21 "-" "okhttp/4.12.0"
+pos-1  | 192.168.86.41 - - [25/Apr/2026:13:06:41 +0000] "GET /tablet/trade/current HTTP/1.1" 200 15 "-" "okhttp/4.12.0"
+pos-1  | 172.18.0.1 - - [25/Apr/2026:13:06:41 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/8.14.1"
+ngansen@hanryxvault:Norwood0202 $
