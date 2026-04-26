@@ -1,0 +1,719 @@
+A. MOVIE PROMOS
+B. PURCHASE BONUSES
+C. THEME DECKS & BOX SETS
+D. LEAGUE & TOURNAMENTS
+E. PROMO PACKS
+F. EVENT PARTICIPATION
+G. MISCELLANEOUS
+
+Below is the ordered list of all promo cards and their source category.
+1. Base Set
+# 	Name KR 	Name ENG 	Source
+58/102 	피카츄 	Pikachu 	Pikachu World Collection 2000 (Gold tail stamp)
+14 	뮤츠 	Mewtwo 	Movie Promos
+2. ADV
+# / P 	Name KR 	Name ENG 	Source
+1 	피카츄 	Pikachu 	Miscelaneous
+3. Diamond & Pearl (DP)
+# / DP 	Name KR 	Name ENG 	Source
+001 	루기아 	Lugia 	Included with Pokémon SoulSilver release Nintendo DS (Feb 4, 2010)
+002 	칠색조 	Ho-Oh 	Included with Pokémon HeartGold release for Nintendo DS (Feb 4, 2010)
+003 	피카츄 	Pikachu 	Distributed during 2010 Pokémon Spring Event (May 1–2), LG Twins Children’s Day Event (May 5), Pokémon Story Event (May 12–Jun 20), and I’m a Pokémon Card Game Player! Event (Jun 5–20)
+004 	갸라도스 	Gyarados 	Theme Decks & Box Sets
+005 	피츄 	Pichu 	Given during I’m a Pokémon Card Game Player! Event (Jun 26–Aug 22, 2010) and Pokémon Card Game League Zone (from Dec 4, 2010)
+006 	잠만보 LV. X 	Snorlax LV.X 	Theme Decks & Box Sets
+007 	먹고자 	Munchlax 	Distributed at Pokémon Summer Festival 2010 entrance
+008 	승리의 메달 	Victory Medal 	Given as a prize for 3 consecutive wins at Pokémon Summer Festival 2010 Battle Zone
+009 	리오르 	Riolu 	Distributed at Pokémon TCG Beginner’s Class and I’m a Pokémon Card Game Player! events
+010 	기라티나 	Giratina 	Given for participating in Pokémon TCG Battle Tournament
+011 	승리의 메달 	Victory Medal 	Given to Junior/Senior Top 4 at Pokémon Card Game Battle Tournament
+012 	팬텀 LV. X 	Gengar LV.X 	Theme Decks & Box Sets
+013 	이브이 	Eevee 	Distributed through I’m a Pokémon TCG Player! (from Nov 6, 2010) and Pokémon Mini Tournament (last Sunday of each month)
+014 	아르세우스 (악) 	Arceus (Dark) 	Randomly inserted to Expansion Pack Set Special Edition
+015 	아르세우스 (풀) 	Arceus (Grass) 	Randomly inserted to Expansion Pack Set Special Edition
+016 	아르세우스 (불꽃) 	Arceus (Fire) 	Randomly inserted to Expansion Pack Set Special Edition
+017 	아르세우스 (물) 	Arceus (Water) 	Randomly inserted to Expansion Pack Set Special Edition
+018 	아르세우스 (무) 	Arceus (Colorless) 	Randomly inserted to Expansion Pack Set Special Edition
+019 	아르세우스 (번개) 	Arceus (Lightning) 	Randomly inserted to Expansion Pack Set Special Edition
+020 	아르세우스 (초) 	Arceus (Psychic) 	Randomly inserted to Expansion Pack Set Special Edition
+021 	아르세우스 (격투) 	Arceus (Fighting) 	Randomly inserted to Expansion Pack Set Special Edition
+022 	아르세우스 (강철) 	Arceus (Metal) 	Randomly inserted to Expansion Pack Set Special Edition
+4.Black & White (BW)
+# / BW 	Name KR 	Name ENG 	Source
+001 	빅토리컵 (금) 	Victory Cup (Gold) 	Leagues & Tournaments
+002 	빅토리컵 (은) 	Victory Cup (Silver) 	Leagues & Tournaments
+003 	빅토리컵 (동) 	Victory Cup (Bronze) 	Leagues & Tournaments
+004 	주리비얀 	Snivy 	2011 Nene Chicken Pokémon Set Purchase Bonus (Holo) + BW Launch Event (Non-Holo)
+005 	뚜꾸리 	Tepig 	2011 Nene Chicken Pokémon Set Purchase Bonus (Holo) + BW Launch Event (Non-Holo)
+006 	수댕이 	Oshawott 	2011 Nene Chicken Pokémon Set Purchase Bonus (Holo) + BW Launch Event (Non-Holo)
+007 	줄뮤마 	Blitzle 	2011 Nene Chicken Pokémon Set Purchase Bonus
+008 	몽나 	Munna 	2011 Nene Chicken Pokémon Set Purchase Bonus
+009 	깜눈크 	Sandile 	2011 Nene Chicken Pokémon Set Purchase Bonus
+010 	조로아 	Zorua 	2011 Nene Chicken Pokémon Set Purchase Bonus
+011 	기어르 	Klink 	2011 Nene Chicken Pokémon Set Purchase Bonus
+012 	콩둘기 	Pidove 	2011 Nene Chicken Pokémon Set Purchase Bonus
+013 	주리비얀 	Snivy 	Pokétown Promo
+014 	뚜꾸리 	Tepig 	Pokétown Promo
+015 	수댕이 	Oshawott 	Pokétown Promo
+016 	샤비 	Servine 	Pokétown Promo
+017 	차오꿀 	Pignite 	Pokétown Promo
+018 	쌍검자비 	Samurott 	Pokétown Promo
+019 	레시라무 	Reshiram 	Movie Promo – Victini and the Black Hero: Zekrom (2011 Korea release)
+020 	제크로무 	Zekrom 	Movie Promo – Victini and the Black Hero: Zekrom (2011 Korea release)
+021 	레시라무 	Reshiram 	Theme decks & box sets
+022 	제크로무 	Zekrom 	Theme decks & box sets
+023 	루카리오 	Lucario 	Theme decks & box sets
+024 	배틀시티 	Battle City 	Leagues & Tournaments (2012 Korea National Championships Participation)
+025 	조로아 	Zorua 	2012 Korea National Championships - Bingo Rally event participation.
+026 	하이퍼볼 	Ultra Ball 	Leagues & Tournaments
+027 	엠페르트 	Empoleon 	Leagues & Tournaments
+028 	풀 기본에너지 	Grass Basic Energy 	Leagues & Tournaments
+029 	불 기본에너지 	Fire Basic Energy 	Leagues & Tournaments
+030 	물 기본에너지 	Water Basic Energy 	Leagues & Tournaments
+031 	번개 기본에너지 	Lightning Basic Energy 	Leagues & Tournaments
+032 	진화의휘석 	Eviolite 	Leagues & Tournaments
+033 	벨 	Bianca 	Leagues & Tournaments
+034 	주박사 	Professor Juniper 	Leagues & Tournaments
+035 	드레디어 	Lilligant 	Leagues & Tournaments
+036 	툰베어 	Beartic 	Leagues & Tournaments
+037 	비크티니 	Victini 	Theme decks & box sets
+038 	레시라무 	Reshiram 	Theme decks & box sets
+039 	제크로무 	Zekrom 	Theme decks & box sets
+040 	랜드로스 	Landorus 	Theme decks & box sets
+041 	레시라무 EX 	Reshiram EX 	Theme decks & box sets
+042 	제크로무 EX 	Zekrom EX 	Theme decks & box sets
+043 	메로엣타 	Meloetta 	Theme decks & box sets
+044 	비리디온 	Virizion 	Theme decks & box sets
+045 	테라키온 	Terrakion 	Theme decks & box sets
+046 	코바르온 	Cobalion 	Theme decks & box sets
+047 	큐레무 	Kyurem 	Theme decks & box sets
+048 	케르디오 	Keldeo 	Movie Promo (Kyurem vs. the Sword of Justice: Keldeo (2012 Korea release))
+049 	피카츄 	Pikachu 	—
+050 	메로엣타 	Meloetta 	—
+051 	레쿠쟈 EX 	Rayquaza EX 	—
+052 	기라티나 EX 	Giratina EX 	—
+053 	플라즈마단의 몬스터볼 	Team Plasma’s Pokéball 	2013 Korea National Championships Participation
+054 	빅토리컵 (금) 	Victory Cup (Gold) 	2013 Korea National Championships – 1st Place
+055 	빅토리컵 (은) 	Victory Cup (Silver) 	2013 Korea National Championships – 2nd Place
+056 	빅토리컵 (동) 	Victory Cup (Bronze) 	2013 Korea National Championships – Top 4
+057 	레시라무 EX 	Reshiram EX 	Miscelaneous
+058 	제크로무 EX 	Zekrom EX 	Miscelaneous
+059 	블랙큐레무 	Black Kyurem 	Miscelaneous
+060 	화이트큐레무 	White Kyurem 	Miscelaneous
+061 	게노세크트 	Genesect 	Winter Wonderland
+062 	게노세크트 	Genesect 	Miscelaneous
+063 	플라스마단 배지 	Team Plasma Badge 	Miscelaneous
+064 	게노세크트 	Genesect 	Movie Promo – Genesect and the Legend Awakened (2014 Korea release)
+065 	리피아 	Leafeon 	Theme decks & box sets
+066 	부스터 	Flareon 	Theme decks & box sets
+067 	샤미드 	Vaporeon 	Theme decks & box sets
+068 	글레이시아 	Glaceon 	Theme decks & box sets
+069 	쥬피썬더 	Jolteon 	Theme decks & box sets
+070 	에브이 	Espeon 	Theme decks & box sets
+071 	블래키 	Umbreon 	Theme decks & box sets
+072 	이브이 	Eevee 	Theme decks & box sets
+5. XY (XY-P)
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+6. Sun & Moon (SM-P)
+# / SM-P 	Name KR 	Name ENG 	Source
+Unnumbered 	솔가레오 	Solgaleo 	League & Tournaments (TOP 8 prize)
+Unnumbered 	루나라아 	Lunala 	League & Tournaments (TOP 8 prize)
+001 	피카츄 	Pikachu 	Purchase Bonus
+002 	나몰빼미 	Rowlett 	Purchase Bonus
+003 	냐오불 	Litten 	Purchase Bonus
+004 	누리공 	Popplio 	Purchase Bonus
+005 	피카츄 	Pikachu 	Purchase Bonus
+006 	토게데마루 	Togedemaru 	Event Participation
+007 	폭거북스 	Turtonator 	Event Participation
+008 	모크나이퍼 	Decidueye 	Promo Pack 1
+009 	치갈기 	Bruxish 	Promo Pack 1
+010 	코스모그 	Cosmog 	Promo Pack 1
+011 	내던숭이 	Passimian 	Promo Pack 1
+012 	알로라 나옹 	Alolan Meowth 	Promo Pack 1
+013 	짜랑꼬 	Jangmo-o 	Promo Pack 1
+014 	포곰곰 	Stufful 	Promo Pack 1
+015 	이븐곰 GX 	Bewear GX 	Promo Pack 1
+016 	수련 	Lana 	Promo Pack 1
+017 	잠만보 GX 	Snorlax GX 	Theme decks & box sets
+018 	카푸꼬꼬꼭 	Tapu Koko 	Leagues & Tournaments
+019 	모크나이퍼 	Decidueye 	League & Tournaments
+020 	어흥염 	Incineroar 	League & Tournaments
+021 	누리레느 	Primarina 	League & Tournaments
+022 	피카츄 	Pikachu 	League & Tournaments
+023 	카푸꼬꼬꼭 GX 	Tapu Koko GX 	League & Tournaments
+024 	카푸꼬꼬꼭 	스페셜 점보카드 세트 「카푸꼬꼬꼭 GX」 	Theme decks & box sets
+025 	아라리 	Exeggcute 	Promo Pack 2
+026 	알로라 라이츄 	Alola Raichu 	Promo Pack 2
+027 	라티아스 	Latios 	Promo Pack 2
+028 	모단단게 	모단단게 	Promo Pack 2
+029 	루가루암 	Rockruff 	Promo Pack 2
+030 	모래성이당 GX 	Palossand GX 	Promo Pack 2
+031 	조로아 	Zorua 	Promo Pack 2
+032 	킬리아 	Kirlia 	Promo Pack 2
+033 	등산객 	Hiker 	Promo Pack 2
+034 	달코퀸 	Tsareena 	Promo Pack 3
+035 	달코퀸 GX 	Tsareena GX 	Promo Pack 3
+036 	갑주무사 	Golisopod 	Promo Pack 3
+037 	투구뿌논 	Vikavolt 	Promo Pack 3
+038 	타타륜 	Dhelmise 	Promo Pack 3
+039 	루카리오 	Lucario 	Promo Pack 3
+040 	폴리곤Z 	Porygon Z 	Promo Pack 3
+041 	지우의 피카츄 	Ash’s Pikachu 	Theme decks & box sets
+042 	에브이 GX 	Espeon GX 	League & Tournaments (1000 BP prize)
+043 	블래키 GX 	Umbreon GX 	League & Tournaments (1000 BP prize)
+044 	지우의 피카츄 (오리지널캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+045 	지우의 피카츄 (호연캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+046 	지우의 피카츄 (신오캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+047 	지우의 피카츄 (하나캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+048 	지우의 피카츄 (칼로스캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+049 	지우의 피카츄 (알로라캡) 	Ash’s Pikachu 	Purchase Bonus (Kisstick Sausage)
+050 	로열마스크 	Royal Mask 	League & Tournaments
+051 	빛나는 칠색조 	Shining Ho-oh 	Movie Promos
+052 	피카츄 	Pikachu 	Event Participation
+053 	알로라 식스테일 	Alola Vulpix 	Collector’s Promo Pack 4 (2017-2018 Winter League (200 BP Prize)
+054 	삼삼드래 	Hydreigon 	Collector’s Promo Pack 4 (2017-2018 Winter League (200 BP Prize)
+055 	레지기가스 	Regigigas 	Collector’s Promo Pack 4 (2017-2018 Winter League (200 BP Prize)
+056 	실버디 	Silvally 	Collector’s Promo Pack 4 (2017-2018 Winter League (200 BP Prize)
+057 	실버디 GX 	SIlvally GX 	Promo Pack 4
+058 	피오네 	Phione 	Promo Pack 3
+059 	알로라 라이츄 	Alolan Raichu 	Promo Pack 3
+060 	럭시오 	Luxio 	Promo Pack 3
+061 	리오르 	Riolu 	Promo Pack 3
+062 	알로라 꼬렛 	Alolan Rattata 	Promo Pack 3
+063 	알로라 레트라 GX 	Alolan Rattata GX 	Promo Pack 3
+064 	조로아크 	Zoroark 	Promo Pack 3
+065 	알로라 디그다 	Alolan Diglett 	Promo Pack 3
+066 	울트라볼 	Ultraball 	Promo Pack 3
+067 	루가루암 	Lycanroc 	2017-2018 Winter League (Add-a-friend Prize)
+068 	아세로라 	Acerola 	2017-2018 Winter League (Participation Prize)
+069 	피카츄 	Pikachu 	Purchase Bonus
+070 	베베놈 	Poipole 	
+071 	하우 	Hau 	League & Tournaments
+072 	전수목 	Xurkitree 	Collector’s Promo Pack 5
+073 	크레세리아 	Cresselia 	Collector’s Promo Pack 5
+074 	포푸니라 	Weavile 	Collector’s Promo Pack 5
+075 	히드런 	Heatran 	Collector’s Promo Pack 5
+076 	짜랑고우거 GX 	Hakamo-o 	Collector’s Promo Pack 5
+077 	알로라 나시 	Alolan Exeggutor 	Miscellaneous
+078 	마샤도 	Marshadow 	Miscellaneous
+079 	네크로즈마 GX 	Necrozoma GX 	Miscellaneous
+080 	루가루암 	Lycanroc 	Miscellaneous
+081 	지가르데 	Zygarde 	Miscellaneous
+082 	라이치 	Olivia 	Miscellaneous
+083 	네크로즈마 황혼의 갈기 	Dusk Mane Necrozoma 	Theme decks & box sets
+084 	네크로즈마 새벽의 날개 	Dawn Wing Necrozoma 	Theme decks & box sets
+085 	워시로토무 	Wash Rotom 	Promo Pack 4
+086 	피카츄 	Pikachu 	Promo Pack 4
+087 	데덴네 	Dedenne 	Promo Pack 4
+088 	지가르데 GX 	Zygarde GX 	Promo Pack 4
+089 	알로라 고지 	Alolan Sandslash 	Promo Pack 4
+090 	알로라 나인테일 	Alolan Ninetales 	Promo Pack 4
+091 	에테르재단 직원 	Aether Foundation Employee 	Promo Pack 4
+092 	알로라 식스테일 	Alolan Vulpix 	League & Tournaments
+093 	보스놀이 피카츄 로켓단 	Pretend Boss Pikachu (Team Rocket) 	Event Participation
+094 	보스놀이 피카츄 아쿠아단 	Pretend Boss Pikachu (Team Aqua) 	Event Participation
+095 	보스놀이 피카츄 마그마단 	Pretend Boss Pikachu (Team Magma) 	Event Participation
+096 	보스놀이 피카츄 갤럭시단 	Pretend Boss Pikachu (Team Galaxy) 	Event Participation
+097 	보스놀이 피카츄 플라즈마단 	Pretend Boss Pikachu (Team Plasma) 	Event Participation
+098 	보스놀이 피카츄 플레어단 	Pretend Boss Pikachu (Team Flare) 	Event Participation
+099 	보스놀이 피카츄 스컬단 	Pretend Boss Pikachu (Team Skull) 	Event Participation
+100 	다크라이 	Darkrai 	Theme decks & box sets
+101 	다크라이 GX 	Darkrai GX 	Movie Promos
+102 	파비코리 	Altaria 	League & Tournaments
+103 	나무킹 	Sceptile 	League & Tournaments
+104 	잎새코 	Nuzleaf 	Promo Pack 5
+105 	고래왕자 	Wailmer 	Promo Pack 5
+106 	마임맨 GX 	Mr. Mime GX 	Promo Pack 5
+107 	테오키스 		Promo Pack 5
+108 	히드런 	Heatran 	Promo Pack 5
+109 	델케티 	Delcatty 	Promo Pack 5
+110 	리턴라벨 	Return Label 	Promo Pack 5
+111 	울트라네크로즈마 	Ultra Necrozoma 	League & Tournaments
+112 	칠색조 GX 	Ho-oh GX 	Purchase Bonus
+113 	염뉴트 GX 	Salazzle GX 	Theme decks & box sets
+114 	카푸꼬꼬꼭 GX 	Tapu Koko GX 	Theme decks & box sets
+115 	다크라이 GX 	Darkrai GX 	Theme decks & box sets
+116 	제크로무 GX 	Zekrom GX 	Purchase Bonus
+117 	제크로무 GX 	Zekrom GX 	League & Tournaments
+118 	제크로무 GX 	Zekrom GX 	League & Tournaments
+119 	송호 오 	Alolan Oak 	
+120 	피카츄 	Pikachu 	Purchase Bonus (Kisstick Sausage)
+121 	꼬지모 	Sudowoodo 	Purchase Bonus (Kisstick Sausage)
+122 	럭키 	Chansey 	Purchase Bonus (Kisstick Sausage)
+123 	이브이 	Eevee 	Purchase Bonus (Kisstick Sausage)
+124 	루기아 	Lugia 	Purchase Bonus (Kisstick Sausage)
+125 	제라오라 	Zeraora 	Theme decks & box sets
+126 	제라오라 	Zeraora 	Movie Promo
+127 	알로라 텅구리 GX 	Alolan Marowak 	Promo Pack 6
+128 	야돈 	Slowpoke 	Promo Pack 6
+129 	탕구리 	Marowak 	Promo Pack 6
+130 	알로라 나옹 	Alolan Meowth 	Promo Pack 6
+131 	라티아스 	Latias 	Promo Pack 6
+132 	라티오스 	Latios 	Promo Pack 6
+133 	에너지 스피너 	Energy Spinner 	Promo Pack 6
+134 	피카츄 	Pikachu 	Lucky Draw Event (2018-2019 Korean League event)
+135 	피카츄 	Pikachu 	Lucky Draw Event (2018-2019 Korean League event)
+136 	피카츄 	Pikachu 	Lucky Draw Event (2018-2019 Korean League event)
+137 	베베놈 	Poipole 	Lucky Draw Event (2018-2019 Korean League event)
+138 	리피아 GX 	Leafeon GX 	1000 BP Priye (2018-2019 Korean League event)
+139 	글레이시아 GX 	Glaceon GX 	1000 BP Priye (2018-2019 Korean League event)
+140 	이브이&잠만보 GX 	Eevee & Snorlax GX 	Purchase Bonus
+141 	명탐정 피카츄 	Detective Pikachu 	Theme decks & box sets
+142 	명탐정 피카츄 	Detective Pikachu 	Theme decks & box sets
+143 	명탐정 피카츄 	Detective Pikachu 	Movie Promos
+144 	파라스 	Paras 	Promo Pack 7
+145 	쥬피썬더 	Jolteon 	Promo Pack 7
+146 	샤프니아 	Carvanha 	Promo Pack 7
+147 	삐삐 	Clefairy 	Promo Pack 7
+148 	신뇽 	Dragonair 	Promo Pack 7
+149 	캥카 GX 	Kangaskhan GX 	Promo Pack 7
+150 	이명벨 	Ear-Ringing Bell 	Promo Pack 7
+151 	불켜미 	Litwick 	Promo Pack 8
+152 	냐오히트 	Torracat 	Promo Pack 8
+153 	무우마직 	Mismagius 	Promo Pack 8
+154 	리오르 	Riolu 	Promo Pack 8
+155 	니로우 	Murkrow 	Promo Pack 8
+156 	폴리곤Z GX 	Porygon Z GX 	Promo Pack 8
+157 	강연의 퀴즈쇼 	Blaine’s Quiz Show 	Promo Pack 8
+158 	카푸느지느 GX 	Tapu Fini GX 	Theme decks & box sets
+159 	볼토로스 GX 	Thundurus 	Theme decks & box sets
+160 	카푸나비나 GX 	Tapu Lele GX 	Theme decks & box sets
+161 	님피아 GX 	Sylveon GX 	Theme decks & box sets
+162 	토네로스 GX 	Tornadus GX 	Theme decks & box sets
+163 	비크티나 	Victini 	Purchase Bonus
+164 	피카츄 	Pikachu 	Purchase Bonus
+165 	투구뿌논 	Vikavolt 	Purchase Bonus
+166 	뮤 	Mew 	Purchase Bonus
+167 	차곡차곡 	Stakataka 	Purchase Bonus
+168 	지라치 	Jirachi 	Purchase Bonus
+169 	멜탄 	Meltan 	Purchase Bonus
+170 	이스케이프 보드 	Escape Board 	Purchase Bonus
+171 	민화 	Erika 	League & Tournaments
+172 	뮤츠 GX 	Mewtwo GX 	League & Tournaments
+173 	뮤츠 GX 	Mewtwo GX 	League & Tournaments
+174 	야느와르몽 	Dusknoir 	Purchase Bonus
+175 	삐삐 	Clefairy 	Purchase Bonus
+176 	두르쿤 	Swadloon 	Promo Pack 9
+177 	배쓰나이 	Basculin 	Promo Pack 9
+178 	아라리 	Exeggcute 	Promo Pack 9
+179 	늑골라 GX 	Carracosta 	Promo Pack 9
+180 	오지기게 	Crabrawler 	Promo Pack 9
+181 	푸푸린 	Igglybuff 	Promo Pack 9
+182 	드래곤Z 드래곤크루 	Dragonium Z: Dragon Claw 	Promo Pack 9
+183 	멜탄 	Meltan 	Theme decks & box sets
+184 	멜메탈 GX 	Melmetal GX 	Theme decks & box sets
+185 	리피아 	Leafeon 	Promo Pack 10
+186 	활화르바 	Larvesta 	Promo Pack 10
+187 	알로라 고지 GX 	Alolan Sandslash GX 	Promo Pack 10
+188 	글레이시아 	Glaceon 	Promo Pack 10
+189 	골비람 	Golett 	Promo Pack 10
+190 	에이팜 	Aipom 	Promo Pack 10
+191 	무지개꽃 	Rainbow Flower 	Promo Pack 10
+192 	포켓기어 3.0 	Pokegear 3.0 	League & Tournaments
+193 	리자몽 GX 	Charizard GX 	Theme decks & box sets
+194 	갸라도스 GX 	Gyarados GX 	Theme decks & box sets
+195 	라이츄 GX 	Raichu GX 	Theme decks & box sets
+196 	아머드 뮤츠 	Armored Mewtwo 	Movie Promos
+7. Sword & Shield (S-P) Work in Progress
+# / S-P 	Name KR 	Name ENG 	Source
+001 	빙큐보 V 	Eiscue V 	Sword & Shield Promo Pack 1
+002 	꼬모카 	Sobble 	Sword & Shield Promo Pack 1
+003 	에이스번 	Scorbunny 	Sword & Shield Promo Pack 1
+004 	만타인 	Mantine 	Sword & Shield Promo Pack 1
+005 	피카츄 	Pikachu 	Sword & Shield Promo Pack 1
+006 	가라르 포니타 	Galarian Ponyta 	Sword & Shield Promo Pack 1
+007 	야부엉 	Hoothoot 	Sword & Shield Promo Pack 1
+008 	호브 	Hoppip 	Sword & Shield Expansion Box “Sword & Shield” Purchase Bonus
+021 	나옹 V 	Meowth V 	Starter Set V Card Battle Event
+022 	나옹 VMAX 	Meowth VMAX 	Korean League Season 2 Participation Reward (Event Cancelled due to COVID-19)
+023 	대왕끼리동 V 	Copperajah V 	“Rebellion Crash” 2BOX Purchase Bonus
+024 	레쿠쟈 	Rayquaza 	Pokémon Science Lab Vol. 4 Purchase Bonus
+025 	모르페코 	Morpeko 	Pixel Pokémon Vol. 1 Bonus
+026 	우르 	Wooloo 	Pixel Pokémon Vol. 2 Bonus
+027 	부스터 	Flareon 	Sword & Shield Promo Pack 2
+028 	럭시오 	Luxio 	Sword & Shield Promo Pack 2
+029 	포트데스 V 		Sword & Shield Promo Pack 2
+030 	몸지브림 		Sword & Shield Promo Pack 2
+031 	탄동 		Sword & Shield Promo Pack 2
+032 	깨봉이 		Sword & Shield Promo Pack 2
+033 	이브이 	Eevee 	Sword & Shield Promo Pack 2
+034 	역경글러브 		Sword & Shield Promo Pack 2
+035 	스트린더 V 		
+036 	마리 	Marnie 	Purchase Bonus (15,000 KRW)
+037 	옐단의 조무래기 	Team Yell Grunt 	Purchase Bonus (15,000 KRW)
+038 	구즈마&할라 	Guzma & Hala 	Purchase Bonus (15,000 KRW)
+039 	난천&카틀레야 	Cynthia & Caitlin 	Purchase Bonus (15,000 KRW)
+040 	마오&수련 		Purchase Bonus (30,000 KRW)
+041 	기본 풀 에너지 	Basic Leaf Energy 	Purchase Bonus (30,000 KRW)
+042 	기본 불꽃 에너지 	Basic Fire Energy 	Purchase Bonus (30,000 KRW)
+043 	기본 물 에너지 	Basic Water Energy 	Purchase Bonus (30,000 KRW)
+044 	기본 번개 에너지 	Basic Lightning Energy 	Purchase Bonus (30,000 KRW)
+045 	기본 초 에너지 	Basic Psychic Energy 	Purchase Bonus (30,000 KRW)
+046 	기본 격투 에너지 	Basic Fighting Energy 	Purchase Bonus (30,000 KRW)
+047 	기본 악 에너지 	Basic Dark Energy 	Purchase Bonus (30,000 KRW)
+048 	기본 강철 에너지 	Basic Metal Energy 	Purchase Bonus (30,000 KRW)
+049 	기본 페어리 에너지 	Basic Fairy Energy 	Purchase Bonus (30,000 KRW)
+050 	포켓몬센터 직원 	Pokémon Center Lady 	Infinity Zone
+051 	무한다이노 V 		Infinity Zone
+052 	무한다이노 VMAX 		Infinity Zone
+053 	후파 	Hoopa 	Infinity Zone
+054 	가라르 가로막구리 		Infinity Zone
+055 	기본 악 에너지 	Basic Dark Energy 	Infinity Zone
+056 	빼미스로우 		Sword & Shield Promo Pack 3
+057 	샤미드 	Shaymin 	Sword & Shield Promo Pack 3
+058 	톱치 		Sword & Shield Promo Pack 3
+059 	페이검 		Sword & Shield Promo Pack 3
+060 	끼리동 		Sword & Shield Promo Pack 3
+061 	이브이 	Eevee 	Sword & Shield Promo Pack 3
+062 	요씽리스 V 		Sword & Shield Promo Pack 3
+063 	모젤란 		Sword & Shield Promo Pack 3
+064 	이올브 V 		
+065 	브리무음 V 		Sword & Shield Promo Pack 4
+066 	파이리 		Sword & Shield Promo Pack 4
+067 	찌로꼬치 		Sword & Shield Promo Pack 4
+068 	쥬피썬더 	Jolteon 	Sword & Shield Promo Pack 4
+069 	코코리 		Sword & Shield Promo Pack 4
+070 	악비르 		Sword & Shield Promo Pack 4
+071 	이브이 	Eevee 	Sword & Shield Promo Pack 4
+072 	소도와 실디 		Sword & Shield Promo Pack 4
+073 	피카츄 V 	Pikachu V 	
+074 	피카츄 VMAX 	Pikachu VMAX 	
+075 	피카츄 	Pikachu 	
+076 	무우마직 	Mismagius 	Official Card Shop Purchase Bonus
+077 	초련&담죽 		Official Card Shop Purchase Bonus
+078 	크로뱃 V 	Crobat V 	Sword & Shield Collection Set “Shiny Star V”
+079 	하이드 악 에너지 		Sword & Shield Collection Set “Shiny Star V”
+080 	기본 악 에너지 	Basic Dark Energy 	Sword & Shield Collection Set “Shiny Star V”
+081 	루기아 	Lugia 	Starter Set VMAX Purchase Bonus
+082 	반디나 	Honey 	“Single Strike Master” & “Double Strike Master” 2BOX Purchase Bonus
+083 	체리버 		Sword & Shield Promo Pack 5
+084 	뚜꾸리 	Tepig 	Sword & Shield Promo Pack 5
+085 	가라르 마임맨 		Sword & Shield Promo Pack 5
+086 	블래키 		Sword & Shield Promo Pack 5
+087 	두트리오 V 		Sword & Shield Promo Pack 5
+088 	이브이 		Sword & Shield Promo Pack 5
+089 	반디나 		Sword & Shield Promo Pack 5
+090 	만병통치제 		Pokémon Card Game Purchase Bonus
+091 	몬스터볼 		Pokémon Card Game Purchase Bonus
+092 	일격 우라오스 V 		Single Strike Master Special Jumbo Card Set
+093 	연격 우라오스 V 		Rapid Strike Master Special Jumbo Card Set
+094 	에이스번 V 		Sword & Shield Card Box Set “Single Strike”
+095 	에이스번 VMAX 		Sword & Shield Card Box Set “Single Strike”
+096 	고릴타 V 		Sword & Shield Card Box Set “Rapid Strike”
+097 	고릴타 VMAX 		Sword & Shield Card Box Set “Rapid Strike”
+098 	모르페코 		Pokémon Pop-up Store Starfield COEX Purchase Bonus
+099 	모르페코 		Pokémon Pop-up Store Starfield COEX Purchase Bonus
+100 	모르페코 		Pokémon Pop-up Store Starfield COEX Purchase Bonus
+101 	잠만보 		Pokémon Card Game Online Official Shop Purchase Bonus
+102 	사다이사 V 		“Silver Lance” 2 BOX Purchase Bonus
+103 	세레비 V 		“Jet-Black Spirit ” 2 BOX Purchase Bonus
+104 	버섯모 V 		Sword & Shield Promo Pack 6
+105 	눈꼬마 		Sword & Shield Promo Pack 6
+106 	줄뮤마 		Sword & Shield Promo Pack 6
+107 	에브이 		Sword & Shield Promo Pack 6
+108 	또가스 		Sword & Shield Promo Pack 6
+109 	이브이 		Sword & Shield Promo Pack 6
+110 	윽우지로봇 		Sword & Shield Promo Pack 6
+111 	포트데스 		Pokémon Card Game Card Shop Purchase Bonus
+112 	가라르 마임꽁꽁 		Pokémon Card Game Card Shop Purchase Bonus
+113 	데덴네 		Pokémon Card Game Card Shop Purchase Bonus
+114 	파르빗 		Pokémon Card Game Card Shop Purchase Bonus
+115 	박사의 연구 		July 2021 Pokémon Go Campaign
+116 	엠페르트 V 		Sword & Shield Highcless Deck Double BOX “Phantom VMAX & Inteleon VMAX”
+117 	마기라스 V 		Sword & Shield Highcless Deck Double BOX “Phantom VMAX & Inteleon VMAX”
+118 	코코 		“Pokémon the Movie: Coco” Theater Gift
+119 	자루도 V 		“Pokémon the Movie: Coco” Theater Gift
+120 	통째로 삼켜진 피카츄 		CGV Promotion
+121 	가라르 야돈 		Sticker Coloring Pokémon Vol. 1,2 Bonus
+122 	애프룡 		11st Live Broadcast Event
+123 	리피아 		Sword & Shield Promo Pack 7
+124 	글레이시아 		Sword & Shield Promo Pack 7
+125 	발토이 		Sword & Shield Promo Pack 7
+126 	삐딱구리 		Sword & Shield Promo Pack 7
+127 	어래곤 V 		Sword & Shield Promo Pack 7
+128 	이브이 		Sword & Shield Promo Pack 7
+129 	허탕보험 		Sword & Shield Promo Pack 7
+130 	파비코리 		Dragon Pokémon V GET Challenge Skyscraping Perfection
+131 	레쿠쟈 V 		Dragon Pokémon V GET Challenge Skyscraping Perfection
+132 	폭거북스 		Dragon Pokémon V GET Challenge Skyscraping Perfection
+133 	할비롱 		Dragon Pokémon V GET Challenge Skyscraping Perfection
+134 	두랄루돈 V 		Dragon Pokémon V GET Challenge Skyscraping Perfection
+135 	턱지충이 		Sword & Shield Promo Pack 8
+136 	가라르 마임꽁꽁 V 		Sword & Shield Promo Pack 8
+137 	일레즌 		Sword & Shield Promo Pack 8
+138 	님피아 	Sylveon 	Sword & Shield Promo Pack 8
+139 	데구리 		Sword & Shield Promo Pack 8
+140 	이브이 	Eeevee 	Sword & Shield Promo Pack 8
+141 	매운맛 스파이시 카레 	Spicy Seasoned Curry 	Sword & Shield Promo Pack 8
+142 	피카츄 VMAX 	Pikachu VMAX 	Kellogg’s Chex Choco Campaign Purchase Bonus
+143 	초염몽 V 		Sword & Shield Promo Pack 9
+144 	가재군 		Sword & Shield Promo Pack 9
+145 	미라몽 	Dusclops 	Sword & Shield Promo Pack 9
+146 	리오르 	Riolu 	Sword & Shield Promo Pack 9
+147 	포푸니라 		Sword & Shield Promo Pack 9
+148 	찌르꼬 		Sword & Shield Promo Pack 9
+149 	현이 		Sword & Shield Promo Pack 9
+150 	리피아 V 	Leafeon V 	Theme decks & box sets
+151 	리피아 VSTAR 	Leafeon VSTAR 	Theme decks & box sets
+152 	글레이시아 V 	Glaceon V 	Theme decks & box sets
+153 	글레이시아 VSTAR 	Glaceon VSTAR 	Theme decks & box sets
+154 	나몰빼미 		Pokémon Pangyo Pop-up Store Opening Event
+155 	브케인 		Pokémon Pangyo Pop-up Store Opening Event
+156 	수댕이 	Oshawott 	Pokémon Pangyo Pop-up Store Opening Event
+157 	레지기가스 	Regigigas 	Theme decks & box sets
+158 	쉐이미 V 	Shaymin V 	Theme decks & box sets
+159 	피카츄 	Pikachu 	Theme decks & box sets
+160 	뮤츠 V 	Mewtwo V 	Theme decks & box sets
+161 	이상해씨 		Pokémon GO Promo Card Gift Campaign
+162 	알로라 나시 V 		Pokémon GO Promo Card Gift Campaign
+163 	파이리 		Pokémon GO Promo Card Gift Campaign
+164 	꼬부기 		Pokémon GO Promo Card Gift Campaign
+165 	멜메탈 V 		Pokémon GO Promo Card Gift Campaign
+166 	망나뇽 V 		Pokémon GO Promo Card Gift Campaign
+167 	망나뇽 VSTAR 		Pokémon GO Promo Card Gift Campaign
+168 	귀뚤뚜기 		Sword & Shield Promo Pack 10
+169 	히스이 배쓰나이 		Sword & Shield Promo Pack 10
+170 	토게틱 	Togetic 	Sword & Shield Promo Pack 10
+171 	두개도스 		Sword & Shield Promo Pack 10
+172 	다투곰 V 		Sword & Shield Promo Pack 10
+173 	자망칼 		Sword & Shield Promo Pack 10
+174 	라벤박사 		Sword & Shield Promo Pack 10
+175 	해너츠 		Sword & Shield Promo Pack 11
+176 	쥬쥬 		Sword & Shield Promo Pack 11
+177 	가이오가 V 		Sword & Shield Promo Pack 11
+178 	저리릴 		Sword & Shield Promo Pack 11
+179 	러브로스 		Sword & Shield Promo Pack 11
+180 	메탕구 		Sword & Shield Promo Pack 11
+181 	구멍파기형제 		Sword & Shield Promo Pack 11
+182 	N/A 		N/A
+183 	피카츄 	Pikachu 	Sword & Shield “Precious Collector Box Sword & Shield”
+184 	용식 	Barry 	“Lucario HR Battle” Participation Reward
+185 	루카리오 V 	Lucario V 	“Lucario HR Battle” Preliminary League 1st Place Reward
+186 	루카리오 VMAX 	Lucario VMAX 	“Lucario HR Battle” Final Tournament Winner Reward
+187 	루기아 V 	Lugia V 	루기아 GET Challenge Paradigm Trigger booster box Purchase Bonus
+188 	루기아 VMAX 	Lugia VMAX 	루기아 GET Challenge Paradigm Trigger booster box Purchase Bonus
+189 	쉐이미 	Shaymin 	루기아 GET Challenge Paradigm Trigger booster box Purchase Bonus
+190 	아케오스 	Archeops 	루기아 GET Challenge Paradigm Trigger booster box Purchase Bonus
+191 	더블 터보 에너지 	Double Turbo Energy 	루기아 GET Challenge Paradigm Trigger booster box Purchase Bonus
+192 	포니타 	Ponyta 	Sword & Shield Promo Pack 12
+193 	누오 V 	Quagsire 	Sword & Shield Promo Pack 12
+194 	듀란 	Duosion 	Sword & Shield Promo Pack 12
+195 	판짱 	Panchman 	Sword & Shield Promo Pack 12
+196 	가라르 나옹 	Galar Meowth 	Sword & Shield Promo Pack 12
+197 	프테라 	Aerodactyl 	Sword & Shield Promo Pack 12
+198 	평온의 공원 	Peaceful Park 	Sword & Shield Promo Pack 12
+199 	레지에레키 V 	Regieleki 	Sword & Shield “Mystery Box”
+200 	안농 V 	Unown V 	Sword & Shield “Mystery Box”
+201 	레지드래고 V 	Regidrago V 	Sword & Shield “Mystery Box”
+202 	루기아 V 	Lugia V 	Sword & Shield “Mystery Box”
+203 	피카츄 	Pikachu 	DDP Pokémon Card Game Let’s Play Event
+204 	히스이 블레이범 V 	Hisuian Typhlosion V 	2023 Korean League Season 1 Participation Reward
+8. Scarlet & Violet (SV-P) Work in Progress
+
+TBC
+9. Mega (M-P)
+# / M-P 	Name KR 	Name ENG 	Source
+001 		Chikorita 	Mega Promo Pack 1
+002 		Lapras EX (Holo) 	Mega Promo Pack 1
+003 		Munkidori 	Mega Promo Pack 1
+004 		Makuhita 	Mega Promo Pack 1
+005 		Digging 	Mega Promo Pack 1
+006 		Counter Gain 	Mega Promo Pack 1
+007 		Lillie’s Determination 	Mega Promo Pack 1
+008 	알로라 나시 EX 	Alolan Exeggutor EX 	Jeju Wonder Island
+N/A 	마스커나 	Meowscarada 	Mega Voltage TV Campaign
+N/A 	악뜨거 	Crocalor 	Mega Voltage TV Campaign
+N/A 	테라파고스 	Terapagos 	Mega Voltage TV Campaign
+N/A 	아꾸왁 	Quaquaval 	Mega Voltage TV Campaign
+N/A 	깜까미 	Sableye 	Mega Voltage TV Campaign
