@@ -26,3 +26,18 @@ jobs:
 
       - name: Scan pi-setup/ for insecure-TLS patterns
         run: python3 pi-setup/scripts/check-no-insecure-tls.py
+
+  no-floating-tags:
+    name: Block floating Docker tags in pi-setup/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Scan pi-setup/ for floating Docker tags
+        run: python3 pi-setup/scripts/check-no-floating-tags.py

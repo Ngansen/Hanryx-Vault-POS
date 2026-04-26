@@ -69,6 +69,18 @@ Bump procedure for each layer is documented in
 `pi-setup/docs/REPRODUCIBILITY.md`. Lockfile regeneration is one command:
 `./pi-setup/scripts/lock-python-deps.sh all` (requires `uv`).
 
+### Automated guard — no floating Docker tags
+
+`pi-setup/scripts/check-no-floating-tags.py` is a repository-level lint that fails CI if any `FROM` line in a `pi-setup/` Dockerfile or any `image:` line in a `pi-setup/` compose file uses a tag that is not a full point release (i.e. a tag without at least two `.` characters, such as `python:3.11-slim`, `node:20-slim` or `nginx:alpine`). It is wired into GitHub Actions via `.github/workflows/pi-setup-security.yml` (runs on PRs and pushes to `main` that touch `pi-setup/`) and can also be run locally:
+
+```bash
+python3 pi-setup/scripts/check-no-floating-tags.py
+```
+
+`FROM scratch` and multi-stage cross-references (`FROM <stage-name>`) are allowed. The optional `@sha256:…` digest is owned by Tasks #11 / #9 and is not validated by this guard.
+
+**Allow-listing an audited exception.** Put the marker `hanryx-allow-floating-tag` (optionally with `: <reason>`) in a comment on the same line or the line immediately above the offending `FROM` / `image:` line. Pinning by `@sha256:…` digest is still safer than the allow marker — prefer it whenever the registry exposes a digest.
+
 ## Security Policy — TLS verification (`pi-setup/`)
 
 TLS / SSL certificate verification is **always on by default** for every outbound network call in `pi-setup/` (git, curl, wget, pip, requests, docker, etc.).
