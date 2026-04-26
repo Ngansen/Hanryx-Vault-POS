@@ -1,4 +1,7 @@
-FROM nginx:alpine
+# Pinned point release so `docker compose build` on the Pi is reproducible.
+# Bump deliberately — an Alpine roll can drop busybox applets the entrypoint
+# scripts rely on.
+FROM nginx:1.27.2-alpine
 
 RUN apk add --no-cache git bash
 

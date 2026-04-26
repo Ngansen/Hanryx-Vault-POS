@@ -1,4 +1,7 @@
-FROM python:3.11-slim-bookworm AS builder
+# Pinned point release so `docker compose build` on the Pi is reproducible.
+# Keep in lock-step with the runtime stage's FROM below — the venv built here
+# is copied into the runtime image, so the two Pythons MUST match.
+FROM python:3.11.10-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -20,7 +23,10 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.11-slim-bookworm
+# Runtime stage — MUST stay pinned to the same Python point release as the
+# builder above. /opt/venv was built against that exact CPython ABI, so a
+# mismatch would silently break extension modules (psycopg2, pillow, etc.).
+FROM python:3.11.10-slim-bookworm
 
 WORKDIR /app
 

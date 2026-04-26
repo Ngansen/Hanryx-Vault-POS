@@ -14,7 +14,10 @@
 #   POST /recognize/scan   — multipart `image`, JSON resp with method & conf
 #   GET  /healthz                                          → liveness + db stats
 # ──────────────────────────────────────────────────────────────────────────────
-FROM python:3.11-slim-bookworm
+# Pinned point release so `docker compose build` on the Pi is reproducible.
+# Bump deliberately — torch/easyocr/opencv behavior is sensitive to the
+# underlying CPython and bookworm-slim point release.
+FROM python:3.11.10-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

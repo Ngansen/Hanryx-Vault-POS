@@ -1,5 +1,8 @@
 # ── Stage 1: build ─────────────────────────────────────────────────────────────
-FROM node:20-slim AS builder
+# Pinned point release so `docker compose build` on the Pi is reproducible.
+# Keep in lock-step with the runtime stage's FROM below so `npm ci --omit=dev`
+# runs against the same Node ABI the build used.
+FROM node:20.18.0-bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -14,7 +17,10 @@ RUN npm ci
 RUN npm run build
 
 # ── Stage 2: runtime ───────────────────────────────────────────────────────────
-FROM node:20-slim
+# Runtime stage — MUST stay pinned to the same Node + bookworm-slim point
+# release as the builder above. Native addons in node_modules link against
+# that exact Node ABI; a mismatch would silently break modules at boot.
+FROM node:20.18.0-bookworm-slim
 
 WORKDIR /app
 
