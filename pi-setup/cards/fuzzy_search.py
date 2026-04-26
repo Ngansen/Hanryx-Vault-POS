@@ -78,7 +78,23 @@ _MAX_FALLBACK_PER_TABLE = 1500
 # Per-table scoring config. Each entry says: "to score a row from this
 # table, compare the query against these columns, take the max score, and
 # project the row into this dict shape for the API response."
+#
+# `cards_master` is listed FIRST so a hit from the unified consolidator
+# (which has every-language name on a single row) wins over the legacy
+# per-language tables when both match — the cashier sees ONE result for
+# Charizard ex with all four language names attached, not four separate
+# results.  The legacy entries below stay for back-compat: if the
+# consolidator hasn't run yet (fresh Pi, first boot), the legacy tables
+# still serve the cashier.
 _TABLES: list[dict] = [
+    {
+        "table": "cards_master",
+        "name_columns": ["name_en", "name_kr", "name_jp", "name_chs", "name_cht"],
+        "select": ("master_id, set_id, card_number, variant_code, "
+                   "name_en, name_kr, name_jp, name_chs, name_cht, "
+                   "card_type, rarity, hp, image_url"),
+        "language": "multi",
+    },
     {
         "table": "tcg_cards",
         "name_columns": ["name"],

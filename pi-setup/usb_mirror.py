@@ -203,6 +203,125 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         """,
     ),
 
+    # ── Unified card DB layer ──────────────────────────────────────────────
+    # cards_master is the post-consolidator view: one row per logical
+    # (set_id, card_number, variant) with every-language name joined in.
+    # This is what /tcg/search-multi queries via the new fuzzy_search
+    # path. Everything below it (ref_*, src_*) is auxiliary and is
+    # mirrored too so the offline POS can still rebuild the master table
+    # from the USB stick if the network is gone for weeks.
+    "cards_master": (
+        """
+        CREATE TABLE cards_master (
+            master_id INTEGER PRIMARY KEY,
+            set_id TEXT, card_number TEXT, variant_code TEXT,
+            pokedex_id INTEGER,
+            name_en TEXT, name_kr TEXT, name_jp TEXT,
+            name_chs TEXT, name_cht TEXT,
+            name_fr TEXT, name_de TEXT, name_it TEXT, name_es TEXT,
+            card_type TEXT, energy_type TEXT, subtype TEXT, stage TEXT,
+            rarity TEXT, rarity_code TEXT, hp INTEGER, artist TEXT,
+            ex_serial_codes TEXT, other_pokemon TEXT, promo_source TEXT,
+            image_url TEXT, image_url_alt TEXT, source_refs TEXT,
+            first_seen INTEGER, last_built INTEGER,
+            _mirror_at INTEGER
+        )
+        """,
+        """
+        SELECT master_id, set_id, card_number, variant_code, pokedex_id,
+               name_en, name_kr, name_jp, name_chs, name_cht,
+               name_fr, name_de, name_it, name_es,
+               card_type, energy_type, subtype, stage,
+               rarity, rarity_code, hp, artist,
+               ex_serial_codes::text, other_pokemon, promo_source,
+               image_url, image_url_alt::text, source_refs::text,
+               first_seen, last_built
+          FROM cards_master
+        """,
+        f"""
+        INSERT INTO cards_master VALUES
+          (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        """,
+    ),
+
+    "ref_set_mapping": (
+        """
+        CREATE TABLE ref_set_mapping (
+            set_id TEXT PRIMARY KEY, era TEXT,
+            name_en TEXT, name_kr TEXT, name_jp TEXT,
+            name_chs TEXT, name_cht TEXT,
+            release_year TEXT, region TEXT, aliases TEXT,
+            _mirror_at INTEGER
+        )
+        """,
+        """
+        SELECT set_id, era, name_en, name_kr, name_jp,
+               name_chs, name_cht, release_year, region, aliases::text
+          FROM ref_set_mapping
+        """,
+        f"""
+        INSERT INTO ref_set_mapping VALUES (?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        """,
+    ),
+
+    "ref_variant_terms": (
+        """
+        CREATE TABLE ref_variant_terms (
+            variant_code TEXT PRIMARY KEY,
+            en_term TEXT, kr_term TEXT, jp_term TEXT,
+            cht_term TEXT, chs_term TEXT, description TEXT,
+            _mirror_at INTEGER
+        )
+        """,
+        """
+        SELECT variant_code, en_term, kr_term, jp_term,
+               cht_term, chs_term, description
+          FROM ref_variant_terms
+        """,
+        f"""
+        INSERT INTO ref_variant_terms VALUES (?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        """,
+    ),
+
+    "ref_pokedex_species": (
+        """
+        CREATE TABLE ref_pokedex_species (
+            pokedex_no INTEGER PRIMARY KEY,
+            name_en TEXT, name_jp TEXT, name_jp_kana TEXT,
+            name_kr TEXT, name_chs TEXT, name_cht TEXT,
+            name_fr TEXT, name_de TEXT, generation INTEGER,
+            _mirror_at INTEGER
+        )
+        """,
+        """
+        SELECT pokedex_no, name_en, name_jp, name_jp_kana,
+               name_kr, name_chs, name_cht, name_fr, name_de, generation
+          FROM ref_pokedex_species
+        """,
+        f"""
+        INSERT INTO ref_pokedex_species VALUES (?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        """,
+    ),
+
+    "ref_promo_provenance": (
+        """
+        CREATE TABLE ref_promo_provenance (
+            promo_id INTEGER PRIMARY KEY,
+            source_category TEXT, set_label TEXT, card_number TEXT,
+            name_kr TEXT, name_en TEXT, notes TEXT,
+            _mirror_at INTEGER
+        )
+        """,
+        """
+        SELECT promo_id, source_category, set_label, card_number,
+               name_kr, name_en, notes
+          FROM ref_promo_provenance
+        """,
+        f"""
+        INSERT INTO ref_promo_provenance VALUES (?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        """,
+    ),
+
     # inventory_snapshot — what's currently in stock and for sale. Subset
     # of columns; full inventory stays in Postgres because the POS writes
     # to it constantly and the mirror would lag the live view.

@@ -107,6 +107,71 @@ Includes the one-time `migrate-db-to-usb.sh` seed, `setup-ollama.sh`
 model pull, and a "trade-show USB-only mode" recipe for booting a
 satellite Pi from just the USB stick.
 
+## Unified Card DB — multilingual master table (`pi-setup/unified/`)
+
+Collapses 21 GitHub forks plus the `Ngansen/Card-Database` Excel
+workbooks plus PokéAPI plus the existing per-language tables into a
+single `cards_master` table where every row carries every language's
+name (EN / KR / JP / CHS / CHT / FR / DE / IT / ES). The legacy
+per-language tables (`cards_kr`, `cards_jpn`, `cards_chs`,
+`cards_jpn_pocket`, `tcg_cards`) stay untouched — server.py has
+hundreds of references to them and a wholesale rename was too risky
+mid-trade-show season.
+
+**Schema** (`pi-setup/unified/schema.py`). Three layers of tables, all
+pgtrgm-indexed:
+
+* `ref_*` — cross-language reference data: `ref_set_mapping`,
+  `ref_variant_terms`, `ref_pokedex_species`, `ref_promo_provenance`.
+* `src_*` — one table per upstream source, never mutated by the
+  consolidator: `src_eng_xlsx`, `src_eng_ex_codes`, `src_jp_xlsx`,
+  `src_jp_ex_codes`, `src_jp_pokemoncardcom`, `src_jp_pocket_limitless`,
+  `src_tcgdex_multi`.
+* `cards_master` — consolidator output, rebuilt by
+  `build_cards_master.py` with priority rules in `unified/priority.py`
+  and full per-field auditability via a `source_refs JSONB` column.
+
+**Importers** (all CLI-callable, idempotent, `execute_values`-batched,
+`--force` flag): `import_ref_mappings.py`, `import_eng_xlsx.py`,
+`import_ex_codes.py`, `import_jp_xlsx.py`, `import_kr_promos.py`,
+`import_tcgdex.py`, `import_jp_pokemoncardcom.py`,
+`import_pocket_limitless.py`, `import_pokeapi_species.py`. Source
+files are pulled from `Ngansen/Card-Database` over HTTPS at runtime
+(no checked-in copies, no licence concerns).
+
+**Consolidator** (`pi-setup/build_cards_master.py`). TCGdex spine + 10
+sources merged by `(set_id, card_number, variant)`. Runs
+`BEGIN; DELETE; bulk INSERT; COMMIT` so a reader during the rebuild
+still sees the previous snapshot.
+
+**Wiring.**
+* `usb_mirror.py` mirrors `cards_master` + every `ref_*` table to the
+  USB SQLite so the offline POS can rebuild from scratch without
+  network.
+* `cards/fuzzy_search.py` lists `cards_master` FIRST, then the legacy
+  per-language tables — a hit in the unified table wins (one result
+  with all four language names attached), but the legacy tables still
+  serve cashiers on a fresh Pi where the consolidator hasn't run yet.
+* `/tcg/search-multi` is unchanged on the wire — same response shape,
+  no cashier-UI changes.
+* New `GET /ai/admin/db-coverage` returns per-set + per-language
+  fill percentages plus a 5,000-row source-share sample so operators
+  can spot a missing import sheet at a glance.
+
+**Sync orchestrator schedule.** Excel-backed importers run weekly
+(Excel files change months apart), TCGdex / pokemon-card.com / Pocket
+run daily, `build_master` runs every 12 h. All are added to the
+existing `JOBS` list in `pi-setup/sync_orchestrator.py`.
+
+**Dependencies.** `openpyxl>=3.1.0` (read-only Excel) and
+`PyYAML>=6.0.1` (TCGdex TS-module fallback parser) added to
+`pi-setup/requirements.in` — regenerate the lockfile with
+`./scripts/lock-python-deps.sh pi-setup` before deploying.
+
+**Operator runbook.** Full architecture + manual rebuild + dashboard
+example in `pi-setup/docs/USB_OFFLINE_DB.md` (the "Unified Card DB"
+section appended at the bottom).
+
 ## Reproducible builds (`pi-setup/`)
 
 The four custom-built containers in `pi-setup/` (`pos`, `recognizer`,

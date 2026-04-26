@@ -262,6 +262,123 @@ def chat():
     })
 
 
+@ai_bp.route("/admin/db-coverage", methods=["GET"])
+def db_coverage():
+    """Per-set + per-language completeness report for cards_master.
+
+    Note: ai_bp has url_prefix="/ai", so the full URL is
+    `GET /ai/admin/db-coverage`, NOT `/admin/db-coverage`.
+
+    The cashier doesn't see this — it's an operator dashboard endpoint.
+    Three sections in the response:
+
+      * `totals`         — overall row count, one number per language.
+      * `per_set`        — for each set_id present in cards_master,
+                            counts of how many rows have each language
+                            populated. Lets the operator spot a set
+                            where the Korean import missed a sheet.
+      * `source_share`   — counts how often each Layer-1 source
+                            "won" the priority race for each major
+                            field. Useful for sanity-checking the
+                            priority rules in unified/priority.py.
+
+    The query is intentionally read-only and bounded to keep the
+    endpoint cheap to poll from a Grafana / Uptime Kuma dashboard.
+    Returns 503 if cards_master doesn't exist yet (i.e. the
+    consolidator hasn't run).
+    """
+    db_path = local_db_path()
+    try:
+        conn = sqlite_connect(db_path)
+    except Exception as e:
+        return jsonify({"error": f"USB DB not available: {e}"}), 503
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='cards_master'"
+        )
+        if not cur.fetchone():
+            return jsonify({
+                "error": ("cards_master not present on this USB mirror — "
+                          "run build_cards_master.py and then re-mirror."),
+            }), 503
+
+        # Totals across the whole table
+        cur.execute("""
+            SELECT
+              COUNT(*)                                                 AS total,
+              SUM(CASE WHEN COALESCE(name_en,  '') <> '' THEN 1 ELSE 0 END)  AS with_en,
+              SUM(CASE WHEN COALESCE(name_kr,  '') <> '' THEN 1 ELSE 0 END)  AS with_kr,
+              SUM(CASE WHEN COALESCE(name_jp,  '') <> '' THEN 1 ELSE 0 END)  AS with_jp,
+              SUM(CASE WHEN COALESCE(name_chs, '') <> '' THEN 1 ELSE 0 END)  AS with_chs,
+              SUM(CASE WHEN COALESCE(name_cht, '') <> '' THEN 1 ELSE 0 END)  AS with_cht,
+              SUM(CASE WHEN COALESCE(ex_serial_codes, '[]') <> '[]'
+                                                       THEN 1 ELSE 0 END)  AS with_codes,
+              SUM(CASE WHEN COALESCE(promo_source, '') <> ''
+                                                       THEN 1 ELSE 0 END)  AS with_promo
+              FROM cards_master
+        """)
+        totals_row = cur.fetchone()
+        totals = {k: totals_row[k] for k in totals_row.keys()}
+
+        # Per-set breakdown — limited to top 50 by row count to keep
+        # the JSON payload reasonable for a dashboard widget.
+        cur.execute("""
+            SELECT set_id,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN COALESCE(name_en,  '') <> '' THEN 1 ELSE 0 END) AS with_en,
+                   SUM(CASE WHEN COALESCE(name_kr,  '') <> '' THEN 1 ELSE 0 END) AS with_kr,
+                   SUM(CASE WHEN COALESCE(name_jp,  '') <> '' THEN 1 ELSE 0 END) AS with_jp,
+                   SUM(CASE WHEN COALESCE(name_chs, '') <> '' THEN 1 ELSE 0 END) AS with_chs
+              FROM cards_master
+             GROUP BY set_id
+             ORDER BY total DESC
+             LIMIT 50
+        """)
+        per_set = []
+        for r in cur.fetchall():
+            d = {k: r[k] for k in r.keys()}
+            t = max(int(d["total"]) or 1, 1)
+            d["pct_en"]  = round(100 * int(d["with_en"])  / t, 1)
+            d["pct_kr"]  = round(100 * int(d["with_kr"])  / t, 1)
+            d["pct_jp"]  = round(100 * int(d["with_jp"])  / t, 1)
+            d["pct_chs"] = round(100 * int(d["with_chs"]) / t, 1)
+            per_set.append(d)
+
+        # Source-share — parse the source_refs JSON to see which
+        # Layer-1 source contributed each field. This is a best-effort
+        # scan over a sample because cards_master can be 70k rows and
+        # JSON-parsing every one in Python is slow. We sample 5,000.
+        cur.execute(
+            "SELECT source_refs FROM cards_master "
+            "WHERE source_refs <> '{}' LIMIT 5000"
+        )
+        share: dict[str, dict[str, int]] = {}
+        for r in cur.fetchall():
+            try:
+                refs = json.loads(r[0]) if r[0] else {}
+            except (TypeError, ValueError):
+                continue
+            for field, ref in refs.items():
+                if not isinstance(ref, str):
+                    continue
+                src_name = ref.split(":", 1)[0] if ":" in ref else ref
+                share.setdefault(field, {})
+                share[field][src_name] = share[field].get(src_name, 0) + 1
+
+        return jsonify({
+            "ok": True,
+            "totals": totals,
+            "per_set_top50": per_set,
+            "source_share_sample": share,
+            "sample_size": 5000,
+        })
+    finally:
+        conn.close()
+
+
 @ai_bp.route("/health")
 def health():
     """Liveness — does the assistant container respond and is the model loaded?"""

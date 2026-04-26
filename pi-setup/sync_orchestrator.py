@@ -191,6 +191,59 @@ def _job_card_hashes() -> None:
     _run_module_subprocess("/app/import_artwork_hashes.py")
 
 
+# ── Unified card DB jobs (U1-U9 importers) ────────────────────────────────
+# These are scheduled less aggressively than the per-language importers
+# because the source data (Excel files in your Card-Database repo,
+# TCGdex API, PokéAPI CSVs) changes WEEKS apart, not hours. The
+# trade-off: a brand-new set release is in your per-language tables
+# within hours but won't be in cards_master until the next consolidator
+# tick (12h). The cashier still finds the card via the legacy table
+# entries in fuzzy_search — they're listed AFTER cards_master, so a
+# stale master row is shadowed by a fresh per-language row.
+
+def _job_ref_mappings() -> None:
+    _run_module_subprocess("/app/import_ref_mappings.py")
+
+
+def _job_eng_xlsx() -> None:
+    _run_module_subprocess("/app/import_eng_xlsx.py")
+
+
+def _job_ex_codes() -> None:
+    _run_module_subprocess("/app/import_ex_codes.py")
+
+
+def _job_jp_xlsx() -> None:
+    _run_module_subprocess("/app/import_jp_xlsx.py")
+
+
+def _job_kr_promos() -> None:
+    _run_module_subprocess("/app/import_kr_promos.py")
+
+
+def _job_tcgdex() -> None:
+    _run_module_subprocess("/app/import_tcgdex.py")
+
+
+def _job_jp_pcc() -> None:
+    _run_module_subprocess("/app/import_jp_pokemoncardcom.py")
+
+
+def _job_pocket_lt() -> None:
+    _run_module_subprocess("/app/import_pocket_limitless.py")
+
+
+def _job_pokeapi_species() -> None:
+    _run_module_subprocess("/app/import_pokeapi_species.py")
+
+
+def _job_build_master() -> None:
+    """Rebuild cards_master from every Layer-1/Layer-2 source.
+    Runs LAST in the daily cycle so it sees fresh data from every
+    importer that ran earlier in the day."""
+    _run_module_subprocess("/app/build_cards_master.py")
+
+
 def _job_ebay_sweep() -> None:
     """eBay sold-listings sweep for the highest-value inventory cards."""
     _run_module_subprocess("/app/ebay_sold.py", ["--sweep", "--top", "200"])
@@ -210,6 +263,23 @@ JOBS: list[Job] = [
     Job(name="jpn_pocket",      interval_sec=24 * 60 * 60,   fn=_job_jpn_pocket_cards,  needs_network=True),
     Job(name="chs_cards",       interval_sec=24 * 60 * 60,   fn=_job_chs_cards,         needs_network=True),
     Job(name="card_hashes",     interval_sec=24 * 60 * 60,   fn=_job_card_hashes,       needs_network=False),
+
+    # ── Unified card DB pipeline ──────────────────────────────────────
+    # Order in this list IS the order they run when multiple are due
+    # in the same tick (see _run_due_jobs). The consolidator goes LAST
+    # so the importers above have a chance to refresh first. Intervals
+    # are intentionally staggered (different prime-ish hour offsets) so
+    # the Pi doesn't try to run all of them at once on a fresh boot.
+    Job(name="ref_mappings",    interval_sec=7 * 24 * 60 * 60, fn=_job_ref_mappings,     needs_network=True),
+    Job(name="eng_xlsx",        interval_sec=7 * 24 * 60 * 60, fn=_job_eng_xlsx,         needs_network=True),
+    Job(name="ex_codes",        interval_sec=7 * 24 * 60 * 60, fn=_job_ex_codes,         needs_network=True),
+    Job(name="jp_xlsx",         interval_sec=7 * 24 * 60 * 60, fn=_job_jp_xlsx,          needs_network=True),
+    Job(name="kr_promos",       interval_sec=7 * 24 * 60 * 60, fn=_job_kr_promos,        needs_network=True),
+    Job(name="tcgdex",          interval_sec=24 * 60 * 60,     fn=_job_tcgdex,           needs_network=True),
+    Job(name="jp_pcc",          interval_sec=24 * 60 * 60,     fn=_job_jp_pcc,           needs_network=True),
+    Job(name="pocket_lt",       interval_sec=24 * 60 * 60,     fn=_job_pocket_lt,        needs_network=True),
+    Job(name="pokeapi_species", interval_sec=7 * 24 * 60 * 60, fn=_job_pokeapi_species,  needs_network=True),
+    Job(name="build_master",    interval_sec=12 * 60 * 60,     fn=_job_build_master,     needs_network=False),
 ]
 
 

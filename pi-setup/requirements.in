@@ -102,3 +102,12 @@ numpy>=1.24.0
 # RAM-flat instead of loading the whole array.  Optional (importer falls back
 # to full load if missing) but strongly recommended on the Pi.
 ijson>=3.2.0
+
+# Unified card DB: read .xlsx workbooks from Card-Database repo (Korean +
+# Chinese master DBs, all-English-cards spreadsheet, EX serial codes,
+# Japanese 2.0 spreadsheet). openpyxl is read-only here, no styling/macros.
+openpyxl>=3.1.0
+
+# Unified card DB: parse TCGdex multilingual TS modules — used as a fallback
+# when the upstream JSON dist artefacts aren't present in the cloned fork.
+PyYAML>=6.0.1

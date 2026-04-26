@@ -174,3 +174,134 @@ To deploy a backup kiosk to a trade show with just a USB stick:
    normal and serves the offline-search page at `/offline-search`.
 5. The satellite Pi has no Postgres, so /admin and /sale-history won't
    work — but the cashier-facing search and pricing pages will.
+
+---
+
+## Unified Card DB (multi-language master table)
+
+The "per-language" tables above (`cards_kr`, `cards_jpn`, `cards_chs`,
+`cards_jpn_pocket`, plus the English `tcg_cards`) each speak ONE
+language and use slightly different schemas. That works for
+language-specific lookups but it forces the cashier to know which table
+to query when a customer hands them a card without telling them what
+country it's from. The unified card DB collapses all of those — plus
+TCGdex, the Card-Database Excel files, the Korean/Chinese master
+mapping spreadsheets, and PokéAPI — into a single table called
+`cards_master` where every row carries every language's name.
+
+### Layered data model
+
+```
+                                ┌─ ref_set_mapping       (cross-language set names)
+   ref_*  (reference data) ─────┼─ ref_variant_terms     (KR/JP/CN promo variant codes)
+                                ├─ ref_pokedex_species   (PokéAPI species, 9 languages)
+                                └─ ref_promo_provenance  (KR Korean_Cards.txt parsed)
+
+   src_*  (one table per      ┌─ src_eng_xlsx           (~32K English rows from Excel)
+          upstream source —   ├─ src_eng_ex_codes       (EX serial-code Excel)
+          NEVER edited by     ├─ src_jp_xlsx            (1996-2017 Japanese 2.0 Excel)
+          the consolidator;   ├─ src_jp_ex_codes        (JP EX serial Excel)
+          re-imported from    ├─ src_jp_pokemoncardcom  (pokemon-card.com fork)
+          scratch each run)   ├─ src_jp_pocket_limitless(TCG Pocket via Limitless)
+                              └─ src_tcgdex_multi       (TCGdex EN/KR/JP/zh-CN/zh-TW)
+
+   cards_master (consolidator output, rebuilt from above by
+                 build_cards_master.py — one row per unique card,
+                 with name_en / name_kr / name_jp / name_chs /
+                 name_cht / name_fr / name_de / name_it / name_es,
+                 plus rarity, hp, image_url, ex_serial_codes,
+                 source_refs JSONB for full per-field auditability).
+```
+
+The legacy per-language tables stay put — `server.py` has hundreds of
+references to `cards_kr` / `cards_jpn` / `cards_chs`, and rewriting all
+of those at once was too risky. Instead, `fuzzy_search.py` now lists
+`cards_master` FIRST and the legacy tables AFTER, so a hit in the
+unified table wins, and a cashier searching with the consolidator
+offline still gets results from the per-language tables.
+
+### Offline-first promise
+
+Everything except the importers is offline-only. `cards_master` and
+every supporting `ref_*` / `src_*` table is mirrored to the USB stick
+by `usb_mirror.py` on its 6-minute tick, so a Pi disconnected from
+network can:
+
+1. Read the unified table for cashier-facing search.
+2. Re-run `build_cards_master.py` against the mirrored `src_*` /
+   `ref_*` tables to rebuild `cards_master` from scratch — useful if
+   the consolidator's priority rules have changed and you want to
+   re-rank without waiting for an importer cycle.
+
+The `src_*` data only changes weeks apart (most are static Excel files
+in the `Ngansen/Card-Database` GitHub repo), so the importer schedule
+is intentionally relaxed:
+
+| Job | Interval | What it does |
+|---|---|---|
+| `ref_mappings` | 7 days | KR + CN master DB Excel → `ref_set_mapping`, `ref_variant_terms` |
+| `eng_xlsx` | 7 days | All-English-cards Excel → `src_eng_xlsx` (~32K rows) |
+| `ex_codes` | 7 days | EX serial-code Excel (EN+JP) → `src_*_ex_codes` |
+| `jp_xlsx` | 7 days | Japanese 2.0 Excel (1996→Dec 2017) → `src_jp_xlsx` |
+| `kr_promos` | 7 days | `Korean_Cards.txt` parser → `ref_promo_provenance` |
+| `pokeapi_species` | 7 days | PokéAPI species CSVs → `ref_pokedex_species` |
+| `tcgdex` | 24 hr | TCGdex REST API per-language → `src_tcgdex_multi` |
+| `jp_pcc` | 24 hr | pokemon-card.com fork → `src_jp_pokemoncardcom` |
+| `pocket_lt` | 24 hr | TCG Pocket via Limitless → `src_jp_pocket_limitless` |
+| `build_master` | 12 hr | Consolidator: all `src_*`/`ref_*` → `cards_master` |
+
+`build_master` is offline (`needs_network=False`) because by the time
+it runs, every input is already in Postgres locally.
+
+### `/tcg/search-multi` behaviour
+
+```bash
+curl 'http://hanryxvault:8080/tcg/search-multi?q=리자몽&limit=5'
+```
+
+Returns hits from `cards_master` first (one row, all four languages
+attached), then falls through to the legacy per-language tables if the
+consolidator hasn't run yet on this Pi or the term doesn't appear in
+`cards_master`. The response shape is unchanged from the previous
+release — `{"query","languages","hits":[...]}` — so the cashier UI
+needs no changes.
+
+### `/ai/admin/db-coverage` — operator dashboard endpoint
+
+Mounted under the `ai_bp` blueprint, so the full path is `/ai/admin/db-coverage`
+(NOT `/admin/db-coverage`). Same blueprint as `/ai/chat` and `/ai/health`.
+
+```bash
+curl 'http://hanryxvault:8080/ai/admin/db-coverage' | jq
+```
+
+Returns a JSON snapshot:
+
+* `totals` — overall row count plus how many `cards_master` rows
+  have each language populated and how many carry an EX serial code
+  or promo provenance entry.
+* `per_set_top50` — the 50 sets with the most rows, with per-language
+  fill percentages so operators can spot a set whose Korean import is
+  missing a sheet at a glance.
+* `source_share_sample` — over a 5,000-row sample, counts which
+  Layer-1 source ended up "winning" the priority race for each major
+  field. Useful when bumping rules in `unified/priority.py`.
+
+Returns 503 if `cards_master` doesn't exist on the USB mirror yet —
+i.e. the consolidator hasn't run since the box was set up.
+
+### Manual rebuild
+
+If you want to force a fresh consolidator pass without waiting for the
+12 h tick:
+
+```bash
+docker compose exec sync python3 /app/build_cards_master.py
+docker compose exec sync python3 /app/usb_mirror.py
+```
+
+The first builds `cards_master` in Postgres; the second re-projects
+the table to the USB SQLite. Both are idempotent — `build_cards_master`
+runs `BEGIN; DELETE FROM cards_master; bulk INSERT; COMMIT` so a
+reader during the rebuild still sees the previous snapshot, and
+`usb_mirror` swaps the SQLite file atomically.
