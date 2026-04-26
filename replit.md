@@ -41,7 +41,15 @@ The four custom-built containers in `pi-setup/` (`pos`, `recognizer`,
 `pokeapi`, `storefront`) are locked end-to-end so two `docker compose build`
 runs from the same git SHA produce byte-identical layers:
 
-- **Base images** (`FROM`): pinned by content-hash `@sha256:…` (Task #11).
+- **Base images** (`FROM` / compose `image:`): pinned by content-hash
+  `@sha256:…` (Task #11 for Dockerfiles, Task #9 for compose). Bump
+  with `pi-setup/scripts/refresh-image-digests.py` (Task #20) — it
+  re-resolves every pinned tag against `registry-1.docker.io` (using
+  the multi-arch image-index digest) and prints a diff (default) or
+  rewrites the files in place (`--write`). Enforces the lock-step
+  rules — POS Dockerfile builder vs runtime, storefront Dockerfile
+  builder vs runtime, and POS vs recognizer Python pin — before
+  touching anything.
 - **`apt-get install`** (Debian images: pos, recognizer, storefront): pinned
   via `snapshot.debian.org` using the `APT_SNAPSHOT_DATE` build arg
   (`pi-setup/Dockerfile`, `pi-setup/recognizer/Dockerfile`,

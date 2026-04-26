@@ -255,7 +255,52 @@ The currently-pinned base images:
 | `pi-setup/docker-compose.yml` (`redis`) | `redis:7.4.1-alpine` |
 | `pi-setup/docker-compose.yml` (`pgbouncer`) | `edoburu/pgbouncer:1.21.0-p2` |
 
-### To bump a base image
+### To bump a base image (recommended path)
+
+The helper script `pi-setup/scripts/refresh-image-digests.py` is the
+recommended path. It re-resolves every pinned `name:tag@sha256:…` in
+pi-setup against `registry-1.docker.io` (using the multi-arch
+image-index digest) and either prints a clean diff or rewrites the
+files in place. It enforces the lock-step rules below before touching
+anything, so you can't accidentally half-bump a pin.
+
+```bash
+# 1. Edit only the *tag* portion in the relevant file(s) (e.g. change
+#    python:3.11.10-slim-bookworm → python:3.11.11-slim-bookworm).
+#    Leave the @sha256:... in place — the script will refresh it.
+#    If you bump a Python pin in pi-setup/Dockerfile, also bump it in
+#    pi-setup/recognizer/Dockerfile (same image — keep them in
+#    lock-step). The script refuses to run otherwise (see below).
+
+# 2. Dry-run: print what would change, exit non-zero if anything would.
+python3 pi-setup/scripts/refresh-image-digests.py
+
+# 3. Apply: rewrite the @sha256:... values in place.
+python3 pi-setup/scripts/refresh-image-digests.py --write
+
+# 4. Rebuild and smoke-test.
+docker compose build --no-cache <service>
+```
+
+The script enforces these lock-step invariants and aborts with a clear
+message if any are violated:
+
+* `pi-setup/Dockerfile` builder + runtime stages must reference the
+  same `python:tag@sha256:…` (the runtime stage runs the venv built in
+  the builder; ABI mismatches silently break extension modules).
+* `pi-setup/services/storefront/Dockerfile` builder + runtime stages
+  must reference the same `node:tag@sha256:…` (same reason).
+* `pi-setup/Dockerfile` and `pi-setup/recognizer/Dockerfile` must
+  reference the same `python:tag@sha256:…` (kept in lock-step by
+  convention).
+
+If the dry-run reports drift, reconcile the source files by hand and
+re-run.
+
+### Manual recipe (fallback)
+
+If the script is unavailable (no Python, no network access to Docker
+Hub, or you're double-checking what it does), the same lookup by hand:
 
 1. Pick the new tag you want (e.g. you're moving from
    `python:3.11.10-slim-bookworm` to `python:3.11.11-slim-bookworm`).
@@ -288,7 +333,9 @@ The currently-pinned base images:
    `Accept` the `index.v1+json` / `manifest.list.v2+json` types), not a
    per-architecture manifest digest. The list digest is what supports
    multi-arch pulls — if you accidentally pin a single-arch manifest,
-   the build will fail on architectures it doesn't cover.
+   the build will fail on architectures it doesn't cover. (The helper
+   script enforces this automatically: it refuses to pin a digest if
+   the registry returned a per-arch manifest instead of the index.)
 
 3. Update **both** the tag and the digest in the relevant file(s). For
    `pi-setup/Dockerfile` and `pi-setup/services/storefront/Dockerfile`
@@ -299,4 +346,5 @@ The currently-pinned base images:
 
 If you only ever update the tag and forget the digest, `docker pull`
 will refuse the image with a manifest-mismatch error — that's the
-desired behaviour (no silent drift, no half-bumped pin).
+desired behaviour (no silent drift, no half-bumped pin). Either re-run
+the helper script (preferred) or look the new digest up by hand.
