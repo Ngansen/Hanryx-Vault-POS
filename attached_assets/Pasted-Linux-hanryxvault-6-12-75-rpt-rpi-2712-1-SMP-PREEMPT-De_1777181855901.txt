@@ -1,0 +1,54 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun Apr 26 03:12:42 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ tailscale netcheck
+2026/04/26 05:37:16 portmap: monitor: gateway and self IP changed: gw=192.168.86.1 self=192.168.86.36
+2026/04/26 05:37:16 portmap: [v1] Got PMP response; IP: 71.89.112.199, epoch: 97620
+2026/04/26 05:37:16 portmap: [v1] Got PCP response: epoch: 97620
+2026/04/26 05:37:17 portmap: [v1] UPnP reply {Location:http://192.168.86.1:5000/rootDesc.xml Server:Linux/5.4.0-122-generic UPnP/1.1 MiniUPnPd/1.9 USN:uuid:37d7d57c-d00c-4fc1-9915-151e2af9321b::urn:schemas-upnp-org:device:InternetGatewayDevice:2}, "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=120\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:2\r\nUSN: uuid:37d7d57c-d00c-4fc1-9915-151e2af9321b::urn:schemas-upnp-org:device:InternetGatewayDevice:2\r\nEXT:\r\nSERVER: Linux/5.4.0-122-generic UPnP/1.1 MiniUPnPd/1.9\r\nLOCATION: http://192.168.86.1:5000/rootDesc.xml\r\nOPT: \"http://schemas.upnp.org/upnp/1/0/\"; ns=01\r\n01-NLS: 1\r\nBOOTID.UPNP.ORG: 1\r\nCONFIGID.UPNP.ORG: 1337\r\n\r\n"
+2026/04/26 05:37:17 portmap: UPnP meta changed: [{Location:http://192.168.86.1:5000/rootDesc.xml Server:Linux/5.4.0-122-generic UPnP/1.1 MiniUPnPd/1.9 USN:uuid:37d7d57c-d00c-4fc1-9915-151e2af9321b::urn:schemas-upnp-org:device:InternetGatewayDevice:2}]
+
+Report:
+        * Time: 2026-04-26T05:37:17.111939495Z
+        * UDP: true
+        * IPv4: yes, 71.89.112.199:49430
+        * IPv6: no, but OS has support
+        * MappingVariesByDestIP: false
+        * PortMapping: UPnP, NAT-PMP, PCP
+        * Nearest DERP: Chicago
+        * DERP latency:
+                - ord: 30.5ms  (Chicago)
+                - tor: 43.1ms  (Toronto)
+                - nyc: 46.5ms  (New York City)
+                - den: 48.4ms  (Denver)
+                - iad: 48.4ms  (Ashburn)
+                - dfw: 63.1ms  (Dallas)
+                - mia: 81.1ms  (Miami)
+                - sfo: 87.2ms  (San Francisco)
+                - lax: 92.4ms  (Los Angeles)
+                - sea: 102.9ms (Seattle)
+                - hnl: 120.5ms (Honolulu)
+                - lhr: 132.2ms (London)
+                - par: 134.5ms (Paris)
+                - fra: 136.5ms (Frankfurt)
+                - sin:         (Singapore)
+                - syd:         (Sydney)
+                - blr:         (Bengaluru)
+                - tok:         (Tokyo)
+                - sao:         (São Paulo)
+                - ams:         (Amsterdam)
+                - jnb:         (Johannesburg)
+                - mad:         (Madrid)
+                - hkg:         (Hong Kong)
+                - waw:         (Warsaw)
+                - dbi:         (Dubai)
+                - nai:         (Nairobi)
+                - nue:         (Nuremberg)
+                - hel:         (Helsinki)
+ngansen@hanryxvault:~ $ 
