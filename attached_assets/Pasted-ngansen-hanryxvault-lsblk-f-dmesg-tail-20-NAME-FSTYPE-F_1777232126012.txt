@@ -1,0 +1,37 @@
+ngansen@hanryxvault:~ $ lsblk -f
+dmesg | tail -20
+NAME FSTYPE FSVER LABEL      UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0
+     swap   1                                                                    
+sda                                                                              
+└─sda1
+     exfat  1.0   Hanryx_POS 5E19-C51E                               231G     0% /media/ngansen/Hanryx_POS
+mmcblk0
+│                                                                                
+├─mmcblk0p1
+│    vfat   FAT32 bootfs     F587-071F                             432.3M    15% /boot/firmware
+└─mmcblk0p2
+     ext4   1.0   rootfs     d6944274-f2f7-4644-96a4-213c3b367f5c   23.9G    55% /
+zram0
+     swap   1     zram0      79b5f751-b936-4119-a44e-879ceb030766                [SWAP]
+[   31.206263] vethb4829c4: entered allmulticast mode
+[   31.206388] vethb4829c4: entered promiscuous mode
+[   31.243803] br-cecbff8e500e: port 6(vethd99edd2) entered blocking state
+[   31.243871] br-cecbff8e500e: port 6(vethd99edd2) entered disabled state
+[   31.243905] vethd99edd2: entered allmulticast mode
+[   31.244033] vethd99edd2: entered promiscuous mode
+[   31.258640] eth0: renamed from vetha9a8986
+[   31.262010] br-cecbff8e500e: port 5(vethb4829c4) entered blocking state
+[   31.262022] br-cecbff8e500e: port 5(vethb4829c4) entered forwarding state
+[   31.280847] br-cecbff8e500e: port 7(vethc4cb889) entered blocking state
+[   31.280861] br-cecbff8e500e: port 7(vethc4cb889) entered disabled state
+[   31.280881] vethc4cb889: entered allmulticast mode
+[   31.280977] vethc4cb889: entered promiscuous mode
+[   31.305288] eth0: renamed from vethd6d1327
+[   31.311007] br-cecbff8e500e: port 6(vethd99edd2) entered blocking state
+[   31.311016] br-cecbff8e500e: port 6(vethd99edd2) entered forwarding state
+[   31.378123] eth0: renamed from vethbfb34dc
+[   31.378782] br-cecbff8e500e: port 7(vethc4cb889) entered blocking state
+[   31.378792] br-cecbff8e500e: port 7(vethc4cb889) entered forwarding state
+[   38.702270] warning: `ThreadPoolForeg' uses wireless extensions which will stop working for Wi-Fi 7 hardware; use nl80211
+ngansen@hanryxvault:~
