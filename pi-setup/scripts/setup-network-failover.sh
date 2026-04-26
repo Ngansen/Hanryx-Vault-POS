@@ -237,6 +237,9 @@ step "Configuring NetworkManager connectivity check"
 NM_CONF="/etc/NetworkManager/conf.d/20-connectivity.conf"
 cat > "$NM_CONF" << 'EOF'
 [connectivity]
+# Captive portals intercept and serve HTTP 302s to themselves; an HTTPS probe would
+# TLS-fail instead of reporting "captive". Upstream-documented at help.ubuntu.com.
+# hanryx-allow-plaintext: NetworkManager captive-portal probe must be plaintext HTTP.
 uri=http://connectivity-check.ubuntu.com
 interval=30
 EOF

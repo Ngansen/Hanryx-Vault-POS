@@ -113,6 +113,25 @@ env["GIT_SSL_NO_VERIFY"] = "1"
 
 **Extending the guard.** Add a new entry to `INSECURE_PATTERNS` in `pi-setup/scripts/check-no-insecure-tls.py` (each entry is `(name, compiled regex, description)`); the marker mechanism applies automatically to anything you add.
 
+### Automated guard — no plaintext-HTTP external URLs
+
+`pi-setup/scripts/check-no-plaintext-http.py` is a sibling lint that catches the complementary risk: code that never attempts TLS in the first place (e.g. `requests.get("http://api.example.com/")`, `curl http://...`, `fetch("http://...")` for an *external* host). On a hostile network like trade-show Wi-Fi this is just as exploitable as a `verify=False` shortcut. It is wired into GitHub Actions via `.github/workflows/pi-setup-security.yml` (runs on PRs and pushes to `main` that touch `pi-setup/`) and can also be run locally:
+
+```bash
+python3 pi-setup/scripts/check-no-plaintext-http.py
+```
+
+**Internal hosts are allow-listed by default.** The pi-setup intentionally talks to its own services over the Docker network and the LAN/VPN using plaintext, so URLs whose host matches any of the following are *not* findings: `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, RFC 1918 ranges (`10/8`, `172.16/12`, `192.168/16`), link-local `169.254/16`, Tailscale CGNAT `100.64/10`, anything ending in `.local` / `.internal` / `.ts.net` / `.lan` / `.home.arpa`, any bare hostname with no dots (treated as a Docker service name like `pos`, `storefront`, `db`, `redis`, `pgbouncer`, `mainpi`), any host that contains a shell/template variable (`${VAR}`, `$(cmd)`, `<PLACEHOLDER>`), and known XML/XSD namespace identifiers (`www.w3.org`, `schemas.xmlsoap.org`, etc.).
+
+**Allow-listing an audited exception.** If a real external plaintext URL is genuinely required (the canonical example is NetworkManager's captive-portal probe at `http://connectivity-check.ubuntu.com`, which must be HTTP because captive portals serve 302s to themselves and an HTTPS probe would TLS-fail instead of detecting the captive state), put the marker `hanryx-allow-plaintext` (optionally with `: <reason>`) in a comment on the same line as the URL or on the line immediately above it. The sibling `hanryx-allow-insecure` marker is also honoured here so a single comment can satisfy both checks. Example (`pi-setup/scripts/setup-network-failover.sh`):
+
+```ini
+# hanryx-allow-plaintext: NetworkManager captive-portal probe must be plaintext HTTP.
+uri=http://connectivity-check.ubuntu.com
+```
+
+**Extending the guard.** To allow a new internal hostname suffix or known-safe namespace prefix, edit `INTERNAL_SUFFIXES` / `INTERNAL_HOSTNAMES` / `XML_NAMESPACE_HOSTS` in `pi-setup/scripts/check-no-plaintext-http.py`. The marker mechanism handles one-off exceptions — prefer it over broadening the global allow-list.
+
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
