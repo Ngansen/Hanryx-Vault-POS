@@ -48,6 +48,25 @@ Current debug bypass flags (audited as of Task #10):
 
 When adding a new flow that downloads or clones code, prefer leaving verification on. If a debug bypass is genuinely needed, follow the same pattern: gate it behind a clearly named `HANRYX_DEBUG_INSECURE_*` env var, log a warning when active, and document it in the list above.
 
+### Automated guard
+
+`pi-setup/scripts/check-no-insecure-tls.py` is a repository-level lint that fails CI if any new occurrence of a known insecure-TLS pattern appears in `pi-setup/`. It is wired into GitHub Actions via `.github/workflows/pi-setup-security.yml` (runs on PRs and pushes to `main` that touch `pi-setup/`) and can also be run locally:
+
+```bash
+python3 pi-setup/scripts/check-no-insecure-tls.py
+```
+
+Patterns currently covered: `verify=False`, `curl -k` / `curl --insecure`, `wget --no-check-certificate`, `pip --trusted-host`, `docker --insecure-registry`, `GIT_SSL_NO_VERIFY`, `urllib3.disable_warnings(...)`, `ssl._create_unverified_context`, `check_hostname=False`, `NODE_TLS_REJECT_UNAUTHORIZED`, `PYTHONHTTPSVERIFY=0`.
+
+**Allow-listing an audited bypass.** Put the marker `hanryx-allow-insecure` (optionally with `: <reason>`) in a comment on the same line as the match or on the line immediately above it. The two debug bypasses listed above already carry this marker. Example:
+
+```python
+# hanryx-allow-insecure: gated by HANRYX_DEBUG_INSECURE_GIT, logs a warning.
+env["GIT_SSL_NO_VERIFY"] = "1"
+```
+
+**Extending the guard.** Add a new entry to `INSECURE_PATTERNS` in `pi-setup/scripts/check-no-insecure-tls.py` (each entry is `(name, compiled regex, description)`); the marker mechanism applies automatically to anything you add.
+
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:

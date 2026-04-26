@@ -1,0 +1,28 @@
+name: pi-setup security
+
+on:
+  pull_request:
+    paths:
+      - 'pi-setup/**'
+      - '.github/workflows/pi-setup-security.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pi-setup/**'
+      - '.github/workflows/pi-setup-security.yml'
+
+jobs:
+  no-insecure-tls:
+    name: Block insecure-TLS shortcuts in pi-setup/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Scan pi-setup/ for insecure-TLS patterns
+        run: python3 pi-setup/scripts/check-no-insecure-tls.py

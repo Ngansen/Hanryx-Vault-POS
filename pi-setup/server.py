@@ -14159,8 +14159,10 @@ def admin_ota_update():
                     "WARNING: HANRYX_DEBUG_INSECURE_GIT=1 set, disabling SSL "
                     "verification for git. Do NOT use in production.\n"
                 )
+                # hanryx-allow-insecure: gated by HANRYX_DEBUG_INSECURE_GIT, logs a warning. See replit.md "Security Policy — TLS verification".
                 env["GIT_SSL_NO_VERIFY"] = "1"
             else:
+                # hanryx-allow-insecure: secure default — clears the bypass env var.
                 env.pop("GIT_SSL_NO_VERIFY", None)
             repo_dir   = os.environ.get("REPO_DIR", "/app")
             compose    = os.path.join(repo_dir, "pi-setup", "docker-compose.yml")

@@ -13,6 +13,7 @@ fi
 
 if [ "${HANRYX_DEBUG_INSECURE_GIT:-0}" = "1" ]; then
     echo "[storefront] WARNING: HANRYX_DEBUG_INSECURE_GIT=1 set, disabling SSL verification for git. Do NOT use in production."
+    # hanryx-allow-insecure: gated by HANRYX_DEBUG_INSECURE_GIT, echoes a warning. See replit.md "Security Policy — TLS verification".
     export GIT_SSL_NO_VERIFY=1
 fi
 
