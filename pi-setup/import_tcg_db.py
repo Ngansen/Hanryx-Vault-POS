@@ -24,13 +24,27 @@ import sys
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "pokedex_local.db")
+# Resolve through cards_db_path so the importer writes to /mnt/cards/pokedex_local.db
+# when HANRYX_LOCAL_DB_DIR is set (production on Pi), and falls back to the
+# in-package path on a developer laptop. Single source of truth across the
+# stack — see cards_db_path.py for the rationale.
+from cards_db_path import local_db_path as _resolve_db_path
+
+
+def _db_path() -> str:
+    return _resolve_db_path()
+
+
+# Backwards-compatible module-level value for any external caller still
+# importing `import_tcg_db.DB_PATH` — resolves once at import time. Code
+# inside this module always calls _db_path() to pick up env changes.
+DB_PATH = _resolve_db_path()
 
 
 # ── Database setup ─────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 

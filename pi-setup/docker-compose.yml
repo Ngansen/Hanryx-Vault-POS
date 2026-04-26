@@ -184,6 +184,18 @@ services:
       # Folder where PokeScraper_3.0 CSVs are dropped (bind-mounted below).
       JPN_DATA_DIR: /app/data/jp_pokellector
 
+      # ── Offline Card Database (USB) ────────────────────────────────────
+      # When set, the SQLite TCG DB, the FAISS visual-recognition index,
+      # and the sync orchestrator's logs all land on the USB drive at
+      # /mnt/cards (bind-mounted below). Unset HANRYX_LOCAL_DB_DIR to
+      # force the legacy in-container path (tests, dev shells, etc.).
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+
+      # Ollama assistant — local AI cashier. Talks to the `assistant`
+      # service over the Docker network. Disable by unsetting OLLAMA_BASE_URL.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://assistant:11434}
+      OLLAMA_MODEL:    ${OLLAMA_MODEL:-qwen2.5:3b}
+
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
@@ -201,6 +213,12 @@ services:
       - /opt/hanryxvault/kiosk/videos:/app/kiosk-videos:ro
       # PokeScraper_3.0 CSV drop folder (read-only).  See data/jp_pokellector/README.md.
       - ./data/jp_pokellector:/app/data/jp_pokellector:ro
+      # ── USB-mounted offline card database (ext4 partition labeled
+      # `hanryxcards`).  Holds pokedex_local.db, the FAISS visual index, and
+      # the sync orchestrator's logs.  bind-mount (not Docker volume) so a
+      # `docker compose down -v` does NOT wipe the USB.  See
+      # docs/USB_OFFLINE_DB.md for the one-time mount setup.
+      - /mnt/cards:/mnt/cards
     # ── USB receipt printer passthrough (MUNBYN P047, etc.) ────────────────
     # If you connect the printer via USB (instead of Ethernet), keep the lines
     # below uncommented AND make sure the printer is plugged in BEFORE running
@@ -246,6 +264,13 @@ services:
     environment:
       PORT: "8081"
       PYTHONUNBUFFERED: "1"
+      # Same USB mount as `pos` — recognizer reads the FAISS index from
+      # /mnt/cards/faiss/ when CLIP-based identification is requested
+      # via the smart-scan path.
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+    volumes:
+      # See `pos` service for rationale on the bind mount.
+      - /mnt/cards:/mnt/cards
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz || exit 1"]
       interval: 30s
@@ -257,6 +282,95 @@ services:
       driver: json-file
       options:
         max-size: "10m"
+        max-file: "3"
+
+  # ── Sync orchestrator — Postgres → SQLite mirror + scheduled importers ───
+  # Runs the same image as `pos` (so it has every Python dep the importers
+  # need) but boots into sync_orchestrator.py instead of server.py. Sleeps
+  # between ticks; on each tick decides which jobs are due and runs them in
+  # series. See pi-setup/sync_orchestrator.py for the full schedule.
+  #
+  # Sized small (256m) because each job is a short subprocess (the heavy work
+  # — pokemontcg.io download, eBay sweep, image hashing — happens in those
+  # subprocesses and can briefly use more RAM).
+  sync:
+    build: .
+    restart: unless-stopped
+    command: ["python3", "/app/sync_orchestrator.py"]
+    environment:
+      DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      REDIS_URL:       redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+      SYNC_TICK_SECONDS:   ${SYNC_TICK_SECONDS:-60}
+      SYNC_LOG_LEVEL:      ${SYNC_LOG_LEVEL:-INFO}
+      # Inherit the same upstream API keys the importers need so we don't
+      # have to re-document them — set them in pi-setup/.env.
+      EBAY_APP_ID:         ${EBAY_APP_ID:-}
+      EBAY_CERT_ID:        ${EBAY_CERT_ID:-}
+      POKEMONTCG_API_KEY:  ${POKEMONTCG_API_KEY:-}
+      TCGPL_API_KEY:       ${TCGPL_API_KEY:-}
+    volumes:
+      - /mnt/cards:/mnt/cards
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 512m: orchestrator itself is tiny (~30m), but the importer subprocesses
+    # it spawns — especially import_kr_cards.py, which loads a 14MB JSON
+    # blob and joins it against postgres — can briefly hit ~200m. 256m
+    # turned out to be too tight in code review; 512m gives 2x headroom.
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── AI cashier assistant (Ollama + Qwen 2.5 3B) ──────────────────────────
+  # Local LLM serving at :11434. The pos container's /ai/chat blueprint
+  # talks to it over the Docker network. Pulling the model is a one-time
+  # 2GB download — see pi-setup/scripts/setup-ollama.sh.
+  #
+  # Why pinned to a recent ollama tag (rather than `latest`):
+  # The `latest` tag silently moves to new model formats which sometimes
+  # require re-pulling models. We pin a known-good tag and bump deliberately
+  # via docs/REPRODUCIBILITY.md (no @sha256 here yet — Ollama's image is
+  # huge and the digest changes weekly with model-format updates; the next
+  # reproducibility pass will lock it).
+  assistant:
+    image: ollama/ollama:0.4.7
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      # Keep the model resident in memory between requests so the cashier
+      # doesn't pay the 5-second cold-start tax every chat. 30-minute idle
+      # eviction so it's gone overnight when the shop is closed.
+      OLLAMA_KEEP_ALIVE: 30m
+      # Single concurrent request — the Pi 5 CPU can't handle two LLM
+      # generations in parallel without thrashing.
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      # Model cache — survives container rebuilds. Big (~2 GB per model)
+      # so we keep it in a Docker volume on the SD card; moving it to USB
+      # would speed up cold-start but the trade-off isn't worth the USB
+      # being a hard dependency for the assistant container.
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    # 4 GB cap: Qwen 2.5 3B uses ~3 GB resident; the headroom covers
+    # context-window allocation. Bump if you swap in a larger model
+    # (qwen2.5:7b needs ~6 GB).
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
         max-file: "3"
 
   # ── Offline PokeAPI mirror ────────────────────────────────────────────────────
@@ -328,3 +442,7 @@ volumes:
   pos-data:
   card-images:
   pokeapi-data:
+  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). Kept on SD
+  # card rather than USB so the assistant container doesn't hard-depend
+  # on the USB being plugged in to start.
+  ollama-data:

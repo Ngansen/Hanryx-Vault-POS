@@ -36,7 +36,11 @@ from datetime import datetime, timezone
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DB_PATH      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pokedex_local.db")
+# Resolve through cards_db_path so syncs land on /mnt/cards/pokedex_local.db
+# when HANRYX_LOCAL_DB_DIR is set (production on Pi), and fall back to the
+# in-package path on a dev box. See cards_db_path.py for rationale.
+from cards_db_path import local_db_path as _resolve_db_path
+DB_PATH      = _resolve_db_path()
 API_BASE     = "https://api.pokemontcg.io/v2"
 API_KEY      = os.environ.get("POKEMON_TCG_API_KEY", "")   # optional — set in env for higher rate limits
 CHECK_HOURS  = 6       # default: check every 6 hours when running in loop mode

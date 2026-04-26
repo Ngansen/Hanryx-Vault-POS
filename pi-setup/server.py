@@ -125,6 +125,16 @@ from urllib.parse import quote
 from flask_compress import Compress
 from cachetools import TTLCache
 
+# Single source of truth for the local SQLite + FAISS paths. Reads
+# HANRYX_LOCAL_DB_DIR (set to /mnt/cards in docker-compose). Fallback path
+# matches the historical pi-setup/pokedex_local.db so dev shells keep working.
+from cards_db_path import (
+    local_db_path as _resolve_local_db_path,
+    faiss_index_path as _resolve_faiss_index_path,
+    faiss_ids_path as _resolve_faiss_ids_path,
+    sync_log_dir as _resolve_sync_log_dir,
+)
+
 # ---------------------------------------------------------------------------
 # Structured JSON logging — every line is machine-parseable
 # ---------------------------------------------------------------------------
@@ -1012,8 +1022,12 @@ def _detect_variant(name: str, rarity: str, description: str) -> str:
 # CLIP + FAISS — visual card identification engine
 # ---------------------------------------------------------------------------
 _CLIP_CONFIDENCE_THRESHOLD = 0.92
-_FAISS_INDEX_PATH = "/tmp/hanryx_cards.index"
-_FAISS_IDS_PATH   = "/tmp/hanryx_cards_ids.json"
+# FAISS index lives on the USB drive at /mnt/cards/faiss/ when
+# HANRYX_LOCAL_DB_DIR is set, so it survives container rebuilds without
+# the 5-10 minute "rebuild from inventory images" boot delay. Falls back
+# to the in-package faiss/ subdir on a dev box.
+_FAISS_INDEX_PATH = _resolve_faiss_index_path()
+_FAISS_IDS_PATH   = _resolve_faiss_ids_path()
 
 _clip_model      = None
 _clip_preprocess = None
@@ -2179,9 +2193,12 @@ def _start_tcgcsv_scheduler():
 _CARD_IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "card-images")
 os.makedirs(_CARD_IMAGES_DIR, exist_ok=True)
 
-# Local SQLite TCG card database built by import_tcg_db.py.
-# Queried before the live API so enrichment works fully offline.
-_LOCAL_TCG_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pokedex_local.db")
+# Local SQLite TCG card database built by import_tcg_db.py and refreshed by
+# the sync orchestrator. Queried before the live API so enrichment works fully
+# offline. Path resolved via cards_db_path so the same file is shared with
+# tcg_lookup.py, sync_tcg_db.py, the orchestrator, and the AI assistant —
+# /mnt/cards/pokedex_local.db on the Pi, in-package fallback on a dev box.
+_LOCAL_TCG_DB_PATH = _resolve_local_db_path()
 
 # ---------------------------------------------------------------------------
 # Server start time — used by /health uptime field
@@ -26516,6 +26533,80 @@ def admin_ai_counterfeit():
     except Exception as e:
         return jsonify({"verdict": "UNAVAILABLE", "confidence": 0.0,
                         "details": str(e), "flags": []}), 500
+
+
+# ---------------------------------------------------------------------------
+# Blueprint registration — offline card database (USB) extension
+# ---------------------------------------------------------------------------
+# Registers the existing tcg_lookup blueprint (it was previously defined but
+# never wired in — the routes /tcg/search, /tcg/card/<id>, /tcg/inventory/<id>,
+# /tcg/stats only worked if you imported it manually) plus the new
+# multilingual-fuzzy-search and AI-cashier-assistant blueprints from the
+# `cards/` package added in the USB-offline-DB rollout.
+#
+# Each blueprint is wrapped in its own try/except so a failed import (e.g.
+# `cards/ai_assistant.py` can't reach Ollama at import time) does not bring
+# down the whole POS — the route just 404s and the rest of the app stays up.
+try:
+    from tcg_lookup import tcg_bp as _tcg_bp
+    app.register_blueprint(_tcg_bp)
+    log.info("[blueprint] tcg_lookup registered → /tcg/*")
+except Exception as _bp_exc:
+    log.warning("[blueprint] tcg_lookup not registered: %s", _bp_exc)
+
+try:
+    from cards.fuzzy_search import search as _fuzzy_search
+
+    @app.route("/tcg/search-multi")
+    def _tcg_search_multi():
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return jsonify({"error": "Provide ?q=<search term>"}), 400
+        limit = min(int(request.args.get("limit", 25)), 100)
+        langs_raw = (request.args.get("languages") or "").strip()
+        langs = [s for s in langs_raw.split(",") if s] or None
+        return jsonify({
+            "query": q,
+            "languages": langs or "all",
+            "hits": _fuzzy_search(_LOCAL_TCG_DB_PATH, q, limit=limit, languages=langs),
+        })
+    log.info("[blueprint] cards.fuzzy_search wired → /tcg/search-multi")
+except Exception as _bp_exc:
+    log.warning("[blueprint] cards.fuzzy_search not wired: %s", _bp_exc)
+
+try:
+    from cards.ai_assistant import ai_bp as _ai_bp
+    app.register_blueprint(_ai_bp)
+    log.info("[blueprint] cards.ai_assistant registered → /ai/*")
+except Exception as _bp_exc:
+    log.warning("[blueprint] cards.ai_assistant not registered: %s", _bp_exc)
+
+# ---------------------------------------------------------------------------
+# /admin/usb-sync/status — read the JSON snapshot the sync orchestrator
+# writes to /mnt/cards/logs/sync_status.json. Safe to call anytime; if the
+# orchestrator hasn't run yet (or USB not mounted) it returns an explanatory
+# 503 instead of a stack trace.
+# ---------------------------------------------------------------------------
+@app.route("/admin/usb-sync/status")
+def _usb_sync_status():
+    try:
+        log_dir = _resolve_sync_log_dir()
+        status_file = log_dir / "sync_status.json"
+        mirror_file = log_dir / "mirror_status.json"
+        out = {"sync_log_dir": str(log_dir)}
+        if status_file.exists():
+            with open(status_file) as f:
+                out["sync"] = json.load(f)
+        else:
+            out["sync"] = None
+        if mirror_file.exists():
+            with open(mirror_file) as f:
+                out["mirror"] = json.load(f)
+        else:
+            out["mirror"] = None
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
 
 if __name__ == "__main__":

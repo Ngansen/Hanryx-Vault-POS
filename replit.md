@@ -6,13 +6,17 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 ## Pi Deployment Architecture (`pi-setup/`)
 
-All services run on the Raspberry Pi 5 via Docker Compose. Three containers share one PostgreSQL instance.
+All services run on the Raspberry Pi 5 via Docker Compose. Multiple containers share one PostgreSQL instance.
 
 | Service | Port | Access | Description |
 |---|---|---|---|
 | `pos` | 8080 | LAN + Tailscale VPN | Flask POS server + admin dashboard |
 | `storefront` | 3000 | Public (via nginx) | HanRyx-Vault Node.js customer website |
 | `db` | 5432 (internal) | Docker network only | PostgreSQL — databases: `vaultpos` + `storefront` |
+| `recognizer` | 8081 (internal) | pos via Docker network | Card image recognition (CLIP + image-hash) |
+| `pokeapi` | 80 (internal) | pos via Docker network | Offline PokeAPI mirror |
+| `sync` | — | none (worker) | Postgres → USB-SQLite mirror + scheduled importers |
+| `assistant` | 11434 (internal) | pos via Docker network | Ollama serving Qwen 2.5 3B for the AI cashier assistant |
 
 **nginx routing** (`pi-setup/nginx/hanryxvault.conf`):
 - `hanryxvault.duckdns.org` → storefront (:3000) — public, HTTPS via certbot
@@ -34,6 +38,74 @@ All services run on the Raspberry Pi 5 via Docker Compose. Three containers shar
 cd pi-setup && cp .env.example .env  # edit .env
 docker compose up -d --build
 ```
+
+## Offline Card Database on USB (`/mnt/cards`)
+
+Multi-language card lookup + price history + visual recognition + AI
+cashier assistant — all read-replicated onto an ext4-formatted USB drive
+mounted at `/mnt/cards`, so the POS keeps working when the trade-show
+WiFi drops. Postgres on the SD card stays the source of truth for live
+writes; the `sync` container projects card and recent-price tables into
+a single SQLite file at `/mnt/cards/pokedex_local.db` every 6 minutes.
+
+**Path resolution.** All four files that previously hard-coded `pokedex_local.db`
+(`tcg_lookup.py`, `import_tcg_db.py`, `sync_tcg_db.py`, `server.py:2184`) now
+resolve through `pi-setup/cards_db_path.py`. The resolver reads
+`HANRYX_LOCAL_DB_DIR` (set to `/mnt/cards` in `docker-compose.yml`) and falls
+back to the in-package path when unset, so dev shells without USB still work.
+
+**FAISS index.** `_FAISS_INDEX_PATH` and `_FAISS_IDS_PATH` (server.py
+~line 1015) moved off `/tmp/` (ephemeral) onto `/mnt/cards/faiss/`
+(survives `docker compose build`). The `_build_faiss_index_bg()` thread
+no longer has to spend 5–10 minutes rebuilding the index from inventory
+images on every container restart.
+
+**Sync orchestrator** (`pi-setup/sync_orchestrator.py`). Long-lived
+container; sleeps in 60s ticks; runs jobs at: mirror = every 6 min,
+tcgplayer + tcg_db = every 1 hr, eBay sweep = every 6 hr, KR/JPN/JPN_POCKET/CHS
+imports + card_hashes = every 24 hr. Network-dependent jobs are
+silently skipped when offline (not marked failed) so a flapping
+trade-show WiFi doesn't spam the status with red. Status JSON written
+to `/mnt/cards/logs/sync_status.json` and exposed via
+`GET /admin/usb-sync/status`.
+
+**Multilingual fuzzy search** (`pi-setup/cards/fuzzy_search.py`). rapidfuzz
+across `name` / `name_kr` / `name_jp` / `name_en` / `name_chs` /
+`commodity_name` columns of every language table. SQL substring pre-filter
++ rapidfuzz token-set scoring + score ≥60 cutoff. Exposed via
+`GET /tcg/search-multi?q=…&languages=ko,en`. Phonetic transliteration
+hook (`_phonetic_normalise`) is wired in but identity-implemented today —
+adding `g2pk` / `pykakasi` / `pypinyin` is one `pip install` away.
+
+**AI cashier assistant** (`pi-setup/cards/ai_assistant.py` + `assistant`
+service in docker-compose). Ollama serving Qwen 2.5 3B. Constrained
+intent grammar (`search_card` | `lookup_price` | `inventory_count` |
+`unknown`) — model never writes SQL, only chooses an intent that maps
+to a hand-authored read-only query. Two routes: `POST /ai/chat`,
+`GET /ai/health`. One-time model pull via
+`pi-setup/scripts/setup-ollama.sh` (~2 GB cached in `ollama-data` Docker
+volume). 30-minute idle eviction; single concurrent request to avoid
+Pi 5 CPU thrashing.
+
+**Bulk CLIP embedding** (`pi-setup/scripts/embed-all-cards.py`). Extends
+the existing `_build_faiss_index_bg()` (which only embeds inventory) to
+all four language card pools. Writes to pgvector (`card_embeddings`
+table, `vector(512)` with ivfflat cosine index) AND to the FAISS file on
+USB. Resumable, batched, HTTPS-only image fetch. One-time overnight run
+on first deploy: `docker exec pi-setup-pos-1 python3 /app/scripts/embed-all-cards.py --source all --resume`.
+
+**Blueprints registered.** `tcg_lookup.tcg_bp` (was previously defined
+but never registered — `/tcg/search`, `/tcg/card/<id>`, `/tcg/inventory/<id>`,
+`/tcg/stats` only worked if you imported the module manually), the new
+`/tcg/search-multi` route, and `cards.ai_assistant.ai_bp` are all wired in
+just before the `if __name__ == "__main__":` block in `server.py`. Each
+registration is wrapped in its own try/except so an import failure in
+one blueprint (e.g. assistant container down) doesn't bring down the rest.
+
+**Deploy guide.** Step-by-step in `pi-setup/docs/USB_OFFLINE_DB.md`.
+Includes the one-time `migrate-db-to-usb.sh` seed, `setup-ollama.sh`
+model pull, and a "trade-show USB-only mode" recipe for booting a
+satellite Pi from just the USB stick.
 
 ## Reproducible builds (`pi-setup/`)
 

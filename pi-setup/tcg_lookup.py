@@ -23,17 +23,25 @@ import json
 import os
 from flask import Blueprint, jsonify, request
 
-# Path to the SQLite database created by import_tcg_db.py
-# Adjust this path if your HanryxVault directory is different
-_DB_PATH = os.path.join(os.path.dirname(__file__), "pokedex_local.db")
+# Path to the SQLite database created by import_tcg_db.py.
+# Resolved through cards_db_path so the same SQLite file is shared with
+# server.py, sync_tcg_db.py, import_tcg_db.py, and the new sync orchestrator.
+# Set HANRYX_LOCAL_DB_DIR=/mnt/cards in docker-compose to put the DB on USB;
+# unset = falls back to pi-setup/pokedex_local.db (legacy in-package path).
+from cards_db_path import local_db_path as _resolve_db_path
+
+
+def _DB_PATH() -> str:  # noqa: N802 — kept for grep-friendliness with the old name
+    return _resolve_db_path()
 
 tcg_bp = Blueprint("tcg", __name__, url_prefix="/tcg")
 
 
 def _get_db():
-    if not os.path.exists(_DB_PATH):
+    path = _DB_PATH()
+    if not os.path.exists(path):
         return None
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -154,7 +162,7 @@ def db_stats() -> dict:
         "inventory_active": cur.execute("SELECT COUNT(*) FROM inventory WHERE sold=0 AND is_wishlist=0").fetchone()[0],
         "tcg_sets": cur.execute("SELECT COUNT(*) FROM sets").fetchone()[0],
         "tcg_cards": cur.execute("SELECT COUNT(*) FROM tcg_cards").fetchone()[0],
-        "db_path": _DB_PATH,
+        "db_path": _DB_PATH(),
     }
 
 
