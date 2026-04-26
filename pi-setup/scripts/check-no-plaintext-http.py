@@ -3,12 +3,25 @@
 check-no-plaintext-http.py
 ==========================
 
-Repository guard that scans ``pi-setup/`` for plaintext ``http://`` URLs that
-target *external* hosts. Complements ``check-no-insecure-tls.py`` (Task #12),
-which only catches code that explicitly disables TLS verification — this
-checker catches code that never attempts TLS in the first place
-(``requests.get("http://api.example.com")`` and friends), which is just as
-exploitable on a hostile network like trade-show Wi-Fi.
+Repository guard that scans ``pi-setup/`` for plaintext URLs that target
+*external* hosts on schemes that have a TLS-protected sibling. Complements
+``check-no-insecure-tls.py`` (Task #12), which only catches code that
+explicitly disables TLS verification — this checker catches code that never
+attempts TLS in the first place (``requests.get("http://api.example.com")``,
+``new WebSocket("ws://...")``, ``mqtt.connect("mqtt://...")`` and friends),
+which is just as exploitable on a hostile network like trade-show Wi-Fi.
+
+The schemes covered are:
+
+* ``http://``  — should be ``https://``
+* ``ws://``    — should be ``wss://`` (Task #23)
+* ``mqtt://``  — should be ``mqtts://`` (Task #23)
+* ``ftp://``   — should be ``ftps://`` or ``sftp://`` (Task #23)
+
+Each scheme is treated identically: the same internal-host allow-list and
+the same ``hanryx-allow-plaintext`` / ``hanryx-allow-insecure`` markers
+apply. The TLS-protected variants (``https://``, ``wss://``, ``mqtts://``,
+``ftps://``, ``sftp://``) are *never* flagged.
 
 Run from the repository root::
 
@@ -18,9 +31,9 @@ Internal hosts are allow-listed by default
 ------------------------------------------
 The pi-setup deliberately talks to its own services over the Docker network
 and the LAN/VPN using plaintext (e.g. ``http://storefront:3000``,
-``http://pos:8080``, ``http://localhost``, ``http://127.0.0.1``,
-``http://10.10.0.1``). Those internal URLs are *not* findings. A host is
-considered internal when its hostname matches any of:
+``http://pos:8080``, ``ws://localhost``, ``mqtt://10.10.0.1``). Those
+internal URLs are *not* findings. A host is considered internal when its
+hostname matches any of:
 
 * loopback / unspecified — ``localhost``, ``127.0.0.1``, ``0.0.0.0``, ``::1``
 * RFC 1918 private IPv4 — ``10/8``, ``172.16/12``, ``192.168/16``
@@ -131,13 +144,25 @@ XML_NAMESPACE_HOSTS: frozenset[str] = frozenset({
 # an internal host (see ``setup-satellite-kiosk-boot.sh`` etc.).
 PLACEHOLDER_CHARS: frozenset[str] = frozenset("${}<>%()*")
 
-# URL extractor. We look for ``http://`` (case-insensitive) followed by host
-# characters, optionally a port, and stop at any character that cannot
-# appear in a host:port. The character class deliberately includes ``$ { }
-# < > % ( )`` so we can detect templated hosts and treat them as
-# placeholders rather than truncating mid-variable.
+# Schemes we flag when used in plaintext form. Each has a TLS-protected
+# sibling that callers should be using instead. Listed longest-first inside
+# the alternation so e.g. ``mqtt`` is preferred over a (non-existent)
+# shorter prefix; the regex engine tries alternatives left-to-right.
+#
+# Important: the regex requires ``://`` immediately after the scheme, so
+# ``https://``, ``wss://``, ``mqtts://``, ``ftps://``, and ``sftp://`` do
+# NOT match (the trailing ``s`` after the scheme name breaks the literal
+# ``://`` requirement, and ``\b`` at the start prevents ``sftp`` from being
+# read as ``ftp`` mid-token).
+INSECURE_SCHEMES: tuple[str, ...] = ("http", "mqtt", "ws", "ftp")
+
+# URL extractor. We look for one of the insecure schemes (case-insensitive)
+# followed by host characters, optionally a port, and stop at any character
+# that cannot appear in a host:port. The character class deliberately
+# includes ``$ { } < > % ( )`` so we can detect templated hosts and treat
+# them as placeholders rather than truncating mid-variable.
 URL_RE = re.compile(
-    r"\bhttp://"
+    r"\b(?P<scheme>" + "|".join(INSECURE_SCHEMES) + r")://"
     r"(?P<host>[A-Za-z0-9._\-\$\{\}<>%\(\)\*]+)"
     r"(?::(?P<port>[0-9A-Za-z\$\{\}<>%\(\)\*_]+))?",
     re.IGNORECASE,
@@ -147,6 +172,7 @@ URL_RE = re.compile(
 class Finding(NamedTuple):
     path: str
     lineno: int
+    scheme: str
     host: str
     line: str
 
@@ -250,8 +276,11 @@ def _scan_file(path: str, rel_path: str) -> Iterable[Finding]:
         return ()
     out: list[Finding] = []
     for idx, line in enumerate(lines):
-        # Cheap pre-filter — most lines have no http:// at all.
-        if "http://" not in line and "HTTP://" not in line:
+        # Cheap pre-filter — most lines contain no URL-shaped token at all.
+        # ``://`` is part of every scheme we care about and is rare enough
+        # in normal source that this short-circuits the vast majority of
+        # lines without ever touching the regex engine.
+        if "://" not in line:
             continue
         for match in URL_RE.finditer(line):
             host = match.group("host") or ""
@@ -264,6 +293,7 @@ def _scan_file(path: str, rel_path: str) -> Iterable[Finding]:
             out.append(Finding(
                 path=rel_path,
                 lineno=idx + 1,
+                scheme=(match.group("scheme") or "").lower(),
                 host=host,
                 line=line.rstrip(),
             ))
@@ -301,21 +331,26 @@ def main(argv: list[str]) -> int:
     findings = scan(pi_setup)
 
     if not findings:
-        print("OK: no plaintext-http external URLs found in pi-setup/.")
+        print(
+            "OK: no plaintext external URLs found in pi-setup/ "
+            f"(checked schemes: {', '.join(s + '://' for s in INSECURE_SCHEMES)})."
+        )
         return 0
 
     print(
-        "FAIL: plaintext http:// call(s) to external host(s) detected in "
-        "pi-setup/. Switch the URL to https:// (preferred) or, if the host "
-        "genuinely cannot speak TLS, add a `# hanryx-allow-plaintext: "
-        "<reason>` marker on the same or preceding line. See "
-        "`Security Policy — TLS verification` in replit.md.",
+        "FAIL: plaintext call(s) to external host(s) detected in pi-setup/ "
+        f"on one or more of: {', '.join(s + '://' for s in INSECURE_SCHEMES)}. "
+        "Switch each URL to its TLS-protected equivalent (https://, wss://, "
+        "mqtts://, ftps://, sftp://) — preferred — or, if the host genuinely "
+        "cannot speak TLS, add a `# hanryx-allow-plaintext: <reason>` marker "
+        "on the same or preceding line. See `Security Policy — TLS "
+        "verification` in replit.md.",
         file=sys.stderr,
     )
     print("", file=sys.stderr)
     for f in findings:
         print(
-            f"  {f.path}:{f.lineno}: external plaintext http:// → {f.host}",
+            f"  {f.path}:{f.lineno}: external plaintext {f.scheme}:// → {f.host}",
             file=sys.stderr,
         )
         print(f"      {f.line}", file=sys.stderr)

@@ -28,7 +28,7 @@ jobs:
         run: python3 pi-setup/scripts/check-no-insecure-tls.py
 
   no-plaintext-http:
-    name: Block plaintext-HTTP outbound calls in pi-setup/
+    name: Block plaintext outbound calls (http/ws/mqtt/ftp) in pi-setup/
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,7 +39,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Scan pi-setup/ for plaintext-HTTP external URLs
+      # Covers http://, ws://, mqtt://, ftp:// — every scheme that has a
+      # TLS-protected sibling (https/wss/mqtts/ftps/sftp). Internal-host
+      # allow-list and `hanryx-allow-plaintext` marker apply identically
+      # to every scheme.
+      - name: Scan pi-setup/ for plaintext external URLs (http/ws/mqtt/ftp)
         run: python3 pi-setup/scripts/check-no-plaintext-http.py
 
   no-floating-tags:

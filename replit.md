@@ -141,16 +141,27 @@ env["GIT_SSL_NO_VERIFY"] = "1"
 python3 pi-setup/scripts/check-no-plaintext-http.py
 ```
 
-**Internal hosts are allow-listed by default.** The pi-setup intentionally talks to its own services over the Docker network and the LAN/VPN using plaintext, so URLs whose host matches any of the following are *not* findings: `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, RFC 1918 ranges (`10/8`, `172.16/12`, `192.168/16`), link-local `169.254/16`, Tailscale CGNAT `100.64/10`, anything ending in `.local` / `.internal` / `.ts.net` / `.lan` / `.home.arpa`, any bare hostname with no dots (treated as a Docker service name like `pos`, `storefront`, `db`, `redis`, `pgbouncer`, `mainpi`), any host that contains a shell/template variable (`${VAR}`, `$(cmd)`, `<PLACEHOLDER>`), and known XML/XSD namespace identifiers (`www.w3.org`, `schemas.xmlsoap.org`, etc.).
+**Schemes covered.** The same scanner enforces TLS for every URL scheme that has a TLS-protected sibling. As of Task #23 the covered insecure schemes are:
 
-**Allow-listing an audited exception.** If a real external plaintext URL is genuinely required (the canonical example is NetworkManager's captive-portal probe at `http://connectivity-check.ubuntu.com`, which must be HTTP because captive portals serve 302s to themselves and an HTTPS probe would TLS-fail instead of detecting the captive state), put the marker `hanryx-allow-plaintext` (optionally with `: <reason>`) in a comment on the same line as the URL or on the line immediately above it. The sibling `hanryx-allow-insecure` marker is also honoured here so a single comment can satisfy both checks. Example (`pi-setup/scripts/setup-network-failover.sh`):
+| Insecure | Use instead |
+| --- | --- |
+| `http://` | `https://` |
+| `ws://` | `wss://` |
+| `mqtt://` | `mqtts://` |
+| `ftp://` | `ftps://` or `sftp://` |
+
+The TLS-protected variants (`https://`, `wss://`, `mqtts://`, `ftps://`, `sftp://`) are never flagged. The internal-host allow-list and the `hanryx-allow-plaintext` / `hanryx-allow-insecure` markers behave identically for every scheme — the scheme list lives in `INSECURE_SCHEMES` in the script and is the single place to add a new one (e.g. `smtp` if a future task wires up SMTP delivery).
+
+**Internal hosts are allow-listed by default.** The pi-setup intentionally talks to its own services over the Docker network and the LAN/VPN using plaintext, so URLs whose host matches any of the following are *not* findings (regardless of scheme): `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, RFC 1918 ranges (`10/8`, `172.16/12`, `192.168/16`), link-local `169.254/16`, Tailscale CGNAT `100.64/10`, anything ending in `.local` / `.internal` / `.ts.net` / `.lan` / `.home.arpa`, any bare hostname with no dots (treated as a Docker service name like `pos`, `storefront`, `db`, `redis`, `pgbouncer`, `mainpi`), any host that contains a shell/template variable (`${VAR}`, `$(cmd)`, `<PLACEHOLDER>`), and known XML/XSD namespace identifiers (`www.w3.org`, `schemas.xmlsoap.org`, etc.).
+
+**Allow-listing an audited exception.** If a real external plaintext URL is genuinely required (the canonical example is NetworkManager's captive-portal probe at `http://connectivity-check.ubuntu.com`, which must be HTTP because captive portals serve 302s to themselves and an HTTPS probe would TLS-fail instead of detecting the captive state), put the marker `hanryx-allow-plaintext` (optionally with `: <reason>`) in a comment on the same line as the URL or on the line immediately above it. The sibling `hanryx-allow-insecure` marker is also honoured here so a single comment can satisfy both checks. The same marker mechanism applies to the new `ws://` / `mqtt://` / `ftp://` schemes. Example (`pi-setup/scripts/setup-network-failover.sh`):
 
 ```ini
 # hanryx-allow-plaintext: NetworkManager captive-portal probe must be plaintext HTTP.
 uri=http://connectivity-check.ubuntu.com
 ```
 
-**Extending the guard.** To allow a new internal hostname suffix or known-safe namespace prefix, edit `INTERNAL_SUFFIXES` / `INTERNAL_HOSTNAMES` / `XML_NAMESPACE_HOSTS` in `pi-setup/scripts/check-no-plaintext-http.py`. The marker mechanism handles one-off exceptions — prefer it over broadening the global allow-list.
+**Extending the guard.** To cover a new insecure scheme, append it to `INSECURE_SCHEMES` in `pi-setup/scripts/check-no-plaintext-http.py` (the regex, error messages, and "OK" message all read from that tuple). To allow a new internal hostname suffix or known-safe namespace prefix, edit `INTERNAL_SUFFIXES` / `INTERNAL_HOSTNAMES` / `XML_NAMESPACE_HOSTS` in the same script. The marker mechanism handles one-off exceptions — prefer it over broadening the global allow-list.
 
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
