@@ -101,6 +101,35 @@ jobs:
       - name: Verify VCS pins in requirements-vcs.txt are full 40-char SHAs
         run: python3 pi-setup/scripts/check-vcs-pins-are-full-shas.py
 
+  image-pins-resolve:
+    name: Verify Docker Hub image pins still resolve
+    runs-on: ubuntu-latest
+    # registry-1.docker.io is occasionally rate-limited / slow — give
+    # the job plenty of headroom on top of the script's per-request
+    # retry/backoff. The script also caches by (repo, tag) so the same
+    # image pinned in two stages (builder + runtime) is only one HTTP
+    # round-trip.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # For every name:tag@sha256:<digest> pin in pi-setup/, hit
+      # registry-1.docker.io and confirm BOTH that the tag still
+      # resolves to a manifest (no 404 — i.e. the upstream maintainer
+      # didn't retire it, the way edoburu/pgbouncer:1.21.0 was retired
+      # under us) AND that the resolved manifest digest still matches
+      # the pinned digest (no silent supply-chain re-push). Fails the
+      # build with a clear message naming the offending image if
+      # either check fails.
+      - name: Verify each pinned tag still resolves and digest matches
+        run: python3 pi-setup/scripts/check-image-pins-resolve.py
+
   debian-snapshot-date-published:
     name: Verify APT_SNAPSHOT_DATE is published on snapshot.debian.org
     runs-on: ubuntu-latest

@@ -297,6 +297,30 @@ message if any are violated:
 If the dry-run reports drift, reconcile the source files by hand and
 re-run.
 
+### CI guard against retired tags / digest drift
+
+A second helper, `pi-setup/scripts/check-image-pins-resolve.py`, runs
+in CI on every PR that touches `pi-setup/`. For every
+`name:tag@sha256:<digest>` pin it confirms two things against
+`registry-1.docker.io`:
+
+1. The tag still resolves to a manifest (no 404 — i.e. the upstream
+   maintainer hasn't retired the tag the way `edoburu/pgbouncer:1.21.0`
+   was retired under us during Task #14).
+2. The resolved multi-arch index digest still matches the digest
+   pinned in the file (no silent supply-chain re-push).
+
+The check fails the build with a clear message naming the offending
+image if either invariant is broken — the bug doesn't reach the Pi.
+You can run it locally any time with:
+
+```bash
+python3 pi-setup/scripts/check-image-pins-resolve.py
+```
+
+It only reads the registry; it never edits files. To fix a finding,
+run the refresher above (or follow the manual recipe below).
+
 ### Manual recipe (fallback)
 
 If the script is unavailable (no Python, no network access to Docker
