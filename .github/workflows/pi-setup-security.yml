@@ -57,6 +57,50 @@ jobs:
       - name: Scan pi-setup/ for floating Docker tags
         run: python3 pi-setup/scripts/check-no-floating-tags.py
 
+  lockfile-drift:
+    name: Catch Python lockfile drift in pi-setup/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # `lock-python-deps.sh` shells out to `uv pip compile`. The script
+      # tolerates either a standalone `uv` binary or `python3 -m uv`, so
+      # installing via pip is enough — no need for a third-party action.
+      - name: Install uv
+        run: python3 -m pip install --upgrade uv
+
+      # Regenerate both lockfiles from the requirements.in sources, exactly
+      # the way a contributor is supposed to do it locally.
+      - name: Regenerate pi-setup lockfiles from requirements.in
+        run: pi-setup/scripts/lock-python-deps.sh all
+
+      # If the regenerated lockfiles differ from what's committed, someone
+      # edited requirements.in (or hand-edited requirements.txt) without
+      # rerunning the lock script. Fail loudly with the diff in the log so
+      # the author can see exactly what they need to commit.
+      - name: Fail if lockfiles drifted from requirements.in
+        run: |
+          if ! git diff --exit-code \
+                pi-setup/requirements.txt \
+                pi-setup/recognizer/requirements.txt; then
+            echo ""
+            echo "::error::Lockfile drift detected. The committed requirements.txt files do not match what 'pi-setup/scripts/lock-python-deps.sh all' produces from the requirements.in sources."
+            echo "::error::Run 'pi-setup/scripts/lock-python-deps.sh all' locally and commit the regenerated requirements.txt files."
+            exit 1
+          fi
+
+      # The lock script can't hash git+ URLs, so reproducibility for those
+      # deps depends entirely on the URL ending in a full 40-char commit SHA.
+      # Reject branch names, tags, and short SHAs in requirements-vcs.txt.
+      - name: Verify VCS pins in requirements-vcs.txt are full 40-char SHAs
+        run: python3 pi-setup/scripts/check-vcs-pins-are-full-shas.py
+
   debian-snapshot-date-published:
     name: Verify APT_SNAPSHOT_DATE is published on snapshot.debian.org
     runs-on: ubuntu-latest
