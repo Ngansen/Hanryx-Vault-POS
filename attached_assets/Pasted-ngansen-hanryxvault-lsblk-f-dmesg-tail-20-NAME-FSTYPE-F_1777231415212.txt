@@ -1,0 +1,65 @@
+ngansen@hanryxvault:~ $ lsblk -f
+dmesg | tail -20
+NAME FSTYPE FSVER LABEL  UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0
+     swap   1                                                                
+mmcblk0
+│                                                                            
+├─mmcblk0p1
+│    vfat   FAT32 bootfs F587-071F                             432.3M    15% /boot/firmware
+└─mmcblk0p2
+     ext4   1.0   rootfs d6944274-f2f7-4644-96a4-213c3b367f5c   23.9G    55% /
+zram0
+     swap   1     zram0  0e2aa0dd-5b00-4bdd-9aa1-14f9f33e9b95                [SWAP]
+[106117.859939] veth1ecbe09 (unregistering): left promiscuous mode
+[106117.859944] docker0: port 1(veth1ecbe09) entered disabled state
+[106118.553209] docker0: port 1(vethc130250) entered blocking state
+[106118.553220] docker0: port 1(vethc130250) entered disabled state
+[106118.553291] vethc130250: entered allmulticast mode
+[106118.555537] vethc130250: entered promiscuous mode
+[106118.571857] docker0: port 1(vethc130250) entered blocking state
+[106118.571867] docker0: port 1(vethc130250) entered forwarding state
+[106118.737552] docker0: port 1(vethc130250) entered disabled state
+[106118.738217] eth0: renamed from veth31f9f8b
+[106118.739367] docker0: port 1(vethc130250) entered blocking state
+[106118.739376] docker0: port 1(vethc130250) entered forwarding state
+[106360.636660] docker0: port 1(vethc130250) entered disabled state
+[106360.637024] veth31f9f8b: renamed from eth0
+[106360.685558] docker0: port 1(vethc130250) entered blocking state
+[106360.685568] docker0: port 1(vethc130250) entered forwarding state
+[106360.747970] docker0: port 1(vethc130250) entered disabled state
+[106360.748384] vethc130250 (unregistering): left allmulticast mode
+[106360.748400] vethc130250 (unregistering): left promiscuous mode
+[106360.748405] docker0: port 1(vethc130250) entered disabled state
+ngansen@hanryxvault:~ $ dmesg | grep -iE "usb|sd[a-z]" | tail -30
+[    0.546282] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    0.546283] usb usb3: Product: xHCI Host Controller
+[    0.546285] usb usb3: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[    0.546287] usb usb3: SerialNumber: xhci-hcd.1
+[    0.546347] hub 3-0:1.0: USB hub found
+[    0.546437] usb usb4: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 6.12
+[    0.546439] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    0.546441] usb usb4: Product: xHCI Host Controller
+[    0.546443] usb usb4: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[    0.546444] usb usb4: SerialNumber: xhci-hcd.1
+[    0.546498] hub 4-0:1.0: USB hub found
+[    0.564579] mmc0: SDHCI controller on 1000fff000.mmc [1000fff000.mmc] using ADMA 64-bit
+[    0.671262] mmc0: new ultra high speed SDR104 SDXC card at address aaaa
+[    0.719116] mmc1: SDHCI controller on 1001100000.mmc [1001100000.mmc] using ADMA 64-bit
+[    0.749162] mmc1: new ultra high speed DDR50 SDIO card at address 0001
+[    0.792597] usb 3-1: new full-speed USB device number 2 using xhci-hcd
+[    0.952316] usb 3-1: New USB device found, idVendor=04b8, idProduct=0e20, bcdDevice= 1.00
+[    0.952321] usb 3-1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[    0.952324] usb 3-1: Product: TM-m30-ii
+[    0.952326] usb 3-1: Manufacturer: EPSON  
+[    0.952327] usb 3-1: SerialNumber: 544336595922240001
+[    3.915310] usblp 3-1:1.0: usblp0: USB Bidirectional printer dev 2 if 0 alt 0 proto 2 vid 0x04B8 pid 0x0E20
+[    3.940705] usbcore: registered new interface driver usblp
+[    3.955635] cdc_acm 3-1:1.1: ttyACM0: USB ACM device
+[    3.955673] usbcore: registered new interface driver cdc_acm
+[    3.955675] cdc_acm: USB Abstract Control Model driver for USB modems and ISDN adapters
+[    4.042636] brcmfmac: brcmf_fw_alloc_request: using brcm/brcmfmac43455-sdio for chip BCM4345/6
+[    4.042822] usbcore: registered new interface driver brcmfmac
+[   11.034305] usblp0: removed
+[   11.050258] usblp 3-1:1.0: usblp0: USB Bidirectional printer dev 2 if 0 alt 0 proto 2 vid 0x04B8 pid 0x0E20
+ngansen
