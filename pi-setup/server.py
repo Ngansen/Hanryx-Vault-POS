@@ -9751,6 +9751,7 @@ _ADMIN_CSS = f"<style>{_ADMIN_BASE_CSS}</style>"
 def _admin_nav(active: str = "dashboard") -> str:
     pages = [
         ("dashboard", "/admin",             "🏠", "Dashboard"),
+        ("search",    "/admin/search",      "🔎", "Search"),
         ("market",    "/admin/market",      "📈", "Market"),
         ("sets",      "/admin/sets",        "🗂️", "Sets"),
         ("imports",   "/admin/imports",     "🚚", "Imports"),
