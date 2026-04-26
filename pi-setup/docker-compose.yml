@@ -62,7 +62,13 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || true"]
+      # edoburu/pgbouncer is Alpine-based and ships without the Postgres
+      # client tools, so `pg_isready` isn't available here (the previous
+      # `|| true` was masking that and making the badge always green).
+      # busybox `nc` IS available, and a TCP connect to pgbouncer's listen
+      # port is a truthful liveness signal — if pgbouncer is up it accepts
+      # the TCP handshake, if it's down/crashed the connect fails.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432"]
       interval: 10s
       timeout: 5s
       retries: 5
