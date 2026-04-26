@@ -11,7 +11,10 @@ if [ -n "$GITHUB_TOKEN" ]; then
     REPO_URL="https://${GITHUB_TOKEN}@github.com/Ngansen/HanRyx-Vault.git"
 fi
 
-export GIT_SSL_NO_VERIFY=1
+if [ "${HANRYX_DEBUG_INSECURE_GIT:-0}" = "1" ]; then
+    echo "[storefront] WARNING: HANRYX_DEBUG_INSECURE_GIT=1 set, disabling SSL verification for git. Do NOT use in production."
+    export GIT_SSL_NO_VERIFY=1
+fi
 
 if [ -d "$SRC_DIR/.git" ]; then
     echo "[storefront] Updating existing source..."
