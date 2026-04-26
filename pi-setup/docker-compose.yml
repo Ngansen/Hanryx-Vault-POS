@@ -8,7 +8,13 @@ services:
     # Pinned to an explicit pgvector + Postgres version so `docker compose pull`
     # is reproducible on the Pi. Bump deliberately, not accidentally — a Postgres
     # minor or new pgvector build can change planner defaults / extension SQL.
-    image: pgvector/pgvector:0.7.4-pg16
+    # The trailing @sha256:… is the content-addressable digest of the multi-arch
+    # manifest list: tags on Docker Hub are technically mutable (a hijacked
+    # registry account could re-push the same tag with malicious bits), so
+    # pinning by digest makes `docker compose pull` tamper-evident — substituted
+    # bits change the digest and the pull fails. The tag is kept for human
+    # readability only. See `docs/REPRODUCIBILITY.md` for the bump procedure.
+    image: pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10
     restart: unless-stopped
     command: ["postgres", "-c", "password_encryption=md5"]
     environment:
@@ -36,7 +42,10 @@ services:
     # reproducible on the Pi. The 7-alpine floating tag silently picks up new
     # Redis 7.x minors and new Alpine bases (which can drop busybox applets
     # the healthcheck relies on). Bump deliberately, not on every pull.
-    image: redis:7.4.1-alpine
+    # The trailing @sha256:… is the content-addressable digest of the multi-arch
+    # manifest list — see the comment on the `db:` image above and
+    # `docs/REPRODUCIBILITY.md` for the rationale and bump procedure.
+    image: redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275
     restart: unless-stopped
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
     healthcheck:
@@ -53,7 +62,16 @@ services:
 
   # ── PgBouncer — connection pooler ────────────────────────────────────────────
   pgbouncer:
-    image: edoburu/pgbouncer:1.21.0
+    # Pinned to an explicit edoburu/pgbouncer build so `docker compose pull` is
+    # reproducible on the Pi. The trailing @sha256:… is the content-addressable
+    # digest of the multi-arch manifest list — see the comment on the `db:`
+    # image above and `docs/REPRODUCIBILITY.md` for the rationale and bump
+    # procedure.
+    #
+    # Tag note: the previous `1.21.0` (no patch suffix) tag is no longer
+    # published on Docker Hub — only the `1.21.0-pN` patch revisions remain.
+    # `-p2` is the latest patch in the 1.21.0 line and is what we now pin.
+    image: edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c
     restart: unless-stopped
     environment:
       DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos

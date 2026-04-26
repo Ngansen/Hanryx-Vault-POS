@@ -17,7 +17,15 @@
 # Pinned point release so `docker compose build` on the Pi is reproducible.
 # Bump deliberately — torch/easyocr/opencv behavior is sensitive to the
 # underlying CPython and bookworm-slim point release.
-FROM python:3.11.10-slim-bookworm
+#
+# The trailing @sha256:… is the content-addressable digest of the multi-arch
+# manifest list. Tags on Docker Hub are mutable in principle (a compromised
+# upstream could re-push the same tag with different bits); pinning by digest
+# makes the pull tamper-evident — substituted bits change the digest and
+# `docker pull` refuses them. The tag is kept for human readability only.
+# Keep this digest in lock-step with the one in `../Dockerfile` (same base
+# image) — see `../docs/REPRODUCIBILITY.md` for the bump procedure.
+FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e
 
 # ── apt snapshot pin ─────────────────────────────────────────────────────────
 # Lock apt to a specific point in time on snapshot.debian.org so two

@@ -2,7 +2,14 @@
 # Pinned point release so `docker compose build` on the Pi is reproducible.
 # Keep in lock-step with the runtime stage's FROM below so `npm ci --omit=dev`
 # runs against the same Node ABI the build used.
-FROM node:20.18.0-bookworm-slim AS builder
+#
+# The trailing @sha256:… is the content-addressable digest of the multi-arch
+# manifest list. Tags on Docker Hub are mutable in principle (a compromised
+# upstream could re-push the same tag with different bits); pinning by digest
+# makes the pull tamper-evident — substituted bits change the digest and
+# `docker pull` refuses them. The tag is kept for human readability only.
+# See `../../docs/REPRODUCIBILITY.md` for the bump procedure.
+FROM node:20.18.0-bookworm-slim@sha256:28fbbb764069c698ead61d6a739a7615e8f0e07a4b8fe1473ceca70c1c3d6aaa AS builder
 
 # ── apt snapshot pin ─────────────────────────────────────────────────────────
 # Lock apt to a specific point in time on snapshot.debian.org so two
@@ -56,9 +63,10 @@ RUN npm run build
 
 # ── Stage 2: runtime ───────────────────────────────────────────────────────────
 # Runtime stage — MUST stay pinned to the same Node + bookworm-slim point
-# release as the builder above. Native addons in node_modules link against
-# that exact Node ABI; a mismatch would silently break modules at boot.
-FROM node:20.18.0-bookworm-slim
+# release AND the same @sha256 digest as the builder above. Native addons in
+# node_modules link against that exact Node ABI; a mismatch would silently
+# break modules at boot. Bumping one without the other is a bug.
+FROM node:20.18.0-bookworm-slim@sha256:28fbbb764069c698ead61d6a739a7615e8f0e07a4b8fe1473ceca70c1c3d6aaa
 
 WORKDIR /app
 

@@ -10,7 +10,7 @@ The reproducibility guarantees layer like this:
 
 | Layer | Locked by | Bumping it |
 |---|---|---|
-| Base image (`FROM`) | content-hash digest in the `FROM` line (Task #11) | edit `Dockerfile`, swap `@sha256:…` |
+| Base image (`FROM` / `image:`) | `name:tag@sha256:…` content-addressable digest | edit the `FROM` / `image:` line, swap both tag and `@sha256:…` ([§6](#6-bumping-base-image-digests-from--image)) |
 | `apt-get install` (Debian images) | snapshot.debian.org snapshot date | bump `APT_SNAPSHOT_DATE` build arg |
 | `apk add` (Alpine pokeapi image) | `pkg=version` pins | bump `ALPINE_GIT_VERSION` / `ALPINE_BASH_VERSION` build args |
 | `pip install` | `requirements.txt` with `--require-hashes` | edit `requirements.in`, regen lockfile |
@@ -185,3 +185,75 @@ If it doesn't, something escaped the lock — most often a layer reading
 the wall-clock (timestamps in build output) rather than a real package
 drift. Use `docker history --no-trunc <image>` and `dive` to find the
 offending layer.
+
+---
+
+## 6. Bumping base image digests (`FROM` / `image:`)
+
+Every `FROM` line in the four in-tree Dockerfiles and every `image:` line
+in `pi-setup/docker-compose.yml` is pinned in the form
+`name:tag@sha256:<digest>`. The tag is human-readable — the digest is what
+Docker actually pulls. Tags on Docker Hub are technically mutable, so
+without `@sha256:…` a hijacked upstream maintainer (or a compromised
+registry account) could re-push the same tag with malicious bits and a
+fresh `docker compose pull` on the Pi would install them silently. With
+the digest pinned, substituted bits change the digest and the pull fails
+loudly.
+
+The currently-pinned base images:
+
+| File | Image |
+|---|---|
+| `pi-setup/Dockerfile` (builder + runtime) | `python:3.11.10-slim-bookworm` |
+| `pi-setup/recognizer/Dockerfile` | `python:3.11.10-slim-bookworm` |
+| `pi-setup/pokeapi/Dockerfile` | `nginx:1.27.2-alpine` |
+| `pi-setup/services/storefront/Dockerfile` (builder + runtime) | `node:20.18.0-bookworm-slim` |
+| `pi-setup/docker-compose.yml` (`db`) | `pgvector/pgvector:0.7.4-pg16` |
+| `pi-setup/docker-compose.yml` (`redis`) | `redis:7.4.1-alpine` |
+| `pi-setup/docker-compose.yml` (`pgbouncer`) | `edoburu/pgbouncer:1.21.0-p2` |
+
+### To bump a base image
+
+1. Pick the new tag you want (e.g. you're moving from
+   `python:3.11.10-slim-bookworm` to `python:3.11.11-slim-bookworm`).
+2. Look up the new tag's digest. The simplest way is to pull it locally
+   and read `RepoDigests`:
+
+   ```bash
+   docker pull python:3.11.11-slim-bookworm
+   docker inspect --format '{{index .RepoDigests 0}}' python:3.11.11-slim-bookworm
+   # → python@sha256:<digest>
+   ```
+
+   On a machine without docker (or without the right architecture), you
+   can hit the registry HTTP API directly. For an `library/<image>` tag
+   on Docker Hub:
+
+   ```bash
+   REPO=library/python   # or pgvector/pgvector, edoburu/pgbouncer, etc.
+   TAG=3.11.11-slim-bookworm
+   TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" | jq -r .token)
+   curl -sI -H "Authorization: Bearer ${TOKEN}" \
+     -H 'Accept: application/vnd.oci.image.index.v1+json' \
+     -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+     "https://registry-1.docker.io/v2/${REPO}/manifests/${TAG}" \
+   | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+   # → sha256:<digest>
+   ```
+
+   Use the **manifest-list / image-index digest** (returned when you
+   `Accept` the `index.v1+json` / `manifest.list.v2+json` types), not a
+   per-architecture manifest digest. The list digest is what supports
+   multi-arch pulls — if you accidentally pin a single-arch manifest,
+   the build will fail on architectures it doesn't cover.
+
+3. Update **both** the tag and the digest in the relevant file(s). For
+   `pi-setup/Dockerfile` and `pi-setup/services/storefront/Dockerfile`
+   the digest appears twice — keep the builder and runtime stages in
+   lock-step. The recognizer Dockerfile's Python pin must also stay in
+   lock-step with the POS Dockerfile (same base image).
+4. `docker compose build --no-cache <service>` and smoke-test.
+
+If you only ever update the tag and forget the digest, `docker pull`
+will refuse the image with a manifest-mismatch error — that's the
+desired behaviour (no silent drift, no half-bumped pin).

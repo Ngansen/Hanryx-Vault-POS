@@ -1,7 +1,15 @@
 # Pinned point release so `docker compose build` on the Pi is reproducible.
 # Keep in lock-step with the runtime stage's FROM below — the venv built here
 # is copied into the runtime image, so the two Pythons MUST match.
-FROM python:3.11.10-slim-bookworm AS builder
+#
+# The trailing @sha256:… is the content-addressable digest of the multi-arch
+# manifest list. Docker Hub tags are technically mutable (a compromised
+# upstream could re-push the same tag with different bits), so pinning by
+# digest makes this build tamper-evident: a corrupted or substituted image
+# would change the digest and `docker pull` would refuse it. The tag is
+# kept for human readability only — the digest is what's actually pulled.
+# See `docs/REPRODUCIBILITY.md` for the bump procedure.
+FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e AS builder
 
 # ── apt snapshot pin ─────────────────────────────────────────────────────────
 # Lock apt to a specific point in time on snapshot.debian.org so two
@@ -59,10 +67,11 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt && \
     pip install --no-cache-dir --no-deps -r requirements-vcs.txt
 
-# Runtime stage — MUST stay pinned to the same Python point release as the
-# builder above. /opt/venv was built against that exact CPython ABI, so a
-# mismatch would silently break extension modules (psycopg2, pillow, etc.).
-FROM python:3.11.10-slim-bookworm
+# Runtime stage — MUST stay pinned to the same Python point release AND the
+# same @sha256 digest as the builder above. /opt/venv was built against that
+# exact CPython ABI, so a mismatch would silently break extension modules
+# (psycopg2, pillow, etc.). Bumping one without the other is a bug.
+FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e
 
 # ── apt snapshot pin (runtime stage) ─────────────────────────────────────────
 # Same lock as the builder stage above. Keep ARG defaults in lock-step so a
