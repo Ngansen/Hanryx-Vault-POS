@@ -5,7 +5,10 @@ services:
   #   vaultpos   — Flask POS server (inventory, sales, scan queue, etc.)
   #   storefront — HanRyx-Vault public storefront (products, orders, users)
   db:
-    image: pgvector/pgvector:pg16
+    # Pinned to an explicit pgvector + Postgres version so `docker compose pull`
+    # is reproducible on the Pi. Bump deliberately, not accidentally — a Postgres
+    # minor or new pgvector build can change planner defaults / extension SQL.
+    image: pgvector/pgvector:0.7.4-pg16
     restart: unless-stopped
     command: ["postgres", "-c", "password_encryption=md5"]
     environment:
@@ -29,7 +32,11 @@ services:
 
   # ── Redis — cross-worker pub/sub (SSE) + shared L2 cache ─────────────────────
   redis:
-    image: redis:7-alpine
+    # Pinned to an explicit Redis + Alpine build so `docker compose pull` is
+    # reproducible on the Pi. The 7-alpine floating tag silently picks up new
+    # Redis 7.x minors and new Alpine bases (which can drop busybox applets
+    # the healthcheck relies on). Bump deliberately, not on every pull.
+    image: redis:7.4.1-alpine
     restart: unless-stopped
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
     healthcheck:
