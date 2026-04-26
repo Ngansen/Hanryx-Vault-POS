@@ -1,9 +1,16 @@
 # Tablet ↔ POS server API contract
 
 This document is the **single source of truth** for the JSON shapes the
-tablet (Expo APK) exchanges with the Main Pi (`http://192.168.86.36:8080`).
-The tablet code lives in a separate repo, so when you change a route here
-update this file in the same commit.
+tablet (Expo APK) exchanges with the Main Pi.
+
+**Default base URL:** `http://100.125.5.34:8080` (Tailscale — works
+anywhere the tablet has internet, including iPhone-hotspot at card shows).
+**LAN fallback:** `http://192.168.86.36:8080` (home/shop wifi only).
+
+The tablet code lives in a separate repo (`tablet-agent`), so when you
+change a route here update this file in the same commit. See
+`docs/TABLET_APK_SPEC.md` for the full APK build spec including the
+`/print/status` readiness contract.
 
 ---
 
