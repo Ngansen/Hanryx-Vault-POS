@@ -89,14 +89,27 @@ mirror to a specific point in time, so two rebuilds install identical
 ### To pick up security updates
 
 1. Pick a new snapshot date in `YYYYMMDDTHHMMSSZ` format (e.g.
-   `20260601T000000Z`). Verify it exists on
-   `https://snapshot.debian.org/archive/debian/<DATE>/`.
+   `20260601T000000Z`). Verify it exists on **both** the main archive
+   and the security archive (a date may be published for one and not
+   the other if you grab it too soon after midnight UTC):
+   - `https://snapshot.debian.org/archive/debian/<DATE>/`
+   - `https://snapshot.debian.org/archive/debian-security/<DATE>/`
 2. Update `APT_SNAPSHOT_DATE` in **all three** Debian Dockerfiles
    (keep them in lock-step):
    - `pi-setup/Dockerfile` (in BOTH the builder and runtime stages)
    - `pi-setup/recognizer/Dockerfile`
    - `pi-setup/services/storefront/Dockerfile`
-3. `docker compose build --no-cache` and smoke-test.
+3. Run the snapshot-date check locally to confirm the new date is
+   actually published before you push:
+   ```bash
+   python3 pi-setup/scripts/check-debian-snapshot-date.py
+   ```
+   This is the same guard that runs in
+   `.github/workflows/pi-setup-security.yml` (job
+   `debian-snapshot-date-published`) on every PR — if it fails locally
+   it will fail in CI too, and if it passes in CI then `docker compose
+   build` on the Pi won't 404 against the snapshot mirror.
+4. `docker compose build --no-cache` and smoke-test.
 
 To override at build time without editing the file:
 

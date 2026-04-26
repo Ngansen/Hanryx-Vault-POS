@@ -56,3 +56,21 @@ jobs:
 
       - name: Scan pi-setup/ for floating Docker tags
         run: python3 pi-setup/scripts/check-no-floating-tags.py
+
+  debian-snapshot-date-published:
+    name: Verify APT_SNAPSHOT_DATE is published on snapshot.debian.org
+    runs-on: ubuntu-latest
+    # snapshot.debian.org is occasionally slow / under load — give the job
+    # plenty of headroom on top of the script's per-URL retry/backoff.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify each APT_SNAPSHOT_DATE exists on snapshot.debian.org
+        run: python3 pi-setup/scripts/check-debian-snapshot-date.py
