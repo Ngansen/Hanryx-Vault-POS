@@ -13,7 +13,7 @@ It does NOT require any other context from the POS repo.
 ## 1. Architecture
 
 ```
-┌─────────────────┐  WireGuard / LAN  ┌──────────────────┐
+┌─────────────────┐  Tailscale / LAN  ┌──────────────────┐
 │ Tablet (Expo)   │ ◄───────────────► │ Main Pi  :8080   │
 │ Android APK     │   poll 2s         │ Flask + Redis    │
 └─────────────────┘                   └──────────────────┘
