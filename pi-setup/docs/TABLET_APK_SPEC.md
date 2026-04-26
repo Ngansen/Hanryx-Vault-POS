@@ -33,16 +33,25 @@ It does NOT require any other context from the POS repo.
 
 ## 2. Network configuration
 
-The tablet reaches the Pi over either:
+The tablet reaches the Pi over **Tailscale** (default) or **home LAN**
+(fallback for at-desk dev). WireGuard is no longer used — replaced by
+Tailscale for simpler key management and roaming.
 
-| Mode      | Base URL                          | When                      |
-|-----------|-----------------------------------|---------------------------|
-| In-store  | `http://192.168.86.36:8080`       | Tablet is on shop wifi    |
-| Remote    | `http://10.8.0.1:8080`            | Tablet is on WireGuard    |
+| Mode                 | Base URL                       | When                                                |
+|----------------------|--------------------------------|-----------------------------------------------------|
+| Tailscale (default)  | `http://100.125.5.34:8080`     | Anywhere — works on iPhone hotspot at card shows    |
+| Home LAN             | `http://192.168.86.36:8080`    | Tablet on home/shop wifi only (lower latency)       |
 
-The base URL must be **configurable in-app** on a settings screen, plus
-an "API Token" field. Persist both with `expo-secure-store` so they
-survive APK reinstalls/restarts.
+**The Tailscale URL must be the baked-in default** — a fresh install (or
+"Clear app data") must show `http://100.125.5.34:8080` already populated
+in the Server URL field, so the operator can take the tablet straight to
+a show without typing anything.
+
+The base URL must remain **configurable in-app** on a settings screen,
+plus an "API Token" field. Persist both with `expo-secure-store` so they
+survive APK reinstalls/restarts. Add a one-tap **"Use home LAN"** preset
+button next to the URL field that fills `http://192.168.86.36:8080` so
+home dev still works without retyping.
 
 ---
 
@@ -64,7 +73,7 @@ opens the settings screen and saves a new value.
 
 ---
 
-## 4. Endpoints (only 3 you actually need)
+## 4. Endpoints (4 you actually need)
 
 ### 4.1 `GET /tablet/trade/current`
 
@@ -127,6 +136,58 @@ NOT wait for the next poll.
 
 Same shape as accept. Response: `{ "ok": true, "status": "rejected" }`.
 
+### 4.4 `GET /print/status`
+
+Polled every **5 seconds** while the print/sale screen is the foreground
+screen. Pause polling when the screen is backgrounded.
+
+**No auth header required** — this endpoint is intentionally
+unauthenticated for diagnostics. Do NOT send `X-API-KEY`.
+
+**Response (always 200):**
+
+```json
+{
+  "printer_available": true,
+  "printer_path": "/dev/usb/lp0",
+  "bt_mac": null
+}
+```
+
+| Field               | Type            | Meaning                                                                                          |
+|---------------------|-----------------|--------------------------------------------------------------------------------------------------|
+| `printer_available` | bool            | Server can open the printer right now. **Use as the primary readiness gate.**                     |
+| `printer_path`      | string \| null  | Device the server will write to. `/dev/usb/lp0` = real USB printer. `"cups"` = no USB device. `null` = no config. |
+| `bt_mac`            | string \| null  | Bluetooth MAC. **Currently null and will stay null** — do NOT require this to be non-null.        |
+
+**Required readiness check** (replace any existing logic):
+
+```ts
+const isReady =
+  res.printer_available === true &&
+  typeof res.printer_path === 'string' &&
+  res.printer_path !== 'cups' &&
+  /^\/dev\/usb\/lp\d+$/.test(res.printer_path);
+```
+
+**Banner text on the diagnostics / sale screen:**
+
+| Condition                                                       | Text                       |
+|-----------------------------------------------------------------|----------------------------|
+| `isReady === true`                                              | `Printer ready (USB)`      |
+| `printer_available === false` OR `printer_path === "cups"`      | `Printer not connected`    |
+| Network error / timeout                                         | `Cannot reach POS server`  |
+
+**Do NOT:**
+- Require `bt_mac` to be non-null.
+- Check for any specific USB VID/PID (server abstracts the device).
+- Cache readiness state for more than one poll cycle.
+- Block the print button on `bt_mac` being null.
+
+The diagnostics screen must include a **"Refresh printer status"** button
+that triggers an immediate poll and updates the banner — guards against
+stale state if the operator just plugged the printer in.
+
 ---
 
 ## 5. Screens (3 screens total)
@@ -181,15 +242,27 @@ Full-screen, ~3 second auto-dismiss back to idle.
 
 ### 5.4 Settings screen (gear icon → modal)
 
-Two fields, "Save" button:
+Two fields, "Save" button, plus presets and diagnostics:
 
-| Field      | Storage                        |
-|------------|--------------------------------|
-| Server URL | `secure-store: serverUrl`      |
-| API Token  | `secure-store: apiToken`       |
+| Field      | Storage                        | Default                          |
+|------------|--------------------------------|----------------------------------|
+| Server URL | `secure-store: serverUrl`      | `http://100.125.5.34:8080`       |
+| API Token  | `secure-store: apiToken`       | (empty — operator pastes on first install) |
 
-A "Test Connection" button that does `GET /health` (no auth) then
-`GET /tablet/trade/current` (with auth) and shows pass/fail for each.
+**Preset buttons** (next to the URL field, fill the field on tap):
+- **"Use Tailscale"** → `http://100.125.5.34:8080`
+- **"Use home LAN"** → `http://192.168.86.36:8080`
+
+**"Test Connection"** button — three sequential checks, each with a
+green/red indicator:
+1. `GET /health` (no auth) — server reachable
+2. `GET /tablet/trade/current` (with `X-API-KEY`) — auth works
+3. `GET /print/status` (no auth) — readiness payload parses and matches
+   the §4.4 contract
+
+**"Refresh printer status"** button — fires a one-shot `GET /print/status`
+and updates the diagnostics banner immediately, bypassing the 5-second
+poll cadence.
 
 ---
 
@@ -267,8 +340,10 @@ with a self-signed keystore (sideload only).
 
 The APK is "done" when:
 
-1. Fresh install → Settings → enter URL + token → Test Connection green
-   on both checks.
+1. Fresh install (or "Clear app data") → Settings → URL field is
+   pre-populated with `http://100.125.5.34:8080` (Tailscale) — operator
+   only needs to paste the API token. Test Connection green on all
+   three checks (`/health`, `/tablet/trade/current`, `/print/status`).
 2. Operator on the Pi clicks **📲 Send Offer to Tablet** for a 3-card
    trade-in → tablet flips from idle to the offer screen within 2 s.
 3. All 3 line items render with correct name/condition/offer/market,
@@ -288,6 +363,18 @@ The APK is "done" when:
    automatically.
 9. APK survives device reboot — settings persisted, polls resume on
    first app launch (no need to re-enter token).
+10. **Tailscale-only test:** turn off the tablet's home wifi, connect to
+    iPhone hotspot only — app still loads sale screen, polls heartbeat,
+    shows `Printer ready (USB)`, and a tap on "test print" produces a
+    real receipt from the Pi-attached MUNBYN printer.
+11. **Printer readiness check:** with a USB printer plugged into the Pi
+    and the POS container healthy, the diagnostics banner shows
+    `Printer ready (USB)`. Unplug the USB cable on the Pi → within ~10 s
+    the banner switches to `Printer not connected`. Plug back in → tap
+    "Refresh printer status" → banner returns to `Printer ready (USB)`.
+12. **Home LAN preset:** Settings → tap **"Use home LAN"** → URL field
+    shows `http://192.168.86.36:8080`. Save → app reconnects on home
+    wifi successfully. This confirms the override path still works.
 
 ---
 
