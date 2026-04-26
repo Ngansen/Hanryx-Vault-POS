@@ -46,7 +46,7 @@ services:
 
   # ── PgBouncer — connection pooler ────────────────────────────────────────────
   pgbouncer:
-    image: edoburu/pgbouncer:latest
+    image: edoburu/pgbouncer:1.21.0
     restart: unless-stopped
     environment:
       DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
