@@ -35,6 +35,19 @@ cd pi-setup && cp .env.example .env  # edit .env
 docker compose up -d --build
 ```
 
+## Security Policy — TLS verification (`pi-setup/`)
+
+TLS / SSL certificate verification is **always on by default** for every outbound network call in `pi-setup/` (git, curl, wget, pip, requests, docker, etc.).
+
+Disabling verification is only allowed via an **explicit, named debug environment variable** (e.g. `HANRYX_DEBUG_INSECURE_GIT=1`), and any code path that honours such a flag **must log a clear warning** when the bypass takes effect. Silent or unconditional disabling of TLS verification is forbidden because of the MITM and supply-chain risk it creates.
+
+Current debug bypass flags (audited as of Task #10):
+- `HANRYX_DEBUG_INSECURE_GIT=1` — sets `GIT_SSL_NO_VERIFY=1` for git operations in:
+  - `pi-setup/server.py` → `admin_ota_update` (OTA pull) — logs warning to OTA log
+  - `pi-setup/services/storefront/build.sh` (storefront build clone) — echoes warning to build log
+
+When adding a new flow that downloads or clones code, prefer leaving verification on. If a debug bypass is genuinely needed, follow the same pattern: gate it behind a clearly named `HANRYX_DEBUG_INSECURE_*` env var, log a warning when active, and document it in the list above.
+
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
