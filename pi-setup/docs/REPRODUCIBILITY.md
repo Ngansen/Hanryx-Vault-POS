@@ -127,6 +127,29 @@ packages we install (`git`, `bash`) to specific versions.
 
 ### To find the current version inside the base image
 
+Use the helper script — it reads the pinned `FROM` line out of
+`pi-setup/pokeapi/Dockerfile`, runs that exact base image, queries its
+apk index, and prints a build-arg snippet ready to paste back into the
+Dockerfile:
+
+```bash
+pi-setup/scripts/resolve-alpine-apk-versions.sh
+# → ARG ALPINE_GIT_VERSION=2.45.4-r0
+#   ARG ALPINE_BASH_VERSION=5.2.37-r0
+```
+
+To resolve against a different base image (e.g. you're previewing a
+digest bump before editing the Dockerfile), pass it as an argument:
+
+```bash
+pi-setup/scripts/resolve-alpine-apk-versions.sh \
+    nginx:1.27.3-alpine@sha256:<new-digest>
+```
+
+The script is read-only — it prints to stdout, it never edits the
+Dockerfile. The equivalent raw `docker run` is fine too if you don't
+have the script handy:
+
 ```bash
 docker run --rm nginx:1.27.2-alpine sh -c \
     'apk update -q && apk policy git bash | grep -E "^(git|bash|\s+[0-9])"'
@@ -134,11 +157,18 @@ docker run --rm nginx:1.27.2-alpine sh -c \
 
 ### To bump
 
-1. Update `ALPINE_GIT_VERSION` and/or `ALPINE_BASH_VERSION` build args at
-   the top of `pi-setup/pokeapi/Dockerfile`.
-2. Rebuild. If the version isn't available in the base image's apk repo,
+1. Run `pi-setup/scripts/resolve-alpine-apk-versions.sh` to get the
+   current versions in the pinned base image.
+2. Replace the `ALPINE_GIT_VERSION` / `ALPINE_BASH_VERSION` build args
+   at the top of `pi-setup/pokeapi/Dockerfile` with the printed snippet.
+3. Rebuild. If the version isn't available in the base image's apk repo,
    the build fails loudly with `unable to select packages: <pkg>=<ver>` —
    that's the desired behaviour (no silent drift).
+
+When bumping the pokeapi base image digest itself (see
+[§6](#6-bumping-base-image-digests-from--image)), re-run the helper
+afterwards: the new image will usually carry newer apk versions and the
+old `ALPINE_*_VERSION` pins will no longer resolve.
 
 ---
 
