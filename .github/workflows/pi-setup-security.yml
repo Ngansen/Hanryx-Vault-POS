@@ -46,6 +46,17 @@ jobs:
       - name: Scan pi-setup/ for plaintext external URLs (http/ws/mqtt/ftp)
         run: python3 pi-setup/scripts/check-no-plaintext-http.py
 
+      # Unit tests pin the scanner's classification contract: every shape
+      # on the internal-host allow-list (RFC 1918, CGNAT, .local/.ts.net,
+      # bare hostnames, placeholders), the XML-namespace skip, and both
+      # marker spellings (same line and line-immediately-above). Without
+      # these, a future edit could silently widen the allow-list — e.g.
+      # treating `evil.local.attacker.com` as internal — and CI would
+      # still pass on a clean tree. Uses the stdlib unittest runner so
+      # the job needs no extra pip install.
+      - name: Run unit tests for the plaintext-HTTP scanner
+        run: python3 -m unittest discover -s pi-setup/scripts/tests -v
+
   no-floating-tags:
     name: Block floating Docker tags in pi-setup/
     runs-on: ubuntu-latest

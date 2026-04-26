@@ -163,6 +163,8 @@ uri=http://connectivity-check.ubuntu.com
 
 **Extending the guard.** To cover a new insecure scheme, append it to `INSECURE_SCHEMES` in `pi-setup/scripts/check-no-plaintext-http.py` (the regex, error messages, and "OK" message all read from that tuple). To allow a new internal hostname suffix or known-safe namespace prefix, edit `INTERNAL_SUFFIXES` / `INTERNAL_HOSTNAMES` / `XML_NAMESPACE_HOSTS` in the same script. The marker mechanism handles one-off exceptions — prefer it over broadening the global allow-list.
 
+**Unit tests pin the contract.** `pi-setup/scripts/tests/test_check_no_plaintext_http.py` (Task #24) locks down the scanner's classification decisions so a future edit can't silently widen the allow-list (e.g. matching `evil.local.attacker.com` as internal because a refactor turned `endswith(".local")` into a substring `in` check). Covers every internal-host shape (loopback, RFC 1918, CGNAT, `.local`/`.ts.net`/`.internal`/`.lan`/`.home.arpa`, bare Docker service names, `${VAR}`/`<PLACEHOLDER>` placeholders), the XML-namespace skip, both allow-marker spellings on the same line and the line above, and the regex behaviour for every `http`/`ws`/`mqtt`/`ftp` scheme plus their TLS-protected siblings (`https`/`wss`/`mqtts`/`ftps`/`sftp` must never match). Runs in CI in the same `no-plaintext-http` job and locally with `python3 -m unittest discover -s pi-setup/scripts/tests` — stdlib only, no extra pip install.
+
 ## HanryxVault Pi Server (`pi-setup/server.py`)
 
 Flask + PostgreSQL POS backend that runs on a Raspberry Pi 5. Key features:
