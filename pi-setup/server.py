@@ -14153,7 +14153,15 @@ def admin_ota_update():
     def _run() -> None:
         global _OTA_RUNNING
         try:
-            env = {**os.environ, "GIT_SSL_NO_VERIFY": "1", "DOCKER_CLI_HINTS": "false"}
+            env = {**os.environ, "DOCKER_CLI_HINTS": "false"}
+            if os.environ.get("HANRYX_DEBUG_INSECURE_GIT", "0") == "1":
+                _OTA_LOG.append(
+                    "WARNING: HANRYX_DEBUG_INSECURE_GIT=1 set, disabling SSL "
+                    "verification for git. Do NOT use in production.\n"
+                )
+                env["GIT_SSL_NO_VERIFY"] = "1"
+            else:
+                env.pop("GIT_SSL_NO_VERIFY", None)
             repo_dir   = os.environ.get("REPO_DIR", "/app")
             compose    = os.path.join(repo_dir, "pi-setup", "docker-compose.yml")
             cmds = [
