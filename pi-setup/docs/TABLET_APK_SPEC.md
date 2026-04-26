@@ -157,32 +157,48 @@ unauthenticated for diagnostics. Do NOT send `X-API-KEY`.
 | Field               | Type            | Meaning                                                                                          |
 |---------------------|-----------------|--------------------------------------------------------------------------------------------------|
 | `printer_available` | bool            | Server can open the printer right now. **Use as the primary readiness gate.**                     |
-| `printer_path`      | string \| null  | Device the server will write to. `/dev/usb/lp0` = real USB printer. `"cups"` = no USB device. `null` = no config. |
+| `printer_path`      | string \| null  | Where the server will send bytes. Today: `/dev/usb/lp0` (USB). `"cups"` = no usable device. `null` = no config. **Future-proofing:** may also be a network host like `192.168.1.50:9100` or `tcp://printer.local:9100` once we add a network printer fallback — the readiness check below already handles this. |
 | `bt_mac`            | string \| null  | Bluetooth MAC. **Currently null and will stay null** — do NOT require this to be non-null.        |
 
-**Required readiness check** (replace any existing logic):
+**Required readiness check** (replace any existing logic). Treats both USB
+and (future) network printers as ready:
 
 ```ts
+const path = res.printer_path;
+
 const isReady =
   res.printer_available === true &&
-  typeof res.printer_path === 'string' &&
-  res.printer_path !== 'cups' &&
-  /^\/dev\/usb\/lp\d+$/.test(res.printer_path);
+  typeof path === 'string' &&
+  path.length > 0 &&
+  path !== 'cups';
+
+// Sub-classify only for banner copy — both branches are equally "ready":
+const isUsbPrinter     = isReady && /^\/dev\/usb\/lp\d+$/.test(path);
+const isNetworkPrinter = isReady && !path.startsWith('/');   // host:port or tcp://… or DNS name
 ```
+
+The transport sub-classification is purely cosmetic (banner copy). Both
+USB and network paths must enable the print button identically — never
+gate on transport type.
 
 **Banner text on the diagnostics / sale screen:**
 
-| Condition                                                       | Text                       |
-|-----------------------------------------------------------------|----------------------------|
-| `isReady === true`                                              | `Printer ready (USB)`      |
-| `printer_available === false` OR `printer_path === "cups"`      | `Printer not connected`    |
-| Network error / timeout                                         | `Cannot reach POS server`  |
+| Condition                                                       | Text                          |
+|-----------------------------------------------------------------|-------------------------------|
+| `isReady` AND `isUsbPrinter`                                    | `Printer ready (USB)`         |
+| `isReady` AND `isNetworkPrinter`                                | `Printer ready (Network)`     |
+| `isReady` (anything else — e.g. unknown future transport)       | `Printer ready`               |
+| `printer_available === false` OR `printer_path === "cups"`      | `Printer not connected`       |
+| Network error / timeout reaching the server                     | `Cannot reach POS server`     |
 
 **Do NOT:**
 - Require `bt_mac` to be non-null.
+- Require `printer_path` to start with `/dev/usb/` — that breaks the
+  network-printer path the moment we add it server-side.
 - Check for any specific USB VID/PID (server abstracts the device).
 - Cache readiness state for more than one poll cycle.
-- Block the print button on `bt_mac` being null.
+- Block the print button on `bt_mac` being null or on the transport
+  sub-classification.
 
 The diagnostics screen must include a **"Refresh printer status"** button
 that triggers an immediate poll and updates the banner — guards against
