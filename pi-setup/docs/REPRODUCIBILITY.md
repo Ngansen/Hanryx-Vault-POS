@@ -15,6 +15,7 @@ The reproducibility guarantees layer like this:
 | `apk add` (Alpine pokeapi image) | `pkg=version` pins | bump `ALPINE_GIT_VERSION` / `ALPINE_BASH_VERSION` build args |
 | `pip install` | `requirements.txt` with `--require-hashes` | edit `requirements.in`, regen lockfile |
 | `pip install` (git+ URLs) | full commit SHA in the URL | edit `requirements-vcs.txt` |
+| Storefront source clone | full commit SHA in `services/storefront/build.sh` | bump `STOREFRONT_GIT_REF` ([§4a](#4a-storefront-source-pin-storefront_git_ref)) |
 | `npm ci` (storefront) | `package-lock.json` checked in upstream | maintain in `Ngansen/HanRyx-Vault` |
 
 Bump anything from this table **deliberately**, never reactively. Security
@@ -172,12 +173,65 @@ old `ALPINE_*_VERSION` pins will no longer resolve.
 
 ---
 
-## 4. Storefront `package-lock.json` (`npm`)
+## 4. Storefront source clone + `package-lock.json` (`npm`)
+
+The storefront image is built in two halves:
+
+1. **The source tree itself** is cloned from `Ngansen/HanRyx-Vault` by
+   `pi-setup/services/storefront/build.sh` before `docker compose build`
+   even starts. The Dockerfile then `COPY`s the result into the image.
+2. **The npm dependency tree** is installed inside the Dockerfile by
+   `npm ci`, which requires a committed `package-lock.json` shipped
+   inside that source tree.
+
+Both halves need a content-addressed pin or the storefront's *application
+code* and *transitive npm tree* will silently differ between rebuilds —
+even when the base image, apt snapshot, and pip lockfile are all locked.
+
+### 4a. Storefront source pin (`STOREFRONT_GIT_REF`)
+
+`build.sh` clones with `--filter=blob:none` and then `git checkout`s a
+specific 40-char commit SHA held in the `STOREFRONT_GIT_REF` shell var
+at the top of the script (default), or overridden via env at build
+time. A commit SHA IS a content hash, so this gets us the same
+byte-for-byte rebuild guarantee that `@sha256:…` gives the base images
+and that the git+ pin in `requirements-vcs.txt` gives the OpenAI CLIP
+dep.
+
+Three guards enforce this:
+
+1. `build.sh` rejects any `STOREFRONT_GIT_REF` that isn't a full
+   40-char lowercase hex SHA (a branch name like `main`, a tag like
+   `v1.0`, or a short SHA all silently drift when upstream moves).
+2. After clone+checkout, `build.sh` re-reads `git rev-parse HEAD` and
+   aborts if it doesn't match `STOREFRONT_GIT_REF` — so a corrupted
+   local clone can't sneak through.
+3. The pin is a one-line edit at the top of `build.sh`, reviewable in
+   a normal diff.
+
+#### To bump the storefront source pin
+
+1. Pick a new commit on https://github.com/Ngansen/HanRyx-Vault (e.g.
+   the tip of `main` after the upstream change you want).
+2. Edit the `STOREFRONT_GIT_REF=…` default at the top of
+   `pi-setup/services/storefront/build.sh` and replace the SHA with the
+   full 40-char SHA of the new commit.
+3. Run `./build.sh` locally; it should print
+   `[storefront] Source ready at … @ <new-sha> (lockfile present)`.
+4. `docker compose build --no-cache storefront` and smoke-test.
+
+To preview a candidate SHA without editing the file:
+
+```bash
+STOREFRONT_GIT_REF=<new-sha> ./pi-setup/services/storefront/build.sh
+```
+
+### 4b. `package-lock.json` (`npm ci`)
 
 `pi-setup/services/storefront/Dockerfile` runs `npm ci`, which requires
-a committed `package-lock.json`. The storefront source is cloned from
-`Ngansen/HanRyx-Vault` at build time, so the lockfile lives in **that**
-repo, not this one.
+a committed `package-lock.json`. The lockfile lives in the upstream
+`Ngansen/HanRyx-Vault` repo (since the source tree is cloned from
+there), not in this repo.
 
 Two guards enforce this:
 
@@ -187,7 +241,7 @@ Two guards enforce this:
    /app/package-lock.json` before `npm ci`, so a misconfigured CI that
    skips `build.sh` still fails loudly inside the build.
 
-### To bump npm deps
+#### To bump npm deps
 
 Do it in the upstream `Ngansen/HanRyx-Vault` repo:
 
@@ -199,11 +253,15 @@ git commit -m "bump <pkg>"
 git push
 ```
 
+Then bump the storefront source pin (§4a) to the new upstream commit,
+so `build.sh` actually picks up the regenerated lockfile — without
+that bump it'll keep checking out the old SHA with the old lockfile.
+
 Then on the Pi (or in CI):
 
 ```bash
 cd pi-setup/services/storefront
-./build.sh                         # pulls fresh source incl. new lockfile
+./build.sh                         # clones at the new pinned SHA
 docker compose build storefront
 ```
 

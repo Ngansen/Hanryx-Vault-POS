@@ -67,11 +67,23 @@ runs from the same git SHA produce byte-identical layers:
   `requirements-vcs.txt` pins the full 40-char commit SHA. A commit SHA IS
   itself a content hash, so reproducibility is preserved without a wheel
   hash.
+- **Storefront source clone** (`Ngansen/HanRyx-Vault`): pinned by full
+  40-char commit SHA in `STOREFRONT_GIT_REF` at the top of
+  `pi-setup/services/storefront/build.sh` (Task #22 — same content-hash
+  rationale as the base-image `@sha256:…` and the git+ pin in
+  `requirements-vcs.txt`). The script clones with `--filter=blob:none`,
+  checks out the pinned commit, rejects any ref that isn't a 40-char hex
+  SHA, and re-verifies `git rev-parse HEAD` after checkout — so a fresh
+  `docker compose build` on the Pi always installs the same storefront
+  bits regardless of where upstream `main` has moved. Bump procedure:
+  `pi-setup/docs/REPRODUCIBILITY.md` §4a.
 - **`npm ci`** (storefront): requires committed `package-lock.json` in the
   upstream `Ngansen/HanRyx-Vault` repo. Two guards enforce this — one in
   `pi-setup/services/storefront/build.sh` (host-side, after clone) and one
   inside `pi-setup/services/storefront/Dockerfile` (`test -f
-  /app/package-lock.json` before `npm ci` in both stages).
+  /app/package-lock.json` before `npm ci` in both stages). Bumping npm
+  deps requires a corresponding `STOREFRONT_GIT_REF` bump (above), since
+  the lockfile only changes on the Pi when the pinned source SHA moves.
 
 Bump procedure for each layer is documented in
 `pi-setup/docs/REPRODUCIBILITY.md`. Lockfile regeneration is one command:
