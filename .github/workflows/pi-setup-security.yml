@@ -162,3 +162,21 @@ jobs:
 
       - name: Verify each APT_SNAPSHOT_DATE exists on snapshot.debian.org
         run: python3 pi-setup/scripts/check-debian-snapshot-date.py
+
+      # Unit tests pin the checker's parsing + classification contract:
+      # the Dockerfile ARG parser (single-stage, multi-stage, inline
+      # comments, indentation, case-insensitive ARG, negative match for
+      # similarly-named vars), the `YYYYMMDDTHHMMSSZ` date validator,
+      # the HTTP retry policy (200 passes, 404 is terminal, 5xx and
+      # network errors retry up to MAX_ATTEMPTS), and the
+      # --skip-on-network-error escape hatch (passes only when EVERY
+      # finding is a network/timeout error; a real 4xx mixed in still
+      # fails). Without these, a future refactor could silently stop
+      # catching bad APT_SNAPSHOT_DATE pins and we'd only find out the
+      # next time a docker compose build 404'd on the Pi. Uses the
+      # stdlib unittest runner so the job needs no extra pip install;
+      # only the snapshot-date test file is selected so an unrelated
+      # test failure in the shared tests/ directory doesn't gate this
+      # job (the no-plaintext-http job already runs the full discover).
+      - name: Run unit tests for the snapshot-date checker
+        run: python3 -m unittest pi-setup.scripts.tests.test_check_debian_snapshot_date -v

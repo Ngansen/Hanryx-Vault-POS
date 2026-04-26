@@ -69,10 +69,14 @@ import urllib.request
 from typing import NamedTuple
 
 # Match `ARG APT_SNAPSHOT_DATE=<value>` (with optional surrounding whitespace
-# and an optional inline `# comment`). Dockerfile ARG values may be quoted,
-# but in practice ours never are; we accept either form for safety.
+# and an optional inline `# comment`). Dockerfile ARG values may be quoted
+# (per `man dockerfile`), but in practice ours never are; we accept either
+# form for safety. The three alternatives in the value group are, in order:
+# double-quoted, single-quoted, bare. Whichever group matches is the date.
 _ARG_RE = re.compile(
-    r"^\s*ARG\s+APT_SNAPSHOT_DATE\s*=\s*([^\s#]+)\s*(?:#.*)?$",
+    r'''^\s*ARG\s+APT_SNAPSHOT_DATE\s*=\s*'''
+    r'''(?:"([^"]*)"|'([^']*)'|([^\s#]+))'''
+    r'''\s*(?:#.*)?$''',
     re.IGNORECASE,
 )
 
@@ -157,7 +161,10 @@ def _extract_dates(dockerfile_path: str, repo_root: str) -> list[DateUse]:
         m = _ARG_RE.match(line)
         if not m:
             continue
-        out.append(DateUse(date=m.group(1), dockerfile_rel=rel, lineno=idx + 1))
+        # Exactly one of the three alternatives (double-quoted /
+        # single-quoted / bare) matches; the other two are None.
+        value = m.group(1) or m.group(2) or m.group(3) or ""
+        out.append(DateUse(date=value, dockerfile_rel=rel, lineno=idx + 1))
     return out
 
 
