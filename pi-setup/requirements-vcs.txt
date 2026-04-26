@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pi-setup / POS — direct VCS dependencies.
+#
+# pip-compile cannot hash git+ URLs, so they live here instead. We pin the
+# exact commit SHA on every line — a commit SHA IS a content hash, so this
+# gets us the same byte-for-byte reproducibility guarantee as a wheel hash:
+# if GitHub silently rewrites history (or someone force-pushes the branch),
+# `pip install` fails because the SHA is no longer reachable.
+#
+# Bump procedure:
+#   1. Look up the new commit on GitHub.
+#   2. Replace the @<sha> below with the new full 40-char SHA.
+#   3. Rebuild the image and smoke-test.
+#
+# See `docs/REPRODUCIBILITY.md` for the full bump procedure.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# OpenAI CLIP — visual card identification (used together with faiss-cpu).
+# Repo: https://github.com/openai/CLIP
+# Pinned to the last commit on main as of 2024-07; bump deliberately.
+clip @ git+https://github.com/openai/CLIP.git@dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1

@@ -30,4 +30,16 @@ else
     git clone --depth=1 "$REPO_URL" "$SRC_DIR"
 fi
 
-echo "[storefront] Source ready at $SRC_DIR"
+# Reproducibility guard — npm ci needs a committed lockfile, otherwise it
+# falls back to a non-deterministic `npm install`-style resolve and the
+# build silently drifts between rebuilds. Fail HERE (host side) so the
+# error surfaces before the much-slower docker build kicks off.
+# See `pi-setup/docs/REPRODUCIBILITY.md` for context.
+if [ ! -f "$SRC_DIR/package-lock.json" ]; then
+    echo "[storefront] FATAL: $SRC_DIR/package-lock.json is missing." >&2
+    echo "[storefront] npm ci needs a committed lockfile to install the same bits twice." >&2
+    echo "[storefront] Restore it in the upstream HanRyx-Vault repo and re-run build.sh." >&2
+    exit 1
+fi
+
+echo "[storefront] Source ready at $SRC_DIR (lockfile present)"

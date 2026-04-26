@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pi-setup / POS — top-level Python dependencies (source of truth).
+#
+# Edit THIS file, then regenerate the fully pinned + hashed lockfile with:
+#
+#     ./scripts/lock-python-deps.sh pi-setup
+#
+# That script runs `uv pip compile --generate-hashes` against the Pi 5's
+# aarch64-unknown-linux-gnu target, so the resolved wheels match what gets
+# installed on the Pi (regardless of the host arch you regenerate from).
+# The Dockerfile installs from `requirements.txt` with
+# `pip install --require-hashes`, so any drift will fail the build loudly.
+#
+# Direct git+ URLs (currently just the OpenAI CLIP repo) cannot be hashed by
+# uv pip compile and live in `requirements-vcs.txt` instead — that file pins
+# the exact commit SHA, which IS itself a content hash, so reproducibility
+# is preserved.
+#
+# See `docs/REPRODUCIBILITY.md` for the full bump procedure.
+# ─────────────────────────────────────────────────────────────────────────────
+
+flask>=3.0.0
+flask-compress>=1.14
+gunicorn>=21.2.0
+gevent>=24.2.1
+psycopg2-binary>=2.9.9
+# Make psycopg2 cooperative with gevent — eliminates worker timeouts
+# caused by blocking DB calls under the single-worker SSE setup
+psycogreen>=1.0
+cachetools>=5.3.0
+requests>=2.31.0
+qrcode[pil]>=7.4.2
+Pillow>=10.0.0
+openai>=1.30.0
+
+# Smart Pokémon scan engine — fuzzy card name matching and scan learning
+rapidfuzz>=3.6.0
+
+# Enterprise: JWT token auth for APK/Expo endpoints
+PyJWT>=2.9.0
+
+# Enterprise: TOTP 2FA for admin dashboard
+pyotp>=2.9.0
+
+# Enterprise: PDF receipt / Z-report generation
+reportlab>=4.0.0
+
+# Enterprise: error tracking (set SENTRY_DSN env var to enable)
+sentry-sdk[flask]>=2.0.0
+
+# Enterprise: S3 backup uploads (optional — set AWS_* env vars to enable)
+boto3>=1.34.0
+
+# Performance: 3-5x faster JSON serialisation (automatic stdlib fallback)
+orjson>=3.9.0
+
+# Redis — cross-worker pub/sub for SSE and shared L2 cache
+redis>=5.0.0
+
+# Server-side Flask sessions backed by Redis — survives container restarts
+# so operators don't get logged out every time we `docker compose recreate`
+flask-session>=0.8.0
+
+# Intelligent pricing engine — eBay sold-listing scraper
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Intelligent pricing engine — multi-language card input translation
+deep-translator>=1.11.0
+
+# QR scan hub — reads USB + Bluetooth HID scanners as keyboard-style input devices
+evdev>=1.6.1
+
+# Twilio — SMS digital-receipt sender (set TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM env vars to enable)
+twilio>=8.0.0
+
+# OCR card scanning — image → text → smart scan pipeline
+pytesseract>=0.3.10
+
+# pgvector — semantic/embedding similarity search in PostgreSQL
+pgvector>=0.3.0
+
+# CLIP + FAISS — visual card identification engine.
+# Use standard PyPI torch wheels — they include ARM64 (Pi 5) builds.
+# Do NOT add --extra-index-url pytorch whl/cpu here; those are x86-only.
+# NOTE: `clip` itself lives in `requirements-vcs.txt` (git+ URL, no hash).
+#
+# torch is capped at <2.11 because torch 2.11 dropped the
+# `platform_machine == "x86_64"` markers on its nvidia-* CUDA deps and
+# instead just gates them on `platform_system == "Linux"` — which matches
+# aarch64 Linux on the Pi 5 too. Those nvidia-* packages have no aarch64
+# wheels on PyPI, so a torch>=2.11 lockfile won't install on the Pi at
+# all. 2.10.x still has the proper x86_64-only marker. Bump the cap when
+# upstream torch fixes that on Linux/aarch64 — see
+# `docs/REPRODUCIBILITY.md` for the procedure.
+torch>=2.6,<2.11
+torchvision>=0.21,<0.26
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+
+# Multi-TCG: streaming JSON parser — keeps Scryfall's 170 MB MTG bulk import
+# RAM-flat instead of loading the whole array.  Optional (importer falls back
+# to full load if missing) but strongly recommended on the Pi.
+ijson>=3.2.0
