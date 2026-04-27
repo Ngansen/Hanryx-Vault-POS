@@ -204,6 +204,120 @@ The diagnostics screen must include a **"Refresh printer status"** button
 that triggers an immediate poll and updates the banner — guards against
 stale state if the operator just plugged the printer in.
 
+### 4.5 `POST /admin/discovery/report` — report a missing card
+
+When a customer brings a card the tablet (or POS) can't find, the
+agent can flag it so the Pi worker rechecks against newly-imported
+sets on the next dispatcher tick (~30 min later, automatically).
+
+Body (JSON):
+```json
+{ "query":   "Charizard ex 199/197",
+  "context": "tablet_lookup_screen" }
+```
+
+* `query` — required, ≤200 chars. Free-form: card name, set+number,
+  TCG id, or even a partial spelling. The Pi searches all five
+  language columns (EN/JA/KO/CHS/CHT) on each dispatcher cycle.
+* `context` — optional, ≤120 chars. Free-form tag for analytics
+  (`"tablet_trade_in"`, `"tablet_kiosk"`, etc.).
+
+Response:
+```json
+{ "ok": true, "queue_id": 42, "status": "queued" }
+```
+
+If the same query is already pending the server returns the existing
+row instead of creating a duplicate:
+```json
+{ "ok": true, "queue_id": 17, "status": "already_pending",
+  "message": "Already queued — will be checked on next cycle." }
+```
+
+Important behaviors:
+- Show the operator a one-line confirmation toast: "Queued — checking
+  sources within 30 min."
+- Do **not** block the trade-in flow on this — it's fire-and-forget.
+- Treat `status: "already_pending"` as success (someone else flagged
+  it; the worker will still check it).
+- On non-200 responses, log locally and silently continue — never
+  surface a network error to the customer.
+
+### 4.6 `GET /admin/discovery/queue.json` — poll the queue
+
+Optional. Use this if you want the tablet to show the operator a
+"recently queued / recently resolved" panel. Don't poll faster than
+once a minute — the queue rarely changes more often than that.
+
+Query string:
+- `status` — filter to one of `pending`, `running`, `resolved`,
+  `failed`, `noop`. Omit for all.
+- `kind` — filter to `set` or `report`. Omit for all.
+- `limit` — default 50, max 500.
+- `since_ms` — only rows with `discovered_at >= since_ms` (use the
+  largest `discovered_at` from your last poll for cheap incremental
+  fetch).
+
+Response:
+```json
+{
+  "ok": true,
+  "count": 3,
+  "rows": [
+    {
+      "id":             42,
+      "kind":           "report",
+      "payload":        { "query": "Charizard ex 199/197",
+                          "context": "tablet_lookup_screen" },
+      "source":         "operator",
+      "status":         "pending",
+      "attempts":       0,
+      "discovered_at":  1730000000000,
+      "resolved_at":    null,
+      "next_attempt_at":1730000000000,
+      "last_error":     "",
+      "reporter":       "operator",
+      "resolved_master_id": null
+    },
+    {
+      "id":             39,
+      "kind":           "set",
+      "payload":        { "set_id": "sv9", "name_en": "Battle Partners",
+                          "name_ja": "バトルパートナーズ",
+                          "release_date": "2025-01-24",
+                          "card_count_total": 196,
+                          "languages": ["en","ja","ko"] },
+      "source":         "tcgdex",
+      "status":         "resolved",
+      "attempts":       1,
+      "discovered_at":  1729900000000,
+      "resolved_at":    1729901500000,
+      "reporter":       "worker"
+    }
+  ]
+}
+```
+
+All timestamps are unix milliseconds (matches the rest of the API).
+
+### 4.7 Polling rules for the discovery feed
+
+If the tablet shows a discovery panel:
+- Poll `/admin/discovery/queue.json?status=pending&limit=20` every
+  60 s while the panel is on screen.
+- Stop polling immediately when the panel is hidden.
+- Poll once with `?status=resolved&since_ms=<last_seen>` after the
+  app comes back from background, to catch anything that resolved
+  while the tablet was asleep.
+
+Backoff:
+- On HTTP 5xx, double the interval (60 → 120 → 240 s, cap 600 s).
+- Reset interval to 60 s on the next successful response.
+- Never retry POST `/admin/discovery/report` automatically — fire
+  once, log on failure, move on. Duplicate reports cost the Pi
+  nothing (the server dedupes), but a runaway retry loop on a
+  flaky link is worse than a silently-dropped report.
+
 ---
 
 ## 5. Screens (3 screens total)

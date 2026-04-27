@@ -180,6 +180,57 @@ existing `JOBS` list in `pi-setup/sync_orchestrator.py`.
 example in `pi-setup/docs/USB_OFFLINE_DB.md` (the "Unified Card DB"
 section appended at the bottom).
 
+**Continuous Discovery v1** (`pi-setup/discover_new_sets.py` +
+`pi-setup/discovery_dispatch.py`). Two-stage worker keeps
+`cards_master` growing without operator action:
+
+* **Probe** (`discover_new_sets.py`, daily) hits TCGdex's per-language
+  set endpoints in parallel — `/v2/{en,ja,ko,zh-tw,zh-cn}/sets` —
+  via a `ThreadPoolExecutor`. JP-, KR-, and CHS-exclusive sets only
+  appear on their respective language endpoint, so probing all five
+  catches ~95% of new releases the EN-only endpoint would miss.
+  Aggregates by `set_id`, diffs against `ref_set_mapping` + the
+  queue, and inserts unknown sets into `discovery_queue` with the
+  per-language names attached and a `languages: [...]` tag.
+  Idempotent via a unique partial index on `(payload->>'set_id')
+  WHERE status='pending'`.
+
+* **Dispatcher** (`discovery_dispatch.py`, every 30 min) uses
+  `SELECT … FOR UPDATE SKIP LOCKED` to safely cooperate across
+  concurrent runs. Routes by language tag in the payload: always
+  runs `import_tcgdex.py`, plus `import_jp_pokemoncardcom.py` for
+  JP-exclusive promos, `import_kr_cards.py` for KR-flagged sets,
+  `import_chs_cards.py` for ZH-CN sets. Always finishes with
+  `build_cards_master.py`. Backoff is 1 h / 6 h / 24 h with the row
+  marked `failed` on the third failure (surfaces on the admin UI for
+  manual triage). Audit trail in `discovery_log`.
+
+* **Schema** — `discovery_queue` (kind / payload JSONB / source /
+  status / attempts / discovered_at / next_attempt_at /
+  resolved_master_id / last_error / reporter) + `discovery_log`
+  (one row per dispatcher attempt). Both registered in
+  `init_unified_schema()` so a fresh boot creates them.
+
+* **Operator UI** — `/admin/search` zero-results state shows a
+  🔍 **Report missing card** button that POSTs to
+  `/admin/discovery/report` (handles dedupe — second click on the
+  same query returns the existing queue id). Full queue browser at
+  `/admin/discovery` with three tabs (Pending / Resolved 7d / Failed)
+  and a Retry button per failed row. Compact "Recently discovered
+  (7d)" panel on the `/admin` dashboard. Nav pill 🆕 **Discovery**
+  added between Search and Market.
+
+* **Tablet integration** — `POST /admin/discovery/report` (fire-and-
+  forget, deduped server-side) and `GET /admin/discovery/queue.json`
+  (incremental polling with `?since_ms=`). Full contract in
+  `pi-setup/docs/TABLET_APK_SPEC.md` §4.5–4.7.
+
+* **Orchestrator wiring** — two new `Job` rows in
+  `pi-setup/sync_orchestrator.py`: `discover_sets` (24 h interval,
+  needs network) and `discovery_dispatch` (30 min interval, needs
+  network). Status visible at `/admin/usb-sync/status` alongside the
+  rest of the sync jobs.
+
 ## Reproducible builds (`pi-setup/`)
 
 The four custom-built containers in `pi-setup/` (`pos`, `recognizer`,

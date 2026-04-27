@@ -15940,6 +15940,7 @@ async function sendTestEmail() {{
 
 loadEmailStatus();
 </script>
+{_recently_discovered_widget()}
 </div><!-- /wrap -->
 </body>
 </html>"""
@@ -26810,8 +26811,599 @@ function addFromMaster(masterId) {{
   // operator confirms condition + price before commit.
   window.location.href = '/admin?add_from_master=' + encodeURIComponent(masterId);
 }}
+
+async function reportMissing(query) {{
+  const btn = document.getElementById('report-missing-btn');
+  const msg = document.getElementById('report-missing-msg');
+  if (!query) return;
+  btn.disabled = true;
+  btn.style.opacity = '0.55';
+  msg.textContent = 'Reporting…';
+  try {{
+    const r = await fetch('/admin/discovery/report', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ query: query, context: 'admin_search_zero_results' }})
+    }});
+    const d = await r.json();
+    if (d.ok) {{
+      btn.textContent = '✓ Reported';
+      btn.style.background = '#065f46';
+      msg.innerHTML = 'Queued — checking sources on the next discovery cycle. '
+        + '<a href="/admin/discovery" style="color:#a78bfa;text-decoration:underline">View queue →</a>';
+    }} else {{
+      btn.disabled = false; btn.style.opacity = '1';
+      msg.textContent = '✗ ' + (d.error || 'Could not enqueue report');
+      msg.style.color = '#f87171';
+    }}
+  }} catch(e) {{
+    btn.disabled = false; btn.style.opacity = '1';
+    msg.textContent = '✗ Network error: ' + e.message;
+    msg.style.color = '#f87171';
+  }}
+}}
 </script>
 </body></html>""")
+
+
+# ---------------------------------------------------------------------------
+# Continuous Discovery v1 — dashboard widget (D7)
+# ---------------------------------------------------------------------------
+def _recently_discovered_widget() -> str:
+    """Compact panel for the /admin dashboard listing the 5 most recent
+    `resolved` discoveries from the last 7 days.
+
+    Returns "" if there are no recent resolutions — keeps the dashboard
+    quiet on a fresh install instead of showing an "empty state" card.
+    """
+    try:
+        db = get_db()
+        cutoff_ms = int((time.time() - 7 * 24 * 3600) * 1000)
+        cur = db.execute(
+            """
+            SELECT id, kind, payload, resolved_at, resolved_master_id
+              FROM discovery_queue
+             WHERE status = 'resolved'
+               AND resolved_at >= %s
+             ORDER BY resolved_at DESC
+             LIMIT 5
+            """,
+            (cutoff_ms,),
+        )
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r) if not isinstance(r, dict) else r
+            if isinstance(d.get("payload"), str):
+                try: d["payload"] = json.loads(d["payload"])
+                except Exception: d["payload"] = {}
+            rows.append(d)
+    except Exception as e:
+        log.warning("[dashboard] discovery widget query failed: %s", e)
+        return ""
+
+    if not rows:
+        return ""  # nothing to show — stay quiet on fresh installs
+
+    items = []
+    for r in rows:
+        payload = r.get("payload") or {}
+        kind = r.get("kind") or ""
+        if kind == "set":
+            label = (payload.get("name_en") or payload.get("name_ja")
+                     or payload.get("name_ko") or payload.get("set_id") or "(unknown set)")
+            sid = payload.get("set_id") or ""
+            cc = payload.get("card_count_total") or 0
+            sub = f"{sid} · {cc} cards" if sid else f"{cc} cards"
+        elif kind == "report":
+            label = f'"{payload.get("query") or "?"}"'
+            sub = "operator report"
+        else:
+            label = f"#{r['id']}"
+            sub = kind
+
+        when = ""
+        try:
+            t = datetime.datetime.fromtimestamp(int(r["resolved_at"]) / 1000)
+            when = t.strftime("%b %d %H:%M")
+        except Exception:
+            pass
+
+        href = "/admin/discovery?tab=resolved"
+        items.append(
+            f'<a href="{href}" style="display:block;padding:8px 10px;'
+            f'border-bottom:1px solid #1e293b;color:#e5e7eb;text-decoration:none">'
+            f'<div style="font-weight:600;font-size:13px">'
+            f'<span style="color:#a78bfa;font-size:10px;text-transform:uppercase;'
+            f'margin-right:6px">{_html.escape(kind)}</span>'
+            f'{_html.escape(label)}</div>'
+            f'<div style="color:#94a3b8;font-size:11px;margin-top:2px">'
+            f'{_html.escape(sub)} · {when}</div>'
+            f'</a>'
+        )
+
+    body = "".join(items)
+    return (
+        '<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;'
+        'padding:0;margin:18px 0;max-width:560px">'
+        '<div style="padding:10px 14px;border-bottom:1px solid #334155;'
+        'display:flex;justify-content:space-between;align-items:center">'
+        '<div style="color:#facc15;font-weight:700;font-size:13px">'
+        '🆕 Recently discovered (last 7 days)</div>'
+        '<a href="/admin/discovery" style="color:#a78bfa;font-size:11px;'
+        'text-decoration:none">View all →</a>'
+        '</div>'
+        f'{body}'
+        '</div>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Continuous Discovery v1 — operator + admin endpoints (D5, D6)
+# ---------------------------------------------------------------------------
+# The worker side (probe + dispatcher) lives in discover_new_sets.py and
+# discovery_dispatch.py and is wired into sync_orchestrator.py. The
+# endpoints below cover the human side:
+#
+#   POST /admin/discovery/report   — operator says "I searched and got
+#                                    nothing", we enqueue a kind='report'
+#                                    row for the dispatcher to recheck.
+#   GET  /admin/discovery          — admin page with three tabs (pending,
+#                                    resolved 7d, failed) + retry button.
+#   POST /admin/discovery/retry/<id>
+#                                  — manual retry for a failed row.
+#   GET  /admin/discovery/queue.json
+#                                  — JSON feed for the tablet (so the
+#                                    tablet agent can poll without
+#                                    scraping HTML).
+
+@app.route("/admin/discovery/report", methods=["POST"])
+@require_admin
+def admin_discovery_report():
+    """Enqueue a 'card not found' report from the operator (or tablet).
+
+    Body (JSON or form): { query: str, context?: str }
+
+    Returns: { ok: bool, queue_id?: int, status?: str, error?: str }
+
+    Idempotent on (query, status='pending'): a second report for the same
+    query while the first is still pending returns the existing row's id
+    rather than creating a duplicate.
+    """
+    payload_in = request.get_json(silent=True) or request.form.to_dict() or {}
+    query   = (payload_in.get("query")   or "").strip()
+    context = (payload_in.get("context") or "operator").strip()[:120]
+
+    if not query:
+        return jsonify({"ok": False, "error": "query is required"}), 400
+    if len(query) > 200:
+        return jsonify({"ok": False, "error": "query too long (max 200 chars)"}), 400
+
+    payload = {"query": query, "context": context}
+    now_ms = int(time.time() * 1000)
+
+    def _find_existing_pending(db_):
+        c = db_.execute(
+            """
+            SELECT id FROM discovery_queue
+             WHERE kind = 'report'
+               AND status = 'pending'
+               AND payload->>'query' = %s
+             LIMIT 1
+            """,
+            (query,),
+        )
+        r = c.fetchone()
+        if not r:
+            return None
+        return int(r["id"] if isinstance(r, dict) else r[0])
+
+    try:
+        db = get_db()
+
+        # Fast-path dedupe: avoid the INSERT round-trip in the common case.
+        existing = _find_existing_pending(db)
+        if existing is not None:
+            return jsonify({"ok": True, "queue_id": existing,
+                            "status": "already_pending",
+                            "message": "Already queued — will be checked on next cycle."})
+
+        # Race-safe INSERT. The partial unique index
+        # `uq_discovery_queue_pending_report` guarantees only one pending
+        # report per query string can exist; if two tablets POST the same
+        # query within milliseconds the loser hits IntegrityError and we
+        # convert it into the same "already_pending" response the
+        # fast-path returns.
+        try:
+            cur = db.execute(
+                """
+                INSERT INTO discovery_queue
+                    (kind, payload, source, reporter, status,
+                     discovered_at, next_attempt_at)
+                VALUES ('report', %s::jsonb, 'operator', 'operator', 'pending',
+                        %s, %s)
+                RETURNING id
+                """,
+                (json.dumps(payload, ensure_ascii=False), now_ms, now_ms),
+            )
+            row = cur.fetchone()
+            qid = int(row["id"] if isinstance(row, dict) else row[0])
+            db.commit()
+            log.info("[discovery] report enqueued id=%s query=%r", qid, query)
+            return jsonify({"ok": True, "queue_id": qid, "status": "queued"})
+        except Exception as insert_err:
+            # Detect unique-violation regardless of psycopg2 vs psycopg3 by
+            # inspecting the SQLSTATE / message; both raise classes that
+            # expose `pgcode == '23505'` for unique_violation.
+            sqlstate = getattr(insert_err, "pgcode", None) or \
+                       getattr(getattr(insert_err, "diag", None), "sqlstate", None)
+            err_text = str(insert_err)
+            looks_like_unique = (
+                sqlstate == "23505"
+                or "uq_discovery_queue_pending_report" in err_text
+                or "duplicate key" in err_text.lower()
+            )
+            if not looks_like_unique:
+                raise
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            existing = _find_existing_pending(db)
+            if existing is not None:
+                log.info("[discovery] report race resolved to existing id=%s "
+                         "query=%r", existing, query)
+                return jsonify({"ok": True, "queue_id": existing,
+                                "status": "already_pending",
+                                "message": "Already queued — will be checked on next cycle."})
+            # Index fired but row vanished (claimed + completed in between).
+            # Treat as transient; client can retry safely.
+            return jsonify({"ok": False,
+                            "error": "transient race; please retry"}), 503
+    except Exception as e:
+        log.error("[discovery] report failed: %s", e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/admin/discovery/retry/<int:queue_id>", methods=["POST"])
+@require_admin
+def admin_discovery_retry(queue_id: int):
+    """Reset a failed row back to pending so the dispatcher picks it up
+    on its next tick. Resets attempts to 0 — gives it a clean three more.
+    """
+    try:
+        db = get_db()
+        cur = db.execute(
+            """
+            UPDATE discovery_queue
+               SET status = 'pending',
+                   attempts = 0,
+                   next_attempt_at = %s,
+                   last_error = ''
+             WHERE id = %s
+               AND status IN ('failed', 'noop')
+             RETURNING id
+            """,
+            (int(time.time() * 1000), queue_id),
+        )
+        row = cur.fetchone()
+        db.commit()
+        if not row:
+            return jsonify({"ok": False, "error": "row not found or not retryable"}), 404
+        return jsonify({"ok": True, "queue_id": queue_id, "status": "pending"})
+    except Exception as e:
+        log.error("[discovery] retry failed: %s", e)
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/admin/discovery/queue.json", methods=["GET"])
+@require_admin
+def admin_discovery_queue_json():
+    """JSON feed of the discovery queue — for the tablet agent to poll.
+
+    Query string:
+      ?status=pending|running|resolved|failed|noop  (default: all)
+      ?kind=set|report                              (default: all)
+      ?limit=N (default 50, max 500)
+      ?since_ms=N  (only rows with discovered_at >= since_ms)
+    """
+    status = (request.args.get("status") or "").strip()
+    kind   = (request.args.get("kind")   or "").strip()
+    limit  = max(1, min(_safe_int(request.args.get("limit"), 50), 500))
+    since  = _safe_int(request.args.get("since_ms"), 0)
+
+    where  = ["1=1"]
+    params: list = []
+    if status in ("pending", "running", "resolved", "failed", "noop"):
+        where.append("status = %s"); params.append(status)
+    if kind in ("set", "report", "card"):
+        where.append("kind = %s"); params.append(kind)
+    if since > 0:
+        where.append("discovered_at >= %s"); params.append(since)
+    params.append(limit)
+
+    db = get_db()
+    cur = db.execute(
+        f"""
+        SELECT id, kind, payload, source, status, attempts,
+               discovered_at, resolved_at, next_attempt_at,
+               last_error, reporter, resolved_master_id
+          FROM discovery_queue
+         WHERE {' AND '.join(where)}
+         ORDER BY discovered_at DESC
+         LIMIT %s
+        """,
+        tuple(params),
+    )
+    rows = []
+    for r in cur.fetchall():
+        d = dict(r) if not isinstance(r, dict) else r
+        # JSONB → dict normalisation
+        if isinstance(d.get("payload"), str):
+            try: d["payload"] = json.loads(d["payload"])
+            except Exception: pass
+        rows.append(d)
+    return jsonify({"ok": True, "count": len(rows), "rows": rows})
+
+
+def _discovery_status_badge(status: str) -> str:
+    palette = {
+        "pending":  ("#1e3a8a", "#bfdbfe", "Pending"),
+        "running":  ("#7c2d12", "#fed7aa", "Running"),
+        "resolved": ("#064e3b", "#6ee7b7", "Resolved"),
+        "failed":   ("#7f1d1d", "#fca5a5", "Failed"),
+        "noop":     ("#374151", "#d1d5db", "No-op"),
+    }
+    bg, fg, lbl = palette.get(status, ("#1e293b", "#94a3b8", status))
+    return (f'<span style="background:{bg};color:{fg};padding:3px 9px;'
+            f'border-radius:10px;font-size:11px;font-weight:600">{lbl}</span>')
+
+
+def _discovery_lang_chips(payload: dict) -> str:
+    langs = payload.get("languages") or []
+    if not langs: return '<span style="color:#666;font-size:11px">—</span>'
+    chips = []
+    for l in langs:
+        chips.append(
+            f'<span style="background:#0f172a;color:#fcd34d;padding:2px 6px;'
+            f'border-radius:3px;font-size:10px;font-weight:600;'
+            f'margin-right:3px;border:1px solid #334155">{_html.escape(l.upper())}</span>'
+        )
+    return "".join(chips)
+
+
+def _discovery_payload_summary(kind: str, payload: dict) -> str:
+    if kind == "set":
+        sid = _html.escape(payload.get("set_id") or "?")
+        names = []
+        for k, lbl in (("name_en", "EN"), ("name_ja", "JP"),
+                       ("name_ko", "KR"), ("name_zh_tw", "CHT"),
+                       ("name_zh_cn", "CHS")):
+            v = (payload.get(k) or "").strip()
+            if v: names.append(f'<span style="color:#94a3b8;font-size:11px">'
+                               f'<b>{lbl}:</b> {_html.escape(v)}</span>')
+        rd = _html.escape(payload.get("release_date") or "")
+        cc = payload.get("card_count_total") or 0
+        rd_html = f' · <span style="color:#666;font-size:11px">{rd}</span>' if rd else ''
+        cc_html = (f' · <span style="color:#666;font-size:11px">{cc} cards</span>'
+                   if cc else '')
+        return (f'<b style="color:#facc15">{sid}</b>{rd_html}{cc_html}<br>'
+                + " · ".join(names))
+    if kind == "report":
+        q = _html.escape(payload.get("query") or "")
+        ctx = _html.escape(payload.get("context") or "")
+        ctx_html = (f'<br><span style="color:#666;font-size:11px">via {ctx}</span>'
+                    if ctx else '')
+        return f'<b style="color:#facc15">"{q}"</b>{ctx_html}'
+    return f'<code style="color:#94a3b8;font-size:11px">{_html.escape(json.dumps(payload)[:120])}</code>'
+
+
+@app.route("/admin/discovery", methods=["GET"])
+@require_admin
+def admin_discovery():
+    """Three-tab admin UI for the Continuous Discovery queue."""
+    nav = _admin_nav("discovery")
+    css = _admin_css()
+    tab = (request.args.get("tab") or "pending").strip().lower()
+    if tab not in ("pending", "resolved", "failed"):
+        tab = "pending"
+
+    db = get_db()
+
+    # Counts (cheap — small table)
+    counts: dict[str, int] = {}
+    try:
+        cur = db.execute(
+            "SELECT status, COUNT(*) AS n FROM discovery_queue GROUP BY status"
+        )
+        for r in cur.fetchall():
+            d = dict(r) if not isinstance(r, dict) else r
+            counts[d["status"]] = int(d["n"])
+    except Exception as e:
+        log.warning("[admin_discovery] count query failed: %s", e)
+
+    # Tab-specific row fetch
+    week_ago_ms = int((time.time() - 7 * 24 * 3600) * 1000)
+    if tab == "pending":
+        cur = db.execute(
+            """
+            SELECT id, kind, payload, source, status, attempts,
+                   discovered_at, next_attempt_at, last_error, reporter
+              FROM discovery_queue
+             WHERE status IN ('pending', 'running')
+             ORDER BY discovered_at DESC
+             LIMIT 200
+            """
+        )
+    elif tab == "resolved":
+        cur = db.execute(
+            """
+            SELECT id, kind, payload, source, status, attempts,
+                   discovered_at, resolved_at, resolved_master_id, reporter
+              FROM discovery_queue
+             WHERE status IN ('resolved', 'noop')
+               AND COALESCE(resolved_at, discovered_at) >= %s
+             ORDER BY COALESCE(resolved_at, discovered_at) DESC
+             LIMIT 200
+            """,
+            (week_ago_ms,),
+        )
+    else:  # failed
+        cur = db.execute(
+            """
+            SELECT id, kind, payload, source, status, attempts,
+                   discovered_at, last_error, reporter
+              FROM discovery_queue
+             WHERE status = 'failed'
+             ORDER BY discovered_at DESC
+             LIMIT 200
+            """
+        )
+    rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
+    for r in rows:
+        if isinstance(r.get("payload"), str):
+            try: r["payload"] = json.loads(r["payload"])
+            except Exception: r["payload"] = {}
+
+    # Build the table rows
+    def _fmt_ts(ms):
+        if not ms: return "—"
+        try:
+            return datetime.datetime.fromtimestamp(int(ms)/1000).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return "—"
+
+    body = []
+    for r in rows:
+        kind = r.get("kind") or ""
+        payload = r.get("payload") or {}
+        when = _fmt_ts(r.get("resolved_at") or r.get("discovered_at"))
+        action_html = ""
+        if tab == "failed":
+            action_html = (
+                f'<button onclick="retryRow({r["id"]})" '
+                f'class="btn-small btn-add">↻ Retry</button>'
+            )
+        elif tab == "resolved" and r.get("resolved_master_id"):
+            mid = r["resolved_master_id"]
+            action_html = (
+                f'<a href="/admin/search?q={mid}" class="btn-small btn-edit">View</a>'
+            )
+        elif tab == "pending":
+            action_html = (
+                f'<span style="color:#666;font-size:11px">attempt {r.get("attempts") or 0}/3</span>'
+            )
+
+        err_html = ""
+        if r.get("last_error") and tab in ("failed", "pending"):
+            err_html = (f'<br><span style="color:#f87171;font-size:11px">'
+                        f'{_html.escape(r["last_error"][:200])}</span>')
+
+        body.append(
+            "<tr>"
+            f"<td style='color:#666;font-size:11px'>#{r['id']}</td>"
+            f"<td><span style='color:#facc15;font-weight:600;text-transform:uppercase;"
+            f"font-size:11px'>{_html.escape(kind)}</span></td>"
+            f"<td>{_discovery_payload_summary(kind, payload)}{err_html}</td>"
+            f"<td>{_discovery_lang_chips(payload)}</td>"
+            f"<td style='color:#94a3b8;font-size:12px'>{when}</td>"
+            f"<td>{_discovery_status_badge(r.get('status') or '')}</td>"
+            f"<td>{action_html}</td>"
+            "</tr>"
+        )
+
+    if not body:
+        empty_msg = {
+            "pending":  "No sets in the queue — the worker will probe again on its next cycle.",
+            "resolved": "Nothing landed in the last 7 days.",
+            "failed":   "No failures — everything resolved cleanly. ✓",
+        }[tab]
+        body_html = (f'<tr><td colspan="7" style="color:#666;text-align:center;'
+                     f'padding:32px">{empty_msg}</td></tr>')
+    else:
+        body_html = "\n".join(body)
+
+    def _tab_pill(key: str, label: str, count: int) -> str:
+        active = " style='background:#facc15;color:#000'" if key == tab else ""
+        return (f'<a href="/admin/discovery?tab={key}" class="btn-small btn-edit"{active}>'
+                f'{label} <span style="opacity:.7">({count})</span></a>')
+
+    pending_count  = (counts.get("pending") or 0) + (counts.get("running") or 0)
+    resolved_count = (counts.get("resolved") or 0) + (counts.get("noop") or 0)
+    failed_count   =  counts.get("failed") or 0
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Discovery | HanryxVault POS</title>{css}
+<style>
+.btn-small {{ font-size:12px;padding:6px 12px;border-radius:4px;border:none;
+  cursor:pointer;text-decoration:none;display:inline-block;margin-right:6px }}
+.btn-add  {{ background:#7c3aed;color:#fff }}
+.btn-edit {{ background:#374151;color:#fff }}
+.btn-add:hover  {{ background:#6d28d9 }}
+.btn-edit:hover {{ background:#4b5563 }}
+table {{ width:100%;border-collapse:collapse;font-size:13px }}
+table th {{ background:#1e293b;color:#facc15;padding:9px 10px;text-align:left;
+  border-bottom:1px solid #334155 }}
+table td {{ padding:9px 10px;text-align:left;vertical-align:top;
+  border-bottom:1px solid #1e293b }}
+table tr:hover td {{ background:#0a0f1c }}
+.tabs {{ margin:14px 0 18px }}
+</style></head><body>
+{nav}
+<div class="admin-content">
+<h1 style="color:#facc15;margin-bottom:2px">🆕 Continuous Discovery</h1>
+<p style="color:#94a3b8;font-size:13px;margin:0 0 6px">
+  New sets and operator-reported missing cards land here, then the dispatcher
+  routes them to the right importer (TCGdex EN/JP/KR/CHS plus per-language
+  fallbacks). Probes run daily; the dispatcher runs every 30 minutes.
+</p>
+<div class="tabs">
+  {_tab_pill("pending",  "📬 Pending",  pending_count)}
+  {_tab_pill("resolved", "✓ Resolved (7d)",  resolved_count)}
+  {_tab_pill("failed",   "✗ Failed",  failed_count)}
+</div>
+<table>
+<thead><tr>
+  <th style="width:50px">#</th>
+  <th style="width:70px">Kind</th>
+  <th>Payload</th>
+  <th style="width:160px">Languages</th>
+  <th style="width:140px">When</th>
+  <th style="width:90px">Status</th>
+  <th style="width:120px">Action</th>
+</tr></thead>
+<tbody>{body_html}</tbody>
+</table>
+
+<p style="color:#555;font-size:11px;margin-top:18px">
+  Tablet agents can poll the JSON feed at
+  <code>GET /admin/discovery/queue.json?status=pending</code>
+  and report missing cards via
+  <code>POST /admin/discovery/report</code> with body <code>{{"query":"..."}}</code>.
+</p>
+</div>
+
+<script>
+async function retryRow(id) {{
+  if (!confirm('Reset attempt counter and re-queue this row?')) return;
+  try {{
+    const r = await fetch('/admin/discovery/retry/' + id, {{ method: 'POST' }});
+    const d = await r.json();
+    if (d.ok) {{ window.location.reload(); }}
+    else {{ alert('Retry failed: ' + (d.error || 'unknown')); }}
+  }} catch (e) {{ alert('Network error: ' + e.message); }}
+}}
+</script>
+</body></html>""")
+
+
+# ---------------------------------------------------------------------------
+# Blueprint registration — offline card database (USB) extension
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------

@@ -338,3 +338,125 @@ Operators get one place to:
 2. See instantly whether the shop holds it, and if so how many.
 3. Add a known catalogue card to inventory in one click without
    retyping the multilingual names.
+
+
+---
+
+# Continuous Discovery v1
+
+The unified card DB stays current automatically. Two background jobs
+(wired into `sync_orchestrator.py`) detect new sets the moment TCGdex
+publishes them and feed them through the existing per-language
+importers without operator action.
+
+## Architecture (probe → queue → dispatch → master)
+
+```
+   ┌────────────────────────────────────────────────────────┐
+   │  discover_new_sets.py        runs DAILY, needs net     │
+   │  ┌─────────┬─────────┬─────────┬─────────┬─────────┐   │
+   │  │ /v2/en  │ /v2/ja  │ /v2/ko  │/v2/zh-tw│/v2/zh-cn│   │
+   │  │  /sets  │  /sets  │  /sets  │  /sets  │  /sets  │   │
+   │  └─────────┴─────────┴─────────┴─────────┴─────────┘   │
+   │   (parallel ThreadPoolExecutor — one slow lang        │
+   │    doesn't block the others)                          │
+   │              │ aggregate by set_id                    │
+   │              ▼                                        │
+   │       diff vs ref_set_mapping + queue                 │
+   │              │ unknown set_ids                        │
+   │              ▼                                        │
+   └──────────────┼────────────────────────────────────────┘
+                  ▼
+           ╭──────────────────────╮
+           │   discovery_queue    │  unique partial idx on set_id
+           │   (kind=set/report)  │  prevents dupes
+           ╰──────────────────────╯
+                  │
+                  ▼   FOR UPDATE SKIP LOCKED — safe to run concurrently
+   ┌──────────────┼────────────────────────────────────────┐
+   │  discovery_dispatch.py       runs every 30 min        │
+   │  per row, routes by language tags in payload:         │
+   │   ─ always: import_tcgdex.py (multilingual)           │
+   │   ─ if 'ja' & JP-exclusive: import_jp_pokemoncardcom  │
+   │   ─ if 'ko':                import_kr_cards.py        │
+   │   ─ if 'zh-cn':             import_chs_cards.py       │
+   │   ─ then:                   build_cards_master.py     │
+   │  writes to discovery_log per attempt                  │
+   │  backoff: 1h / 6h / 24h, then 'failed' for triage     │
+   └────────────────────────────────────────────────────────┘
+                  │
+                  ▼
+           cards_master grows
+                  │
+                  ▼
+         next mirror tick → USB SQLite
+                  │
+                  ▼
+        Pi-attached tablets see the new cards
+```
+
+## Why per-language probing matters
+
+TCGdex's English endpoint **deliberately omits** sets that have no
+English release: most JP-exclusive promo bundles, every Pokemon Korea
+exclusive, the Simplified-Chinese reprints. A POS that only probes the
+EN endpoint misses exactly the cards multilingual customers are most
+likely to bring in. Hitting all five language endpoints catches ~95%
+of new releases without any HTML scraping.
+
+## Operator escape hatch — "Report missing card"
+
+The zero-results state on `/admin/search` exposes a **🔍 Report missing
+card** button. Clicking it POSTs the current query to
+`/admin/discovery/report` which inserts a `kind='report'` row.
+
+The dispatcher rechecks every report against `cards_master` on its
+next 30-minute tick. The most common reason for a "missing" card on
+day 1 is that its set hasn't been imported yet — by day 2 the set
+discovery probe has caught it, the importer has pulled it down, and
+the report flips to `resolved` automatically.
+
+## Admin pages
+
+* **`/admin/discovery`** — three-tab queue browser (Pending / Resolved
+  7d / Failed) with a per-row Retry button on the Failed tab. Surfaces
+  failures that gave up after 3 attempts so a human can intervene.
+* **`/admin` dashboard** — compact "Recently discovered (last 7 days)"
+  panel showing the 5 most recent landed sets / reports. Renders
+  nothing on a fresh install (no noise).
+* Nav pill 🆕 **Discovery** added between Search and Market.
+
+## JSON feed for the tablet
+
+`GET /admin/discovery/queue.json?status=pending&kind=set&limit=50`
+returns the queue as JSON — tablet agents poll this rather than
+scraping HTML. See `TABLET_APK_SPEC.md` §4.5–4.7 for the full contract.
+
+## Manual run / debugging
+
+```bash
+# Run the probe by hand (safe — idempotent)
+docker exec hanryxvault-pos python3 /app/discover_new_sets.py
+
+# Run only specific languages
+docker exec hanryxvault-pos python3 /app/discover_new_sets.py \
+    --languages en ja
+
+# Drain the queue once (prints JSON summary of what was processed)
+docker exec hanryxvault-pos python3 /app/discovery_dispatch.py
+
+# Dry-run dispatcher — log what it WOULD do, run no importer
+docker exec hanryxvault-pos python3 /app/discovery_dispatch.py --dry-run
+
+# Check queue depth
+docker exec hanryxvault-pg psql -U postgres -c \
+  "SELECT status, COUNT(*) FROM discovery_queue GROUP BY status"
+```
+
+## Acceptance
+
+A new TCGdex set ID should land in `cards_master` within **24 hours**
+(probe interval) + **30 minutes** (dispatcher interval) + the time the
+importer takes (~2 min on the Pi). The next `mirror` job (6 min cycle)
+copies it to the USB SQLite — total worst-case ~25 hours, typical
+~30 minutes if the operator triggers a manual probe.

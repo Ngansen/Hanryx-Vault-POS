@@ -344,6 +344,12 @@ CREATE INDEX IF NOT EXISTS idx_discovery_queue_discovered_at
 CREATE UNIQUE INDEX IF NOT EXISTS uq_discovery_queue_pending_set
     ON discovery_queue ((payload->>'set_id'))
  WHERE kind = 'set' AND status IN ('pending','running');
+-- Dedup for operator reports: only one open row per query string. Closes the
+-- SELECT-then-INSERT race in /admin/discovery/report when two tablets POST
+-- the same missing-card query within milliseconds of each other.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_discovery_queue_pending_report
+    ON discovery_queue ((payload->>'query'))
+ WHERE kind = 'report' AND status = 'pending';
 """
 
 DDL_DISCOVERY_LOG = """

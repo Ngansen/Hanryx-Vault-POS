@@ -118,11 +118,16 @@ def _claim_pending(cur, batch: int, kind_filter: str | None) -> list[dict]:
     Uses `FOR UPDATE SKIP LOCKED` so concurrent dispatchers cooperate
     rather than collide. Returns the claimed rows (status set to 'running').
     """
+    # Stamp `next_attempt_at` with NOW at claim time. The reaper uses this
+    # as a "started_at" proxy to detect rows orphaned by a dispatcher crash.
+    now_ms = int(time.time() * 1000)
     where_kind = ""
-    params: list[Any] = [int(time.time() * 1000), batch]
+    params: list[Any]
     if kind_filter:
         where_kind = "AND kind = %s "
-        params = [int(time.time() * 1000), kind_filter, batch]
+        params = [now_ms, kind_filter, batch, now_ms]   # WHERE now, kind, LIMIT, SET now
+    else:
+        params = [now_ms, batch, now_ms]                # WHERE now, LIMIT, SET now
 
     cur.execute(
         f"""
@@ -137,8 +142,9 @@ def _claim_pending(cur, batch: int, kind_filter: str | None) -> list[dict]:
              FOR UPDATE SKIP LOCKED
         )
         UPDATE discovery_queue q
-           SET status   = 'running',
-               attempts = q.attempts + 1
+           SET status          = 'running',
+               attempts        = q.attempts + 1,
+               next_attempt_at = %s   -- reused as 'started_at' for reaper
           FROM claimed c
          WHERE q.id = c.id
         RETURNING q.id, q.kind, q.payload, q.source, q.attempts, q.reporter
@@ -185,6 +191,8 @@ def _mark_resolved(cur, queue_id: int, master_id: int | None, cards_added: int) 
 
 
 def _mark_noop(cur, queue_id: int, note: str) -> None:
+    """Terminal-but-not-an-error: payload was malformed or we deliberately
+    decided not to retry. Will not be re-claimed."""
     cur.execute(
         """
         UPDATE discovery_queue
@@ -195,6 +203,62 @@ def _mark_noop(cur, queue_id: int, note: str) -> None:
         """,
         (int(time.time() * 1000), note[:500], queue_id),
     )
+
+
+def _mark_deferred(cur, queue_id: int, delay_ms: int, note: str) -> None:
+    """Re-pend a row for later WITHOUT consuming an attempt. Used for
+    operator reports that haven't matched any card yet — they should keep
+    getting checked indefinitely on roughly the daily probe cadence,
+    not run out of retries and disappear into 'failed'.
+
+    Decrements `attempts` back so the backoff/fail logic never kicks in.
+    """
+    cur.execute(
+        """
+        UPDATE discovery_queue
+           SET status = 'pending',
+               next_attempt_at = %s,
+               attempts = GREATEST(attempts - 1, 0),
+               last_error = %s
+         WHERE id = %s
+        """,
+        (int(time.time() * 1000) + delay_ms, note[:500], queue_id),
+    )
+
+
+def _reap_stale_running(cur, max_age_ms: int = 60 * 60 * 1000) -> int:
+    """Reset rows that have been stuck in 'running' for too long back to
+    'pending' so they can be re-claimed.
+
+    Catches rows orphaned by a dispatcher crash: SIGKILL, container
+    restart, power loss, network blip during importer subprocess. Without
+    this, those rows would sit in 'running' forever because the claim
+    query only looks at 'pending'.
+
+    `next_attempt_at` is stamped with NOW at claim time (see
+    `_claim_pending`), so we treat it as a started_at proxy.
+
+    Default ceiling is 1h — set discovery rarely takes more than a few
+    minutes per importer, so anything older is almost certainly orphaned.
+    """
+    threshold = int(time.time() * 1000) - max_age_ms
+    cur.execute(
+        """
+        UPDATE discovery_queue
+           SET status = 'pending',
+               last_error = COALESCE(NULLIF(last_error, ''),
+                                     'reaped from stale running')
+         WHERE status = 'running'
+           AND next_attempt_at < %s
+        RETURNING id
+        """,
+        (threshold,),
+    )
+    rows = cur.fetchall()
+    if rows:
+        log.warning("[reap] reset %d stale 'running' row(s) to 'pending': %s",
+                    len(rows), [r[0] for r in rows][:10])
+    return len(rows)
 
 
 def _mark_backoff_or_fail(cur, queue_id: int, attempts: int, err: str) -> None:
@@ -245,17 +309,18 @@ def _looks_jp_exclusive(payload: dict) -> bool:
     return bool(payload.get("name_ja")) and not payload.get("name_en")
 
 
-def _handle_set(cur, db_conn, row: dict, dry_run: bool) -> tuple[str, int, str]:
+def _handle_set(cur, db_conn, row: dict, dry_run: bool) -> tuple[str, int, str, int | None]:
     """Run the right importers for a kind='set' discovery.
 
-    Returns (outcome, cards_added, note).
-    Outcomes: 'resolved' | 'error'.
+    Returns (outcome, cards_added, note, master_id).
+    Outcomes: 'resolved' | 'error'. master_id is always None for sets
+    (a set spawns many master rows, not one).
     """
     payload = row["payload"]
     set_id = (payload.get("set_id") or "").strip()
     langs  = payload.get("languages") or []
     if not set_id:
-        return "error", 0, "payload.set_id missing"
+        return "error", 0, "payload.set_id missing", None
 
     # Snapshot existing master row count for this set so we can report
     # how many cards the dispatcher actually added.
@@ -275,14 +340,14 @@ def _handle_set(cur, db_conn, row: dict, dry_run: bool) -> tuple[str, int, str]:
 
     if dry_run:
         steps = " → ".join(p[0] for p in plan)
-        return "resolved", 0, f"DRY-RUN would run: {steps}"
+        return "resolved", 0, f"DRY-RUN would run: {steps}", None
 
     sources_tried = []
     for module, args in plan:
         ok, err = _run_importer(module, args)
         sources_tried.append(module)
         if not ok:
-            return "error", 0, f"{module} failed: {err[-300:]}"
+            return "error", 0, f"{module} failed: {err[-300:]}", None
 
     # Re-count after the rebuild — must reconnect to see committed changes
     # from the subprocess (the cur is on its own transaction).
@@ -290,23 +355,29 @@ def _handle_set(cur, db_conn, row: dict, dry_run: bool) -> tuple[str, int, str]:
     after = _count_master_rows(cur, set_id)
     cards_added = max(0, after - before)
     note = f"sources: {', '.join(sources_tried)}; rows {before}→{after}"
-    return "resolved", cards_added, note
+    return "resolved", cards_added, note, None
 
 
-def _handle_report(cur, row: dict, dry_run: bool) -> tuple[str, int, str]:
+def _handle_report(cur, row: dict, dry_run: bool) -> tuple[str, int, str, int | None]:
     """Operator-driven 'I searched for X and got nothing' report.
 
     For v1 we just check whether the query string now matches any name in
     the unified cards_master (a recent set discovery may have added it).
-    If yes → resolved with master_id; if no → noop and try again next tick.
+    Outcomes:
+      - 'resolved' with master_id  → match found, terminal success.
+      - 'deferred' with delay      → no match yet; re-pend without
+        burning an attempt so we keep checking on the daily cadence
+        forever (reports are cheap; we never want them to silently
+        fall off into 'failed').
+      - 'noop'                     → payload was malformed; terminal.
     """
     payload = row["payload"]
     q = (payload.get("query") or "").strip()
     if not q:
-        return "noop", 0, "payload.query missing"
+        return "noop", 0, "payload.query missing", None
 
     if dry_run:
-        return "noop", 0, "DRY-RUN report check skipped"
+        return "deferred", 0, "DRY-RUN report check skipped", None
 
     cur.execute(
         """
@@ -323,8 +394,8 @@ def _handle_report(cur, row: dict, dry_run: bool) -> tuple[str, int, str]:
     )
     found = cur.fetchone()
     if found:
-        return "resolved", 1, f"matched master_id={found[0]} for '{q}'"
-    return "noop", 0, f"no match for '{q}' in cards_master yet"
+        return "resolved", 1, f"matched master_id={found[0]} for '{q}'", int(found[0])
+    return "deferred", 0, f"no match for '{q}' in cards_master yet", None
 
 
 # ─── Main loop ─────────────────────────────────────────────────────────────
@@ -333,40 +404,58 @@ def dispatch(db_conn, *, batch: int = BATCH_LIMIT,
              kind_filter: str | None = None,
              dry_run: bool = False) -> dict:
     cur = db_conn.cursor()
+
+    # Reap orphaned 'running' rows (crashed dispatchers) BEFORE the claim
+    # so they have a shot at being picked up in this same tick.
+    reaped = _reap_stale_running(cur)
+    db_conn.commit()
+
     claimed = _claim_pending(cur, batch=batch, kind_filter=kind_filter)
     db_conn.commit()  # release the FOR UPDATE locks ASAP
 
     if not claimed:
-        log.info("[dispatch] no pending rows due for processing")
-        return {"claimed": 0, "resolved": 0, "noop": 0,
-                "errored": 0, "failed_terminal": 0}
+        log.info("[dispatch] no pending rows due for processing (reaped=%d)", reaped)
+        return {"claimed": 0, "reaped": reaped, "resolved": 0,
+                "deferred": 0, "noop": 0, "errored": 0, "failed_terminal": 0}
 
-    log.info("[dispatch] claimed %d row(s): %s",
-             len(claimed),
+    log.info("[dispatch] reaped=%d, claimed %d row(s): %s",
+             reaped, len(claimed),
              ", ".join(f"#{r['id']}({r['kind']})" for r in claimed))
 
-    counts = {"resolved": 0, "noop": 0, "errored": 0, "failed_terminal": 0}
+    counts = {"resolved": 0, "deferred": 0, "noop": 0,
+              "errored": 0, "failed_terminal": 0}
+    master_id: int | None
 
     for row in claimed:
         rid = row["id"]
         started = time.time()
         try:
             if row["kind"] == "set":
-                outcome, cards_added, note = _handle_set(cur, db_conn, row, dry_run)
+                outcome, cards_added, note, master_id = _handle_set(
+                    cur, db_conn, row, dry_run)
             elif row["kind"] == "report":
-                outcome, cards_added, note = _handle_report(cur, row, dry_run)
+                outcome, cards_added, note, master_id = _handle_report(
+                    cur, row, dry_run)
             else:
-                outcome, cards_added, note = "error", 0, f"unknown kind '{row['kind']}'"
+                outcome, cards_added, note, master_id = (
+                    "error", 0, f"unknown kind '{row['kind']}'", None)
         except Exception as e:
-            outcome, cards_added, note = "error", 0, f"handler crashed: {e}"
+            outcome, cards_added, note, master_id = (
+                "error", 0, f"handler crashed: {e}", None)
 
         dur_ms = int((time.time() - started) * 1000)
         _write_log(cur, rid, row["source"] or "tcgdex",
                    outcome, cards_added, dur_ms, note)
 
         if outcome == "resolved":
-            _mark_resolved(cur, rid, master_id=None, cards_added=cards_added)
+            _mark_resolved(cur, rid, master_id=master_id, cards_added=cards_added)
             counts["resolved"] += 1
+        elif outcome == "deferred":
+            # Daily re-check for unresolved operator reports. Long enough
+            # that we don't hammer the DB; short enough that next-day
+            # set discoveries will surface fresh matches.
+            _mark_deferred(cur, rid, delay_ms=24 * 3600 * 1000, note=note)
+            counts["deferred"] += 1
         elif outcome == "noop":
             _mark_noop(cur, rid, note)
             counts["noop"] += 1
@@ -379,7 +468,7 @@ def dispatch(db_conn, *, batch: int = BATCH_LIMIT,
 
         db_conn.commit()
 
-    summary = {"claimed": len(claimed), **counts}
+    summary = {"claimed": len(claimed), "reaped": reaped, **counts}
     log.info("[dispatch] done: %s", summary)
     return summary
 
