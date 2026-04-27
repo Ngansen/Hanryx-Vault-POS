@@ -3299,6 +3299,30 @@ def init_db():
                 pass
             log.warning("[pgvector] Schema setup skipped: %s", _ve)
 
+    # Initialize the unified card schema (cards_master, discovery_queue,
+    # discovery_log, all src_* / ref_* tables). Idempotent — CREATE IF NOT
+    # EXISTS — so it's safe to call on every startup. Without this, the
+    # /admin/discovery page 500s on a fresh DB because discovery_queue is
+    # only created lazily by importer subprocesses that may never have run.
+    try:
+        from unified.schema import init_unified_schema
+        result = init_unified_schema(db)
+        log.info(
+            "[DB] Unified schema ready: %d tables, trgm=%s",
+            len(result.get("tables_ensured", [])),
+            result.get("trigram_ok"),
+        )
+    except Exception as _use:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning(
+            "[DB] Unified schema init skipped: %s "
+            "(discovery/admin pages may show empty data until an importer runs)",
+            _use,
+        )
+
     db.close()
     log.info("[DB] Initialized PostgreSQL database")
 
@@ -27423,7 +27447,11 @@ def admin_discovery():
 
     db = get_db()
 
-    # Counts (cheap — small table)
+    # Counts (cheap — small table). If discovery_queue doesn't exist yet
+    # (fresh DB before any importer has run), Postgres aborts the tx and
+    # every subsequent query on this connection fails with "current
+    # transaction is aborted" until we rollback. So always rollback on
+    # error to keep the connection usable for the next query below.
     counts: dict[str, int] = {}
     try:
         cur = db.execute(
@@ -27434,45 +27462,59 @@ def admin_discovery():
             counts[d["status"]] = int(d["n"])
     except Exception as e:
         log.warning("[admin_discovery] count query failed: %s", e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
-    # Tab-specific row fetch
+    # Tab-specific row fetch. Wrapped so a missing/empty discovery_queue
+    # renders the page with "no rows" instead of a 500.
     week_ago_ms = int((time.time() - 7 * 24 * 3600) * 1000)
-    if tab == "pending":
-        cur = db.execute(
-            """
-            SELECT id, kind, payload, source, status, attempts,
-                   discovered_at, next_attempt_at, last_error, reporter
-              FROM discovery_queue
-             WHERE status IN ('pending', 'running')
-             ORDER BY discovered_at DESC
-             LIMIT 200
-            """
-        )
-    elif tab == "resolved":
-        cur = db.execute(
-            """
-            SELECT id, kind, payload, source, status, attempts,
-                   discovered_at, resolved_at, resolved_master_id, reporter
-              FROM discovery_queue
-             WHERE status IN ('resolved', 'noop')
-               AND COALESCE(resolved_at, discovered_at) >= %s
-             ORDER BY COALESCE(resolved_at, discovered_at) DESC
-             LIMIT 200
-            """,
-            (week_ago_ms,),
-        )
-    else:  # failed
-        cur = db.execute(
-            """
-            SELECT id, kind, payload, source, status, attempts,
-                   discovered_at, last_error, reporter
-              FROM discovery_queue
-             WHERE status = 'failed'
-             ORDER BY discovered_at DESC
-             LIMIT 200
-            """
-        )
-    rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
+    rows: list = []
+    try:
+        if tab == "pending":
+            cur = db.execute(
+                """
+                SELECT id, kind, payload, source, status, attempts,
+                       discovered_at, next_attempt_at, last_error, reporter
+                  FROM discovery_queue
+                 WHERE status IN ('pending', 'running')
+                 ORDER BY discovered_at DESC
+                 LIMIT 200
+                """
+            )
+        elif tab == "resolved":
+            cur = db.execute(
+                """
+                SELECT id, kind, payload, source, status, attempts,
+                       discovered_at, resolved_at, resolved_master_id, reporter
+                  FROM discovery_queue
+                 WHERE status IN ('resolved', 'noop')
+                   AND COALESCE(resolved_at, discovered_at) >= %s
+                 ORDER BY COALESCE(resolved_at, discovered_at) DESC
+                 LIMIT 200
+                """,
+                (week_ago_ms,),
+            )
+        else:  # failed
+            cur = db.execute(
+                """
+                SELECT id, kind, payload, source, status, attempts,
+                       discovered_at, last_error, reporter
+                  FROM discovery_queue
+                 WHERE status = 'failed'
+                 ORDER BY discovered_at DESC
+                 LIMIT 200
+                """
+            )
+        rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
+    except Exception as e:
+        log.warning("[admin_discovery] %s tab fetch failed: %s", tab, e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        rows = []
     for r in rows:
         if isinstance(r.get("payload"), str):
             try: r["payload"] = json.loads(r["payload"])
