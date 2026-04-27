@@ -1,0 +1,30 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "
+from server import _direct_db
+db = _direct_db()
+print('Sets in ref_set_mapping:',  db.execute('SELECT COUNT(*) AS n FROM ref_set_mapping').fetchone()['n'])
+print('Cards in cards_master:',    db.execute('SELECT COUNT(*) AS n FROM cards_master').fetchone()['n'])
+print('Cards w/ local images:',    db.execute(\"SELECT COUNT(*) AS n FROM cards_master WHERE image_url LIKE 'file://%'\").fetchone()['n'])
+print()
+print('Top 10 sets by card count:')
+for r in db.execute('SELECT set_id, COUNT(*) AS n FROM cards_master GROUP BY set_id ORDER BY n DESC LIMIT 10').fetchall():
+    print(f\"  {r['set_id']:<35} {r['n']:>5}\")
+"   print(' ', dict(r))mber LIMIT 5', ('xy-evoluti
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-04-27T07:32:23","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-27T07:32:23","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-27T07:32:24","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-27T07:32:24","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-27T07:32:24","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-04-27T07:32:24","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-04-27T07:32:24","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+Sets in ref_set_mapping: 171
+Cards in cards_master: 33396
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/app/server.py", line 628, in execute
+    cur.execute(sql.replace("?", "%s"), params or ())
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/extras.py", line 146, in execute
+    return super().execute(query, vars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: tuple index out of range
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
