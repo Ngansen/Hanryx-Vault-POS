@@ -9345,6 +9345,12 @@ def _image_to_escpos_raster(img, max_width_px: int) -> bytes:
 def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
     """Decode a base64 logo and render to centered ESC/POS raster bytes.
 
+    The header crest is capped at ~1.4" wide (≈50% of paper width) and
+    ~1.2" tall (244 px at the printer's ~203 DPI), preserving the source
+    aspect ratio. This stops oversized PNGs from the tablet eating 3"+
+    of paper. Tweak the `max_w_frac` / `max_h_px` constants below to
+    resize without rebuilding the APK.
+
     Returns b"" on any failure so the caller can safely concatenate.
     """
     try:
@@ -9358,7 +9364,22 @@ def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
         if "," in b64_str and b64_str.lstrip().lower().startswith("data:"):
             b64_str = b64_str.split(",", 1)[1]
         img = _PILImage.open(_BytesIO(_b64dec(b64_str)))
-        raster = _image_to_escpos_raster(img, paper_width_px)
+
+        # Crest size caps — tweak here, no APK rebuild needed.
+        max_w_frac = 0.50          # ~1.4" on 80mm, ~0.95" on 58mm
+        max_h_px = 244             # ~1.2" at 203 DPI
+        max_w_px = max(120, int(paper_width_px * max_w_frac))
+
+        w0, h0 = img.size
+        scale = min(max_w_px / w0, max_h_px / h0, 1.0)
+        if scale < 1.0:
+            new_w = max(1, int(w0 * scale))
+            new_h = max(1, int(h0 * scale))
+            img = img.resize((new_w, new_h), _PILImage.LANCZOS)
+
+        # Pass img.size[0] as max_width so _image_to_escpos_raster doesn't
+        # try to scale up to paper width and undo our cap.
+        raster = _image_to_escpos_raster(img, img.size[0])
         return _PR_CENTER + raster + _PR_LF + _PR_LEFT
     except Exception as e:
         try:
