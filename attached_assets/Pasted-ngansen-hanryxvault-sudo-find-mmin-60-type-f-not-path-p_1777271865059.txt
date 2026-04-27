@@ -1,0 +1,55 @@
+ngansen@hanryxvault:~ $ sudo find / -mmin -60 -type f \
+  -not -path '/proc/*' -not -path '/sys/*' -not -path '/var/log/*' \
+  -not -path '/var/lib/docker/*' -not -path '/run/*' \
+  2>/dev/null | head -50
+/etc/resolv.conf
+/mnt/cards/pokedex_local.db
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets 7b215188acc48338be2681ef323cd6a3.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Unified Minds 29015188acc483f0b50f815a70ba77dc.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/HeartGold and SoulSilver 10015188acc482cdb013014ffd10c4fa.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Steam Siege/Untitled fc015188acc4838e98a281f99be03fad.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Legendary Treasures/Untitled 32c15188acc48294998f01b5daea2284.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Black and White ac815188acc4821bb0e4018bc54380ee.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Phantom Forces/Untitled 41d15188acc482d9adee812dd3e29827.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Call of Legends 24b15188acc4824193d1010a54e8cec4.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/EX Emerald/Untitled fe915188acc4829891b401600c938a94.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Neo Destiny b8115188acc48297b44a81259cbb8ad3.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Pop series 1 add15188acc4823aae1c815feaebe0d3.md
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/Silver Tempest/Untitled 7a315188acc483379e8801aecee46dbb.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Psychic-Energy.BLW.109.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Grass-Energy.HGSS.115.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 60.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 23.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Lightning-Energy.HGSS.118.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/1600 1.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Fighting-Energy.HGSS.120.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 68.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 7.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 1.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 20.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 52.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 32.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Psychic-Energy.HGSS.119.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 28.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 26.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 72.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 65.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 49.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 70.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 30.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Fighting-Energy.BLW.110.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Metal-Energy.HGSS.122.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 67.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 17.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 15.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Fire-Energy.HGSS.116.webp
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 22.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 47.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 46.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 25.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 40.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/Untitled 59715188acc483608f0481583321868c.csv
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/240 38.jpg
+/mnt/cards/tcg-master-set/Pokemon Card Sets Database/TCG Sets/XY Evolutions/275491.jpg
+ngansen@hanryxvault:~ $
