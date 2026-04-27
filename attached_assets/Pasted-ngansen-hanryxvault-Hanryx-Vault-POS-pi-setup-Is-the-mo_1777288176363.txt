@@ -1,0 +1,110 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # Is the mount still alive?
+mount | grep /mnt/cards
+ls -la /mnt/cards/ 2>&1 | head -20
+
+# Kernel-level — look for USB resets, EXT4 errors, "lost connection"
+sudo dmesg | tail -80
+
+# What device is it?
+lsblk -f
+df -hT /mnt/cards 2>&1
+total 8
+drwxr-xr-x 2 root root 4096 Apr 26 19:42 .
+drwxr-xr-x 4 root root 4096 Apr 26 19:42 ..
+[11923.290030] docker0: port 1(vethc8b43ef) entered blocking state
+[11923.290040] docker0: port 1(vethc8b43ef) entered forwarding state
+[11923.329533] docker0: port 1(vethc8b43ef) entered disabled state
+[11923.330872] vethc8b43ef (unregistering): left allmulticast mode
+[11923.330881] vethc8b43ef (unregistering): left promiscuous mode
+[11923.330886] docker0: port 1(vethc8b43ef) entered disabled state
+[11923.613869] docker0: port 1(veth1ac4a0c) entered blocking state
+[11923.613879] docker0: port 1(veth1ac4a0c) entered disabled state
+[11923.613893] veth1ac4a0c: entered allmulticast mode
+[11923.613975] veth1ac4a0c: entered promiscuous mode
+[11923.632492] docker0: port 1(veth1ac4a0c) entered blocking state
+[11923.632504] docker0: port 1(veth1ac4a0c) entered forwarding state
+[11923.803926] docker0: port 1(veth1ac4a0c) entered disabled state
+[11923.804969] eth0: renamed from veth358413d
+[11923.805570] docker0: port 1(veth1ac4a0c) entered blocking state
+[11923.805577] docker0: port 1(veth1ac4a0c) entered forwarding state
+[11923.909546] docker0: port 1(veth1ac4a0c) entered disabled state
+[11923.910080] veth358413d: renamed from eth0
+[11923.961633] docker0: port 1(veth1ac4a0c) entered blocking state
+[11923.961645] docker0: port 1(veth1ac4a0c) entered forwarding state
+[11924.013106] docker0: port 1(veth1ac4a0c) entered disabled state
+[11924.015496] veth1ac4a0c (unregistering): left allmulticast mode
+[11924.015506] veth1ac4a0c (unregistering): left promiscuous mode
+[11924.015514] docker0: port 1(veth1ac4a0c) entered disabled state
+[11928.354324] veth7116007: renamed from eth0
+[11928.354840] br-5332d57b369e: port 9(veth69b467a) entered disabled state
+[11928.386490] br-5332d57b369e: port 9(veth69b467a) entered blocking state
+[11928.386498] br-5332d57b369e: port 9(veth69b467a) entered forwarding state
+[11928.432415] br-5332d57b369e: port 9(veth69b467a) entered disabled state
+[11928.433639] veth69b467a (unregistering): left allmulticast mode
+[11928.433647] veth69b467a (unregistering): left promiscuous mode
+[11928.433652] br-5332d57b369e: port 9(veth69b467a) entered disabled state
+[11929.431650] br-5332d57b369e: port 9(veth7803ecb) entered blocking state
+[11929.431670] br-5332d57b369e: port 9(veth7803ecb) entered disabled state
+[11929.431688] veth7803ecb: entered allmulticast mode
+[11929.431952] veth7803ecb: entered promiscuous mode
+[11929.475891] eth0: renamed from vethb0e98b5
+[11929.476889] br-5332d57b369e: port 9(veth7803ecb) entered blocking state
+[11929.476901] br-5332d57b369e: port 9(veth7803ecb) entered forwarding state
+[17740.509733] usb 1-2: USB disconnect, device number 2
+[17740.590337] EXT4-fs (sda1): shut down requested (2)
+[17740.595253] Aborting journal on device sda1-8.
+[17740.595281] device offline error, dev sda, sector 239337474 op 0x1:(WRITE) flags 0x9800 phys_seg 1 prio class 2
+[17740.595287] Buffer I/O error on dev sda1, logical block 29917184, lost sync page write
+[17740.595294] JBD2: I/O error when updating journal superblock for sda1-8.
+[17748.665969] usb usb1-port2: attempt power cycle
+[17749.061713] usb 1-2: new high-speed USB device number 5 using xhci-hcd
+[17749.271183] usb 1-2: New USB device found, idVendor=154b, idProduct=1006, bcdDevice= 1.10
+[17749.271193] usb 1-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[17749.271197] usb 1-2: Product: USB 3.2.1 FD
+[17749.271200] usb 1-2: Manufacturer: PNY
+[17749.271202] usb 1-2: SerialNumber: 071834A2995F7A38
+[17749.274436] usb-storage 1-2:1.0: USB Mass Storage device detected
+[17749.274860] scsi host1: usb-storage 1-2:1.0
+[17750.292897] scsi 1:0:0:0: Direct-Access     PNY      USB 3.2.1 FD     PMAP PQ: 0 ANSI: 6
+[17750.293526] sd 1:0:0:0: Attached scsi generic sg0 type 0
+[17750.772440] sd 1:0:0:0: [sdb] 484362240 512-byte logical blocks: (248 GB/231 GiB)
+[17750.773522] sd 1:0:0:0: [sdb] Write Protect is off
+[17750.773527] sd 1:0:0:0: [sdb] Mode Sense: 45 00 00 00
+[17750.774313] sd 1:0:0:0: [sdb] Write cache: disabled, read cache: enabled, doesn't support DPO or FUA
+[17750.804235]  sdb: sdb1
+[17750.804799] sd 1:0:0:0: [sdb] Attached SCSI removable disk
+[24834.792911] usb 1-2: USB disconnect, device number 5
+[24842.872973] usb usb1-port2: attempt power cycle
+[24843.264881] usb 1-2: new high-speed USB device number 8 using xhci-hcd
+[24843.478365] usb 1-2: New USB device found, idVendor=154b, idProduct=1006, bcdDevice= 1.10
+[24843.478374] usb 1-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[24843.478378] usb 1-2: Product: USB 3.2.1 FD
+[24843.478381] usb 1-2: Manufacturer: PNY
+[24843.478383] usb 1-2: SerialNumber: 071834A2995F7A38
+[24843.479057] usb-storage 1-2:1.0: USB Mass Storage device detected
+[24843.482359] scsi host1: usb-storage 1-2:1.0
+[24844.488060] scsi 1:0:0:0: Direct-Access     PNY      USB 3.2.1 FD     PMAP PQ: 0 ANSI: 6
+[24844.488422] sd 1:0:0:0: Attached scsi generic sg0 type 0
+[24844.751738] sd 1:0:0:0: [sdb] 484362240 512-byte logical blocks: (248 GB/231 GiB)
+[24844.752794] sd 1:0:0:0: [sdb] Write Protect is off
+[24844.752796] sd 1:0:0:0: [sdb] Mode Sense: 45 00 00 00
+[24844.753547] sd 1:0:0:0: [sdb] Write cache: disabled, read cache: enabled, doesn't support DPO or FUA
+[24844.783340]  sdb: sdb1
+[24844.783450] sd 1:0:0:0: [sdb] Attached SCSI removable disk
+NAME FSTYPE FSVER LABEL       UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0
+     swap   1                                                                     
+sdb                                                                               
+└─sdb1
+     ext4   1.0   hanryxcards 381e39df-5f24-44ad-a925-38d5b60e4256                
+mmcblk0
+│                                                                                 
+├─mmcblk0p1
+│    vfat   FAT32 bootfs      F587-071F                             432.3M    15% /boot/firmware
+└─mmcblk0p2
+     ext4   1.0   rootfs      d6944274-f2f7-4644-96a4-213c3b367f5c   18.2G    64% /
+zram0
+     swap   1     zram0       ef8bed58-b811-41d2-b1da-d4210c46abea                [SWAP]
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2 ext4   58G   38G   19G  68% /
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
