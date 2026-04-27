@@ -1,0 +1,133 @@
+ngansen@hanryxvault:~ $ # Show everything in your home dir, newest first — the upload should be obvious
+ls -lat ~ | head -30
+
+# Also check the usual suspects in case scp/sftp dropped it elsewhere
+ls -lat ~/Downloads ~/uploads /tmp /mnt 2>/dev/null | head -40
+
+# And catch anything modified in the last 2 days under your home
+find ~ -maxdepth 3 -mtime -2 -type f 2>/dev/null | head -40
+find ~ -maxdepth 3 -mtime -2 -type d 2>/dev/null | head -40
+total 256
+drwx------ 18 ngansen ngansen   4096 Apr 27 06:31 .
+-rw-------  1 ngansen ngansen 106276 Apr 27 06:31 .bash_history
+-rw-------  1 ngansen ngansen   3480 Apr 27 03:55 .xsession-errors
+-rw-------  1 ngansen ngansen     56 Apr 27 03:51 .Xauthority
+drwxrwxr-x  9 ngansen ngansen   4096 Apr 27 02:23 Hanryx-Vault-POS
+-rw-------  1 ngansen ngansen   3480 Apr 26 19:43 .xsession-errors.old
+drwx------  2 ngansen ngansen   4096 Apr 21 17:00 .ssh
+-rw-rw-r--  1 ngansen ngansen     29 Apr 20 00:16 .gitconfig
+drwx------  9 ngansen ngansen   4096 Apr 19 15:06 .cache
+drwxrwxr-x  9 ngansen ngansen   4096 Apr 18 23:20 hanryx-vault-pos
+drwxr-xr-x  2 root    root      4096 Apr 17 23:38 .hanryx
+drwx------ 15 ngansen ngansen   4096 Apr 15 03:17 .config
+-rw-rw-r--  1 ngansen ngansen     66 Apr 15 03:14 .selected_editor
+-rwxrwxr-x  1 ngansen ngansen    115 Apr 15 03:09 launch-admin.sh
+-rw-rw-r--  1 ngansen ngansen    248 Apr 14 22:42 .wget-hsts
+-rw-r--r--  1 root    root       547 Apr  5 20:48 phone-wg.conf
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 03:05 pi_private.key
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 03:05 pi_public.key
+-rw-rw-r--  1 ngansen ngansen    229 Apr  4 02:43 phone.conf
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 02:43 phone-private.key
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 02:43 phone-public.key
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 02:38 privatekey
+-rw-rw-r--  1 ngansen ngansen     45 Apr  4 02:38 publickey
+-rw-------  1 root    root        45 Apr  3 04:02 server-private.key
+-rw-r--r--  1 root    root        45 Apr  3 04:02 server-public.key
+-rw-rw-r--  1 ngansen docker       0 Apr  3 02:41 =
+-rw-rw-r--  1 ngansen ngansen      0 Apr  3 02:41 resolving
+-rw-rw-r--  1 ngansen ngansen      0 Apr  3 02:41 unpacking
+-rw-rw-r--  1 ngansen ngansen      0 Apr  3 02:41 exporting
+/tmp:
+total 20
+drwxrwxrwt 13 root    root     280 Apr 27 06:32 .
+drwx------  3 root    root      60 Apr 27 03:55 systemd-private-f5c81ff71dea4a4c8a8a91e15e4e35f6-upower.service-1ZYQe9
+drwx------  2 ngansen ngansen   80 Apr 27 03:55 org.chromium.Chromium.59EsLF
+-r--r--r--  1 ngansen ngansen   11 Apr 27 03:51 .X0-lock
+drwxrwxrwt  2 root    root      60 Apr 27 03:51 .X11-unix
+drwx------  2 ngansen ngansen   60 Apr 27 03:51 ssh-9tkThblqBJW6
+drwx------  3 root    root      60 Apr 27 03:51 systemd-private-f5c81ff71dea4a4c8a8a91e15e4e35f6-ModemManager.service-kxkm6P
+drwx------  3 root    root      60 Apr 27 03:51 systemd-private-f5c81ff71dea4a4c8a8a91e15e4e35f6-systemd-logind.service-07bGb3
+drwx------  3 root    root      60 Apr 27 03:51 systemd-private-f5c81ff71dea4a4c8a8a91e15e4e35f6-polkit.service-TT6mE7
+drwx------  3 root    root      60 Apr 27 03:51 systemd-private-f5c81ff71dea4a4c8a8a91e15e4e35f6-bluetooth.service-48vNrX
+drwxrwxrwt  2 root    root      40 Apr 27 03:51 .font-unix
+drwxrwxrwt  2 root    root      40 Apr 27 03:51 .ICE-unix
+drwxrwxrwt  2 root    root      40 Apr 27 03:51 .XIM-unix
+drwxr-xr-x 18 root    root    4096 Apr  6 20:09 ..
+
+/mnt:
+total 16
+drwxrwxrwx  6 ngansen ngansen 4096 Apr 27 06:10 cards
+drwxr-xr-x  4 root    root    4096 Apr 26 19:42 .
+drwxr-xr-x 18 root    root    4096 Apr  6 20:09 ..
+drwxr-xr-x  2 root    root    4096 Apr  5 22:25 nvme
+
+/home/ngansen/Downloads:
+total 8
+drwx------ 18 ngansen ngansen 4096 Apr 27 06:31 ..
+drwxr-xr-x  2 ngansen ngansen 4096 Dec  4 14:51 .
+/home/ngansen/.xsession-errors.old
+/home/ngansen/.bash_history
+/home/ngansen/.config/chromium/Local State
+/home/ngansen/.config/chromium/Variations
+/home/ngansen/.config/chromium/Last Version
+/home/ngansen/.config/chromium/BrowserMetrics-spare.pma
+/home/ngansen/.Xauthority
+/home/ngansen/.docker/.token_seed
+/home/ngansen/.docker/buildx/current
+/home/ngansen/.xsession-errors
+/home/ngansen/.local/state/lesshst
+/home/ngansen/Hanryx-Vault-POS/.replit
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1120_1777268117734.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Korean_Cards_1777244957429.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/ALL_English_Pokémon_Cards_1777243924194.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-docker-co_1777261524944.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Chinese_Pokemon_Global_Master_Database_1777243924194.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1108_1777232693664.png
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-Linux-hanryxvault-6-12-75-rpt-rpi-2712-1-SMP-PREEMPT-De_1777181855901.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Copy_of_Pokemon_TCG_Spreadsheet_V3.2_1777243924194.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1120_1777267917394.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/image_1777230754812.jpg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Copy_of_Japanese_Pokemon_Card_Spreadsheet_2.0_September_1996__1777243924194.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1116_1777267917394.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-Norwood0202-cd-Hanryx-Vault-POS-pi-_1777124304849.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1120_1777268420340.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Korean_Cards_1777243924194.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1094_1777123576668.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1119_1777267917394.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1117_1777268117734.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/image_1777121505344.jpg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1115_1777268420340.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Korean_Pokemon_Global_Master_Database_1777244957429.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/pokemon_tcg_postgres_system_1777228773425.zip
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1115_1777267872858.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-s-etup-cd-Hanry_1777265397708.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1117_1777268420340.jpeg
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-lsblk-f-dmesg-tail-20-NAME-FSTYPE-F_1777232126012.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Japanese_Pokemon_Card_Spreadsheet_2.0_September_1996_-_Decemb_1777243924194.xlsx
+/home/ngansen/Hanryx-Vault-POS/attached_assets/IMG_1107_1777231261200.png
+/home/ngansen
+/home/ngansen/.config/chromium
+/home/ngansen/.config/chromium/OptimizationHints
+/home/ngansen/.config/chromium/PKIMetadata
+/home/ngansen/.config/chromium/component_crx_cache
+/home/ngansen/.config/chromium/CertificateRevocation
+/home/ngansen/.config/chromium/Default
+/home/ngansen/.docker/buildx
+/home/ngansen/.docker/buildx/activity
+/home/ngansen/.local/state
+/home/ngansen/.local/state/wireplumber
+/home/ngansen/Hanryx-Vault-POS
+/home/ngansen/Hanryx-Vault-POS/attached_assets
+/home/ngansen/Hanryx-Vault-POS/.git
+/home/ngansen/Hanryx-Vault-POS/.git/objects
+/home/ngansen/Hanryx-Vault-POS/.github
+/home/ngansen/Hanryx-Vault-POS/.github/workflows
+/home/ngansen/Hanryx-Vault-POS/pi-setup
+/home/ngansen/Hanryx-Vault-POS/pi-setup/pokeapi
+/home/ngansen/Hanryx-Vault-POS/pi-setup/scripts
+/home/ngansen/Hanryx-Vault-POS/pi-setup/unified
+/home/ngansen/Hanryx-Vault-POS/pi-setup/docs
+/home/ngansen/Hanryx-Vault-POS/pi-setup/recognizer
+/home/ngansen/Hanryx-Vault-POS/pi-setup/cards
+/home/ngansen/.cache/menus
+ngansen@hanryxvault:~ $
