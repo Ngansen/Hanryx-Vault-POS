@@ -9406,7 +9406,24 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     subheader = (conf.get("receipt_subheader") or "Trading Card Shop").encode()
     footer    = (conf.get("receipt_footer")    or "hanryxvault.cards").encode()
 
-    divider = _PR_DIVIDER_NARR   # default 58 mm
+    # ── Paper-width-aware layout ─────────────────────────────────────────────
+    # 58 mm (32 chars / 384 px) is the historical default. 80 mm printers
+    # (MUNBYN P047 etc., 42 chars / 576 px) get a wider divider AND a wider
+    # name column so the receipt fills the paper instead of looking lost in a
+    # narrow gutter on the left. Set `paper_width=80` in pi-setup/printer.conf
+    # to opt in; everything else (logo + QR raster widths, line-item layout,
+    # divider) follows from this single switch.
+    paper_w = _paper_width_px(conf)
+    if paper_w >= 576:                # 80 mm
+        divider = _PR_DIVIDER_WIDE
+        name_w     = 32               # 32 + ' ' + '$' + 7 = 41 chars (fits 42)
+        name_w_qty = 28               # '  x?' (4) + name(28) + ' $' + 7 = 42
+        item_trunc = 32
+    else:                             # 58 mm
+        divider = _PR_DIVIDER_NARR
+        name_w     = 22               # 22 + ' ' + '$' + 7 = 31 chars (fits 32)
+        name_w_qty = 19               # '  x?' (4) + name(19) + ' $' + 7 = 33
+        item_trunc = 22
 
     timestamp = sale.get("timestamp", 0)
     if timestamp:
@@ -9425,8 +9442,8 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     # ── Optional store logo ──────────────────────────────────────────────────
     # The tablet sends a base64 PNG/JPEG in `logoBase64` (read from
     # filesDir/receipt_logo.png on the Android side, see MainViewModel.kt
-    # L3543-3562). Width is auto-fit to the printer's pixel row count.
-    paper_w = _paper_width_px(conf)
+    # L3543-3562). Width auto-fits to the printer's pixel row count (paper_w
+    # was computed at the top of this function from conf["paper_width"]).
     logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
     if logo_b64:
         out += _render_logo_raster(logo_b64, paper_w)
@@ -9446,13 +9463,14 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
 
     # Line items
     for item in items:
-        name  = (item.get("name") or "Item")[:22]
+        name  = (item.get("name") or "Item")[:item_trunc]
         qty   = int(item.get("quantity") or 1)
         price = float(item.get("unitPrice") or item.get("price") or 0)
         total = float(item.get("lineTotal") or (price * qty))
-        line  = f"{name:<22} ${total:>7.2f}\n"
+        line  = f"{name:<{name_w}} ${total:>7.2f}\n"
         if qty > 1:
-            line = f"  x{qty} {name:<19} ${total:>7.2f}\n"
+            qty_name = name[:name_w_qty]
+            line = f"  x{qty} {qty_name:<{name_w_qty}} ${total:>7.2f}\n"
         out += line.encode()
 
     out += divider
@@ -9462,13 +9480,13 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     tax      = float(sale.get("taxAmount",  0))
     tip      = float(sale.get("tipAmount",  0))
     total    = float(sale.get("totalAmount",0))
-    out += f"{'Subtotal':<22} ${subtotal:>7.2f}\n".encode()
+    out += f"{'Subtotal':<{name_w}} ${subtotal:>7.2f}\n".encode()
     if tax > 0:
-        out += f"{'Tax':<22} ${tax:>7.2f}\n".encode()
+        out += f"{'Tax':<{name_w}} ${tax:>7.2f}\n".encode()
     if tip > 0:
-        out += f"{'Tip':<22} ${tip:>7.2f}\n".encode()
+        out += f"{'Tip':<{name_w}} ${tip:>7.2f}\n".encode()
     out += _PR_BOLD_ON
-    out += f"{'TOTAL':<22} ${total:>7.2f}\n".encode()
+    out += f"{'TOTAL':<{name_w}} ${total:>7.2f}\n".encode()
     out += _PR_BOLD_OFF
 
     # Payment
