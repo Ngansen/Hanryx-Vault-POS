@@ -230,7 +230,10 @@ def iter_set_mds(root: Path) -> Iterator[Path]:
 
 
 def iter_card_rows(csv_path: Path) -> Iterator[dict]:
-    with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
+    # utf-8-sig strips the BOM that Notion writes at the start of every CSV.
+    # Without it the first column's header becomes '\ufeffCard Number' and
+    # every row.get('Card Number') returns None — silent 100% skip.
+    with csv_path.open("r", encoding="utf-8-sig", errors="replace", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             yield row
@@ -358,14 +361,20 @@ def run(root: Path, dry_run: bool, limit_sets: Optional[int]) -> dict:
             continue
 
         set_folder = csv_path.parent
+        set_seen = 0
+        set_upserted = 0
+        first_skipped_row: Optional[dict] = None
         for row in iter_card_rows(csv_path):
             stats["cards_seen"] += 1
+            set_seen += 1
             try:
                 card_number = (row.get("Card Number") or "").strip()
                 raw_name    = (row.get("Name") or "").strip()
                 raw_rarity  = (row.get("Rarity") or "").strip()
                 if not card_number or not raw_name:
                     stats["cards_skipped"] += 1
+                    if first_skipped_row is None:
+                        first_skipped_row = dict(row)
                     continue
 
                 name_en = normalize_card_name(raw_name)
@@ -380,6 +389,7 @@ def run(root: Path, dry_run: bool, limit_sets: Optional[int]) -> dict:
                         name_en, rarity_clean, image_url,
                     )
                 stats["cards_upserted"] += 1
+                set_upserted += 1
             except Exception as e:
                 stats["cards_skipped"] += 1
                 stats["errors"].append(f"{set_id}/{row}: {e}")
@@ -388,6 +398,19 @@ def run(root: Path, dry_run: bool, limit_sets: Optional[int]) -> dict:
                         db.rollback()
                     except Exception:
                         pass
+
+        # Loud warning if a set's CSV parsed but produced zero rows. This
+        # almost always means the column headers don't match what we expect
+        # (BOM, renamed columns, blank file). Surfaces silently-broken
+        # imports immediately instead of after a full run.
+        if set_seen > 0 and set_upserted == 0:
+            log.warning(
+                "  → 0/%d rows accepted for %s. CSV headers were: %s. "
+                "First skipped row: %s",
+                set_seen, set_id,
+                list((first_skipped_row or {}).keys()),
+                first_skipped_row,
+            )
 
         if not dry_run:
             db.commit()
