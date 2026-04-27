@@ -1,0 +1,43 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Status of pos right now — Up or Restarting?
+docker compose ps pos
+
+# 2. Drop -s so curl actually shows errors:
+curl -k -v -o /dev/null -w "\nHTTP %{http_code}\n" https://localhost/ 2>&1 | tail -10
+
+# 3. Last 30 lines of pos log — is it still PermissionError?
+docker compose logs --tail=30 pos
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME             IMAGE          COMMAND            SERVICE   CREATED       STATUS                    PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       2 hours ago   Up 14 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying [::1]:443...
+* connect to ::1 port 443 from ::1 port 53574 failed: Connection refused
+*   Trying 127.0.0.1:443...
+* connect to 127.0.0.1 port 443 from 127.0.0.1 port 37920 failed: Connection refused
+* Failed to connect to localhost port 443 after 0 ms: Could not connect to server
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+* closing connection #0
+curl: (7) Failed to connect to localhost port 443 after 0 ms: Could not connect to server
+
+HTTP 000
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:50 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:51 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:52 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:52 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:53 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:53 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:54 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:54 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:55 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:55 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:56 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:56 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:57 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:57 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:58 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:58 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:59 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr/2026:03:29:59 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://192.168.86.36:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 192.168.86.22 - - [27/Apr
