@@ -1,0 +1,29 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # On the Pi:
+docker compose exec pos python3 notion_master_import.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 07:16:42,068 [INFO] notion_master_import: Importing from: /mnt/cards/tcg-master-set/Pokemon Card Sets Database  (dry_run=False)
+2026-04-27 07:16:43,037 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 07:16:43,042 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+2026-04-27 07:16:43,169 [INFO] hanryxvault: [pokeapi] canonical name index ready: 1025 species
+2026-04-27 07:16:43,246 [INFO] hanryxvault: [bg] price-refresh scheduler disabled via env
+2026-04-27 07:16:43,292 [INFO] hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+2026-04-27 07:16:43,296 [INFO] hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+2026-04-27 07:16:43,299 [INFO] hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+2026-04-27 07:16:43,309 [INFO] unified.schema: [unified.schema] init complete (14 tables, trgm=True)
+2026-04-27 07:16:43,311 [INFO] notion_master_import: [set   1] Ancient Origins (id=ancient-origins) csv=Untitled 7e715188acc482399ce20192f5f53fd6.csv
+Traceback (most recent call last):
+  File "/app/notion_master_import.py", line 451, in <module>
+    main()
+  File "/app/notion_master_import.py", line 434, in main
+    stats = run(args.root, args.dry_run, args.limit_sets)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/notion_master_import.py", line 353, in run
+    upsert_set_mapping(db, set_id, meta)
+  File "/app/notion_master_import.py", line 261, in upsert_set_mapping
+    json.dumps({"source": SOURCE_TAG, **set_meta}, default=str),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server.py", line 87, in _orjson_dumps
+    return _orjson.dumps(obj, option=opts or None).decode()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Type is not JSON serializable: PosixPath
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 

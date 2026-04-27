@@ -243,6 +243,12 @@ def iter_card_rows(csv_path: Path) -> Iterator[dict]:
 
 
 def upsert_set_mapping(db, set_id: str, set_meta: dict) -> None:
+    # server.py monkey-patches json.dumps to orjson which silently ignores
+    # the default= kwarg. Pre-stringify Path objects (csv_path) so we don't
+    # rely on the dumper's fallback.
+    raw = {"source": SOURCE_TAG}
+    for k, v in set_meta.items():
+        raw[k] = str(v) if isinstance(v, Path) else v
     db.execute(
         """
         INSERT INTO ref_set_mapping
@@ -258,7 +264,7 @@ def upsert_set_mapping(db, set_id: str, set_meta: dict) -> None:
             set_id,
             set_meta.get("name_en", ""),
             parse_release_year(set_meta.get("release_date", "")),
-            json.dumps({"source": SOURCE_TAG, **set_meta}, default=str),
+            json.dumps(raw),
             NOW_MS(),
         ),
     )
