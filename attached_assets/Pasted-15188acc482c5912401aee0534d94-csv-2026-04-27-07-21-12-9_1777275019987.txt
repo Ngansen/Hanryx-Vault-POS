@@ -1,0 +1,26 @@
+15188acc482c5912401aee0534d94.csv
+2026-04-27 07:21:12,953 [INFO] notion_master_import: [set 158] Temporal Forces (id=temporal-forces) csv=Untitled 50715188acc48253bb3801059cb120a9.csv
+2026-04-27 07:21:13,021 [INFO] notion_master_import: [set 159] Topps Chrome Series 1 (id=topps-chrome-series-1) csv=Untitled cfe15188acc483a7a48c019df3a505e9.csv
+2026-04-27 07:21:13,049 [INFO] notion_master_import: [set 160] Topps Chrome Series 2 (id=topps-chrome-series-2) csv=Untitled c7915188acc483fa9706816d3bc1b7d6.csv
+2026-04-27 07:21:13,075 [INFO] notion_master_import: [set 161] Topps Chrome Series 3 (id=topps-chrome-series-3) csv=Untitled ca415188acc4822e8350814a529a7c3b.csv
+2026-04-27 07:21:13,091 [INFO] notion_master_import: [set 162] Twilight Masquerade (id=twilight-masquerade) csv=Untitled ae115188acc482babbc581d040949500.csv
+2026-04-27 07:21:13,161 [INFO] notion_master_import: [set 163] Ultra Prism (id=ultra-prism) csv=Untitled 27815188acc482cea6f28161f483146b.csv
+2026-04-27 07:21:13,216 [INFO] notion_master_import: [set 164] Unbroken Bonds (id=unbroken-bonds) csv=Untitled c5515188acc482a3a7cc014bf266758c.csv
+2026-04-27 07:21:13,291 [INFO] notion_master_import: [set 165] Unified Minds (id=unified-minds) csv=Untitled 22b15188acc48370a1c28180bf677f28.csv
+2026-04-27 07:21:13,383 [INFO] notion_master_import: [set 166] Vivid Voltage (id=vivid-voltage) csv=Untitled aa615188acc482359dff811f5b8275f0.csv
+2026-04-27 07:21:13,719 [INFO] notion_master_import: [set 167] White Flare (id=white-flare) csv=Untitled 89f15188acc4829f97c881a248867525.csv
+2026-04-27 07:21:13,783 [INFO] notion_master_import: [set 168] Wizards of the Coast Promos (id=wizards-of-the-coast-promos) csv=Untitled b2d15188acc4830091a901440223c80b.csv
+2026-04-27 07:21:13,803 [INFO] notion_master_import: [set 169] XY Evolutions (id=xy-evolutions) csv=Untitled 59715188acc483608f0481583321868c.csv
+2026-04-27 07:21:13,903 [INFO] notion_master_import: [set 170] XY Promos (id=xy-promos) csv=Untitled 58115188acc4829db16781fe8e6c87bb.csv
+2026-04-27 07:21:13,972 [INFO] notion_master_import: [set 171] XY base set (id=xy-base-set) csv=Untitled 16b15188acc48269a642013a5e406701.csv
+2026-04-27 07:21:14,028 [INFO] notion_master_import: ────────────────────────────────────────────────────────────
+2026-04-27 07:21:14,028 [INFO] notion_master_import: DONE in 15.1s
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_seen        171
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_upserted    171
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_no_csv      2
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_seen       38946
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_upserted   38898
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_skipped    48
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   images_matched   32
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   errors           0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
