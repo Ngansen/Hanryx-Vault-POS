@@ -218,7 +218,18 @@ services:
       # the sync orchestrator's logs.  bind-mount (not Docker volume) so a
       # `docker compose down -v` does NOT wipe the USB.  See
       # docs/USB_OFFLINE_DB.md for the one-time mount setup.
-      - /mnt/cards:/mnt/cards
+      #
+      # `propagation: rslave` is critical: when /mnt/cards is remounted on
+      # the host (e.g. after a USB drive hiccup → `sudo mount -a`), the
+      # container immediately sees the freshly-mounted contents instead of
+      # being stuck pointing at the original (now stale) inode. Without
+      # this, a USB disconnect requires `docker compose up --force-recreate
+      # pos` to recover, which wipes any files added via `docker compose cp`.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
       # ── USB receipt printer passthrough (MUNBYN P047, etc.) ──────────────
       # Bind-mount the /dev/usb parent directory with shared (rslave)
       # propagation rather than a static `devices: - /dev/usb/lp0` mapping.
@@ -282,8 +293,12 @@ services:
       # via the smart-scan path.
       HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
     volumes:
-      # See `pos` service for rationale on the bind mount.
-      - /mnt/cards:/mnt/cards
+      # See `pos` service for rationale on the bind mount + propagation: rslave.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz || exit 1"]
       interval: 30s
