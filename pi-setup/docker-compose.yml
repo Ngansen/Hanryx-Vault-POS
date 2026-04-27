@@ -339,7 +339,12 @@ services:
       POKEMONTCG_API_KEY:  ${POKEMONTCG_API_KEY:-}
       TCGPL_API_KEY:       ${TCGPL_API_KEY:-}
     volumes:
-      - /mnt/cards:/mnt/cards
+      # See `pos` service for rationale on the bind mount + propagation: rslave.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
     depends_on:
       db:
         condition: service_healthy
