@@ -9246,6 +9246,11 @@ def _load_printer_conf() -> dict:
         "receipt_header":   "HanryxVault",
         "receipt_subheader": "Trading Card Shop",
         "receipt_footer":   "hanryxvault.cards",
+        # Paper width in millimetres — "58" (most compact thermal printers,
+        # 384 px / 32 chars wide) or "80" (MUNBYN P047 etc., 576 px / 42 chars).
+        # Used by the logo + QR raster helpers to fit images correctly. Set
+        # `paper_width=80` in pi-setup/printer.conf if your printer is 80 mm.
+        "paper_width":      "58",
     }
     if os.path.exists(_PRINTER_CONF_PATH):
         with open(_PRINTER_CONF_PATH) as f:
@@ -9279,6 +9284,122 @@ def _open_printer():
     return None, "cups", conf
 
 
+# ── Logo + QR raster helpers ────────────────────────────────────────────────
+# The tablet (MainViewModel.kt) sends an optional store logo and an optional
+# customer-facing QR code inside the /print/receipt JSON body:
+#
+#   logoBase64   — base64-encoded PNG/JPEG (with or without data: URI prefix)
+#   qrEnabled    — bool, gates the QR block
+#   qrData       — string to encode (e.g. https://hanryxvault.cards)
+#
+# We rasterise both to ESC/POS GS v 0 bit-image bytes so any compatible
+# thermal printer (MUNBYN P047, Star, Epson clones) renders them correctly.
+# Both helpers are wrapped in try/except → on any failure they return b"" so
+# a corrupt logo or QR generation hiccup never breaks an actual sale receipt.
+
+def _paper_width_px(conf: dict) -> int:
+    """Pixels across one row at the printer head. 80 mm → 576, 58 mm → 384."""
+    pw = str(conf.get("paper_width") or "58").strip()
+    return 576 if pw == "80" else 384
+
+
+def _image_to_escpos_raster(img, max_width_px: int) -> bytes:
+    """Convert a PIL Image into ESC/POS GS v 0 raster bytes.
+
+    - Dithers to 1-bit, resizes (preserving aspect) to fit within max_width_px.
+    - Pads width up to a multiple of 8 (one byte per 8 horizontal pixels).
+    - Inverts because PIL mode "1" stores 1=white, ESC/POS wants 1=black.
+    Returns raw bytes ready to be written to the printer (no centering/init).
+    """
+    from PIL import Image as _PILImage
+
+    if img.mode != "L":
+        img = img.convert("L")
+    # Floyd-Steinberg dither to 1-bit (PIL's default for L → 1).
+    img = img.convert("1")
+    w, h = img.size
+    if w > max_width_px:
+        new_h = max(1, int(h * (max_width_px / w)))
+        img = img.resize((max_width_px, new_h), _PILImage.LANCZOS).convert("1")
+        w, h = img.size
+    # Pad width up to a multiple of 8 (extra pixels white = no print).
+    if w % 8 != 0:
+        pad = 8 - (w % 8)
+        new_img = _PILImage.new("1", (w + pad, h), 1)  # 1 = white in mode "1"
+        new_img.paste(img, (0, 0))
+        img = new_img
+        w = w + pad
+    width_bytes = w // 8
+    raw = img.tobytes()
+    # PIL "1" packs MSB-first with 1=white; ESC/POS wants 1=print(black).
+    inverted = bytes(b ^ 0xFF for b in raw)
+    xL = width_bytes & 0xFF
+    xH = (width_bytes >> 8) & 0xFF
+    yL = h & 0xFF
+    yH = (h >> 8) & 0xFF
+    # GS v 0 m xL xH yL yH d1...dk  (m=0 → normal density)
+    header = _GS + b'v0' + bytes([0, xL, xH, yL, yH])
+    return header + inverted
+
+
+def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
+    """Decode a base64 logo and render to centered ESC/POS raster bytes.
+
+    Returns b"" on any failure so the caller can safely concatenate.
+    """
+    try:
+        from PIL import Image as _PILImage
+        from io import BytesIO as _BytesIO
+        from base64 import b64decode as _b64dec
+
+        if not b64_str:
+            return b""
+        # Strip optional "data:image/png;base64," prefix the tablet may send.
+        if "," in b64_str and b64_str.lstrip().lower().startswith("data:"):
+            b64_str = b64_str.split(",", 1)[1]
+        img = _PILImage.open(_BytesIO(_b64dec(b64_str)))
+        raster = _image_to_escpos_raster(img, paper_width_px)
+        return _PR_CENTER + raster + _PR_LF + _PR_LEFT
+    except Exception as e:
+        try:
+            log.warning("[print] logo render skipped: %s", e)
+        except Exception:
+            pass
+        return b""
+
+
+def _render_qr_raster(data: str, paper_width_px: int) -> bytes:
+    """Generate a QR for `data` and render to centered ESC/POS raster bytes.
+
+    QR fills ~60% of paper width. Returns b"" on any failure.
+    """
+    try:
+        if not data:
+            return b""
+        from PIL import Image as _PILImage
+
+        target = max(120, int(paper_width_px * 0.60))
+        qr = _qrcode.QRCode(
+            version=None,
+            error_correction=_qrcode_const.ERROR_CORRECT_M,
+            box_size=10,
+            border=2,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white").convert("L")
+        if img.size[0] != target:
+            img = img.resize((target, target), _PILImage.NEAREST)
+        raster = _image_to_escpos_raster(img, paper_width_px)
+        return _PR_CENTER + raster + _PR_LF + _PR_LEFT
+    except Exception as e:
+        try:
+            log.warning("[print] QR render skipped: %s", e)
+        except Exception:
+            pass
+        return b""
+
+
 def _format_receipt(sale: dict, conf: dict) -> bytes:
     """Build ESC/POS byte string for one sale receipt."""
     header    = (conf.get("receipt_header")    or "HanryxVault").encode()
@@ -9300,6 +9421,16 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     # ── Build receipt bytes ──────────────────────────────────────────────────
     out = bytearray()
     out += _PR_INIT
+
+    # ── Optional store logo ──────────────────────────────────────────────────
+    # The tablet sends a base64 PNG/JPEG in `logoBase64` (read from
+    # filesDir/receipt_logo.png on the Android side, see MainViewModel.kt
+    # L3543-3562). Width is auto-fit to the printer's pixel row count.
+    paper_w = _paper_width_px(conf)
+    logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
+    if logo_b64:
+        out += _render_logo_raster(logo_b64, paper_w)
+
     out += _PR_LF
 
     # Header
@@ -9350,6 +9481,18 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     out += divider
     out += _PR_CENTER
     out += f"{footer.decode()}\n".encode()
+
+    # ── Optional customer-facing QR ──────────────────────────────────────────
+    # Tablet sends `qrEnabled` (bool) + `qrData` (string). Typical content:
+    # store URL, feedback link, post-show sales site, etc. Centered, ~60% of
+    # paper width. Silently no-ops if PIL/qrcode generation fails.
+    qr_enabled = sale.get("qrEnabled")
+    if qr_enabled is None:
+        qr_enabled = sale.get("qr_enabled", False)
+    qr_data = (sale.get("qrData") or sale.get("qr_data") or "").strip()
+    if qr_enabled and qr_data:
+        out += _render_qr_raster(qr_data, paper_w)
+
     out += b"Thank you!\n"
     out += _PR_NORMAL + _PR_LEFT
 
@@ -25908,7 +26051,14 @@ def admin_sets_list():
 @app.route("/admin/sets/cards", methods=["GET"])
 @require_admin
 def admin_sets_cards():
-    """JSON — every card belonging to a given set across all language tables."""
+    """JSON — every card belonging to a given set across all language tables.
+
+    Wrapped in a top-level try/except so any backend failure (missing column,
+    psycopg2 error, _sets_browser regression, etc.) returns a structured JSON
+    error instead of Flask's HTML 500 page. Without this, the browser-side
+    `r.json()` call throws the cryptic "JSON.parse: unexpected character at
+    line 1 column 1" message, hiding the real cause from the operator.
+    """
     if _sets_browser is None:
         return jsonify({"error": "sets_browser unavailable"}), 503
     set_q = (request.args.get("set") or "").strip()
@@ -25918,24 +26068,36 @@ def admin_sets_cards():
         limit = max(1, min(int(request.args.get("limit") or 600), 2000))
     except ValueError:
         limit = 600
-    with _PgConn() as conn:
-        cards = _sets_browser.cards_in_set(conn, set_q, limit=limit)
-    # Group by language for the UI's convenience.
-    grouped: dict[str, list] = {}
-    for c in cards:
-        grouped.setdefault(str(c.get("language") or "?"), []).append(c)
-    cluster = next((c.get("cluster") for c in cards if c.get("cluster")), None)
-    expanded_tokens = sorted({c.get("matched_via") for c in cards
-                              if c.get("matched_via")})
-    return jsonify({
-        "query":     set_q,
-        "cluster":   cluster,
-        "expanded":  expanded_tokens,
-        "count":     len(cards),
-        "by_lang":   {k: len(v) for k, v in grouped.items()},
-        "cards":     cards,
-        "grouped":   grouped,
-    })
+    try:
+        with _PgConn() as conn:
+            cards = _sets_browser.cards_in_set(conn, set_q, limit=limit)
+        # Group by language for the UI's convenience.
+        grouped: dict[str, list] = {}
+        for c in cards:
+            grouped.setdefault(str(c.get("language") or "?"), []).append(c)
+        cluster = next((c.get("cluster") for c in cards if c.get("cluster")), None)
+        expanded_tokens = sorted({c.get("matched_via") for c in cards
+                                  if c.get("matched_via")})
+        return jsonify({
+            "query":     set_q,
+            "cluster":   cluster,
+            "expanded":  expanded_tokens,
+            "count":     len(cards),
+            "by_lang":   {k: len(v) for k, v in grouped.items()},
+            "cards":     cards,
+            "grouped":   grouped,
+        })
+    except Exception as e:
+        log.exception("[admin/sets/cards] failed for set=%r: %s", set_q, e)
+        return jsonify({
+            "error":   "sets_browser_failed",
+            "message": str(e),
+            "type":    type(e).__name__,
+            "query":   set_q,
+            "cards":   [],
+            "grouped": {},
+            "count":   0,
+        }), 500
 
 
 _LANG_FLAGS = {

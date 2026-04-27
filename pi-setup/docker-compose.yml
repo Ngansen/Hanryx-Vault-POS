@@ -219,14 +219,27 @@ services:
       # `docker compose down -v` does NOT wipe the USB.  See
       # docs/USB_OFFLINE_DB.md for the one-time mount setup.
       - /mnt/cards:/mnt/cards
-    # ── USB receipt printer passthrough (MUNBYN P047, etc.) ────────────────
-    # If you connect the printer via USB (instead of Ethernet), keep the lines
-    # below uncommented AND make sure the printer is plugged in BEFORE running
-    # `docker compose up` — Docker fails to start if the device file is
-    # missing on the host. For Ethernet printers, comment them out and set
-    # PRINTER_NETWORK_HOST in pi-setup/.env instead.
-    devices:
-      - "/dev/usb/lp0:/dev/usb/lp0"
+      # ── USB receipt printer passthrough (MUNBYN P047, etc.) ──────────────
+      # Bind-mount the /dev/usb parent directory with shared (rslave)
+      # propagation rather than a static `devices: - /dev/usb/lp0` mapping.
+      # A static device mapping is captured at container-create time; if the
+      # printer is unplugged the cgroup rule points at a dead inode and the
+      # only way to recover is `docker compose up --force-recreate pos`.
+      # With this bind-mount + cgroup rule, unplug/replug of the printer is
+      # reflected live inside the container — no recreate needed. The printer
+      # must still be plugged in BEFORE the first `docker compose up` so that
+      # /dev/usb exists on the host (Docker fails to start the container if
+      # the source path is missing). For Ethernet printers, you can comment
+      # this line and the device_cgroup_rules block out and set
+      # PRINTER_NETWORK_HOST in pi-setup/.env instead.
+      - /dev/usb:/dev/usb:rslave
+    # Grant the container r/w/mknod on the USB lp character-device class
+    # (major 180 = /dev/usb/lp*). Combined with the /dev/usb bind-mount above,
+    # this lets newly enumerated lp devices appear inside the container with
+    # no recreate. See `man 4 lp` and Documentation/admin-guide/devices.txt
+    # in the kernel tree for the major-number assignment.
+    device_cgroup_rules:
+      - 'c 180:* rmw'
     # The /dev/usb/lp0 device is owned by root:lp on the host. The container
     # runs as the unprivileged 'hanryx' user, so we add gid 7 (lp on Debian /
     # Raspberry Pi OS) so the user can open the device for writing receipts.
