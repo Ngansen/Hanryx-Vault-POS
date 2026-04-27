@@ -9511,6 +9511,9 @@ def _format_receipt(sale: dict, conf: dict) -> bytes:
     if qr_enabled and qr_data:
         out += _render_qr_raster(qr_data, paper_w)
 
+    # Re-assert center mode — _render_qr_raster ends with _PR_LEFT, which
+    # would otherwise leave "Thank you!" left-aligned under a centered QR.
+    out += _PR_CENTER
     out += b"Thank you!\n"
     out += _PR_NORMAL + _PR_LEFT
 
