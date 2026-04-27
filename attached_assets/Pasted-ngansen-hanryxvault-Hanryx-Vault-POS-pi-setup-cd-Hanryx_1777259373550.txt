@@ -1,0 +1,102 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# What state is everything in?
+docker compose ps
+
+# Why pos is restart-looping (last 80 lines, usually shows the traceback):
+docker compose logs --tail=80 pos
+
+# Why sync won't start:
+docker compose logs --tail=80 sync
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME                    IMAGE                                                                                                  COMMAND                  SERVICE      CREATED             STATUS                          PORTS
+pi-setup-db-1           pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10   "docker-entrypoint.s…"   db           About an hour ago   Up About an hour (healthy)      5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest                                                                               "/entrypoint.sh /usr…"   pgbouncer    7 hours ago         Up 7 hours (healthy)            5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi                                                                                       "/docker-entrypoint.…"   pokeapi      7 hours ago         Up 7 hours (healthy)            80/tcp
+pi-setup-pos-1          pi-setup-pos                                                                                           "/entrypoint.sh"         pos          About an hour ago   Restarting (3) 35 seconds ago   
+pi-setup-recognizer-1   pi-setup-recognizer                                                                                    "python -u server.py"    recognizer   7 hours ago         Up 7 hours (healthy)            8081/tcp
+pi-setup-redis-1        redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275             "docker-entrypoint.s…"   redis        About an hour ago   Up About an hour (healthy)      6379/tcp
+pi-setup-storefront-1   pi-setup-storefront                                                                                    "docker-entrypoint.sh"   storefront   7 hours ago         Up 7 hours (unhealthy)          0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+pos-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1  |   File "/app/server.py", line 1029, in <module>
+pos-1  |     _FAISS_INDEX_PATH = _resolve_faiss_index_path()
+pos-1  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/app/cards_db_path.py", line 72, in faiss_index_path
+pos-1  |     d.mkdir(parents=True, exist_ok=True)
+pos-1  |   File "/usr/local/lib/python3.11/pathlib.py", line 1116, in mkdir
+pos-1  |     os.mkdir(self, mode)
+pos-1  | PermissionError: [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | [2026-04-27 03:07:04 +0000] [18] [INFO] Worker exiting (pid: 18)
+pos-1  | [2026-04-27 03:07:04 +0000] [13] [ERROR] Worker (pid:18) exited with code 3.
+pos-1  | [2026-04-27 03:07:04 +0000] [13] [ERROR] Shutting down: Master
+pos-1  | [2026-04-27 03:07:04 +0000] [13] [ERROR] Reason: Worker failed to boot.
+pos-1  | [2026-04-27 03:08:06 +0000] [13] [INFO] Starting gunicorn 25.3.0
+pos-1  | {"ts":"2026-04-27T03:08:06","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-27T03:08:06","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | [2026-04-27 03:08:06 +0000] [13] [WARNING] DB init error (will retry on first request): [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | [2026-04-27 03:08:06 +0000] [13] [INFO] Listening at: http://0.0.0.0:8080 (13)
+pos-1  | [2026-04-27 03:08:06 +0000] [13] [INFO] Using worker: gevent
+pos-1  | [2026-04-27 03:08:06 +0000] [18] [INFO] Booting worker with pid: 18
+pos-1  | [2026-04-27 03:08:06 +0000] [13] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+pos-1  | {"ts":"2026-04-27T03:08:07","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-27T03:08:07","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | [2026-04-27 03:08:07 +0000] [18] [WARNING] post_fork startup thread error: [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | {"ts":"2026-04-27T03:08:07","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+pos-1  | {"ts":"2026-04-27T03:08:07","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+pos-1  | [2026-04-27 03:08:07 +0000] [18] [ERROR] Exception in worker process
+pos-1  | Traceback (most recent call last):
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 713, in spawn_worker
+pos-1  |     worker.init_process()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/ggevent.py", line 143, in init_process
+pos-1  |     super().init_process()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 136, in init_process
+pos-1  |     self.load_wsgi()
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 148, in load_wsgi
+pos-1  |     self.wsgi = self.app.wsgi()
+pos-1  |                 ^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+pos-1  |     self.callable = self.load()
+pos-1  |                     ^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+pos-1  |     return self.load_wsgiapp()
+pos-1  |            ^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+pos-1  |     return util.import_app(self.app_uri)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/opt/venv/lib/python3.11/site-packages/gunicorn/util.py", line 377, in import_app
+pos-1  |     mod = importlib.import_module(module)
+pos-1  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+pos-1  |     return _bootstrap._gcd_import(name[level:], package, level)
+pos-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+pos-1  |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+pos-1  |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+pos-1  |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+pos-1  |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+pos-1  |   File "/app/server.py", line 1029, in <module>
+pos-1  |     _FAISS_INDEX_PATH = _resolve_faiss_index_path()
+pos-1  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pos-1  |   File "/app/cards_db_path.py", line 72, in faiss_index_path
+pos-1  |     d.mkdir(parents=True, exist_ok=True)
+pos-1  |   File "/usr/local/lib/python3.11/pathlib.py", line 1116, in mkdir
+pos-1  |     os.mkdir(self, mode)
+pos-1  | PermissionError: [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | [Errno 13] Permission denied: '/mnt/cards/faiss'
+pos-1  | [2026-04-27 03:08:07 +0000] [18] [INFO] Worker exiting (pid: 18)
+pos-1  | [2026-04-27 03:08:07 +0000] [13] [ERROR] Worker (pid:18) exited with code 3.
+pos-1  | [2026-04-27 03:08:07 +0000] [13] [ERROR] Shutting down: Master
+pos-1  | [2026-04-27 03:08:07 +0000] [13] [ERROR] Reason: Worker failed to boot.
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
