@@ -26537,6 +26537,263 @@ def admin_ai_counterfeit():
 
 
 # ---------------------------------------------------------------------------
+# /admin/search — unified search across live inventory (PG) + offline
+# multilingual catalogue (cards_master on USB SQLite).
+#
+# One result table, three badges:
+#   in_stock         — catalogue card we currently hold (green)
+#   catalogue_only   — catalogue card we don't stock (grey, "+ Add" button)
+#   in_stock_only    — inventory row with no catalogue match (amber)
+# ---------------------------------------------------------------------------
+@app.route("/admin/search", methods=["GET"])
+@require_admin
+def admin_search():
+    q     = (request.args.get("q") or "").strip()
+    limit = max(1, min(_safe_int(request.args.get("limit"), 60), 200))
+
+    nav = _admin_nav("search")
+    css = _admin_css()
+
+    catalogue_hits: list[dict] = []
+    inv_rows: list = []
+
+    if q:
+        # ---- Catalogue (offline USB SQLite, fuzzy multilingual) ----------
+        try:
+            from cards.fuzzy_search import search as _fs
+            catalogue_hits = _fs(_LOCAL_TCG_DB_PATH, q, limit=limit) or []
+        except Exception as e:
+            log.warning("[admin_search] catalogue lookup failed: %s", e)
+
+        # ---- Live inventory (Postgres) -----------------------------------
+        try:
+            db  = get_db()
+            cur = db.execute(
+                """
+                SELECT qr_code, name, set_code, rarity, price, stock,
+                       image_url, tcg_id, category
+                  FROM inventory
+                 WHERE name     ILIKE %s
+                    OR set_code ILIKE %s
+                    OR tcg_id   ILIKE %s
+                    OR qr_code  ILIKE %s
+                 ORDER BY stock DESC NULLS LAST, name
+                 LIMIT %s
+                """,
+                (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%", limit),
+            )
+            inv_rows = cur.fetchall()
+        except Exception as e:
+            log.warning("[admin_search] inventory lookup failed: %s", e)
+
+    # ---- Build inventory lookup keys (tcg_id + name) ----------------------
+    inv_by_tcg_id:    dict[str, dict] = {}
+    inv_by_name_low:  dict[str, dict] = {}
+    inv_dicts:        list[dict]      = []
+    for r in inv_rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        inv_dicts.append(d)
+        if d.get("tcg_id"):
+            inv_by_tcg_id[str(d["tcg_id"]).lower()] = d
+        if d.get("name"):
+            inv_by_name_low[str(d["name"]).strip().lower()] = d
+
+    matched_qrs: set[str] = set()
+    rows_html:   list[str] = []
+
+    def _badge(kind: str, stock: int = 0) -> str:
+        if kind == "in_stock":
+            return f'<span class="badge badge-stock">✓ In stock ×{stock}</span>'
+        if kind == "catalogue_only":
+            return '<span class="badge badge-cat">Catalogue only</span>'
+        return f'<span class="badge badge-orphan">⚠ Stock {stock} (no catalogue match)</span>'
+
+    def _row_cells(name, set_id, num, lang_names, rarity, badge_html, action_html, image=""):
+        img = (
+            f'<img src="{_html.escape(image)}" loading="lazy" '
+            f'style="height:46px;border-radius:3px;background:#0a0f1c">'
+            if image else '<span style="color:#333">—</span>'
+        )
+        return (
+            f"<tr><td>{img}</td>"
+            f"<td><b>{_html.escape(name or '(unnamed)')}</b><br>"
+            f"<span style='color:#94a3b8;font-size:11px'>{lang_names}</span></td>"
+            f"<td>{_html.escape(set_id or '-')}<br>"
+            f"<span style='color:#666;font-size:11px'>#{_html.escape(str(num) or '-')}</span></td>"
+            f"<td>{_html.escape(rarity or '-')}</td>"
+            f"<td>{badge_html}</td>"
+            f"<td>{action_html}</td></tr>"
+        )
+
+    # ---- Catalogue hits first (these are the unified rich rows) ----------
+    catalogue_count_unified = 0
+    for hit in catalogue_hits:
+        if hit.get("table") != "cards_master":
+            continue  # skip legacy per-language hits
+        catalogue_count_unified += 1
+        r = hit.get("row", {}) or {}
+
+        master_id = r.get("master_id")
+        set_id    = r.get("set_id") or ""
+        card_num  = str(r.get("card_number") or "")
+
+        # Try several keys to find a matching inventory row
+        keys_to_try = [
+            f"{set_id}-{card_num}".lower(),
+            f"{set_id}-{card_num.lstrip('0')}".lower() if card_num else "",
+            (r.get("name_en")  or "").strip().lower(),
+            (r.get("name_kr")  or "").strip().lower(),
+            (r.get("name_jp")  or "").strip().lower(),
+            (r.get("name_chs") or "").strip().lower(),
+            (r.get("name_cht") or "").strip().lower(),
+        ]
+        inv_match = None
+        for k in keys_to_try:
+            if not k:
+                continue
+            inv_match = inv_by_tcg_id.get(k) or inv_by_name_low.get(k)
+            if inv_match:
+                break
+
+        # Multi-language name strip
+        lang_bits = []
+        for k, lbl in (("name_en","EN"),("name_kr","KR"),("name_jp","JP"),
+                       ("name_chs","CHS"),("name_cht","CHT")):
+            v = (r.get(k) or "").strip()
+            if v:
+                lang_bits.append(f"<b style='color:#facc15'>{lbl}</b>: {_html.escape(v)}")
+        lang_names = "  ·  ".join(lang_bits)
+
+        primary = (r.get("name_en") or r.get("name_jp") or
+                   r.get("name_kr") or r.get("name_chs") or "(unnamed)")
+
+        if inv_match:
+            qr = inv_match.get("qr_code")
+            if qr:
+                matched_qrs.add(qr)
+            badge_html  = _badge("in_stock", inv_match.get("stock") or 0)
+            action_html = (
+                f'<a href="/admin?focus={_html.escape(str(qr or ""))}" '
+                f'class="btn-small btn-edit">Open</a>'
+            )
+        else:
+            badge_html  = _badge("catalogue_only")
+            action_html = (
+                f'<button class="btn-small btn-add" '
+                f'onclick="addFromMaster({master_id or 0})">+ Add to inventory</button>'
+            )
+
+        rows_html.append(_row_cells(
+            primary, set_id, card_num, lang_names,
+            r.get("rarity"), badge_html, action_html, r.get("image_url") or ""
+        ))
+
+    # ---- Orphan inventory rows (in stock but not in catalogue) -----------
+    orphan_count = 0
+    for d in inv_dicts:
+        qr = d.get("qr_code")
+        if qr and qr in matched_qrs:
+            continue
+        orphan_count += 1
+        rows_html.append(_row_cells(
+            d.get("name") or "(unnamed)",
+            d.get("set_code") or "",
+            d.get("tcg_id") or "",
+            f"<span style='color:#fcd34d'>£{(d.get('price') or 0):.2f}</span>  ·  "
+            f"category: {_html.escape(d.get('category') or '-')}",
+            d.get("rarity") or "",
+            _badge("in_stock_only", d.get("stock") or 0),
+            (f'<a href="/admin?focus={_html.escape(str(qr))}" '
+             f'class="btn-small btn-edit">Open</a>') if qr else "",
+            d.get("image_url") or ""
+        ))
+
+    body_rows = "\n".join(rows_html) or (
+        '<tr><td colspan="6" style="color:#666;text-align:center;padding:32px">'
+        + ('Type a card name in any language to search.' if not q
+           else 'No results — try a different spelling, set code, or QR.')
+        + '</td></tr>'
+    )
+
+    summary_line = (
+        f"Catalogue hits: <b>{catalogue_count_unified}</b>  ·  "
+        f"Inventory rows matched: <b>{len(matched_qrs)}</b>  ·  "
+        f"Orphans (stock w/o catalogue): <b>{orphan_count}</b>"
+        if q else "Searches both your live stock and the offline multilingual catalogue at the same time."
+    )
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search | HanryxVault POS</title>{css}
+<style>
+.search-box {{ display:flex;gap:8px;align-items:center;margin:4px 0 18px }}
+.search-box input {{ flex:1;padding:11px 16px;font-size:15px;background:#0f172a;
+  border:1px solid #334155;color:#e5e7eb;border-radius:6px;outline:none }}
+.search-box input:focus {{ border-color:#facc15 }}
+.badge {{ font-size:11px;padding:3px 9px;border-radius:10px;font-weight:600;white-space:nowrap }}
+.badge-stock  {{ background:#064e3b;color:#6ee7b7 }}
+.badge-cat    {{ background:#1e293b;color:#94a3b8 }}
+.badge-orphan {{ background:#451a03;color:#fcd34d }}
+.btn-small {{ font-size:12px;padding:5px 11px;border-radius:4px;border:none;
+  cursor:pointer;text-decoration:none;display:inline-block }}
+.btn-add  {{ background:#1d4ed8;color:#fff }}
+.btn-edit {{ background:#374151;color:#fff }}
+.btn-add:hover {{ background:#1e40af }}
+.btn-edit:hover {{ background:#4b5563 }}
+table {{ width:100%;border-collapse:collapse;font-size:13px }}
+table th {{ background:#1e293b;color:#facc15;padding:9px 10px;text-align:left;
+  border-bottom:1px solid #334155;position:sticky;top:0 }}
+table td {{ padding:8px 10px;text-align:left;vertical-align:top;
+  border-bottom:1px solid #1e293b }}
+table tr:hover td {{ background:#0a0f1c }}
+.lang-hint {{ color:#666;font-size:11px;margin-top:8px }}
+</style></head><body>
+{nav}
+<div class="admin-content">
+<h1 style="color:#facc15;margin-bottom:2px">🔎 Card Search</h1>
+<p style="color:#94a3b8;font-size:13px;margin:0 0 14px">{summary_line}</p>
+
+<form class="search-box" method="get" action="/admin/search">
+  <input name="q" autofocus value="{_html.escape(q)}"
+    placeholder="Search any language: charizard · 리자몽 · リザードン · 喷火龙 · sv1-199">
+  <button type="submit" style="background:#facc15;color:#000;padding:11px 22px;
+    border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px">
+    Search
+  </button>
+</form>
+<p class="lang-hint">Tip: searches by name (KR/EN/JP/CHS/CHT), set code, TCG id, or QR code. Up to {limit} catalogue rows shown.</p>
+
+<table>
+<thead><tr>
+  <th style="width:60px"></th>
+  <th>Card / All-language names</th>
+  <th style="width:110px">Set</th>
+  <th style="width:90px">Rarity</th>
+  <th style="width:160px">Status</th>
+  <th style="width:130px">Action</th>
+</tr></thead>
+<tbody>{body_rows}</tbody>
+</table>
+
+<p style="color:#555;font-size:11px;margin-top:18px">
+  Catalogue source: <code>cards_master</code> (USB SQLite, offline-safe).
+  Inventory source: live Postgres.
+  Match keys: tcg_id (set-number), then exact name in any language.
+</p>
+</div>
+
+<script>
+function addFromMaster(masterId) {{
+  if (!masterId) {{ alert('No master_id available for this row.'); return; }}
+  // v1: pre-fill the existing add-item flow with the master_id so the
+  // operator confirms condition + price before commit.
+  window.location.href = '/admin?add_from_master=' + encodeURIComponent(masterId);
+}}
+</script>
+</body></html>""")
+
+
+# ---------------------------------------------------------------------------
 # Blueprint registration — offline card database (USB) extension
 # ---------------------------------------------------------------------------
 # Registers the existing tcg_lookup blueprint (it was previously defined but

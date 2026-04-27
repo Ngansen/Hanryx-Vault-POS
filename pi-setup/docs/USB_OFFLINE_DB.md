@@ -305,3 +305,36 @@ the table to the USB SQLite. Both are idempotent — `build_cards_master`
 runs `BEGIN; DELETE FROM cards_master; bulk INSERT; COMMIT` so a
 reader during the rebuild still sees the previous snapshot, and
 `usb_mirror` swaps the SQLite file atomically.
+
+### Unified search UI — `/admin/search`
+
+A single admin page that queries **both** halves at once: live inventory
+in Postgres and the offline `cards_master` catalogue on the USB SQLite
+mirror. One result table, three colour-coded badges:
+
+* **In stock ×N** (green) — catalogue card the shop currently holds.
+  Match keys, in priority order: `tcg_id` exact, `set_id-card_number`,
+  `set_id-card_number` with leading-zeros stripped, then exact name in
+  EN/KR/JP/CHS/CHT.
+* **Catalogue only** (grey) — known card not in stock. Comes with a
+  `+ Add to inventory` button that opens the existing add flow with
+  `cards_master.master_id` pre-filled so the operator only confirms
+  condition + price.
+* **Stock N (no catalogue match)** (amber) — inventory rows with no
+  catalogue counterpart. Usually means: legacy SKU from before the
+  unified DB shipped, sealed product (which `cards_master` deliberately
+  excludes), or a card whose import is still missing — tomorrow's
+  consolidator pass should clear it.
+
+Each row shows the card image, every populated language name on one
+line, set + card number, rarity, the badge, and an action. The query
+input accepts any language plus set codes and QR codes. Up to 200 rows
+per page.
+
+Operators get one place to:
+
+1. Look up a card by its Korean / Japanese / Chinese / English name
+   without caring which database has it.
+2. See instantly whether the shop holds it, and if so how many.
+3. Add a known catalogue card to inventory in one click without
+   retyping the multilingual names.

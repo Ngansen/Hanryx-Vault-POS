@@ -157,6 +157,14 @@ still sees the previous snapshot.
 * New `GET /ai/admin/db-coverage` returns per-set + per-language
   fill percentages plus a 5,000-row source-share sample so operators
   can spot a missing import sheet at a glance.
+* New `GET /admin/search` is the operator-facing UI on top of all of
+  the above: one query box, results from `cards_master` (offline) and
+  `inventory` (live PG) merged into a single table with three badges —
+  `in_stock` (green, with quantity), `catalogue_only` (grey, with a
+  one-click `+ Add to inventory` button that pre-fills the existing
+  add flow with the `master_id`), and `in_stock_only` (amber, flags
+  legacy SKUs with no catalogue match). Search accepts EN/KR/JP/CHS/CHT
+  names, set codes, TCG ids, or QR codes.
 
 **Sync orchestrator schedule.** Excel-backed importers run weekly
 (Excel files change months apart), TCGdex / pokemon-card.com / Pocket
