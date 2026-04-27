@@ -64,8 +64,18 @@ RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --n
 COPY requirements.txt requirements-vcs.txt ./
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+# NOTE on the second install: OpenAI CLIP's setup.py still does
+# `from pkg_resources import ...`, but setuptools 81+ (Aug 2025) removed
+# pkg_resources from the default install. PEP 517 build isolation creates a
+# fresh env that pulls the *latest* setuptools, so CLIP fails to build with
+# `ModuleNotFoundError: No module named 'pkg_resources'`. Fix: constrain the
+# build env's setuptools to <81 via PIP_CONSTRAINT, which applies to both the
+# main install (no-op — already hash-pinned) and the isolated build envs.
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt && \
-    pip install --no-cache-dir --no-deps -r requirements-vcs.txt
+    echo 'setuptools<81' > /tmp/build-constraints.txt && \
+    PIP_CONSTRAINT=/tmp/build-constraints.txt \
+      pip install --no-cache-dir --no-deps -r requirements-vcs.txt && \
+    rm /tmp/build-constraints.txt
 
 # Runtime stage — MUST stay pinned to the same Python point release AND the
 # same @sha256 digest as the builder above. /opt/venv was built against that

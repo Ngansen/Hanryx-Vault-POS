@@ -1,0 +1,102 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ grep "^#14" /tmp/build.log | tail -100
+#14 28.07   Downloading soupsieve-2.8.3-py3-none-any.whl (37 kB)
+#14 28.13 Collecting sympy==1.14.0 (from -r requirements.txt (line 2256))
+#14 28.15   Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+#14 28.75      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 10.6 MB/s eta 0:00:00
+#14 28.86 Collecting torch==2.10.0 (from -r requirements.txt (line 2260))
+#14 28.89   Downloading torch-2.10.0-cp311-cp311-manylinux_2_28_aarch64.whl (146.0 MB)
+#14 41.53      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 146.0/146.0 MB 11.4 MB/s eta 0:00:00
+#14 41.88 Collecting torchvision==0.25.0 (from -r requirements.txt (line 2303))
+#14 41.91   Downloading torchvision-0.25.0-cp311-cp311-manylinux_2_28_aarch64.whl (2.3 MB)
+#14 42.15      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 10.0 MB/s eta 0:00:00
+#14 42.47 Collecting tqdm==4.67.3 (from -r requirements.txt (line 2333))
+#14 42.51   Downloading tqdm-4.67.3-py3-none-any.whl (78 kB)
+#14 42.52      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 78.4/78.4 kB 8.3 MB/s eta 0:00:00
+#14 42.65 Collecting twilio==9.10.5 (from -r requirements.txt (line 2337))
+#14 42.68   Downloading twilio-9.10.5-py2.py3-none-any.whl (2.3 MB)
+#14 42.90      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 11.2 MB/s eta 0:00:00
+#14 42.95 Collecting typing-extensions==4.15.0 (from -r requirements.txt (line 2341))
+#14 42.98   Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+#14 42.99      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.6/44.6 kB 11.7 MB/s eta 0:00:00
+#14 43.02 Collecting typing-inspection==0.4.2 (from -r requirements.txt (line 2353))
+#14 43.05   Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+#14 43.13 Collecting urllib3==2.6.3 (from -r requirements.txt (line 2357))
+#14 43.17   Downloading urllib3-2.6.3-py3-none-any.whl (131 kB)
+#14 43.19      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 131.6/131.6 kB 9.8 MB/s eta 0:00:00
+#14 43.25 Collecting werkzeug==3.1.8 (from -r requirements.txt (line 2364))
+#14 43.28   Downloading werkzeug-3.1.8-py3-none-any.whl (226 kB)
+#14 43.31      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 226.5/226.5 kB 10.6 MB/s eta 0:00:00
+#14 43.71 Collecting yarl==1.23.0 (from -r requirements.txt (line 2368))
+#14 43.75   Downloading yarl-1.23.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (100 kB)
+#14 43.76      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100.6/100.6 kB 8.8 MB/s eta 0:00:00
+#14 43.80 Collecting zope-event==6.1 (from -r requirements.txt (line 2498))
+#14 43.84   Downloading zope_event-6.1-py3-none-any.whl (6.4 kB)
+#14 44.04 Collecting zope-interface==8.4 (from -r requirements.txt (line 2502))
+#14 44.07   Downloading zope_interface-8.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl (265 kB)
+#14 44.10      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 265.6/265.6 kB 9.6 MB/s eta 0:00:00
+#14 45.83 Building wheels for collected packages: evdev, psycogreen
+#14 45.83   Building wheel for evdev (pyproject.toml): started
+#14 47.42   Building wheel for evdev (pyproject.toml): finished with status 'done'
+#14 47.42   Created wheel for evdev: filename=evdev-1.9.3-cp311-cp311-linux_aarch64.whl size=112166 sha256=4a76d7d68555ed1842d198326c335f8241633c351e2e7c0bd475002e269845ea
+#14 47.42   Stored in directory: /tmp/pip-ephem-wheel-cache-hbujzf2g/wheels/f0/dd/8b/5a2b5dc6a3be207507980fd91a48dd104a4c43eaaf5e943285
+#14 47.42   Building wheel for psycogreen (pyproject.toml): started
+#14 47.67   Building wheel for psycogreen (pyproject.toml): finished with status 'done'
+#14 47.67   Created wheel for psycogreen: filename=psycogreen-1.0.2-py3-none-any.whl size=5250 sha256=b62c9ce3837f69b9905c366492e95383782f73801e109dd3ad51e8f20114399c
+#14 47.67   Stored in directory: /tmp/pip-ephem-wheel-cache-hbujzf2g/wheels/a8/e2/42/e7ce48d2618074b8d0cc17d90564817c6dbe627a55800756c7
+#14 47.67 Successfully built evdev psycogreen
+#14 48.29 Installing collected packages: psycogreen, mpmath, brotli, zope-interface, zope-event, urllib3, typing-extensions, tqdm, sympy, soupsieve, sniffio, six, redis, rapidfuzz, qrcode, pyotp, pyjwt, psycopg2-binary, propcache, pillow, packaging, orjson, numpy, networkx, multidict, msgspec, markupsafe, lxml, jmespath, jiter, itsdangerous, ijson, idna, h11, greenlet, fsspec, frozenlist, filelock, evdev, distro, click, charset-normalizer, certifi, cachetools, cachelib, blinker, backports-zstd, attrs, async-timeout, annotated-types, aiohappyeyeballs, yarl, werkzeug, typing-inspection, sentry-sdk, requests, reportlab, python-dateutil, pytesseract, pydantic-core, pgvector, jinja2, httpcore, gunicorn, gevent, faiss-cpu, beautifulsoup4, anyio, aiosignal, torch, pydantic, httpx, flask, deep-translator, botocore, aiohttp, torchvision, s3transfer, openai, flask-session, flask-compress, aiohttp-retry, twilio, boto3
+#14 90.12 Successfully installed aiohappyeyeballs-2.6.1 aiohttp-3.13.5 aiohttp-retry-2.9.1 aiosignal-1.4.0 annotated-types-0.7.0 anyio-4.13.0 async-timeout-5.0.1 attrs-26.1.0 backports-zstd-1.3.0 beautifulsoup4-4.14.3 blinker-1.9.0 boto3-1.42.96 botocore-1.42.96 brotli-1.2.0 cachelib-0.13.0 cachetools-7.0.6 certifi-2026.4.22 charset-normalizer-3.4.7 click-8.3.3 deep-translator-1.11.4 distro-1.9.0 evdev-1.9.3 faiss-cpu-1.13.2 filelock-3.29.0 flask-3.1.3 flask-compress-1.24 flask-session-0.8.0 frozenlist-1.8.0 fsspec-2026.3.0 gevent-26.4.0 greenlet-3.4.0 gunicorn-25.3.0 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.13 ijson-3.5.0 itsdangerous-2.2.0 jinja2-3.1.6 jiter-0.14.0 jmespath-1.1.0 lxml-6.1.0 markupsafe-3.0.3 mpmath-1.3.0 msgspec-0.21.1 multidict-6.7.1 networkx-3.6.1 numpy-2.4.4 openai-2.32.0 orjson-3.11.8 packaging-26.2 pgvector-0.4.2 pillow-12.2.0 propcache-0.4.1 psycogreen-1.0.2 psycopg2-binary-2.9.12 pydantic-2.13.3 pydantic-core-2.46.3 pyjwt-2.12.1 pyotp-2.9.0 pytesseract-0.3.13 python-dateutil-2.9.0.post0 qrcode-8.2 rapidfuzz-3.14.5 redis-7.4.0 reportlab-4.4.10 requests-2.33.1 s3transfer-0.16.1 sentry-sdk-2.58.0 six-1.17.0 sniffio-1.3.1 soupsieve-2.8.3 sympy-1.14.0 torch-2.10.0 torchvision-0.25.0 tqdm-4.67.3 twilio-9.10.5 typing-extensions-4.15.0 typing-inspection-0.4.2 urllib3-2.6.3 werkzeug-3.1.8 yarl-1.23.0 zope-event-6.1 zope-interface-8.4
+#14 90.48 
+#14 90.48 [notice] A new release of pip is available: 24.0 -> 26.1
+#14 90.48 [notice] To update, run: pip install --upgrade pip
+#14 93.88 Collecting clip@ git+https://github.com/openai/CLIP.git@dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1 (from -r requirements-vcs.txt (line 21))
+#14 93.88   Cloning https://github.com/openai/CLIP.git (to revision dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1) to /tmp/pip-install-uk8sohbq/clip_716636ebdfb749dfaf61b1869467a294
+#14 93.89   Running command git clone --filter=blob:none --quiet https://github.com/openai/CLIP.git /tmp/pip-install-uk8sohbq/clip_716636ebdfb749dfaf61b1869467a294
+#14 95.59   Running command git rev-parse -q --verify 'sha^dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1'
+#14 95.60   Running command git fetch -q https://github.com/openai/CLIP.git dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1
+#14 96.01   Running command git checkout -q dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1
+#14 96.44   Resolved https://github.com/openai/CLIP.git to commit dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1
+#14 96.44   Installing build dependencies: started
+#14 98.74   Installing build dependencies: finished with status 'done'
+#14 98.75   Getting requirements to build wheel: started
+#14 98.92   Getting requirements to build wheel: finished with status 'error'
+#14 98.93   error: subprocess-exited-with-error
+#14 98.93   
+#14 98.93   × Getting requirements to build wheel did not run successfully.
+#14 98.93   │ exit code: 1
+#14 98.93   ╰─> [20 lines of output]
+#14 98.93       Traceback (most recent call last):
+#14 98.93         File "/opt/venv/lib/python3.11/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 353, in <module>
+#14 98.93           main()
+#14 98.93         File "/opt/venv/lib/python3.11/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 335, in main
+#14 98.93           json_out['return_val'] = hook(**hook_input['kwargs'])
+#14 98.93                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#14 98.93         File "/opt/venv/lib/python3.11/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 118, in get_requires_for_build_wheel
+#14 98.93           return hook(config_settings)
+#14 98.93                  ^^^^^^^^^^^^^^^^^^^^^
+#14 98.93         File "/tmp/pip-build-env-ee8sflsf/overlay/lib/python3.11/site-packages/setuptools/build_meta.py", line 333, in get_requires_for_build_wheel
+#14 98.93           return self._get_build_requires(config_settings, requirements=[])
+#14 98.93                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#14 98.93         File "/tmp/pip-build-env-ee8sflsf/overlay/lib/python3.11/site-packages/setuptools/build_meta.py", line 301, in _get_build_requires
+#14 98.93           self.run_setup()
+#14 98.93         File "/tmp/pip-build-env-ee8sflsf/overlay/lib/python3.11/site-packages/setuptools/build_meta.py", line 520, in run_setup
+#14 98.93           super().run_setup(setup_script=setup_script)
+#14 98.93         File "/tmp/pip-build-env-ee8sflsf/overlay/lib/python3.11/site-packages/setuptools/build_meta.py", line 317, in run_setup
+#14 98.93           exec(code, locals())
+#14 98.93         File "<string>", line 3, in <module>
+#14 98.93       ModuleNotFoundError: No module named 'pkg_resources'
+#14 98.93       [end of output]
+#14 98.93   
+#14 98.93   note: This error originates from a subprocess, and is likely not a problem with pip.
+#14 98.93 error: subprocess-exited-with-error
+#14 98.93 
+#14 98.93 × Getting requirements to build wheel did not run successfully.
+#14 98.93 │ exit code: 1
+#14 98.93 ╰─> See above for output.
+#14 98.93 
+#14 98.93 note: This error originates from a subprocess, and is likely not a problem with pip.
+#14 99.20 
+#14 99.20 [notice] A new release of pip is available: 24.0 -> 26.1
+#14 99.20 [notice] To update, run: pip install --upgrade pip
+#14 ERROR: process "/bin/sh -c pip install --no-cache-dir --require-hashes -r requirements.txt &&     pip install --no-cache-dir --no-deps -r requirements-vcs.txt" did not complete successfully: exit code: 1
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
