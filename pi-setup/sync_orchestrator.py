@@ -253,6 +253,21 @@ def _job_tcgplayer_refresh() -> None:
     _run_module_subprocess("/app/tcgplayer_proxy.py", ["--refresh", "--top", "1000"])
 
 
+# ── Continuous Discovery v1 (D4) ──────────────────────────────────────────
+# Two-stage worker that keeps cards_master growing without operator action:
+#   1. discover_sets (daily): hits TCGdex per-language set endpoints
+#      (en/ja/ko/zh-tw/zh-cn) and enqueues every unknown set_id into
+#      discovery_queue. Cheap (one HTTP call per language).
+#   2. discovery_dispatch (every 30 min): drains pending queue rows,
+#      runs the right importers, builds cards_master, mirrors to USB.
+def _job_discover_sets() -> None:
+    _run_module_subprocess("/app/discover_new_sets.py")
+
+
+def _job_discovery_dispatch() -> None:
+    _run_module_subprocess("/app/discovery_dispatch.py")
+
+
 JOBS: list[Job] = [
     Job(name="mirror",          interval_sec=6 * 60,         fn=_job_mirror,            needs_network=False),
     Job(name="tcg_db",          interval_sec=60 * 60,        fn=_job_tcg_db,            needs_network=True),
@@ -280,6 +295,13 @@ JOBS: list[Job] = [
     Job(name="pocket_lt",       interval_sec=24 * 60 * 60,     fn=_job_pocket_lt,        needs_network=True),
     Job(name="pokeapi_species", interval_sec=7 * 24 * 60 * 60, fn=_job_pokeapi_species,  needs_network=True),
     Job(name="build_master",    interval_sec=12 * 60 * 60,     fn=_job_build_master,     needs_network=False),
+
+    # ── Continuous Discovery v1 ───────────────────────────────────────
+    # Probe runs daily (cheap — 5 HTTP calls); dispatcher runs every
+    # 30 min so a freshly-enqueued set lands in cards_master within
+    # an hour rather than waiting for the next daily cycle.
+    Job(name="discover_sets",     interval_sec=24 * 60 * 60, fn=_job_discover_sets,     needs_network=True),
+    Job(name="discovery_dispatch", interval_sec=30 * 60,     fn=_job_discovery_dispatch, needs_network=True),
 ]
 
 

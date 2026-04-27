@@ -9752,6 +9752,7 @@ def _admin_nav(active: str = "dashboard") -> str:
     pages = [
         ("dashboard", "/admin",             "🏠", "Dashboard"),
         ("search",    "/admin/search",      "🔎", "Search"),
+        ("discovery", "/admin/discovery",   "🆕", "Discovery"),
         ("market",    "/admin/market",      "📈", "Market"),
         ("sets",      "/admin/sets",        "🗂️", "Sets"),
         ("imports",   "/admin/imports",     "🚚", "Imports"),
@@ -26708,12 +26709,32 @@ def admin_search():
             d.get("image_url") or ""
         ))
 
-    body_rows = "\n".join(rows_html) or (
-        '<tr><td colspan="6" style="color:#666;text-align:center;padding:32px">'
-        + ('Type a card name in any language to search.' if not q
-           else 'No results — try a different spelling, set code, or QR.')
-        + '</td></tr>'
-    )
+    if rows_html:
+        body_rows = "\n".join(rows_html)
+    elif not q:
+        body_rows = (
+            '<tr><td colspan="6" style="color:#666;text-align:center;padding:32px">'
+            'Type a card name in any language to search.</td></tr>'
+        )
+    else:
+        # Zero results — give the operator a "Report missing" button. The
+        # POSTed query lands in discovery_queue; the dispatcher will recheck
+        # against newly-imported sets on its next tick (D5).
+        q_js = _html.escape(q).replace("'", "\\'")
+        body_rows = (
+            '<tr><td colspan="6" style="color:#94a3b8;text-align:center;padding:32px">'
+            f'No results for <b>"{_html.escape(q)}"</b> — try a different spelling, set code, or QR.<br>'
+            '<div style="margin-top:18px">'
+            f'<button id="report-missing-btn" type="button" '
+            f'onclick="reportMissing(\'{q_js}\')" '
+            'style="background:#7c3aed;color:#fff;padding:9px 18px;border:none;'
+            'border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">'
+            '🔍 Report missing card</button>'
+            '<div id="report-missing-msg" style="color:#a78bfa;font-size:12px;'
+            'margin-top:10px;min-height:16px"></div>'
+            '</div>'
+            '</td></tr>'
+        )
 
     summary_line = (
         f"Catalogue hits: <b>{catalogue_count_unified}</b>  ·  "
