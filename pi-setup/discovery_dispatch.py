@@ -226,7 +226,11 @@ def _mark_deferred(cur, queue_id: int, delay_ms: int, note: str) -> None:
     )
 
 
-def _reap_stale_running(cur, max_age_ms: int = 60 * 60 * 1000) -> int:
+_DEFAULT_REAP_MAX_AGE_MS = int(os.getenv("DISCOVERY_REAP_MAX_AGE_MS",
+                                         str(60 * 60 * 1000)))
+
+
+def _reap_stale_running(cur, max_age_ms: int | None = None) -> int:
     """Reset rows that have been stuck in 'running' for too long back to
     'pending' so they can be re-claimed.
 
@@ -240,7 +244,12 @@ def _reap_stale_running(cur, max_age_ms: int = 60 * 60 * 1000) -> int:
 
     Default ceiling is 1h — set discovery rarely takes more than a few
     minutes per importer, so anything older is almost certainly orphaned.
+    Override via `DISCOVERY_REAP_MAX_AGE_MS` env var on the Pi (e.g.
+    900000 = 15 min for a one-day card-show, where a 1h orphan window
+    is too long to wait).
     """
+    if max_age_ms is None:
+        max_age_ms = _DEFAULT_REAP_MAX_AGE_MS
     threshold = int(time.time() * 1000) - max_age_ms
     cur.execute(
         """

@@ -26970,15 +26970,21 @@ def admin_discovery_report():
     rather than creating a duplicate.
     """
     payload_in = request.get_json(silent=True) or request.form.to_dict() or {}
-    query   = (payload_in.get("query")   or "").strip()
-    context = (payload_in.get("context") or "operator").strip()[:120]
+    raw_query = (payload_in.get("query")   or "").strip()
+    context   = (payload_in.get("context") or "operator").strip()[:120]
 
-    if not query:
+    if not raw_query:
         return jsonify({"ok": False, "error": "query is required"}), 400
-    if len(query) > 200:
+    if len(raw_query) > 200:
         return jsonify({"ok": False, "error": "query too long (max 200 chars)"}), 400
 
-    payload = {"query": query, "context": context}
+    # Lowercase + collapse internal whitespace for dedupe.  "Pikachu  ex" and
+    # "pikachu ex" should hit the same queue row; the partial unique index
+    # uq_discovery_queue_pending_report keys on (payload->>'query') so the
+    # normalised form is what enforces the cross-tablet uniqueness. Original
+    # casing is preserved in `query_display` for the admin UI.
+    query = " ".join(raw_query.lower().split())
+    payload = {"query": query, "query_display": raw_query, "context": context}
     now_ms = int(time.time() * 1000)
 
     def _find_existing_pending(db_):
