@@ -315,6 +315,55 @@ CREATE INDEX IF NOT EXISTS idx_cards_master_name_chs_trgm
 """
 
 
+# ─── Continuous Discovery v1 (D1) ─────────────────────────────────────────
+# Queue of sets/cards/operator-reports awaiting auto-import; written by the
+# probes (discover_new_sets.py) and the /admin/search "Report missing" button,
+# drained by discovery_dispatch.py. Decoupling probe from dispatch lets the
+# operator UI surface in-flight work without blocking on subprocess runs.
+DDL_DISCOVERY_QUEUE = """
+CREATE TABLE IF NOT EXISTS discovery_queue (
+    id              BIGSERIAL PRIMARY KEY,
+    kind            TEXT NOT NULL,                 -- 'set' | 'card' | 'report'
+    payload         JSONB NOT NULL DEFAULT '{}',   -- {set_id, query, ...}
+    source          TEXT NOT NULL DEFAULT '',      -- 'tcgdex' | 'operator' | ...
+    reporter        TEXT NOT NULL DEFAULT 'worker',-- 'worker' | 'operator'
+    status          TEXT NOT NULL DEFAULT 'pending',
+        -- 'pending' | 'running' | 'resolved' | 'failed' | 'noop'
+    discovered_at   BIGINT NOT NULL DEFAULT 0,     -- epoch ms
+    resolved_at     BIGINT NOT NULL DEFAULT 0,
+    next_attempt_at BIGINT NOT NULL DEFAULT 0,     -- backoff target (epoch ms)
+    attempts        INT    NOT NULL DEFAULT 0,
+    last_error      TEXT   NOT NULL DEFAULT '',
+    resolved_master_id BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_queue_status_kind
+    ON discovery_queue (status, kind);
+CREATE INDEX IF NOT EXISTS idx_discovery_queue_discovered_at
+    ON discovery_queue (discovered_at DESC);
+-- Dedup for set-discovery: only one open row per set_id
+CREATE UNIQUE INDEX IF NOT EXISTS uq_discovery_queue_pending_set
+    ON discovery_queue ((payload->>'set_id'))
+ WHERE kind = 'set' AND status IN ('pending','running');
+"""
+
+DDL_DISCOVERY_LOG = """
+CREATE TABLE IF NOT EXISTS discovery_log (
+    log_id          BIGSERIAL PRIMARY KEY,
+    queue_id        BIGINT REFERENCES discovery_queue(id) ON DELETE CASCADE,
+    attempted_at    BIGINT NOT NULL DEFAULT 0,
+    duration_ms     INT    NOT NULL DEFAULT 0,
+    source_tried    TEXT   NOT NULL DEFAULT '',  -- 'tcgdex','pokemon-card.com',...
+    outcome         TEXT   NOT NULL DEFAULT '',  -- 'resolved' | 'noop' | 'error'
+    cards_added     INT    NOT NULL DEFAULT 0,
+    note            TEXT   NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_log_queue
+    ON discovery_log (queue_id);
+CREATE INDEX IF NOT EXISTS idx_discovery_log_attempted_at
+    ON discovery_log (attempted_at DESC);
+"""
+
+
 # ─── Public entry points ──────────────────────────────────────────────────
 
 _ALL_DDL = [
@@ -330,6 +379,8 @@ _ALL_DDL = [
     ("ref_promo_provenance",    DDL_REF_PROMO_PROVENANCE),
     ("ref_pokedex_species",     DDL_REF_POKEDEX_SPECIES),
     ("cards_master",            DDL_CARDS_MASTER),
+    ("discovery_queue",         DDL_DISCOVERY_QUEUE),
+    ("discovery_log",           DDL_DISCOVERY_LOG),
 ]
 
 
