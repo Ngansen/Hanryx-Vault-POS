@@ -1,0 +1,33 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose logs --since=2m pos | grep -iE "print|receipt|worker"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos sh -c "ls -la /dev/rfcomm* /dev/usb/lp* /dev/ttyUSB* 2>/dev/null; echo ---; cat /app/printer.conf 2>/dev/null || echo no-printer.conf; echo ---; echo PRINTER_NETWORK_HOST=\$PRINTER_NETWORK_HOST"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+crw-rw---- 1 root lp 180, 0 Apr 27 03:15  /dev/usb/lp0
+---
+no-printer.conf
+---
+PRINTER_NETWORK_HOST=
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "from server import _load_printer_conf; print(_load_printer_conf())"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-04-27T03:44:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{'printer_path': None, 'printer_type': 'auto', 'printer_usb_path': '/dev/usb/lp0', 'printer_network_host': '', 'printer_network_port': 9100, 'receipt_header': 'HanryxVault', 'receipt_subheader': 'Trading Card Shop', 'receipt_footer': 'hanryxvault.cards'}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "from server import _do_print; _do_print({'items':[{'name':'TEST','unitPrice':1.0,'quantity':1}],'totalAmount':1.0,'paymentMethod':'cash','timestamp':0,'kickDrawer':False}); print('returned-cleanly')"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-04-27T03:44:43","level":"INFO","logger":"hanryxvault","msg":"[print] Receipt sent to /dev/usb/lp0"}
+returned-cleanly
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose logs --since=30s pos | grep -iE "print|receipt"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
