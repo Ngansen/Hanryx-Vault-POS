@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import logging
 import re
@@ -77,7 +78,10 @@ def slugify_set(name: str) -> str:
 
 # Rarity → variant code map. Notion uses free-text rarity; we collapse it
 # down to one of the canonical variant codes from ref_variant_terms (STD,
-# RH, MBH, PBH, 1ED, SAR). Anything we can't classify falls back to STD.
+# RH, MBH, PBH, 1ED, SAR). Anything we can't classify falls back to STD —
+# UNLESS it's a recognisable non-vanilla rarity, in which case we mint a
+# deterministic V<hash> code so distinct prints of the same card_number
+# don't collide on the (set_id, card_number, variant_code) unique key.
 _VARIANT_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b1st\s*edition\b",        re.I), "1ED"),
     (re.compile(r"master\s*ball",            re.I), "MBH"),
@@ -86,11 +90,25 @@ _VARIANT_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"reverse\s*holo|\brh\b",    re.I), "RH"),
 ]
 
+# Rarities that should always collapse to STD (the "default" print). Anything
+# outside this whitelist that doesn't match an explicit _VARIANT_RULES entry
+# gets a hash-derived V<XXXX> code so it keeps its own row.
+_VANILLA_RARITY_RX = re.compile(
+    r"^(common|uncommon|rare|trainer|energy|basic\s*energy|special\s*energy)$",
+    re.I,
+)
+
 
 def parse_rarity(raw: str) -> tuple[str, str]:
     """
     (rarity_clean, variant_code) — strips Notion symbols (☆⚫●◆) from rarity
     and infers variant from keywords. Default variant = STD.
+
+    For rarities we don't have an explicit rule for (e.g. "Rare Holo",
+    "Rare Ultra", "Trainer Gallery", "Amazing Rare"), we derive a stable
+    4-char hash suffix so the row survives the unique key when a sibling
+    "Common" / "Rare" print of the same collector number is also present.
+    The pricing UI treats unknown variant_code values as default-priced.
     """
     if not raw:
         return ("", "STD")
@@ -103,6 +121,14 @@ def parse_rarity(raw: str) -> tuple[str, str]:
         if rx.search(cleaned):
             variant = code
             break
+
+    # Tiebreaker: non-vanilla rarities that didn't match an explicit rule
+    # get a deterministic suffix so they don't collapse onto STD and lose
+    # their distinct row at upsert time. Stable across re-imports.
+    if variant == "STD" and cleaned and not _VANILLA_RARITY_RX.fullmatch(cleaned):
+        suffix = hashlib.sha1(cleaned.lower().encode("utf-8")).hexdigest()[:4].upper()
+        variant = f"V{suffix}"
+
     return (cleaned, variant)
 
 
@@ -205,16 +231,32 @@ def parse_set_md(md_path: Path) -> dict:
     # Fallback: if the MD didn't have a CSV link, look for an
     # "Untitled*.csv" file in a sibling folder named like the MD.
     if not out["csv_path"]:
-        sibling = md_path.parent / md_path.stem.split(" ")[0]
         # md_path.stem looks like 'Unified Minds 29015188acc...' — drop the
         # 32-char trailing Notion hash to recover the human folder name.
         folder_name = re.sub(r"\s+[0-9a-f]{20,}$", "", md_path.stem)
         candidate_folder = md_path.parent / folder_name
+
+        # Slug-equivalence fallback. Notion sometimes writes the MD title
+        # with a curly apostrophe (U+2019) but the on-disk folder uses an
+        # ASCII apostrophe (or vice versa) — direct path resolution then
+        # silently fails. "Champion's Path" is the canonical example.
+        # Scan siblings and match by slug, which strips both glyphs.
+        if not candidate_folder.is_dir():
+            target_slug = slugify_set(folder_name)
+            for sibling in md_path.parent.iterdir():
+                if not sibling.is_dir():
+                    continue
+                # Strip a possible Notion hash off the folder name too,
+                # in case Notion's export keeps it on the dir as well.
+                sib_clean = re.sub(r"\s+[0-9a-f]{20,}$", "", sibling.name)
+                if slugify_set(sib_clean) == target_slug:
+                    candidate_folder = sibling
+                    break
+
         if candidate_folder.is_dir():
             csvs = list(candidate_folder.glob("Untitled*.csv"))
             if csvs:
                 out["csv_path"] = csvs[0]
-        del sibling  # keep linter quiet
 
     return out
 

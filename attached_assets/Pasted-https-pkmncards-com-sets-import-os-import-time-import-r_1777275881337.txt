@@ -1,0 +1,80 @@
+https://pkmncards.com/sets/
+
+import os
+import time
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+# Configuration
+BASE_URL = "https://pkmncards.com/sets/"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+DOWNLOAD_FOLDER = "pokemon_cards_archive"
+
+def download_image(url, folder, filename):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    
+    path = os.path.join(folder, filename)
+    if os.path.exists(path):
+        return # Skip if already downloaded
+
+    try:
+        response = requests.get(url, headers=HEADERS, stream=True, timeout=10)
+        if response.status_code == 200:
+            with open(path, 'wb') as f:
+                for chunk in response.iter_content(1024):
+                    f.write(chunk)
+            print(f"  Successfully downloaded: {filename}")
+        time.sleep(1)  # Ethical rate limiting
+    except Exception as e:
+        print(f"  Error downloading {url}: {e}")
+
+def scrape_pkmn_cards():
+    print(f"Connecting to {BASE_URL}...")
+    response = requests.get(BASE_URL, headers=HEADERS)
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    # Find all set links - these are typically within the 'entry-content' or a specific list
+    # Adjust the selector if the site structure has updated
+    set_links = soup.select('ul.sets-list li a') or soup.select('.entry-content a[href*="/set/"]')
+
+    for link in set_links:
+        set_url = link.get('href')
+        set_name = link.text.strip().replace(" ", "_").replace("/", "-")
+        
+        print(f"\nProcessing Set: {set_name}")
+        set_folder = os.path.join(DOWNLOAD_FOLDER, set_name)
+        
+        # Navigate to the set page
+        set_response = requests.get(set_url, headers=HEADERS)
+        set_soup = BeautifulSoup(set_response.text, 'html.parser')
+        
+        # Target card images (usually high-res thumbnails or direct image links)
+        # Standard selector for pkmncards gallery images:
+        images = set_soup.select('a img[src*=".jpg"]')
+        
+        for img in images:
+            img_url = img.get('src')
+            if not img_url: continue
+            
+            # Ensure we get the full URL if relative
+            full_img_url = urljoin(set_url, img_url)
+            # Use the card ID/Name from the URL as filename
+            filename = full_img_url.split("/")[-1].split("?")[0]
+            
+            download_image(full_img_url, set_folder, filename)
+
+if __name__ == "__main__":
+    scrape_pkmn_cards()
+
+
+
+
+Technical Notes for High-Volume Scraping
+• HTML Selectors: Web structures shift occasionally. If the script doesn't find links, right-click a set name on the page, select Inspect, and verify if the CSS selector (e.g., ul.sets-list li a) still matches.
+• Storage Space: For 50,000+ cards, ensure your local drive has significant overhead. High-resolution card scans can average 200KB–500KB each, which can quickly exceed 20GB–30GB of data.
+• Resuming Progress: The script includes a check (os.path.exists(path)) so you can stop it and restart it later; it will automatically skip any files you've already successfully downloaded.
+• The "Slow and Steady" Rule: It is tempting to remove the time.sleep() calls to speed things up, but pkmncards.com uses basic rate-limiting. Going too fast will result in a 403 Fo
