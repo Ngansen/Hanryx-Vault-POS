@@ -378,7 +378,9 @@ def main() -> None:
                     help="Seconds between HTTP requests (default 1.0).")
     args = ap.parse_args()
 
-    from server import _direct_db  # type: ignore[import-not-found]
+    # Use the standalone connector (filler_db) instead of `from server import …`
+    # so an unhealthy /mnt/cards never blocks DB-only fill jobs at import time.
+    from filler_db import _direct_db  # type: ignore[import-not-found]
 
     db = _direct_db()
     client = PoliteClient(sleep_s=args.sleep)
