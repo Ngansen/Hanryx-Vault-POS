@@ -1,0 +1,69 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # JP names — try one set with verbose parser logs
+docker compose exec pos python3 japanese_names_filler.py \
+  --set-id sv-base --limit-sets 1 --debug --dry-run
+# JP images — same
+docker compose exec pos python3 japanese_image_filler.py \
+  --set-id sv-base --limit-sets 1 --debug --dry-run
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 11:04:18,901 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 11:04:18,906 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/pathlib.py", line 1116, in mkdir
+    os.mkdir(self, mode)
+OSError: [Errno 5] Input/output error: '/mnt/cards/faiss'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/japanese_names_filler.py", line 680, in <module>
+    main()
+  File "/app/japanese_names_filler.py", line 645, in main
+    from server import _direct_db  # type: ignore[import-not-found]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server.py", line 1029, in <module>
+    _FAISS_INDEX_PATH = _resolve_faiss_index_path()
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/cards_db_path.py", line 72, in faiss_index_path
+    d.mkdir(parents=True, exist_ok=True)
+  File "/usr/local/lib/python3.11/pathlib.py", line 1125, in mkdir
+    if not exist_ok or not self.is_dir():
+                           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/pathlib.py", line 1250, in is_dir
+    return S_ISDIR(self.stat().st_mode)
+                   ^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/pathlib.py", line 1013, in stat
+    return os.stat(self, follow_symlinks=follow_symlinks)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 5] Input/output error: '/mnt/cards/faiss'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 11:04:20,561 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 11:04:20,567 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/pathlib.py", line 1116, in mkdir
+    os.mkdir(self, mode)
+OSError: [Errno 5] Input/output error: '/mnt/cards/faiss'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/japanese_image_filler.py", line 695, in <module>
+    main()
+  File "/app/japanese_image_filler.py", line 660, in main
+    from server import _direct_db  # type: ignore[import-not-found]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server.py", line 1029, in <module>
+    _FAISS_INDEX_PATH = _resolve_faiss_index_path()
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/cards_db_path.py", line 72, in faiss_index_path
+    d.mkdir(parents=True, exist_ok=True)
+  File "/usr/local/lib/python3.11/pathlib.py", line 1125, in mkdir
+    if not exist_ok or not self.is_dir():
+                           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/pathlib.py", line 1250, in is_dir
+    return S_ISDIR(self.stat().st_mode)
+                   ^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/pathlib.py", line 1013, in stat
+    return os.stat(self, follow_symlinks=follow_symlinks)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 5] Input/output error: '/mnt/cards/faiss'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
