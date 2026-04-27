@@ -1,0 +1,244 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # On the Pi:
+docker compose exec pos python3 notion_master_import.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 07:16:42,068 [INFO] notion_master_import: Importing from: /mnt/cards/tcg-master-set/Pokemon Card Sets Database  (dry_run=False)
+2026-04-27 07:16:43,037 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 07:16:43,042 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+2026-04-27 07:16:43,169 [INFO] hanryxvault: [pokeapi] canonical name index ready: 1025 species
+2026-04-27 07:16:43,246 [INFO] hanryxvault: [bg] price-refresh scheduler disabled via env
+2026-04-27 07:16:43,292 [INFO] hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+2026-04-27 07:16:43,296 [INFO] hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+2026-04-27 07:16:43,299 [INFO] hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+2026-04-27 07:16:43,309 [INFO] unified.schema: [unified.schema] init complete (14 tables, trgm=True)
+2026-04-27 07:16:43,311 [INFO] notion_master_import: [set   1] Ancient Origins (id=ancient-origins) csv=Untitled 7e715188acc482399ce20192f5f53fd6.csv
+Traceback (most recent call last):
+  File "/app/notion_master_import.py", line 451, in <module>
+    main()
+  File "/app/notion_master_import.py", line 434, in main
+    stats = run(args.root, args.dry_run, args.limit_sets)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/notion_master_import.py", line 353, in run
+    upsert_set_mapping(db, set_id, meta)
+  File "/app/notion_master_import.py", line 261, in upsert_set_mapping
+    json.dumps({"source": SOURCE_TAG, **set_meta}, default=str),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server.py", line 87, in _orjson_dumps
+    return _orjson.dumps(obj, option=opts or None).decode()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Type is not JSON serializable: PosixPath
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull
+cd pi-setup
+docker compose cp notion_master_import.py pos:/app/notion_master_import.py
+docker compose exec pos python3 notion_master_import.py
+remote: Enumerating objects: 14, done.
+remote: Counting objects: 100% (14/14), done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 10 (delta 7), reused 10 (delta 7), pack-reused 0 (from 0)
+Unpacking objects: 100% (10/10), 3.20 KiB | 272.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   ed4df91..b4f635c  main       -> origin/main
+Updating ed4df91..b4f635c
+Fast-forward
+ ...p-On-the-Pi_1777274230882.txt | 29 ++++++++++
+ ...p-docker-co_1777274133273.txt | 28 +++++++++
+ pi-setup/notion_master_import.py |  8 ++-
+ 3 files changed, 64 insertions(+), 1 deletion(-)
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-On-the-Pi_1777274230882.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-docker-co_1777274133273.txt
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied notion_master_imp... 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 07:20:58,964 [INFO] notion_master_import: Importing from: /mnt/cards/tcg-master-set/Pokemon Card Sets Database  (dry_run=False)
+2026-04-27 07:20:59,937 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 07:20:59,942 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+2026-04-27 07:21:00,062 [INFO] hanryxvault: [pokeapi] canonical name index ready: 1025 species
+2026-04-27 07:21:00,146 [INFO] hanryxvault: [bg] price-refresh scheduler disabled via env
+2026-04-27 07:21:00,187 [INFO] hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+2026-04-27 07:21:00,190 [INFO] hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+2026-04-27 07:21:00,194 [INFO] hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+2026-04-27 07:21:00,200 [INFO] unified.schema: [unified.schema] init complete (14 tables, trgm=True)
+2026-04-27 07:21:00,203 [INFO] notion_master_import: [set   1] Ancient Origins (id=ancient-origins) csv=Untitled 7e715188acc482399ce20192f5f53fd6.csv
+2026-04-27 07:21:00,240 [INFO] notion_master_import: [set   2] Aquapolis (id=aquapolis) csv=Untitled aae15188acc48200bceb8165e63c4d05.csv
+2026-04-27 07:21:00,296 [INFO] notion_master_import: [set   3] Arceus (id=arceus) csv=Untitled 05815188acc48344adac01f0498ac053.csv
+2026-04-27 07:21:00,334 [INFO] notion_master_import: [set   4] Astral Radiance (id=astral-radiance) csv=Untitled 5b415188acc483c6b6e701377e18031e.csv
+2026-04-27 07:21:00,402 [INFO] notion_master_import: [set   5] Astral radiance Trainer gallery (id=astral-radiance-trainer-gallery) csv=Untitled 56115188acc4836396b981e000bc3541.csv
+2026-04-27 07:21:00,421 [INFO] notion_master_import: [set   6] Base Set 1 (id=base-set-1) csv=Untitled 1ad15188acc48244955801d9141df864.csv
+2026-04-27 07:21:00,454 [INFO] notion_master_import: [set   7] Base set 2 (id=base-set-2) csv=Untitled f5015188acc4838293ef0132dbbfc679.csv
+2026-04-27 07:21:00,499 [INFO] notion_master_import: [set   8] Battle Styles (id=battle-styles) csv=Untitled 4c115188acc482859b88018aa5f687c7.csv
+2026-04-27 07:21:00,557 [INFO] notion_master_import: [set   9] Best of Game (id=best-of-game) csv=Untitled 9f015188acc4826ea30681e7f3167ba1.csv
+2026-04-27 07:21:00,562 [INFO] notion_master_import: [set  10] Black Bolt (id=black-bolt) csv=Untitled 9ba15188acc48240a6880139982454c4.csv
+2026-04-27 07:21:00,614 [INFO] notion_master_import: [set  11] Black and White Promos (id=black-and-white-promos) csv=Untitled 94615188acc4831fb87c8159242dec15.csv
+2026-04-27 07:21:00,647 [INFO] notion_master_import: [set  12] Black and White (id=black-and-white) csv=Untitled 59015188acc482d0b37901f910d7aa0d.csv
+2026-04-27 07:21:00,689 [INFO] notion_master_import: [set  13] Boundaries Crossed (id=boundaries-crossed) csv=Untitled 8f615188acc482be8c6f811146e39c7f.csv
+2026-04-27 07:21:00,736 [INFO] notion_master_import: [set  14] Break Trough (id=break-trough) csv=Untitled 2ec15188acc4828db4e3013dd1b5fb58.csv
+2026-04-27 07:21:00,791 [INFO] notion_master_import: [set  15] BreakPoint (id=breakpoint) csv=Untitled 85015188acc48244b2b201e24545de61.csv
+2026-04-27 07:21:00,830 [INFO] notion_master_import: [set  16] Brilliant Stars (id=brilliant-stars) csv=Untitled a8815188acc482c98760015f0c5b0cb7.csv
+2026-04-27 07:21:00,890 [INFO] notion_master_import: [set  17] Brilliant Stars Trainer gallery (id=brilliant-stars-trainer-gallery) csv=Untitled 8ab15188acc482bcaf8381ef2cde9880.csv
+2026-04-27 07:21:00,903 [INFO] notion_master_import: [set  18] Burning Shadows (id=burning-shadows) csv=Untitled 5ff15188acc48292a68001e58f553b06.csv
+2026-04-27 07:21:00,956 [INFO] notion_master_import: [set  19] Call of Legends (id=call-of-legends) csv=Untitled 4b115188acc48342a2fd019341451961.csv
+2026-04-27 07:21:00,991 [INFO] notion_master_import: [set  20] Celebrations (id=celebrations) csv=Untitled dd615188acc483bda51a0183292710ad.csv
+2026-04-27 07:21:01,004 [INFO] notion_master_import: [set  21] Celestial Storm (id=celestial-storm) csv=Untitled ad715188acc483d4b31d817e211272f6.csv
+2026-04-27 07:21:01,060 [INFO] notion_master_import: [set  22] Champion’s Path (id=champions-path) csv=Untitled 0ca15188acc48265b49d816682e3ac91.csv
+2026-04-27 07:21:01,060 [WARNING] notion_master_import:   → no per-set CSV found, skipping cards
+2026-04-27 07:21:01,062 [INFO] notion_master_import: [set  23] Chilling Reign (id=chilling-reign) csv=Untitled f3715188acc483a2af85818dbc7af78f.csv
+2026-04-27 07:21:01,138 [INFO] notion_master_import: [set  24] Cosmic Eclipse (id=cosmic-eclipse) csv=Untitled 57315188acc4834892a78140339aefdd.csv
+2026-04-27 07:21:01,225 [INFO] notion_master_import: [set  25] Crimson Invasion (id=crimson-invasion) csv=Untitled c6315188acc483d69439012fcf440f1e.csv
+2026-04-27 07:21:01,273 [INFO] notion_master_import: [set  26] Crown Zenith Galarian Gallery (id=crown-zenith-galarian-gallery) csv=Untitled 9ae15188acc483dc947481e3e3e61e42.csv
+2026-04-27 07:21:01,303 [INFO] notion_master_import: [set  27] Crown Zenith (id=crown-zenith) csv=Untitled 31d15188acc48334b1da014d606f4463.csv
+2026-04-27 07:21:01,357 [INFO] notion_master_import: [set  28] Dark Explorers (id=dark-explorers) csv=Untitled e5f15188acc4832dbcdb8103645218eb.csv
+2026-04-27 07:21:01,395 [INFO] notion_master_import: [set  29] Darkness Ablaze (id=darkness-ablaze) csv=Untitled 18d15188acc4837b9b55813f286d4dd2.csv
+2026-04-27 07:21:01,455 [INFO] notion_master_import: [set  30] Destined Rivals (id=destined-rivals) csv=Untitled fc015188acc48214862f0171b2a9a8c8.csv
+2026-04-27 07:21:01,532 [INFO] notion_master_import: [set  31] Detective Pikachu (id=detective-pikachu) csv=Untitled 2cf15188acc483de9dda819e574c9f94.csv
+2026-04-27 07:21:01,540 [INFO] notion_master_import: [set  32] Diamond and Pearl black star Promos (id=diamond-and-pearl-black-star-promos) csv=Untitled b8215188acc483d4b53881ba38d269e4.csv
+2026-04-27 07:21:01,561 [INFO] notion_master_import: [set  33] Diamond and Pearl (id=diamond-and-pearl) csv=Untitled e6915188acc482daa7c90152ccc2b3c9.csv
+2026-04-27 07:21:01,604 [INFO] notion_master_import: [set  34] Double Crisis (id=double-crisis) csv=Untitled a4215188acc48396880681f652bb4fc3.csv
+2026-04-27 07:21:01,619 [INFO] notion_master_import: [set  35] Dragon Majesty (id=dragon-majesty) csv=Untitled bc215188acc482c0818401fb14997133.csv
+2026-04-27 07:21:01,653 [INFO] notion_master_import: [set  36] Dragon Vault (id=dragon-vault) csv=Untitled 6b715188acc4831691ab01b1c2f0ddbd.csv
+2026-04-27 07:21:01,662 [INFO] notion_master_import: [set  37] Dragons Exalted (id=dragons-exalted) csv=Untitled 59315188acc48240975a8159e5c9d9a7.csv
+2026-04-27 07:21:01,706 [INFO] notion_master_import: [set  38] EX Crystal Guardians (id=ex-crystal-guardians) csv=Untitled a7715188acc482d6946601f9c376e405.csv
+2026-04-27 07:21:01,740 [INFO] notion_master_import: [set  39] EX Delta Species (id=ex-delta-species) csv=Untitled a0015188acc482afb8fc01ecb1ddec8b.csv
+2026-04-27 07:21:01,788 [INFO] notion_master_import: [set  40] EX Deoxys (id=ex-deoxys) csv=Untitled 20715188acc4836b855b818fe0fe6f7a.csv
+2026-04-27 07:21:01,829 [INFO] notion_master_import: [set  41] EX Dragon (id=ex-dragon) csv=Untitled fb115188acc48285a56f810b9d8304a0.csv
+2026-04-27 07:21:01,861 [INFO] notion_master_import: [set  42] EX Dragon Frontiers (id=ex-dragon-frontiers) csv=Untitled e0c15188acc483ff817f015daf1de977.csv
+2026-04-27 07:21:01,900 [INFO] notion_master_import: [set  43] EX Emerald (id=ex-emerald) csv=Untitled fe915188acc4829891b401600c938a94.csv
+2026-04-27 07:21:01,937 [INFO] notion_master_import: [set  44] EX Firered and LeafGreen (id=ex-firered-and-leafgreen) csv=Untitled 44d15188acc4838097ba81693e600338.csv
+2026-04-27 07:21:01,979 [INFO] notion_master_import: [set  45] EX Hidden legends (id=ex-hidden-legends) csv=Untitled 7ac15188acc4830a8f2201f4035a3ca3.csv
+2026-04-27 07:21:02,013 [INFO] notion_master_import: [set  46] EX Holon Phantoms (id=ex-holon-phantoms) csv=Untitled 5f715188acc4822d8ca701c601867cc5.csv
+2026-04-27 07:21:02,047 [INFO] notion_master_import: [set  47] EX Power keepers (id=ex-power-keepers) csv=Untitled 74515188acc4826c9f3f0195ef234e48.csv
+2026-04-27 07:21:02,085 [INFO] notion_master_import: [set  48] EX Sandstorm (id=ex-sandstorm) csv=Untitled ab715188acc4826db26001f7192efb59.csv
+2026-04-27 07:21:02,118 [INFO] notion_master_import: [set  49] EX Team Magma vs Team Aqua (id=ex-team-magma-vs-team-aqua) csv=Untitled 14715188acc483c6933a814acbde4e08.csv
+2026-04-27 07:21:02,153 [INFO] notion_master_import: [set  50] EX Team Rocket Returns (id=ex-team-rocket-returns) csv=Untitled 49a15188acc482ffbcee81b0ac0ddc68.csv
+2026-04-27 07:21:02,190 [INFO] notion_master_import: [set  51] EX Unseen Forces Unown Collection (id=ex-unseen-forces-unown-collection) csv=Untitled c8115188acc4830885af015c6d23fea4.csv
+2026-04-27 07:21:02,203 [INFO] notion_master_import: [set  52] EX Unseen Forces (id=ex-unseen-forces) csv=Untitled fb615188acc482c197ef01b1ef4c3703.csv
+2026-04-27 07:21:02,243 [INFO] notion_master_import: [set  53] EX legend Maker (id=ex-legend-maker) csv=Untitled c6c15188acc483e7b80b8151f2697bef.csv
+2026-04-27 07:21:02,274 [INFO] notion_master_import: [set  54] Emerging powers (id=emerging-powers) csv=Untitled 54615188acc48260a5e681d0e1262a46.csv
+2026-04-27 07:21:02,308 [INFO] notion_master_import: [set  55] Evolving Skies (id=evolving-skies) csv=Untitled f7815188acc483abb03c0158d4b100f8.csv
+2026-04-27 07:21:02,385 [INFO] notion_master_import: [set  56] Ex Ruby and Sapphire (id=ex-ruby-and-sapphire) csv=Untitled 74415188acc4822e84a9012c03894a98.csv
+2026-04-27 07:21:02,423 [INFO] notion_master_import: [set  57] Expedition base set (id=expedition-base-set) csv=Untitled 44215188acc48377bbfb8145946baf7a.csv
+2026-04-27 07:21:02,475 [INFO] notion_master_import: [set  58] Fates Collide (id=fates-collide) csv=Untitled 63f15188acc4827b991e01ee77576096.csv
+2026-04-27 07:21:02,517 [INFO] notion_master_import: [set  59] Flashfire (id=flashfire) csv=Untitled 17115188acc482b2a32e01882537c8a3.csv
+2026-04-27 07:21:02,556 [INFO] notion_master_import: [set  60] Forbidden Light (id=forbidden-light) csv=Untitled 63115188acc482dd82f901c1c79d1442.csv
+2026-04-27 07:21:02,606 [INFO] notion_master_import: [set  61] Fossil (id=fossil) csv=Untitled e2115188acc482c2a51501c503cccf7e.csv
+2026-04-27 07:21:02,630 [INFO] notion_master_import: [set  62] Furious Fists (id=furious-fists) csv=Untitled 70a15188acc482bda7e581e8b1ebfeb7.csv
+2026-04-27 07:21:02,667 [INFO] notion_master_import: [set  63] Fusion Strike (id=fusion-strike) csv=Untitled 62515188acc482a497100142490de226.csv
+2026-04-27 07:21:08,412 [INFO] notion_master_import: [set  64] Futsal Promos (id=futsal-promos) csv=Untitled c1015188acc4824b950c81e7ed7caec6.csv
+2026-04-27 07:21:08,416 [INFO] notion_master_import: [set  65] Generations (id=generations) csv=Untitled a3915188acc4823ea871817242163137.csv
+2026-04-27 07:21:08,456 [INFO] notion_master_import: [set  66] Great Encounters (id=great-encounters) csv=Untitled 8be15188acc482e0ad1a8117e535ee10.csv
+2026-04-27 07:21:08,492 [INFO] notion_master_import: [set  67] Guardians Rising (id=guardians-rising) csv=Untitled 6ec15188acc48323a871016e403f54f3.csv
+2026-04-27 07:21:08,563 [INFO] notion_master_import: [set  68] Gym Challenge (id=gym-challenge) csv=Untitled f9d15188acc4830c86430167eed6c119.csv
+2026-04-27 07:21:08,610 [INFO] notion_master_import: [set  69] Gym Heroes (id=gym-heroes) csv=Untitled 88015188acc482f5aeee81aca2fde324.csv
+2026-04-27 07:21:08,653 [INFO] notion_master_import: [set  70] HS Triumphant (id=hs-triumphant) csv=Untitled a9c15188acc482a59a7881c9cf51c49d.csv
+2026-04-27 07:21:08,687 [INFO] notion_master_import: [set  71] HS Undaunted (id=hs-undaunted) csv=Untitled f5915188acc4830f8acb012a6e4d6d80.csv
+2026-04-27 07:21:08,717 [INFO] notion_master_import: [set  72] HS Unleashed (id=hs-unleashed) csv=Untitled 7ca15188acc482e89060816156eb1458.csv
+2026-04-27 07:21:08,751 [INFO] notion_master_import: [set  73] HeartGold and SoulSilver (id=heartgold-and-soulsilver) csv=Untitled 1b115188acc48283a5ed811fe40f9d53.csv
+2026-04-27 07:21:08,793 [INFO] notion_master_import: [set  74] HeartGold and SoulSilver Promos (id=heartgold-and-soulsilver-promos) csv=Untitled 33015188acc482199fe2813b2e579820.csv
+2026-04-27 07:21:08,804 [INFO] notion_master_import: [set  75] Hidden fates (id=hidden-fates) csv=Untitled 49215188acc4835c8de201548b96d148.csv
+2026-04-27 07:21:08,857 [INFO] notion_master_import: [set  76] Journey Together (id=journey-together) csv=Untitled 93315188acc4827f95e60115ba7e6964.csv
+2026-04-27 07:21:08,920 [INFO] notion_master_import: [set  77] Jungle (id=jungle) csv=Untitled cc815188acc4833a90e1812dc89a26f3.csv
+2026-04-27 07:21:08,942 [INFO] notion_master_import: [set  78] Kalos starter set (id=kalos-starter-set) csv=Untitled d2f15188acc48261a58481e602fb97a9.csv
+2026-04-27 07:21:08,961 [INFO] notion_master_import: [set  79] Legendary Collection (id=legendary-collection) csv=Untitled c3215188acc482968d890114e94cd555.csv
+2026-04-27 07:21:08,998 [INFO] notion_master_import: [set  80] Legendary Treasures (id=legendary-treasures) csv=Untitled 32c15188acc48294998f01b5daea2284.csv
+2026-04-27 07:21:09,034 [INFO] notion_master_import: [set  81] Legends Awakened (id=legends-awakened) csv=Untitled 35d15188acc48231bc8101b2ac72ee3f.csv
+2026-04-27 07:21:09,083 [INFO] notion_master_import: [set  82] Lost Origin (id=lost-origin) csv=Untitled 77815188acc482f690940115c4f84184.csv
+2026-04-27 07:21:09,151 [INFO] notion_master_import: [set  83] Lost Origin Trainer gallery (id=lost-origin-trainer-gallery) csv=Untitled d1515188acc482758590811ab4ff7511.csv
+2026-04-27 07:21:09,165 [INFO] notion_master_import: [set  84] Lost Thunder (id=lost-thunder) csv=Untitled a2e15188acc482149002014e1895327a.csv
+2026-04-27 07:21:09,237 [INFO] notion_master_import: [set  85] MC Donald 25th Anniversary (id=mc-donald-25th-anniversary) csv=Untitled 89a15188acc483bfaddc81ab59fa53fa.csv
+2026-04-27 07:21:09,247 [INFO] notion_master_import: [set  86] MC Donald Dragon Discovery (id=mc-donald-dragon-discovery) csv=Untitled 32b15188acc4833db879811f7271750d.csv
+2026-04-27 07:21:09,254 [INFO] notion_master_import: [set  87] MC Donald Match Battle 2023 (id=mc-donald-match-battle-2023) csv=Untitled 3ef15188acc4838ea97f810d2081f6b4.csv
+2026-04-27 07:21:09,267 [INFO] notion_master_import: [set  88] MC Donald Match Battle (id=mc-donald-match-battle) csv=Untitled 99415188acc4832b942c0113ce61f699.csv
+2026-04-27 07:21:09,274 [INFO] notion_master_import: [set  89] MC Donald collection 2011 (id=mc-donald-collection-2011) csv=Untitled b1515188acc4828eb587011d90b57256.csv
+2026-04-27 07:21:09,279 [INFO] notion_master_import: [set  90] MC Donald collection 2012 (id=mc-donald-collection-2012) csv=Untitled 2f115188acc482faa06881b0a1029e9b.csv
+2026-04-27 07:21:09,285 [INFO] notion_master_import: [set  91] MC Donald collection 2013 (id=mc-donald-collection-2013) csv=Untitled 60415188acc482c0ab0b81b4c951faae.csv
+2026-04-27 07:21:09,291 [INFO] notion_master_import: [set  92] MC Donald collection 2014 (id=mc-donald-collection-2014) csv=Untitled 81a15188acc483d8beb8817934012228.csv
+2026-04-27 07:21:09,296 [INFO] notion_master_import: [set  93] MC Donald collection 2015 (id=mc-donald-collection-2015) csv=Untitled 92315188acc48234a166019219790c85.csv
+2026-04-27 07:21:09,302 [INFO] notion_master_import: [set  94] MC Donald collection 2016 (id=mc-donald-collection-2016) csv=Untitled dd915188acc48212890b813471f51149.csv
+2026-04-27 07:21:09,307 [INFO] notion_master_import: [set  95] MC Donald collection 2017 (id=mc-donald-collection-2017) csv=Untitled 84e15188acc482fd822b8101a1156366.csv
+2026-04-27 07:21:09,313 [INFO] notion_master_import: [set  96] MC Donald collection 2018 (id=mc-donald-collection-2018) csv=Untitled 1e015188acc48334beaf01d7d67e9817.csv
+2026-04-27 07:21:09,319 [INFO] notion_master_import: [set  97] MC Donald collection 2019 (id=mc-donald-collection-2019) csv=Untitled e1515188acc483b6a775816de7e51382.csv
+2026-04-27 07:21:09,325 [INFO] notion_master_import: [set  98] MC Donald collection 2019 FR (id=mc-donald-collection-2019-fr) csv=Untitled 94c15188acc483b397678188e3a6da82.csv
+2026-04-27 07:21:09,344 [INFO] notion_master_import: [set  99] Majestic Dawn (id=majestic-dawn) csv=Untitled 46615188acc48328a53e012ee4a1d308.csv
+2026-04-27 07:21:09,377 [INFO] notion_master_import: [set 100] Mega Evolution (id=mega-evolution) csv=<MISSING>
+2026-04-27 07:21:09,377 [WARNING] notion_master_import:   → no per-set CSV found, skipping cards
+2026-04-27 07:21:09,379 [INFO] notion_master_import: [set 101] Mysterious Treasures (id=mysterious-treasures) csv=Untitled ba315188acc4831bb6a701753b56df93.csv
+2026-04-27 07:21:09,420 [INFO] notion_master_import: [set 102] Neo Destiny (id=neo-destiny) csv=Untitled f0715188acc48300aa5f8196d02d8156.csv
+2026-04-27 07:21:09,457 [INFO] notion_master_import: [set 103] Neo Discovery (id=neo-discovery) csv=Untitled 2b515188acc482d2add581561cc240da.csv
+2026-04-27 07:21:09,491 [INFO] notion_master_import: [set 104] Neo Genesis (id=neo-genesis) csv=Untitled c9615188acc483c9a88c013ca7b21d91.csv
+2026-04-27 07:21:09,528 [INFO] notion_master_import: [set 105] Neo Revelation (id=neo-revelation) csv=Untitled f7215188acc48393892581fe2a8d3608.csv
+2026-04-27 07:21:09,551 [INFO] notion_master_import: [set 106] Next Destinies (id=next-destinies) csv=Untitled 43015188acc4838aa9d781cdbbd59908.csv
+2026-04-27 07:21:09,607 [INFO] notion_master_import: [set 107] Nintendo Promos (id=nintendo-promos) csv=Untitled 97315188acc482d6a33c019cc1e01fea.csv
+2026-04-27 07:21:09,764 [INFO] notion_master_import: [set 108] Noble Victories (id=noble-victories) csv=Untitled 42715188acc4828f83f901cffa02352c.csv
+2026-04-27 07:21:10,024 [INFO] notion_master_import: [set 109] Obsidian Flames (id=obsidian-flames) csv=Untitled bd515188acc483c897da81fbfb47d136.csv
+2026-04-27 07:21:10,328 [INFO] notion_master_import: [set 110] Paldea Evolved (id=paldea-evolved) csv=Untitled 89d15188acc482a58577010b3c1d4aec.csv
+2026-04-27 07:21:10,782 [INFO] notion_master_import: [set 111] Paldean fates (id=paldean-fates) csv=Untitled ec215188acc482afba1d01359087a939.csv
+2026-04-27 07:21:11,038 [INFO] notion_master_import: [set 112] Paradox Rift (id=paradox-rift) csv=Untitled 89e15188acc48242914b01b060ab3bba.csv
+2026-04-27 07:21:11,153 [INFO] notion_master_import: [set 113] Phantom Forces (id=phantom-forces) csv=Untitled 41d15188acc482d9adee812dd3e29827.csv
+2026-04-27 07:21:11,193 [INFO] notion_master_import: [set 114] Plasma Blast (id=plasma-blast) csv=Untitled 8fa15188acc482e0a5e281b7ee1bb1f4.csv
+2026-04-27 07:21:11,230 [INFO] notion_master_import: [set 115] Plasma Freeze (id=plasma-freeze) csv=Untitled e9d15188acc483e587a281539c895e4b.csv
+2026-04-27 07:21:11,272 [INFO] notion_master_import: [set 116] Plasma Storm (id=plasma-storm) csv=Untitled c7115188acc483e592c98174547e9196.csv
+2026-04-27 07:21:11,317 [INFO] notion_master_import: [set 117] Platinum (id=platinum) csv=Untitled 8bd15188acc4828dad2981c45c9d8def.csv
+2026-04-27 07:21:11,382 [INFO] notion_master_import: [set 118] Pokemon GO (id=pokemon-go) csv=Untitled 6bb15188acc483a5a166019c74db6dff.csv
+2026-04-27 07:21:11,412 [INFO] notion_master_import: [set 119] Pokemon Rumble (id=pokemon-rumble) csv=Untitled 98015188acc482f8a74a016022ddacf0.csv
+2026-04-27 07:21:11,419 [INFO] notion_master_import: [set 120] Pop series 1 (id=pop-series-1) csv=Untitled d6115188acc48365a72a81f98b2c4928.csv
+2026-04-27 07:21:11,426 [INFO] notion_master_import: [set 121] Pop series 2 (id=pop-series-2) csv=Untitled 82115188acc4838d82aa01d598ce74f3.csv
+2026-04-27 07:21:11,434 [INFO] notion_master_import: [set 122] Pop series 3 (id=pop-series-3) csv=Untitled 13215188acc48251bf4801feabc28733.csv
+2026-04-27 07:21:11,443 [INFO] notion_master_import: [set 123] Pop series 4 (id=pop-series-4) csv=Untitled b3315188acc482d4ac9701e9b757ee35.csv
+2026-04-27 07:21:11,450 [INFO] notion_master_import: [set 124] Pop series 5 (id=pop-series-5) csv=Untitled ab615188acc482b08c0481e8b8626321.csv
+2026-04-27 07:21:11,460 [INFO] notion_master_import: [set 125] Pop series 6 (id=pop-series-6) csv=Untitled 36715188acc483f59207019f6050ce6f.csv
+2026-04-27 07:21:11,469 [INFO] notion_master_import: [set 126] Pop series 7 (id=pop-series-7) csv=Untitled 69415188acc483d28241819eb761ed91.csv
+2026-04-27 07:21:11,477 [INFO] notion_master_import: [set 127] Pop series 8 (id=pop-series-8) csv=Untitled ecb15188acc4828ca8ea812e12a7fb73.csv
+2026-04-27 07:21:11,485 [INFO] notion_master_import: [set 128] Pop series 9 (id=pop-series-9) csv=Untitled a1615188acc482b68425015bdaa01482.csv
+2026-04-27 07:21:11,492 [INFO] notion_master_import: [set 129] Primal Clash (id=primal-clash) csv=Untitled b4815188acc483129e9c8173d767a156.csv
+2026-04-27 07:21:11,547 [INFO] notion_master_import: [set 130] Prismatic Evolutions (id=prismatic-evolutions) csv=Untitled 09e15188acc48242998c0139b65f1e2f.csv
+2026-04-27 07:21:11,609 [INFO] notion_master_import: [set 131] Radiant Collection (id=radiant-collection) csv=Untitled 74315188acc4832195c58173a73fc160.csv
+2026-04-27 07:21:11,621 [INFO] notion_master_import: [set 132] Rebel Clash (id=rebel-clash) csv=Untitled f2415188acc48362b82381917c5f789b.csv
+2026-04-27 07:21:11,686 [INFO] notion_master_import: [set 133] Rising Rivals (id=rising-rivals) csv=Untitled e7815188acc4829d909f0161ad0b91f2.csv
+2026-04-27 07:21:11,726 [INFO] notion_master_import: [set 134] Roaring Skies (id=roaring-skies) csv=Untitled 18615188acc48286b84881b384029d44.csv
+2026-04-27 07:21:11,764 [INFO] notion_master_import: [set 135] Scarlet and Violet 151 (id=scarlet-and-violet-151) csv=Untitled 59615188acc4833aa96e8149eaf31217.csv
+2026-04-27 07:21:11,833 [INFO] notion_master_import: [set 136] Scarlet and Violet Base set (id=scarlet-and-violet-base-set) csv=Untitled ed615188acc4822a8c0601dd2fcd8f7e.csv
+2026-04-27 07:21:11,913 [INFO] notion_master_import: [set 137] Scarlet and Violet Energies (id=scarlet-and-violet-energies) csv=Untitled 96715188acc4831491ea0111ce5e6be8.csv
+2026-04-27 07:21:11,921 [INFO] notion_master_import: [set 138] Scarlet and Violet Promos (id=scarlet-and-violet-promos) csv=Untitled 9ae15188acc482c0b9c281e82ccce2cc.csv
+2026-04-27 07:21:11,985 [INFO] notion_master_import: [set 139] Secret Wonders (id=secret-wonders) csv=Untitled 0eb15188acc4832886a2015a21efeca5.csv
+2026-04-27 07:21:12,029 [INFO] notion_master_import: [set 140] Shining Fates (id=shining-fates) csv=Untitled 42815188acc482179ef5811a2faf327d.csv
+2026-04-27 07:21:12,089 [INFO] notion_master_import: [set 141] Shining Legends (id=shining-legends) csv=Untitled dc315188acc483fdb500818708e42eeb.csv
+2026-04-27 07:21:12,115 [INFO] notion_master_import: [set 142] Shrouded fable (id=shrouded-fable) csv=Untitled 41a15188acc483f2b84e01701127fc0c.csv
+2026-04-27 07:21:12,151 [INFO] notion_master_import: [set 143] Silver Tempest Trainer gallery (id=silver-tempest-trainer-gallery) csv=Untitled 42b15188acc483bb9f0401a764ca8845.csv
+2026-04-27 07:21:12,166 [INFO] notion_master_import: [set 144] Silver Tempest (id=silver-tempest) csv=Untitled 7a315188acc483379e8801aecee46dbb.csv
+2026-04-27 07:21:12,235 [INFO] notion_master_import: [set 145] Skyridge (id=skyridge) csv=Untitled 9e315188acc483c9a44d017482a32b83.csv
+2026-04-27 07:21:12,292 [INFO] notion_master_import: [set 146] Southern Islands (id=southern-islands) csv=Untitled 8d415188acc483c4ab0401ce6111161b.csv
+2026-04-27 07:21:12,300 [INFO] notion_master_import: [set 147] Steam Siege (id=steam-siege) csv=Untitled fc015188acc4838e98a281f99be03fad.csv
+2026-04-27 07:21:12,340 [INFO] notion_master_import: [set 148] Stellar Crown (id=stellar-crown) csv=Untitled 45d15188acc4824d9639814199ca96e3.csv
+2026-04-27 07:21:12,398 [INFO] notion_master_import: [set 149] Stormfront (id=stormfront) csv=Untitled 00915188acc482d4bfd881b119b89659.csv
+2026-04-27 07:21:12,433 [INFO] notion_master_import: [set 150] Sun and Moon Base (id=sun-and-moon-base) csv=Untitled bf215188acc482f8b127817af14618b6.csv
+2026-04-27 07:21:12,485 [INFO] notion_master_import: [set 151] Sun and Moon Promos (id=sun-and-moon-promos) csv=Untitled e5415188acc48351b42d818a3176da24.csv
+2026-04-27 07:21:12,563 [INFO] notion_master_import: [set 152] Supreme Victors (id=supreme-victors) csv=Untitled 92615188acc483f9ab5f0195e5da8632.csv
+2026-04-27 07:21:12,618 [INFO] notion_master_import: [set 153] Surging Sparks (id=surging-sparks) csv=Untitled 96d15188acc4831680a901a4ceddf7d1.csv
+2026-04-27 07:21:12,693 [INFO] notion_master_import: [set 154] Sword and Shield Promos (id=sword-and-shield-promos) csv=Untitled 43815188acc4833295f901b44009237f.csv
+2026-04-27 07:21:12,791 [INFO] notion_master_import: [set 155] Sword and Shield base (id=sword-and-shield-base) csv=Untitled fa715188acc48352a1ed8153a430587b.csv
+2026-04-27 07:21:12,863 [INFO] notion_master_import: [set 156] Team Rocket (id=team-rocket) csv=Untitled b8915188acc483bcb4e7810be42086fa.csv
+2026-04-27 07:21:12,891 [INFO] notion_master_import: [set 157] Team Up (id=team-up) csv=Untitled 74215188acc482c5912401aee0534d94.csv
+2026-04-27 07:21:12,953 [INFO] notion_master_import: [set 158] Temporal Forces (id=temporal-forces) csv=Untitled 50715188acc48253bb3801059cb120a9.csv
+2026-04-27 07:21:13,021 [INFO] notion_master_import: [set 159] Topps Chrome Series 1 (id=topps-chrome-series-1) csv=Untitled cfe15188acc483a7a48c019df3a505e9.csv
+2026-04-27 07:21:13,049 [INFO] notion_master_import: [set 160] Topps Chrome Series 2 (id=topps-chrome-series-2) csv=Untitled c7915188acc483fa9706816d3bc1b7d6.csv
+2026-04-27 07:21:13,075 [INFO] notion_master_import: [set 161] Topps Chrome Series 3 (id=topps-chrome-series-3) csv=Untitled ca415188acc4822e8350814a529a7c3b.csv
+2026-04-27 07:21:13,091 [INFO] notion_master_import: [set 162] Twilight Masquerade (id=twilight-masquerade) csv=Untitled ae115188acc482babbc581d040949500.csv
+2026-04-27 07:21:13,161 [INFO] notion_master_import: [set 163] Ultra Prism (id=ultra-prism) csv=Untitled 27815188acc482cea6f28161f483146b.csv
+2026-04-27 07:21:13,216 [INFO] notion_master_import: [set 164] Unbroken Bonds (id=unbroken-bonds) csv=Untitled c5515188acc482a3a7cc014bf266758c.csv
+2026-04-27 07:21:13,291 [INFO] notion_master_import: [set 165] Unified Minds (id=unified-minds) csv=Untitled 22b15188acc48370a1c28180bf677f28.csv
+2026-04-27 07:21:13,383 [INFO] notion_master_import: [set 166] Vivid Voltage (id=vivid-voltage) csv=Untitled aa615188acc482359dff811f5b8275f0.csv
+2026-04-27 07:21:13,719 [INFO] notion_master_import: [set 167] White Flare (id=white-flare) csv=Untitled 89f15188acc4829f97c881a248867525.csv
+2026-04-27 07:21:13,783 [INFO] notion_master_import: [set 168] Wizards of the Coast Promos (id=wizards-of-the-coast-promos) csv=Untitled b2d15188acc4830091a901440223c80b.csv
+2026-04-27 07:21:13,803 [INFO] notion_master_import: [set 169] XY Evolutions (id=xy-evolutions) csv=Untitled 59715188acc483608f0481583321868c.csv
+2026-04-27 07:21:13,903 [INFO] notion_master_import: [set 170] XY Promos (id=xy-promos) csv=Untitled 58115188acc4829db16781fe8e6c87bb.csv
+2026-04-27 07:21:13,972 [INFO] notion_master_import: [set 171] XY base set (id=xy-base-set) csv=Untitled 16b15188acc48269a642013a5e406701.csv
+2026-04-27 07:21:14,028 [INFO] notion_master_import: ────────────────────────────────────────────────────────────
+2026-04-27 07:21:14,028 [INFO] notion_master_import: DONE in 15.1s
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_seen        171
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_upserted    171
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   sets_no_csv      2
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_seen       38946
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_upserted   38898
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   cards_skipped    48
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   images_matched   32
+2026-04-27 07:21:14,029 [INFO] notion_master_import:   errors           0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
