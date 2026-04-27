@@ -1,0 +1,24 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # Find the 2 sets that had no CSV
+docker compose exec pos python3 notion_master_import.py --dry-run 2>&1 | grep -B1 "no per-set CSV"
+2026-04-27 07:35:19,669 [INFO] notion_master_import: [set  22] Champion’s Path (id=champions-path) csv=Untitled 0ca15188acc48265b49d816682e3ac91.csv
+2026-04-27 07:35:19,669 [WARNING] notion_master_import:   → no per-set CSV found, skipping cards
+--
+2026-04-27 07:35:20,362 [INFO] notion_master_import: [set 100] Mega Evolution (id=mega-evolution) csv=<MISSING>
+2026-04-27 07:35:20,362 [WARNING] notion_master_import:   → no per-set CSV found, skipping cards
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # How bad is the upsert collision? See sets where rows-in-CSV > rows-in-DB
+docker compose exec pos python3 -c "
+from server import _direct_db
+db=_direct_db()
+print('Sets with most variant_code collisions (rows likely overwriting each other):')
+[print(f\"  {r['set_id']:<35} unique_card_nums={r['n']}\") for r in db.execute(\"SELECT set_id, COUNT(DISTINCT card_number) AS n FROM cards_master GROUP BY set_id HAVING COUNT(DISTINCT card_number) < COUNT(*) ORDER BY (COUNT(*) - COUNT(DISTINCT card_number)) DESC LIMIT 10\").fetchall()]
+"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-04-27T07:35:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+Sets with most variant_code collisions (rows likely overwriting each other):
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
