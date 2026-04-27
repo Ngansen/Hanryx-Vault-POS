@@ -1,0 +1,28 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
+docker compose exec pos python3 notion_master_import.py --dry-run --limit-sets 5
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-04-27 07:14:59,962 [INFO] notion_master_import: Importing from: /mnt/cards/tcg-master-set/Pokemon Card Sets Database  (dry_run=True)
+2026-04-27 07:15:00,943 [INFO] hanryxvault: [redis] Connected to redis://redis:6379/0
+2026-04-27 07:15:00,948 [INFO] hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+2026-04-27 07:15:01,075 [INFO] hanryxvault: [pokeapi] canonical name index ready: 1025 species
+2026-04-27 07:15:01,151 [INFO] hanryxvault: [bg] price-refresh scheduler disabled via env
+2026-04-27 07:15:01,193 [INFO] hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+2026-04-27 07:15:01,196 [INFO] hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+2026-04-27 07:15:01,200 [INFO] hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+2026-04-27 07:15:01,206 [INFO] unified.schema: [unified.schema] init complete (14 tables, trgm=True)
+2026-04-27 07:15:01,208 [INFO] notion_master_import: [set   1] Ancient Origins (id=ancient-origins) csv=Untitled 7e715188acc482399ce20192f5f53fd6.csv
+2026-04-27 07:15:01,214 [INFO] notion_master_import: [set   2] Aquapolis (id=aquapolis) csv=Untitled aae15188acc48200bceb8165e63c4d05.csv
+2026-04-27 07:15:01,219 [INFO] notion_master_import: [set   3] Arceus (id=arceus) csv=Untitled 05815188acc48344adac01f0498ac053.csv
+2026-04-27 07:15:01,222 [INFO] notion_master_import: [set   4] Astral Radiance (id=astral-radiance) csv=Untitled 5b415188acc483c6b6e701377e18031e.csv
+2026-04-27 07:15:01,228 [INFO] notion_master_import: [set   5] Astral radiance Trainer gallery (id=astral-radiance-trainer-gallery) csv=Untitled 56115188acc4836396b981e000bc3541.csv
+2026-04-27 07:15:01,229 [INFO] notion_master_import: ────────────────────────────────────────────────────────────
+2026-04-27 07:15:01,229 [INFO] notion_master_import: DONE in 1.3s
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   sets_seen        5
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   sets_upserted    0
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   sets_no_csv      0
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   cards_seen       640
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   cards_upserted   640
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   cards_skipped    0
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   images_matched   0
+2026-04-27 07:15:01,229 [INFO] notion_master_import:   errors           0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
