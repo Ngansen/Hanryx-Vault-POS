@@ -9253,8 +9253,18 @@ _PR_CUT          = _GS  + b'V\x42\x00'  # partial cut + feed
 # t1=25, t2=250  →  ~50 ms pulse, plenty for any star/epson-compatible drawer.
 _PR_KICK_DRAWER  = _ESC + b'p\x00\x19\xfa'
 _PR_LF           = b'\n'
-_PR_DIVIDER_WIDE = b'-' * 42 + b'\n'    # 80 mm paper (42 chars)
-_PR_DIVIDER_NARR = b'-' * 32 + b'\n'    # 58 mm paper (32 chars)
+_PR_DIVIDER_WIDE      = b'-' * 42 + b'\n'    # 80 mm paper (42 chars)
+_PR_DIVIDER_NARR      = b'-' * 32 + b'\n'    # 58 mm paper (32 chars)
+_PR_DIVIDER_WIDE_BOLD = b'=' * 42 + b'\n'    # 80 mm — major section break
+_PR_DIVIDER_NARR_BOLD = b'=' * 32 + b'\n'    # 58 mm — major section break
+
+# Dragon-only emblem (no wordmark) — printed small above the QR as a
+# "wax-seal" style brand mark to bookend the receipt. Cropped from the same
+# source as receipt_logo.png. Lives on the Pi filesystem so we don't depend
+# on the tablet sending a second image.
+_DRAGON_EMBLEM_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "assets", "dragon_emblem.png"
+)
 
 
 def _load_printer_conf() -> dict:
@@ -9268,7 +9278,7 @@ def _load_printer_conf() -> dict:
         "printer_network_host": os.environ.get("PRINTER_NETWORK_HOST"),
         "printer_network_port": int(os.environ.get("PRINTER_NETWORK_PORT", "9100")),
         "receipt_header":   "HanryxVault",
-        "receipt_subheader": "Trading Card Shop",
+        "receipt_subheader": "Korean Pokémon TCG Specialists",
         "receipt_footer":   "hanryxvault.cards",
         # Paper width in millimetres — "58" (most compact thermal printers,
         # 384 px / 32 chars wide) or "80" (MUNBYN P047 etc., 576 px / 42 chars).
@@ -9366,7 +9376,7 @@ def _image_to_escpos_raster(img, max_width_px: int) -> bytes:
     return header + inverted
 
 
-def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
+def _render_logo_raster(b64_str: str, paper_width_px: int, *, max_w_frac: float = 0.50) -> bytes:
     """Decode a base64 logo and render to centered ESC/POS raster bytes.
 
     The header crest is capped at ~1.4" wide (≈50% of paper width) and
@@ -9389,10 +9399,10 @@ def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
             b64_str = b64_str.split(",", 1)[1]
         img = _PILImage.open(_BytesIO(_b64dec(b64_str)))
 
-        # Crest size caps — tweak here, no APK rebuild needed.
-        max_w_frac = 0.50          # ~1.4" on 80mm, ~0.95" on 58mm
+        # Crest size caps — caller can override max_w_frac to print a smaller
+        # "seal" emblem (e.g. 0.28 above the QR) vs the full header logo.
         max_h_px = 244             # ~1.2" at 203 DPI
-        max_w_px = max(120, int(paper_width_px * max_w_frac))
+        max_w_px = max(80, int(paper_width_px * max_w_frac))
 
         w0, h0 = img.size
         scale = min(max_w_px / w0, max_h_px / h0, 1.0)
@@ -9413,17 +9423,20 @@ def _render_logo_raster(b64_str: str, paper_width_px: int) -> bytes:
         return b""
 
 
-def _render_qr_raster(data: str, paper_width_px: int) -> bytes:
+def _render_qr_raster(data: str, paper_width_px: int, *, max_w_frac: float = 0.40) -> bytes:
     """Generate a QR for `data` and render to centered ESC/POS raster bytes.
 
-    QR fills ~60% of paper width. Returns b"" on any failure.
+    QR defaults to ~40% of paper width (caller can override). Returns b"" on
+    any failure. The smaller default is intentional: a 60% QR dominates the
+    receipt for low-value sales and wastes thermal paper without helping the
+    customer scan it any better.
     """
     try:
         if not data:
             return b""
         from PIL import Image as _PILImage
 
-        target = max(120, int(paper_width_px * 0.60))
+        target = max(120, int(paper_width_px * max_w_frac))
         qr = _qrcode.QRCode(
             version=None,
             error_correction=_qrcode_const.ERROR_CORRECT_M,
@@ -9445,130 +9458,267 @@ def _render_qr_raster(data: str, paper_width_px: int) -> bytes:
         return b""
 
 
-def _format_receipt(sale: dict, conf: dict) -> bytes:
-    """Build ESC/POS byte string for one sale receipt."""
-    header    = (conf.get("receipt_header")    or "HanryxVault").encode()
-    subheader = (conf.get("receipt_subheader") or "Trading Card Shop").encode()
-    footer    = (conf.get("receipt_footer")    or "hanryxvault.cards").encode()
+def _load_dragon_emblem_b64() -> str:
+    """Load the dragon-only emblem PNG (lives on the Pi at assets/dragon_emblem.png)
+    and return base64. Returns "" silently if the file is missing or unreadable
+    so the receipt still prints fine without the seal."""
+    try:
+        import base64
+        with open(_DRAGON_EMBLEM_PATH, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii")
+    except Exception:
+        return ""
+
+
+def _enrich_items_for_receipt(items: list) -> list:
+    """Look up set_code / condition / language for each line item by qrCode and
+    attach them as `_set_code`, `_condition`, `_language` keys (underscored to
+    avoid colliding with anything the tablet might send in the future).
+
+    Single batched query against `inventory`. Defensive: any DB hiccup falls
+    back to the original items list — the receipt will still print, just
+    without the rich subline.
+    """
+    if not items:
+        return items
+    qrs = [it.get("qrCode") or it.get("qr_code") for it in items]
+    qrs = [q for q in qrs if q]
+    if not qrs:
+        return items
+
+    by_qr = {}
+    db = None
+    try:
+        db = _direct_db()
+        placeholders = ",".join(["%s"] * len(qrs))
+        rows = db.execute(
+            f"SELECT qr_code, set_code, condition, language "
+            f"FROM inventory WHERE qr_code IN ({placeholders})",
+            qrs,
+        ).fetchall()
+        for r in rows:
+            by_qr[r["qr_code"]] = dict(r)
+    except Exception as _e:
+        try: log.warning("[receipt] item enrichment skipped: %s", _e)
+        except Exception: pass
+    finally:
+        if db:
+            try: db.close()
+            except Exception: pass
+
+    out = []
+    for it in items:
+        qr   = it.get("qrCode") or it.get("qr_code") or ""
+        meta = by_qr.get(qr) or {}
+        enriched = dict(it)
+        enriched["_set_code"]  = (meta.get("set_code")  or "").strip()
+        enriched["_condition"] = (meta.get("condition") or "").strip()
+        enriched["_language"]  = (meta.get("language")  or "").strip()
+        out.append(enriched)
+    return out
+
+
+def _format_receipt(
+    sale: dict,
+    conf: dict,
+    *,
+    copy_label: str | None = None,
+    include_disclosure: bool = True,
+    emblem_b64: str | None = None,
+) -> bytes:
+    """Build ESC/POS byte string for one sale receipt.
+
+    Premium B&W layout designed to FEEL professional on a single-color
+    thermal printer:
+      • Centered header logo (sent by tablet) with breathing room
+      • Double-height bold store name + tagline
+      • Optional COPY label (CUSTOMER COPY / MERCHANT COPY)
+      • Friendly date + short receipt # (R-XXXXXX) + internal txn id
+      • Detailed line items: qty, name, set/condition/language subline
+      • Items count summary on the same row as the subtotal
+      • Tax shows the rate ("Tax (6%)")
+      • Bold TOTAL
+      • Payment + change
+      • Optional disclosure block (skipped on merchant copy by default)
+      • Dragon emblem above the QR (loaded from assets/dragon_emblem.png)
+      • Smaller QR (~40% paper width)
+      • Branded thank-you line
+    """
+    header     = (conf.get("receipt_header")     or "HanryxVault").encode()
+    subheader  = (conf.get("receipt_subheader")  or "Korean Pokémon TCG Specialists").encode()
+    footer     = (conf.get("receipt_footer")     or "hanryxvault.cards").encode()
+    disclosure = (conf.get("receipt_disclosure") or "").strip()
 
     # ── Paper-width-aware layout ─────────────────────────────────────────────
-    # 58 mm (32 chars / 384 px) is the historical default. 80 mm printers
-    # (MUNBYN P047 etc., 42 chars / 576 px) get a wider divider AND a wider
-    # name column so the receipt fills the paper instead of looking lost in a
-    # narrow gutter on the left. Set `paper_width=80` in pi-setup/printer.conf
-    # to opt in; everything else (logo + QR raster widths, line-item layout,
-    # divider) follows from this single switch.
+    # 58 mm = 32 chars / 384 px wide.  80 mm = 42 chars / 576 px wide.
     paper_w = _paper_width_px(conf)
     if paper_w >= 576:                # 80 mm
-        divider = _PR_DIVIDER_WIDE
-        name_w     = 32               # 32 + ' ' + '$' + 7 = 41 chars (fits 42)
-        name_w_qty = 28               # '  x?' (4) + name(28) + ' $' + 7 = 42
-        item_trunc = 32
+        char_w     = 42
+        item_trunc = 27               # qty(2)+sp+name(27)+' $'+price(8) = 41
+        div_thick  = _PR_DIVIDER_WIDE_BOLD
+        div_thin   = _PR_DIVIDER_WIDE
     else:                             # 58 mm
-        divider = _PR_DIVIDER_NARR
-        name_w     = 22               # 22 + ' ' + '$' + 7 = 31 chars (fits 32)
-        name_w_qty = 19               # '  x?' (4) + name(19) + ' $' + 7 = 33
-        item_trunc = 22
+        char_w     = 32
+        item_trunc = 19               # qty(2)+sp+name(19)+' $'+price(8) = 32
+        div_thick  = _PR_DIVIDER_NARR_BOLD
+        div_thin   = _PR_DIVIDER_NARR
 
     timestamp = sale.get("timestamp", 0)
-    if timestamp:
-        dt_str = datetime.datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d  %H:%M")
-    else:
-        dt_str = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M")
+    dt_obj = (datetime.datetime.fromtimestamp(timestamp / 1000)
+              if timestamp else datetime.datetime.now())
+    # Friendly: "Apr 27, 2026  5:34 AM" — fall back if %-I not supported
+    try:
+        dt_str = dt_obj.strftime("%b %d, %Y  %-I:%M %p")
+    except ValueError:
+        dt_str = dt_obj.strftime("%b %d, %Y  %I:%M %p").replace(" 0", " ")
 
-    txn_id  = (sale.get("transactionId") or sale.get("transaction_id") or "")[:16]
-    method  = sale.get("paymentMethod")  or sale.get("payment_method") or "CARD"
-    items   = sale.get("items", [])
+    txn_id   = (sale.get("transactionId") or sale.get("transaction_id") or "")
+    short_no = ""
+    if txn_id:
+        digits = "".join(c for c in txn_id if c.isalnum())
+        short_no = "R-" + digits[-6:].upper() if digits else ""
+
+    method  = sale.get("paymentMethod") or sale.get("payment_method") or "CARD"
+    items   = sale.get("items", []) or []
+
+    def _row(left: str, right: str) -> bytes:
+        """Pad `left` and `right` to fill exactly char_w columns."""
+        pad = max(1, char_w - len(left) - len(right))
+        return (left + (" " * pad) + right + "\n").encode()
 
     # ── Build receipt bytes ──────────────────────────────────────────────────
     out = bytearray()
     out += _PR_INIT
 
-    # ── Optional store logo ──────────────────────────────────────────────────
-    # The tablet sends a base64 PNG/JPEG in `logoBase64` (read from
-    # filesDir/receipt_logo.png on the Android side, see MainViewModel.kt
-    # L3543-3562). Width auto-fits to the printer's pixel row count (paper_w
-    # was computed at the top of this function from conf["paper_width"]).
+    # Header logo (sent by tablet as base64 PNG/JPEG).
     logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
     if logo_b64:
         out += _render_logo_raster(logo_b64, paper_w)
-
     out += _PR_LF
 
-    # Header
+    # Store name (double height) + tagline
     out += _PR_CENTER + _PR_DOUBLE + header + _PR_LF
-    out += _PR_NORMAL + subheader  + _PR_LF + _PR_LEFT
-    out += _PR_LF + divider
+    out += _PR_NORMAL + subheader + _PR_LF
+    out += _PR_LEFT
 
-    # Date / transaction
+    # COPY label (centered, bold, small)
+    if copy_label:
+        out += _PR_LF
+        out += _PR_CENTER + _PR_BOLD_ON + copy_label.encode() + _PR_BOLD_OFF + _PR_LF
+        out += _PR_LEFT
+
+    out += _PR_LF + div_thick
+
+    # ── Date + receipt numbers ───────────────────────────────────────────────
     out += f"{dt_str}\n".encode()
+    if short_no:
+        out += f"Receipt: {short_no}\n".encode()
     if txn_id:
-        out += f"Txn: {txn_id}\n".encode()
-    out += divider
+        out += f"Txn:     {txn_id[:24]}\n".encode()
+    out += div_thick
 
-    # Line items
+    # ── Line items ───────────────────────────────────────────────────────────
+    item_count = 0
     for item in items:
-        name  = (item.get("name") or "Item")[:item_trunc]
-        qty   = int(item.get("quantity") or 1)
-        price = float(item.get("unitPrice") or item.get("price") or 0)
-        total = float(item.get("lineTotal") or (price * qty))
-        line  = f"{name:<{name_w}} ${total:>7.2f}\n"
+        name  = (item.get("name") or "Item")
+        qty   = int(item.get("qty") or item.get("quantity") or 1)
+        price = float(item.get("unitPrice") or item.get("unit_price") or item.get("price") or 0)
+        total = float(item.get("lineTotal") or item.get("line_total") or (price * qty))
+        item_count += qty
+
+        # Main: ` 1 Charizard ex                $  45.00`
+        name_short = name[:item_trunc]
+        out += f"{qty:>2} {name_short:<{item_trunc}} ${total:>7.2f}\n".encode()
+
+        # Subline: set / condition / language — only if any are present
+        sub_bits = []
+        if item.get("_set_code"):
+            sub_bits.append(item["_set_code"])
+        cl = "/".join(b for b in (item.get("_condition", ""), item.get("_language", "")) if b)
+        if cl:
+            sub_bits.append(cl)
+        if sub_bits:
+            sub = "   " + " · ".join(sub_bits)
+            out += (sub[:char_w] + "\n").encode()
+
+        # Per-unit price line when qty > 1 (helps customer reconcile)
         if qty > 1:
-            qty_name = name[:name_w_qty]
-            line = f"  x{qty} {qty_name:<{name_w_qty}} ${total:>7.2f}\n"
-        out += line.encode()
+            out += f"   ({qty} x ${price:.2f})\n".encode()
 
-    out += divider
+    out += div_thin
 
-    # Totals
-    subtotal = float(sale.get("subtotal",   0))
-    tax      = float(sale.get("taxAmount",  0))
-    tip      = float(sale.get("tipAmount",  0))
-    total    = float(sale.get("totalAmount",0))
-    out += f"{'Subtotal':<{name_w}} ${subtotal:>7.2f}\n".encode()
+    # ── Totals ───────────────────────────────────────────────────────────────
+    subtotal = float(sale.get("subtotal", 0))
+    tax      = float(sale.get("taxAmount") or sale.get("tax_amount") or 0)
+    tip      = float(sale.get("tipAmount") or sale.get("tip_amount") or 0)
+    total    = float(sale.get("totalAmount") or sale.get("total_amount") or 0)
+
+    # Items count + subtotal on a single row (left/right justified)
+    out += _row(f"Items: {item_count}", f"Subtotal ${subtotal:>7.2f}")
+
     if tax > 0:
-        out += f"{'Tax':<{name_w}} ${tax:>7.2f}\n".encode()
+        # Derive the rate from subtotal so the customer sees the % they paid.
+        rate_pct = ""
+        if subtotal > 0:
+            r = round((tax / subtotal) * 100, 1)
+            rate_pct = f" ({r:g}%)"
+        out += _row(f"Tax{rate_pct}", f"${tax:>7.2f}")
     if tip > 0:
-        out += f"{'Tip':<{name_w}} ${tip:>7.2f}\n".encode()
+        out += _row("Tip", f"${tip:>7.2f}")
+
+    out += div_thin
     out += _PR_BOLD_ON
-    out += f"{'TOTAL':<{name_w}} ${total:>7.2f}\n".encode()
+    out += _row("TOTAL", f"${total:>7.2f}")
     out += _PR_BOLD_OFF
 
-    # Payment
+    # ── Payment ──────────────────────────────────────────────────────────────
+    out += div_thin
     out += f"Payment: {method}\n".encode()
     cash = float(sale.get("cashReceived") or sale.get("cash_received") or 0)
     if cash > 0:
         change = float(sale.get("changeGiven") or sale.get("change_given") or 0)
-        out += f"Cash: ${cash:.2f}  Change: ${change:.2f}\n".encode()
+        out += _row(f"Cash:   ${cash:.2f}", f"Change: ${change:.2f}")
 
-    out += divider
+    out += div_thick
+
+    # ── Footer (centered) ────────────────────────────────────────────────────
     out += _PR_CENTER
     out += f"{footer.decode()}\n".encode()
+    out += _PR_LEFT
 
-    # ── Optional customer-facing QR ──────────────────────────────────────────
-    # Tablet sends `qrEnabled` (bool) + `qrData` (string). Typical content:
-    # store URL, feedback link, post-show sales site, etc. Centered, ~60% of
-    # paper width. Silently no-ops if PIL/qrcode generation fails.
+    # ── Disclosure (optional, skipped on merchant copy) ──────────────────────
+    if include_disclosure and disclosure:
+        import textwrap
+        out += _PR_LF
+        out += _PR_CENTER + _PR_BOLD_ON + b"DISCLOSURE\n" + _PR_BOLD_OFF + _PR_LEFT
+        for raw_para in disclosure.split("\n"):
+            wrapped = textwrap.wrap(raw_para, width=char_w) or [""]
+            for line in wrapped:
+                out += (line + "\n").encode()
+
+    # ── Dragon emblem (small seal above QR) ──────────────────────────────────
+    if emblem_b64:
+        out += _PR_LF
+        out += _render_logo_raster(emblem_b64, paper_w, max_w_frac=0.28)
+
+    # ── QR code (smaller — 40% of paper width) ───────────────────────────────
     qr_enabled = sale.get("qrEnabled")
     if qr_enabled is None:
         qr_enabled = sale.get("qr_enabled", False)
     qr_data = (sale.get("qrData") or sale.get("qr_data") or "").strip()
     if qr_enabled and qr_data:
-        out += _render_qr_raster(qr_data, paper_w)
+        out += _render_qr_raster(qr_data, paper_w, max_w_frac=0.40)
 
-    # Re-assert center mode — _render_qr_raster ends with _PR_LEFT, which
-    # would otherwise leave "Thank you!" left-aligned under a centered QR.
+    # ── Thank-you (re-assert center after raster blocks left-align) ──────────
     out += _PR_CENTER
-    out += b"Thank you!\n"
+    out += b"Thank you for collecting with us!\n"
     out += _PR_NORMAL + _PR_LEFT
 
-    # Cash drawer kick — fires on every sale unless the tablet explicitly
-    # disables it via the in-app toggle (sends kickDrawer:false in the
-    # /print/receipt payload). Default True so curl-tests also pop the drawer.
+    # Cash drawer — only kick on the customer copy, never on the merchant copy.
     kick = sale.get("kickDrawer")
     if kick is None:
         kick = sale.get("kick_drawer", True)
-    if kick:
+    if kick and (copy_label is None or copy_label.upper().startswith("CUSTOMER")):
         out += _PR_KICK_DRAWER
 
     # Feed + cut
@@ -9597,19 +9747,61 @@ def _print_over_network(host: str, port: int, payload: bytes, timeout: float = 5
 
 
 def _do_print(sale: dict):
-    """Background-thread print job — tries Network → BT/USB → CUPS in order."""
+    """Background-thread print job — tries Network → BT/USB → CUPS in order.
+
+    Builds 1 or 2 receipt copies (configurable on the Receipt Settings page).
+    The merchant copy can optionally skip the disclosure block to save paper —
+    you already know your own return policy. Both copies use the same
+    enriched item list (DB lookup once) so they're identical apart from the
+    COPY label and the disclosure block.
+    """
     fh, path, conf = _open_printer()
 
     # Merge rich receipt settings (store name, instagram, footer, etc.)
     rs = _load_receipt_settings()
-    conf["receipt_header"]    = rs.get("store_name",  conf.get("receipt_header",    "HanryxVault"))
-    conf["receipt_subheader"] = rs.get("tagline",     conf.get("receipt_subheader", "Trading Card Shop"))
+    conf["receipt_header"]     = rs.get("store_name", conf.get("receipt_header", "HanryxVault"))
+    conf["receipt_subheader"]  = rs.get("tagline",    conf.get("receipt_subheader", "Korean Pokémon TCG Specialists"))
     footer_parts = [p for p in [rs.get("website"), rs.get("instagram"), rs.get("phone")] if p]
-    conf["receipt_footer"]    = "  |  ".join(footer_parts) if footer_parts else rs.get("footer_msg", "hanryxvault.cards")
-    conf["paper_width"]       = rs.get("paper_width", "80")
+    conf["receipt_footer"]     = "  |  ".join(footer_parts) if footer_parts else rs.get("footer_msg", "hanryxvault.cards")
+    conf["paper_width"]        = rs.get("paper_width", "80")
+    conf["receipt_disclosure"] = rs.get("disclosure", "")
+
+    # Enrich items once (single DB query) so both copies print identical detail.
+    enriched_sale = dict(sale)
+    enriched_sale["items"] = _enrich_items_for_receipt(sale.get("items", []) or [])
+
+    # Number of copies + whether merchant copy skips the disclosure.
+    try:
+        copies = max(1, min(2, int(rs.get("print_copies", 1))))
+    except Exception:
+        copies = 1
+    merchant_skip = str(rs.get("merchant_skip_disclosure", "1")).lower() in ("1", "true", "on", "yes")
+
+    emblem_b64 = _load_dragon_emblem_b64()
 
     try:
-        receipt_bytes = _format_receipt(sale, conf)
+        if copies == 1:
+            receipt_bytes = _format_receipt(
+                enriched_sale, conf,
+                copy_label=None,
+                include_disclosure=True,
+                emblem_b64=emblem_b64,
+            )
+        else:
+            # Customer copy first (always with disclosure), then merchant copy.
+            customer = _format_receipt(
+                enriched_sale, conf,
+                copy_label="CUSTOMER COPY",
+                include_disclosure=True,
+                emblem_b64=emblem_b64,
+            )
+            merchant = _format_receipt(
+                enriched_sale, conf,
+                copy_label="MERCHANT COPY",
+                include_disclosure=not merchant_skip,
+                emblem_b64=emblem_b64,
+            )
+            receipt_bytes = customer + merchant
 
         # ── Preferred path: Ethernet/network printer (MUNBYN P047 etc.) ─────
         net_host = conf.get("printer_network_host")
@@ -20039,14 +20231,24 @@ _RECEIPT_SETTINGS_KEY = "receipt_settings_v2"
 
 def _load_receipt_settings() -> dict:
     defaults = {
-        "store_name":    "HanryxVault",
-        "tagline":       "Trading Card Shop",
-        "website":       "hanryxvault.cards",
-        "instagram":     "",
-        "phone":         "",
-        "address":       "",
-        "footer_msg":    "Thanks for shopping with us!",
-        "paper_width":   "80",
+        "store_name":               "HanryxVault",
+        "tagline":                  "Korean Pokémon TCG Specialists",
+        "website":                  "hanryxvault.cards",
+        "instagram":                "",
+        "phone":                    "",
+        "address":                  "",
+        "footer_msg":               "Thank you for collecting with us!",
+        "paper_width":              "80",
+        # Multi-line disclosure printed near the bottom of the receipt.
+        # Edit on the Receipt Settings admin page; supports plain text with
+        # blank lines between paragraphs. Wraps automatically to paper width.
+        "disclosure":               "",
+        # 1 = customer copy only.  2 = customer + merchant copy.
+        "print_copies":             "1",
+        # When printing 2 copies, omit the disclosure block on the merchant
+        # copy (saves ~1.5" of paper per sale; the merchant already knows the
+        # policy). "1"/"0" string for HTML form compatibility.
+        "merchant_skip_disclosure": "1",
     }
     try:
         db  = _direct_db()
@@ -20094,7 +20296,7 @@ def admin_receipt_page():
     </div>
     <div>
       <label>Tagline</label>
-      <input name="tagline" value="{s['tagline']}" placeholder="Trading Card Shop">
+      <input name="tagline" value="{s['tagline']}" placeholder="Korean Pokémon TCG Specialists">
     </div>
     <div>
       <label>Website</label>
@@ -20117,12 +20319,36 @@ def admin_receipt_page():
     <label>Footer Message</label>
     <input name="footer_msg" value="{s['footer_msg']}" placeholder="Thanks for shopping with us!" style="width:100%">
   </div>
+  <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+    <div>
+      <label>Paper Width</label>
+      <select name="paper_width" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:6px;width:100%">
+        <option value="80" {"selected" if s["paper_width"]=="80" else ""}>80mm (standard)</option>
+        <option value="58" {"selected" if s["paper_width"]=="58" else ""}>58mm (narrow)</option>
+      </select>
+    </div>
+    <div>
+      <label>Copies per sale</label>
+      <select name="print_copies" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:6px;width:100%">
+        <option value="1" {"selected" if str(s.get("print_copies","1"))=="1" else ""}>1 (customer only)</option>
+        <option value="2" {"selected" if str(s.get("print_copies","1"))=="2" else ""}>2 (customer + merchant)</option>
+      </select>
+    </div>
+    <div>
+      <label>Skip disclosure on merchant copy</label>
+      <label style="display:flex;align-items:center;gap:8px;color:#aaa;font-size:13px;padding-top:8px">
+        <input type="checkbox" name="merchant_skip_disclosure" value="1"
+          {"checked" if str(s.get("merchant_skip_disclosure","1")) in ("1","true","on","yes") else ""}
+          style="width:18px;height:18px;accent-color:#facc15">
+        Saves paper on the merchant copy
+      </label>
+    </div>
+  </div>
   <div style="margin-bottom:24px">
-    <label>Paper Width</label>
-    <select name="paper_width" style="background:#1e1e1e;color:#fff;border:1px solid #333;padding:8px 12px;border-radius:6px">
-      <option value="80" {"selected" if s["paper_width"]=="80" else ""}>80mm (standard)</option>
-      <option value="58" {"selected" if s["paper_width"]=="58" else ""}>58mm (narrow)</option>
-    </select>
+    <label>Disclosure (printed near the bottom of the receipt)</label>
+    <textarea name="disclosure" rows="6" style="width:100%;background:#1e1e1e;color:#fff;border:1px solid #333;padding:10px;border-radius:6px;font-family:inherit;font-size:13px;line-height:1.45;resize:vertical"
+      placeholder="e.g. All sales are final. No refunds, returns, or exchanges...">{s.get("disclosure","")}</textarea>
+    <div style="color:#666;font-size:11px;margin-top:4px">Wraps automatically to paper width. Use blank lines between paragraphs.</div>
   </div>
   <div style="background:#111;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:20px;font-family:monospace;font-size:12px;color:#aaa">
     <div style="text-align:center;color:#fff;font-size:14px;font-weight:bold">{s['store_name']}</div>
@@ -20145,15 +20371,21 @@ def admin_receipt_page():
 @app.route("/admin/receipt", methods=["POST"])
 @require_admin
 def admin_receipt_save():
+    copies = request.form.get("print_copies", "1").strip()
+    if copies not in ("1", "2"):
+        copies = "1"
     settings = {
-        "store_name":  request.form.get("store_name",  "HanryxVault").strip(),
-        "tagline":     request.form.get("tagline",     "Trading Card Shop").strip(),
-        "website":     request.form.get("website",     "").strip(),
-        "instagram":   request.form.get("instagram",   "").strip(),
-        "phone":       request.form.get("phone",       "").strip(),
-        "address":     request.form.get("address",     "").strip(),
-        "footer_msg":  request.form.get("footer_msg",  "Thanks for shopping with us!").strip(),
-        "paper_width": request.form.get("paper_width", "80"),
+        "store_name":               request.form.get("store_name",  "HanryxVault").strip(),
+        "tagline":                  request.form.get("tagline",     "Korean Pokémon TCG Specialists").strip(),
+        "website":                  request.form.get("website",     "").strip(),
+        "instagram":                request.form.get("instagram",   "").strip(),
+        "phone":                    request.form.get("phone",       "").strip(),
+        "address":                  request.form.get("address",     "").strip(),
+        "footer_msg":               request.form.get("footer_msg",  "Thank you for collecting with us!").strip(),
+        "paper_width":              request.form.get("paper_width", "80"),
+        "disclosure":               request.form.get("disclosure",  "").strip(),
+        "print_copies":             copies,
+        "merchant_skip_disclosure": "1" if request.form.get("merchant_skip_disclosure") else "0",
     }
     _save_receipt_settings(settings)
     return redirect("/admin/receipt?saved=1")
@@ -21605,7 +21837,7 @@ _KIOSK_SETTINGS_PATH = "/data/kiosk_settings.json"
 _KIOSK_DEFAULT: dict = {
     "enabled":           True,
     "store_name":        "HanryxVault",
-    "tagline":           "Trading Card Shop",
+    "tagline":           "Korean Pokémon TCG Specialists",
     "idle_message":      "Welcome to the Vault",
     "show_social":       True,
     "instagram":         "@hanryxvault",
@@ -24645,7 +24877,7 @@ def admin_kiosk_save():
     settings = {
         "enabled":          bool(request.form.get("enabled")),
         "store_name":       request.form.get("store_name",   "HanryxVault").strip(),
-        "tagline":          request.form.get("tagline",      "Trading Card Shop").strip(),
+        "tagline":          request.form.get("tagline",      "Korean Pokémon TCG Specialists").strip(),
         "idle_message":     request.form.get("idle_message", "Welcome!").strip(),
         "show_social":      bool(request.form.get("show_social")),
         "instagram":        request.form.get("instagram",    "").strip(),
