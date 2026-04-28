@@ -1,0 +1,61 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Mon Apr 27 21:52:51 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS
+git pull
+docker compose cp pi-setup/server.py                  pos:/app/server.py
+docker compose cp pi-setup/assets/dragon_emblem.png   pos:/app/assets/dragon_emblem.png
+docker compose cp pi-setup/assets/receipt_logo.png    pos:/app/assets/receipt_logo.png
+docker compose restart pos
+docker compose logs -f pos
+remote: Enumerating objects: 53, done.
+remote: Counting objects: 100% (53/53), done.
+remote: Compressing objects: 100% (16/16), done.
+Unpacking objects:                                
+remote: Total 46 (delta 33), reused 42 (delta 29), pack-reused 0 (from 0)
+  100% (46/46), 4.57 MiB | 4.52 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   d1d0d0b..b4768d9  main       -> origin/main
+Updating d1d0d0b..b4768d9
+Fast-forward
+ ...F26EF026B15_1777362295965.png | Bin 0 -> 1264158 bytes
+ .../IMG_0976_1777362295965.jpeg  | Bin 0 -> 94788 bytes
+ .../IMG_1124_1777330777969.png   | Bin 0 -> 295410 bytes
+ ...p-Is-the-mo_1777288176363.txt | 110 ++
+ ...p-JP-names-_1777287898436.txt |  69 ++
+ ...p-grep-n-mn_1777289417187.txt |  48 +
+ .../image_1777330654124.jpg      | Bin 0 -> 1577515 bytes
+ .../assets/dragon_emblem.png     | Bin 0 -> 459249 bytes
+ pi-setup/assets/receipt_logo.png | Bin 0 -> 1146870 bytes
+ pi-setup/docker-compose.yml      |  28 +-
+ pi-setup/filler_db.py            | 154 +++
+ .../japanese_image_filler.py     |   4 +-
+ .../japanese_names_filler.py     |   4 +-
+ pi-setup/korean_names_filler.py  |   4 +-
+ .../pkmncards_image_filler.py    |   4 +-
+ pi-setup/server.py               | 462 +++++++--
+ pi-setup/usb_resilience_setup.sh | 269 +++++
+ 17 files changed, 1033 insertions(+), 123 deletions(-)
+ create mode 100644 attached_assets/871BCFF6-675F-4D08-B93F-0F26EF026B15_1777362295965.png
+ create mode 100644 attached_assets/IMG_0976_1777362295965.jpeg
+ create mode 100644 attached_assets/IMG_1124_1777330777969.png
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-Is-the-mo_1777288176363.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-JP-names-_1777287898436.txt
+ create mode 100644 attached_assets/Pasted-ngansen-hanryxvault-Hanryx-Vault-POS-pi-setup-grep-n-mn_1777289417187.txt
+ create mode 100644 attached_assets/image_1777330654124.jpg
+ create mode 100644 pi-setup/assets/dragon_emblem.png
+ create mode 100644 pi-setup/assets/receipt_logo.png
+ create mode 100644 pi-setup/filler_db.py
+ create mode 100755 pi-setup/usb_resilience_setup.sh
+no configuration file provided: not found
+no configuration file provided: not found
+no configuration file provided: not found
+no configuration file provided: not found
+no configuration file provided: not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
