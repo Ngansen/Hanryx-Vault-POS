@@ -381,6 +381,11 @@ services:
       REDIS_URL:       redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
       HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+      # Same on-drive defaults as the pos service — the workers/run
+      # CLI runs equally well in either container, so both need to
+      # know where the model files live.
+      OCR_MODELS_DIR:      ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+      CLIP_MODEL_PATH:     ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
       SYNC_TICK_SECONDS:   ${SYNC_TICK_SECONDS:-60}
       SYNC_LOG_LEVEL:      ${SYNC_LOG_LEVEL:-INFO}
       # Inherit the same upstream API keys the importers need so we don't
@@ -531,11 +536,13 @@ services:
         max-file: "3"
 
 volumes:
-  pgdata:
-  pos-data:
-  card-images:
-  pokeapi-data:
-  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). Kept on SD
-  # card rather than USB so the assistant container doesn't hard-depend
-  # on the USB being plugged in to start.
+  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). The ONLY
+  # remaining named volume — every other piece of bulky state has been
+  # moved to bind-mounts on /mnt/cards (see the `db`, `pos`, and
+  # `pokeapi` service blocks above). Ollama stays on SD on purpose:
+  # if the USB drive is unplugged, the assistant container should
+  # still come up and answer "I'm offline" rather than failing to
+  # start at all. See pi-setup/scripts/move-volumes-to-drive.sh for
+  # the one-time migration of the four legacy volumes (pgdata,
+  # pos-data, card-images, pokeapi-data) to the drive.
   ollama-data:

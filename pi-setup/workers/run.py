@@ -105,6 +105,7 @@ def build_worker(name: str, conn, args) -> Worker:
                                 recheck_after_s=recheck_s,
                                 model_id=args.ocr_model_id,
                                 lang_hint=args.ocr_lang_hint,
+                                models_dir=args.ocr_models_dir,
                                 **common)
 
     return cls(conn, **common)
@@ -152,6 +153,14 @@ def main() -> int:
                          "of auto-picking per card (KR > JP > CHS > EN). "
                          "Useful for back-fill passes (e.g. JP overlay text "
                          "on a Korean print).")
+    ap.add_argument("--ocr-models-dir", type=str, default=None,
+                    help="ocr_index: root dir for PaddleOCR per-language "
+                         "model caches (default: $OCR_MODELS_DIR or "
+                         "/mnt/cards/models/paddleocr). One subdir per "
+                         "language is created (korean/, japan/, ch/, en/) "
+                         "each holding det/ and rec/ model files. Pass an "
+                         "empty string to fall back to PaddleOCR's "
+                         "~/.paddleocr default if the drive is unavailable.")
     args = ap.parse_args()
 
     if args.list:
