@@ -1,0 +1,70 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue Apr 28 11:57:09 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ # 1. Confirm the server sees a printer
+curl -s http://localhost:8080/print/status | jq .
+
+# 2. Fire a test receipt (2 copies, exercises every block of the new layout)
+curl -sS -X POST http://localhost:8080/print/receipt \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "transactionId": "SMOKE-TEST-001",
+    "timestamp": '"$(date +%s)"'000,
+    "paymentMethod": "CASH",
+    "subtotal": 57.00,
+    "taxAmount": 4.56,
+    "totalAmount": 61.56,
+    "cashReceived": 70.00,
+    "changeGiven": 8.44,
+    "items": [
+      {"name": "Charizard ex (SAR)",  "quantity":   }'"kickDrawer": trues://hanryxvault.cards",ity":
+{
+  "bt_mac": null,
+  "printer_available": false,
+  "printer_path": "cups"
+}
+{"ok":true,"queued":true}
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== 1. Container up? ==="
+docker compose ps pos
+
+echo
+echo "=== 2. Server reachable? ==="
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8080/health
+
+echo
+echo "=== 3. What printer does the server see? ==="
+curl -sS http://localhost:8080/print/status
+
+echo
+echo "=== 4. USB printer detected by the host? ==="
+lsusb | grep -iE "printer|munbyn|epson|star|xprinter|zjiang|pos|thermal" || echo "no USB printer mat "\[print\]|printer|usb|bluetooth|cups" | tail -30
+=== 1. Container up? ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME             IMAGE          COMMAND            SERVICE   CREATED        STATUS                  PORTS
+pi-setup-pos-1   pi-setup-pos   "/entrypoint.sh"   pos       35 hours ago   Up 13 hours (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+
+=== 2. Server reachable? ===
+HTTP 200
+
+=== 3. What printer does the server see? ===
+{"bt_mac":null,"printer_available":false,"printer_path":"cups"}
+
+=== 4. USB printer detected by the host? ===
+Bus 001 Device 004: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+crw-rw-rw- 1 root lp 180, 0 Apr 28 00:16  /dev/usb/lp0
+no /dev/usb/lp* device
+
+=== 5. Network printer configured? ===
+no network printer in conf
+
+=== 6. Last print-related log lines ===
+pos-1  | {"ts":"2026-04-29T01:24:10","level":"ERROR","logger":"hanryxvault","msg":"[print] Print error: [Errno 2] No such file or directory: 'lp'"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
