@@ -4539,6 +4539,93 @@ def card_scan_multi():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/card/image", methods=["GET"])
+def card_image_resolve():
+    """
+    Resolve the best image for a (set_id, card_number) — preferring a local
+    file on the USB drive over a network URL, and a language-matching
+    source over an unrelated one. Used by the kiosk and admin views so
+    images keep rendering even when booth Wi-Fi is dead.
+
+    Query params:
+        set_id        canonical TCGdex set id (required)
+        card_number   normalised collector number, e.g. '025' (required)
+        lang          'en'|'kr'|'jp'|'chs'|'cht' (optional, default '')
+
+    Resolution order:
+        1. lang-matching candidate, local file exists  → send_file
+        2. lang-matching candidate, network URL        → 302 redirect
+        3. any candidate, local file exists            → send_file
+        4. any candidate, network URL                  → 302 redirect
+        5. cards_master.image_url (legacy primary)     → 302 redirect
+        else 404
+    """
+    set_id = (request.args.get("set_id") or "").strip()
+    card_number = (request.args.get("card_number") or "").strip()
+    want_lang = (request.args.get("lang") or "").strip().lower()
+    if not set_id or not card_number:
+        return jsonify({"error": "set_id and card_number required"}), 400
+
+    try:
+        db = _direct_db()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT image_url, image_url_alt FROM cards_master "
+            "WHERE set_id=%s AND card_number=%s LIMIT 1",
+            (set_id, card_number),
+        )
+        row = cur.fetchone()
+    except Exception as e:
+        log.exception("[card/image] db lookup failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    if not row:
+        return jsonify({"error": "card not found"}), 404
+
+    primary_url, alt = row[0], row[1]
+    if isinstance(alt, str):
+        try:
+            alt = json.loads(alt) if alt else []
+        except Exception:
+            alt = []
+    candidates = list(alt) if isinstance(alt, list) else []
+
+    # Sort: lang-match local < lang-match url < any local < any url.
+    def _rank(c):
+        lang_match = (c.get("lang") or "") == want_lang and want_lang
+        has_local  = bool(c.get("local"))
+        if lang_match and has_local: return 0
+        if lang_match:               return 1
+        if has_local:                return 2
+        return 3
+    candidates.sort(key=_rank)
+
+    for c in candidates:
+        local = (c.get("local") or "").strip()
+        if local and os.path.isfile(local):
+            try:
+                resp = send_file(local, conditional=True)
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+                resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
+                return resp
+            except Exception:
+                log.exception("[card/image] send_file failed for %s", local)
+                # Fall through to next candidate / network url.
+        url = (c.get("url") or "").strip()
+        if url:
+            return redirect(url, code=302)
+
+    # Last-ditch fallback: the legacy primary image_url column.
+    if primary_url:
+        return redirect(primary_url, code=302)
+    return jsonify({"error": "no image available"}), 404
+
+
 @app.route("/admin/multi/<game>/visual/status", methods=["GET"])
 def multi_visual_status(game: str):
     try:
@@ -27985,6 +28072,102 @@ try:
     log.info("[blueprint] cards.fuzzy_search wired → /tcg/search-multi")
 except Exception as _bp_exc:
     log.warning("[blueprint] cards.fuzzy_search not wired: %s", _bp_exc)
+
+# /tcg/search-master — unified Postgres-backed search across cards_master.
+# Returns ONE row per logical card with every language name + every image
+# candidate, so a Korean cashier typing "피카츄" and an English cashier
+# typing "Pikachu" both land on the same row. Uses pg_trgm similarity for
+# typo tolerance; cards_master ships with GIN trigram indexes on all four
+# major language name columns so this is a sub-100ms query.
+try:
+    @app.route("/tcg/search-master", methods=["GET"])
+    def _tcg_search_master():
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return jsonify({"error": "Provide ?q=<search term>"}), 400
+        try:
+            limit = max(1, min(int(request.args.get("limit", 25)), 100))
+        except ValueError:
+            limit = 25
+        # ?lang=kr restricts ranking to one language column; default scores
+        # against the GREATEST similarity across en/kr/jp/chs/cht.
+        lang = (request.args.get("lang") or "").strip().lower()
+        col_for = {"en": "name_en", "kr": "name_kr", "jp": "name_jp",
+                   "chs": "name_chs", "cht": "name_cht"}
+        score_col = col_for.get(lang)
+
+        try:
+            db = _direct_db()
+            cur = db.cursor()
+            if score_col:
+                sql = f"""
+                    SELECT set_id, card_number, variant_code,
+                           name_en, name_kr, name_jp, name_chs, name_cht,
+                           rarity, image_url, image_url_alt,
+                           similarity({score_col}, %s) AS score
+                      FROM cards_master
+                     WHERE {score_col} %% %s
+                  ORDER BY score DESC
+                     LIMIT %s
+                """
+                cur.execute(sql, (q, q, limit))
+            else:
+                sql = """
+                    SELECT set_id, card_number, variant_code,
+                           name_en, name_kr, name_jp, name_chs, name_cht,
+                           rarity, image_url, image_url_alt,
+                           GREATEST(
+                              similarity(name_en,  %s),
+                              similarity(name_kr,  %s),
+                              similarity(name_jp,  %s),
+                              similarity(name_chs, %s),
+                              similarity(name_cht, %s)
+                           ) AS score
+                      FROM cards_master
+                     WHERE name_en  %% %s OR name_kr  %% %s
+                        OR name_jp  %% %s OR name_chs %% %s
+                        OR name_cht %% %s
+                  ORDER BY score DESC
+                     LIMIT %s
+                """
+                cur.execute(sql, (q, q, q, q, q, q, q, q, q, q, limit))
+            rows = cur.fetchall()
+        except Exception as e:
+            log.exception("[tcg/search-master] failed")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        hits = []
+        for r in rows:
+            alt = r[10]
+            if isinstance(alt, str):
+                try: alt = json.loads(alt) if alt else []
+                except Exception: alt = []
+            hits.append({
+                "set_id":      r[0],
+                "card_number": r[1],
+                "variant":     r[2],
+                "name_en":     r[3],
+                "name_kr":     r[4],
+                "name_jp":     r[5],
+                "name_chs":    r[6],
+                "name_cht":    r[7],
+                "rarity":      r[8],
+                "image_url":   r[9],
+                "image_alt":   alt or [],
+                # Front-end can call this directly to get the best local image.
+                "image_endpoint": f"/card/image?set_id={r[0]}&card_number={r[1]}",
+                "score":       float(r[11] or 0.0),
+            })
+        return jsonify({"query": q, "lang": lang or "all",
+                        "count": len(hits), "hits": hits})
+    log.info("[blueprint] cards_master search wired → /tcg/search-master")
+except Exception as _bp_exc:
+    log.warning("[blueprint] cards_master search not wired: %s", _bp_exc)
 
 try:
     from cards.ai_assistant import ai_bp as _ai_bp

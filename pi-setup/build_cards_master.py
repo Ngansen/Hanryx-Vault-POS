@@ -48,6 +48,7 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 
+from unified.local_images import SOURCE_LANG, local_path_for
 from unified.priority import AGGREGATES, PRIORITY
 from unified.schema import init_unified_schema
 
@@ -655,6 +656,35 @@ def build_cards_master(db_conn) -> dict:
             src_refs["promo_source"] = _src_id_for("ref_dex", promos[0]) \
                 .replace("ref_pokedex_species", "ref_promo_provenance")
 
+        # Image candidates: walk EVERY source that has an image_url for
+        # this card and record {src, url, local}. The local path is "" if
+        # the file isn't on the USB drive — /card/image will fall back to
+        # the network URL. This is what makes multi-language images work
+        # offline at the booth even if Wi-Fi dies mid-show.
+        candidates: list[dict] = []
+        seen_urls: set[str] = set()
+        for sid in AGGREGATES.get("image_url_alt", []):
+            src_dict = sources.get(sid, {})
+            src_row = src_dict.get((set_id, card_number))
+            if src_row is None:
+                for alt in _alt_keys_for_number(card_number):
+                    src_row = src_dict.get((set_id, alt))
+                    if src_row:
+                        break
+            if src_row is None:
+                continue
+            url = _safe_str(_extract(sid, src_row, "image_url"))
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            local = local_path_for(sid, url, set_id=set_id)
+            candidates.append({
+                "src":   sid,
+                "lang":  SOURCE_LANG.get(sid, ""),
+                "url":   url,
+                "local": local,
+            })
+
         rows.append((
             out["set_id"],
             out["card_number"],
@@ -681,7 +711,7 @@ def build_cards_master(db_conn) -> dict:
             _safe_str(out.get("other_pokemon")),
             _safe_str(out.get("promo_source")),
             _safe_str(out.get("image_url")),
-            json.dumps([], ensure_ascii=False),     # image_url_alt — TODO populate
+            json.dumps(candidates, ensure_ascii=False),
             json.dumps(src_refs, ensure_ascii=False),
             now,
             now,
