@@ -22,7 +22,28 @@ services:
       POSTGRES_USER:     vaultpos
       POSTGRES_PASSWORD: ${DB_PASSWORD:-vaultpos}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres data dir lives on the UGreen USB drive at
+      # /mnt/cards/postgres-data by default — same drive as
+      # cards_master images, CLIP/OCR model files, and the FAISS
+      # index. Keeping the DB and the bulky offline assets on the
+      # same physical drive means a single removable medium carries
+      # the entire offline state of the POS (embeddings + OCR text
+      # + image local paths + model files) — pull the drive, plug it
+      # into a different Pi, `docker compose up`, and you're trading
+      # again at a different booth.
+      #
+      # The DB_DATA_DIR env var is the migration knob: set it in
+      # pi-setup/.env to the legacy Docker-volume path
+      # (`/var/lib/docker/volumes/pi-setup_pgdata/_data`) on the
+      # first boot AFTER pulling this commit, run
+      # `pi-setup/scripts/move_pgdata_to_drive.sh`, then unset
+      # DB_DATA_DIR so the default takes over. See the script for
+      # the full safety-checked migration flow.
+      - type: bind
+        source: ${DB_DATA_DIR:-/mnt/cards/postgres-data}
+        target: /var/lib/postgresql/data
+        bind:
+          propagation: rslave
       - ./init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vaultpos -d vaultpos"]
