@@ -57,6 +57,7 @@ from workers.language_helper import LanguageEnrichWorker  # noqa: E402
 from workers.data_analyst import DataAnalystWorker  # noqa: E402
 from workers.clip_embedder import ClipEmbedderWorker  # noqa: E402
 from workers.ocr_indexer import OcrIndexerWorker  # noqa: E402
+from workers.price_refresh import PriceRefreshWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -70,7 +71,7 @@ WORKERS: dict[str, type[Worker]] = {
     "data_analysis": DataAnalystWorker,
     "clip_embed":    ClipEmbedderWorker,
     "ocr_index":     OcrIndexerWorker,
-    # 'image_mirror':  ImageMirrorWorker,    # Slice 12
+    "price_refresh": PriceRefreshWorker,
 }
 
 
@@ -105,7 +106,23 @@ def build_worker(name: str, conn, args) -> Worker:
                                 recheck_after_s=recheck_s,
                                 model_id=args.ocr_model_id,
                                 lang_hint=args.ocr_lang_hint,
+                                models_dir=args.ocr_models_dir,
                                 **common)
+    if name == "price_refresh":
+        # Price worker has THREE recheck cadences (one per priority
+        # tier), so the single --recheck-after-days flag doesn't
+        # apply. Use the dedicated --price-*-recheck-days flags.
+        def _days_to_s(v):
+            return None if v is None else int(v) * 86400
+        return PriceRefreshWorker(
+            conn,
+            inventory_recheck_s=_days_to_s(args.price_inventory_recheck_days),
+            scanned_recheck_s=_days_to_s(args.price_scanned_recheck_days),
+            catalogue_recheck_s=_days_to_s(args.price_catalogue_recheck_days),
+            source=args.price_source,
+            condition=args.price_condition,
+            **common,
+        )
 
     return cls(conn, **common)
 
@@ -152,6 +169,37 @@ def main() -> int:
                          "of auto-picking per card (KR > JP > CHS > EN). "
                          "Useful for back-fill passes (e.g. JP overlay text "
                          "on a Korean print).")
+    ap.add_argument("--ocr-models-dir", type=str, default=None,
+                    help="ocr_index: root dir for PaddleOCR per-language "
+                         "model caches (default: $OCR_MODELS_DIR or "
+                         "/mnt/cards/models/paddleocr). One subdir per "
+                         "language is created (korean/, japan/, ch/, en/) "
+                         "each holding det/ and rec/ model files. Pass an "
+                         "empty string to fall back to PaddleOCR's "
+                         "~/.paddleocr default if the drive is unavailable.")
+    ap.add_argument("--price-source", type=str, default=None,
+                    help="price_refresh: pin every fan-out to a single "
+                         "upstream client (e.g. 'ebay_sold', 'tcgplayer', "
+                         "'tcgpl'). Default: hit every available source. "
+                         "Useful for back-fill passes when one source has "
+                         "drifted and you want to re-sync against another.")
+    ap.add_argument("--price-condition", type=str, default=None,
+                    help="price_refresh: condition tier to quote (NM/LP/MP/"
+                         "HP/DM). Default: NM (matches the price_quotes "
+                         "cache baseline; other tiers are derived from it "
+                         "via condition multipliers at display time).")
+    ap.add_argument("--price-inventory-recheck-days", type=int, default=None,
+                    help="price_refresh: days between price refreshes for "
+                         "cards currently in inventory (default 7 — weekly).")
+    ap.add_argument("--price-scanned-recheck-days", type=int, default=None,
+                    help="price_refresh: days between price refreshes for "
+                         "cards scanned in the last 30 days but not in "
+                         "inventory (default 14 — bi-weekly).")
+    ap.add_argument("--price-catalogue-recheck-days", type=int, default=None,
+                    help="price_refresh: days between price refreshes for "
+                         "the long tail of cards_master that's neither in "
+                         "inventory nor recently scanned (default 90 — "
+                         "quarterly, to stay well under upstream API quotas).")
     args = ap.parse_args()
 
     if args.list:
