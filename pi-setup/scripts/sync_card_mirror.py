@@ -186,21 +186,76 @@ def _safe_run(cmd: list[str], cwd: Optional[Path] = None) -> tuple[int, str]:
 
 
 def _download(url: str, dest: Path, *, timeout: int = 30,
-              min_size: int = 256) -> tuple[bool, str]:
+              min_size: int = 256, revalidate: bool = True
+              ) -> tuple[bool, str]:
     """
     Download `url` to `dest`. Returns (ok, status). Atomic: writes to
     dest.tmp first, fsyncs, renames. Files smaller than `min_size` bytes
     are treated as failed (CDNs sometimes return 1-byte error stubs).
+
+    revalidate=True (default):
+        When `dest` already exists, send `If-Modified-Since: <mtime>`
+        and treat HTTP 304 as success (status='not-modified', no
+        write). On 200, replace the file and stamp its mtime from the
+        response Last-Modified header so the next IMS round-trip is
+        cheap. The first re-run after a full sync becomes thousands
+        of free 304s instead of thousands of zero-cost
+        skip-exists shortcuts that hide silent upstream churn.
+
+    revalidate=False:
+        Pure resume mode — if `dest` exists with size >= min_size we
+        short-circuit with 'skip-exists' and never hit the network.
+        Use when there is no upstream worth checking (Phase A is
+        already covered by `git pull`; this flag exists so a future
+        offline-only refresh can opt out entirely).
+
+    Why a parameter rather than always-revalidate: a fresh Pi spinning
+    up at a trade-show venue with flaky WiFi shouldn't be required to
+    HEAD every one of ~50k images before serving them locally. The
+    operator can flip `revalidate=False` from the cron one-liner for
+    the truly-offline case.
     """
+    # Lazy import — `email.utils` is stdlib but the imports stay
+    # local so the (rare) hostile-environment case where stdlib
+    # email is shadowed still loads sync_card_mirror enough for
+    # Phase A git work to run.
+    from email.utils import formatdate, parsedate_to_datetime
+
+    existing_mtime: float | None = None
     if dest.exists() and dest.stat().st_size >= min_size:
-        return True, "skip-exists"
+        if not revalidate:
+            return True, "skip-exists"
+        existing_mtime = dest.stat().st_mtime
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
+    headers: dict[str, str] = {"User-Agent": USER_AGENT}
+    if existing_mtime is not None:
+        # RFC 7232 §3.3 — usegmt=True for the IMF-fixdate format the
+        # spec mandates ("Wed, 21 Oct 2015 07:28:00 GMT"). Servers
+        # that strict-parse will reject the local-tz form.
+        headers["If-Modified-Since"] = formatdate(existing_mtime,
+                                                  usegmt=True)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status == 304:
+                # 304 has no body — server confirms our copy is
+                # still fresh. No write, no atomicity dance, just
+                # bump our local mtime to "now" so the next IMS
+                # round trip uses an up-to-date floor.
+                try:
+                    now = time.time()
+                    os.utime(dest, (now, now))
+                except OSError:
+                    pass
+                return True, "not-modified"
             if r.status >= 400:
                 return False, f"http-{r.status}"
+            # Capture Last-Modified BEFORE we close the response —
+            # urllib's response object is single-pass and the headers
+            # vanish once .read() returns on some platforms.
+            last_modified = r.headers.get("Last-Modified")
             with open(tmp, "wb") as f:
                 shutil.copyfileobj(r, f, length=64 * 1024)
                 f.flush()
@@ -209,8 +264,35 @@ def _download(url: str, dest: Path, *, timeout: int = 30,
             tmp.unlink(missing_ok=True)
             return False, "too-small"
         os.replace(tmp, dest)
+        # Stamp the file's mtime from the server's Last-Modified so
+        # our next IMS request matches what the upstream thinks the
+        # version is. If the header is missing or unparseable we leave
+        # the OS-default mtime (= now) which is also fine — the
+        # tradeoff is one extra full-body refresh on the next cycle.
+        if last_modified:
+            try:
+                dt = parsedate_to_datetime(last_modified)
+                if dt is not None:
+                    os.utime(dest, (dt.timestamp(), dt.timestamp()))
+            except (TypeError, ValueError, OSError):
+                # Bad date or unsupported FS — non-fatal. The file
+                # is correctly downloaded; we just lose the IMS
+                # optimisation for one cycle.
+                pass
         return True, "ok"
     except urllib.error.HTTPError as e:
+        # Some servers (notably older nginx defaults) return 304 as
+        # an HTTPError rather than a normal response. Treat it the
+        # same — 304 is a successful conditional GET regardless of
+        # which urllib branch surfaces it.
+        if e.code == 304:
+            try:
+                now = time.time()
+                os.utime(dest, (now, now))
+            except OSError:
+                pass
+            tmp.unlink(missing_ok=True)
+            return True, "not-modified"
         tmp.unlink(missing_ok=True)
         return False, f"http-{e.code}"
     except Exception as e:
