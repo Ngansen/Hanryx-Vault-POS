@@ -493,5 +493,166 @@ class SeedTest(unittest.TestCase):
         self.assertIn("MAX(h2.checked_at)", sql)
 
 
+# ── models_dir resolution + factory wiring ────────────────────
+#
+# Verifies that the per-language PaddleOCR model files (det_model_dir
+# and rec_model_dir) get pointed at /mnt/cards/models/paddleocr/<lang>/
+# instead of PaddleOCR's own ~/.paddleocr cache (which lives on the SD
+# card and gets wiped by every `docker compose build`). Uses the same
+# sys.modules patch trick as EnsureQuoteFnTest in test_price_refresh.
+
+
+class ModelsDirTest(unittest.TestCase):
+    def test_default_models_dir(self):
+        # No kwarg, no env var → the on-drive default. This is what a
+        # fresh Pi gets when it's been set up per pi-setup/README.md.
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OCR_MODELS_DIR", None)
+            w = OcrIndexerWorker(FakeConn())
+        self.assertEqual(w.models_dir, "/mnt/cards/models/paddleocr")
+
+    def test_explicit_kwarg_wins(self):
+        w = OcrIndexerWorker(FakeConn(), models_dir="/tmp/custom-paddle")
+        self.assertEqual(w.models_dir, "/tmp/custom-paddle")
+
+    def test_env_var_used_when_no_kwarg(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ,
+                             {"OCR_MODELS_DIR": "/srv/paddle"}):
+            w = OcrIndexerWorker(FakeConn())
+        self.assertEqual(w.models_dir, "/srv/paddle")
+
+    def test_kwarg_beats_env(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ,
+                             {"OCR_MODELS_DIR": "/from/env"}):
+            w = OcrIndexerWorker(FakeConn(),
+                                 models_dir="/from/kwarg")
+        self.assertEqual(w.models_dir, "/from/kwarg")
+
+    def test_empty_string_is_escape_hatch(self):
+        # Operator escape hatch: "" means "fall back to PaddleOCR's
+        # ~/.paddleocr default". Explicitly NOT replaced with the
+        # default — the factory below skips det/rec_model_dir entirely
+        # when models_dir is empty, so first-use downloads land in the
+        # container default cache instead of the (unmounted) drive.
+        w = OcrIndexerWorker(FakeConn(), models_dir="")
+        self.assertEqual(w.models_dir, "")
+
+    def test_factory_passes_per_lang_paths_to_paddleocr(self):
+        # The whole point of the migration: the (det|rec)_model_dir
+        # kwargs PaddleOCR receives must be on /mnt/cards so the
+        # 50-100MB-per-lang downloads survive container rebuilds.
+        from unittest import mock
+        recorded: dict = {}
+
+        class FakePaddleOCR:
+            def __init__(self, **kw):
+                recorded.clear()
+                recorded.update(kw)
+
+        fake_mod = mock.MagicMock()
+        fake_mod.PaddleOCR = FakePaddleOCR
+        with mock.patch.dict(sys.modules, {"paddleocr": fake_mod}):
+            w = OcrIndexerWorker(
+                FakeConn(),
+                models_dir="/mnt/cards/models/paddleocr",
+            )
+            factory = w._ensure_paddle()
+            self.assertIsNotNone(factory)
+            factory("korean")
+        self.assertEqual(recorded["lang"], "korean")
+        self.assertEqual(recorded["det_model_dir"],
+                         "/mnt/cards/models/paddleocr/korean/det")
+        self.assertEqual(recorded["rec_model_dir"],
+                         "/mnt/cards/models/paddleocr/korean/rec")
+        self.assertFalse(recorded["use_angle_cls"])
+        self.assertFalse(recorded["show_log"])
+
+    def test_factory_skips_model_dirs_when_empty_string(self):
+        # When the drive is unavailable the operator can run with
+        # models_dir="" and PaddleOCR falls back to its own cache.
+        from unittest import mock
+        recorded: dict = {}
+
+        class FakePaddleOCR:
+            def __init__(self, **kw):
+                recorded.clear()
+                recorded.update(kw)
+
+        fake_mod = mock.MagicMock()
+        fake_mod.PaddleOCR = FakePaddleOCR
+        with mock.patch.dict(sys.modules, {"paddleocr": fake_mod}):
+            w = OcrIndexerWorker(FakeConn(), models_dir="")
+            factory = w._ensure_paddle()
+            factory("japan")
+        self.assertEqual(recorded["lang"], "japan")
+        self.assertNotIn("det_model_dir", recorded)
+        self.assertNotIn("rec_model_dir", recorded)
+
+    def test_factory_uses_paddle_lang_codes_in_path(self):
+        # The factory takes the PADDLE-side lang code ('korean',
+        # 'japan', 'ch', 'en') — not the worker's internal codes
+        # ('kr', 'jp', 'chs', 'en'). This guards against a regression
+        # where the worker's internal code accidentally leaks into
+        # the on-disk path (which would silently re-download every
+        # language because the path wouldn't match what PaddleOCR
+        # wrote on a previous run).
+        from unittest import mock
+        from workers.ocr_indexer import PADDLE_LANG_MAP
+
+        recorded: list[dict] = []
+
+        class FakePaddleOCR:
+            def __init__(self, **kw):
+                recorded.append(dict(kw))
+
+        fake_mod = mock.MagicMock()
+        fake_mod.PaddleOCR = FakePaddleOCR
+        with mock.patch.dict(sys.modules, {"paddleocr": fake_mod}):
+            w = OcrIndexerWorker(FakeConn(),
+                                 models_dir="/mnt/cards/models/paddleocr")
+            factory = w._ensure_paddle()
+            for paddle_code in PADDLE_LANG_MAP.values():
+                factory(paddle_code)
+
+        # Every recorded call's path ends in /<paddle_code>/det or /rec,
+        # never /<internal_code>/.
+        for kw in recorded:
+            paddle_code = kw["lang"]
+            self.assertTrue(
+                kw["det_model_dir"].endswith(f"/{paddle_code}/det"),
+                f"det path {kw['det_model_dir']!r} doesn't end in "
+                f"/{paddle_code}/det — internal code may have leaked")
+            self.assertTrue(
+                kw["rec_model_dir"].endswith(f"/{paddle_code}/rec"),
+                f"rec path {kw['rec_model_dir']!r} doesn't end in "
+                f"/{paddle_code}/rec — internal code may have leaked")
+
+    def test_factory_caches_per_lang_so_paddleocr_constructed_once(self):
+        # _get_ocr / the per-lang cache should only construct PaddleOCR
+        # once per language even if called many times. A regression
+        # here would mean every card OCR re-downloads the model.
+        from unittest import mock
+        construction_count = {"n": 0}
+
+        class FakePaddleOCR:
+            def __init__(self, **kw):
+                construction_count["n"] += 1
+
+            def ocr(self, *a, **kw):
+                return []
+
+        fake_mod = mock.MagicMock()
+        fake_mod.PaddleOCR = FakePaddleOCR
+        with mock.patch.dict(sys.modules, {"paddleocr": fake_mod}):
+            w = OcrIndexerWorker(FakeConn(),
+                                 models_dir="/mnt/cards/models/paddleocr")
+            for _ in range(5):
+                w._get_ocr("korean")
+        self.assertEqual(construction_count["n"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -200,3 +200,99 @@ so it syncs locally without hitting the internet.
   access.log         ← HTTP request log
   error.log          ← Error log
 ```
+
+---
+
+## Storage layout: SD card vs USB drive
+
+Bulky and write-heavy state lives on the UGreen 1 TB USB ext4 drive
+mounted at `/mnt/cards`. The SD card only holds the OS, container
+images, application code, and a small bit of state that needs to keep
+working when the drive is unplugged.
+
+```
+/mnt/cards/                  (USB drive — 1 TB, the source of truth)
+  postgres-data/             ← Postgres data dir (was Docker volume `pgdata`)
+  pos-data/                  ← POS app local data (was `pos-data`)
+  card-images/               ← Card image blob store (was `card-images`)
+  pokeapi-data/              ← Cached PokeAPI dump (was `pokeapi-data`)
+  cards_master/              ← Reference card master (already on drive)
+  faiss/                     ← CLIP FAISS indexes (already on drive)
+  models/
+    paddleocr/<lang>/det/    ← PaddleOCR per-language detection models
+    paddleocr/<lang>/rec/    ← PaddleOCR per-language recognition models
+    clip-vit-b32.onnx        ← CLIP image-similarity model
+  pokedex_local.db           ← SQLite mirror of pokedex (HANRYX_LOCAL_DB_DIR)
+  logs/                      ← Long-retention log archive
+  backups/                   ← Postgres dumps (cron, see scripts/backup.sh)
+
+SD card (kept small on purpose):
+  /var/lib/docker/volumes/pi-setup_ollama-data/   ← Ollama LLM cache (~2 GB)
+                                                    stays on SD so the
+                                                    assistant container
+                                                    still boots if the
+                                                    USB drive is unplugged.
+```
+
+### Bind-mount env-var overrides
+
+`docker-compose.yml` reads each storage path from an env var with the
+on-drive default baked in. Leave them unset for a normal install — only
+set them when you need to point a service somewhere else (an
+emergency repair, or a temporary copy of the data on the SD card while
+the drive is being replaced).
+
+| Env var               | Default                                  | What lives there                           |
+| --------------------- | ---------------------------------------- | ------------------------------------------ |
+| `DB_DATA_DIR`         | `/mnt/cards/postgres-data`               | Postgres `/var/lib/postgresql/data`        |
+| `POS_DATA_DIR`        | `/mnt/cards/pos-data`                    | POS app local data dir                     |
+| `CARD_IMAGES_DIR`     | `/mnt/cards/card-images`                 | Card image blob store (`/app/card-images`) |
+| `POKEAPI_DATA_DIR`    | `/mnt/cards/pokeapi-data`                | PokeAPI mirror cache                       |
+| `OCR_MODELS_DIR`      | `/mnt/cards/models/paddleocr`            | PaddleOCR per-language model files         |
+| `CLIP_MODEL_PATH`     | `/mnt/cards/models/clip-vit-b32.onnx`    | CLIP ONNX file                             |
+| `HANRYX_LOCAL_DB_DIR` | `/mnt/cards`                             | Root for `pokedex_local.db`, faiss/, etc.  |
+
+`OCR_MODELS_DIR` deserves a special note: setting it to the empty
+string (`OCR_MODELS_DIR=`) is a deliberate escape hatch — the OCR
+worker will fall back to PaddleOCR's own `~/.paddleocr` cache inside
+the container. Useful if the drive is being repaired and you want OCR
+to keep limping along; the trade-off is that the per-language model
+files (50–100 MB each) will re-download on every `docker compose
+build` because the SD-side cache lives inside the image layer.
+
+### Migrating an existing install onto the drive
+
+If you have a running deploy from before the bind-mount layout (data
+still in `/var/lib/docker/volumes/pi-setup_pgdata/_data` etc), run:
+
+```bash
+# Dry run first — prints exactly what it would copy, writes nothing.
+bash pi-setup/scripts/move-volumes-to-drive.sh --dry-run
+
+# Then for real (interactive: asks before each volume).
+bash pi-setup/scripts/move-volumes-to-drive.sh
+
+# Or non-interactive after you've checked the dry run output.
+bash pi-setup/scripts/move-volumes-to-drive.sh --yes
+```
+
+The script:
+
+* Refuses to run unless `/mnt/cards` is actually a separate mount and
+  is writable (so it can't accidentally fill the SD card if the drive
+  failed to mount at boot).
+* Stops the docker-compose stack so the source volumes are quiescent.
+* For each of the four legacy named volumes (`pgdata`, `pos-data`,
+  `card-images`, `pokeapi-data`), runs `cp -a` inside an alpine
+  container that has both the named volume and the bind-mount target
+  attached. Preserves attrs, xattrs, and uid/gid.
+* Refuses to overwrite a target that already has files unless you
+  pass `--force-overwrite`.
+* Leaves the old named volumes intact — `docker volume rm` them
+  yourself once you've run a full show on the new layout and verified
+  everything works.
+
+The ollama-data volume is intentionally NOT migrated: keeping it on
+SD means the assistant container still comes up and answers "I'm
+offline" if the USB drive is unplugged, instead of failing to start.
+
