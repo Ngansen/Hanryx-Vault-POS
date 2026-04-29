@@ -57,6 +57,176 @@ from .base import Worker, WorkerError
 log = logging.getLogger("workers.price_refresh")
 
 
+# ── Per-source breakdown helpers (T021) ──────────────────────────────────
+#
+# price_aggregator returns ONE median across every source — that's the
+# right number to quote at the booth, but it hides the case where a
+# single source disagrees 2-3× with everyone else (a stale auction on
+# tcgkorea, a typo'd Buy It Now on eBay). These helpers compute a per-
+# source slice from the listings_sample[] in the quote response so the
+# operator gets a divergence signal for free.
+#
+# Why we work off listings_sample instead of plumbing per-source data
+# back through price_aggregator: that aggregator is shared with the
+# server.py /price endpoint and the mobile scanner, and its return shape
+# is part of an HTTP contract with the React kiosk client. Adding a
+# breakdown field would force a coordinated client release. Computing
+# from listings_sample keeps this slice purely additive — the worker
+# can ship without touching any other surface.
+#
+# Sample is capped at 30 by price_aggregator. That's plenty for
+# disagreement detection (you only need ~3 listings/source to see a
+# 1.5× drift), and the median itself comes from the FULL listing set
+# — we're only using the sample for source attribution.
+
+# Empirical threshold. TCG market prices rarely disagree more than 1.5×
+# between healthy sources. Once they do, it's almost always a stale
+# listing or a misidentified card variant.
+DEFAULT_DISAGREEMENT_THRESHOLD: float = 1.5
+
+
+def _per_source_breakdown(listings_sample: list[dict]) -> list[dict]:
+    """Group listings by .source and return a per-source aggregate.
+
+    Returns a list of dicts:
+        {"source": str, "currency": str, "price_usd": float,
+         "sample_count": int}
+
+    `price_usd` is the per-source median. `currency` is the modal
+    currency of that source's listings (usually 'USD' since
+    price_aggregator normalises everything via fx_rates, but we
+    record it so a future fx outage shows up as currency drift
+    rather than silent USD assumption).
+
+    Listings without a usable source name OR a positive price_usd
+    are dropped — they'd just inject NULL noise into the aggregate.
+    """
+    by_src: dict[str, list[dict]] = {}
+    for row in listings_sample or []:
+        if not isinstance(row, dict):
+            continue
+        src = (row.get("source") or "").strip()
+        if not src:
+            continue
+        try:
+            p = float(row.get("price_usd") or 0)
+        except (TypeError, ValueError):
+            continue
+        if p <= 0:
+            continue
+        by_src.setdefault(src, []).append(row)
+
+    out: list[dict] = []
+    for src, rows in sorted(by_src.items()):
+        prices = sorted(float(r["price_usd"]) for r in rows)
+        # Median: middle for odd counts, mean of two middles for even.
+        n = len(prices)
+        median = (prices[n // 2] if n % 2 else
+                  (prices[n // 2 - 1] + prices[n // 2]) / 2)
+        # Modal currency. Defaults to USD if every row is missing it
+        # (which is the post-fx-normalise case).
+        ccy_counts: dict[str, int] = {}
+        for r in rows:
+            c = (r.get("currency") or "USD").strip().upper() or "USD"
+            ccy_counts[c] = ccy_counts.get(c, 0) + 1
+        currency = max(ccy_counts.items(), key=lambda kv: kv[1])[0]
+        out.append({
+            "source": src,
+            "currency": currency,
+            "price_usd": round(median, 4),
+            "sample_count": n,
+        })
+    return out
+
+
+def _detect_disagreement(
+    breakdown: list[dict],
+    threshold: float = DEFAULT_DISAGREEMENT_THRESHOLD,
+) -> dict | None:
+    """Return a disagreement dict if max/min ratio > threshold.
+
+    Disagreement requires >= 2 sources with positive prices. A single-
+    source quote is never "in disagreement" with itself.
+
+    Boundary: a ratio == threshold is NOT a disagreement (we want
+    strict greater-than so the threshold acts as a soft ceiling).
+    """
+    valid = [b for b in (breakdown or [])
+             if (b.get("price_usd") or 0) > 0]
+    if len(valid) < 2:
+        return None
+    prices = [float(b["price_usd"]) for b in valid]
+    lo, hi = min(prices), max(prices)
+    if lo <= 0:
+        return None
+    ratio = hi / lo
+    if ratio <= threshold:
+        return None
+    return {
+        "ratio": round(ratio, 3),
+        "min_usd": round(lo, 4),
+        "max_usd": round(hi, 4),
+        "source_count": len(valid),
+        "sources": [
+            {"source": b["source"], "price_usd": float(b["price_usd"])}
+            for b in valid
+        ],
+    }
+
+
+def _record_breakdown(conn, *, card_id: str, breakdown: list[dict],
+                      fetched_at: int) -> int:
+    """INSERT one row per source into price_quote_source. ON CONFLICT
+    keeps the run idempotent (same fetched_at re-played → no-op)."""
+    if not breakdown:
+        return 0
+    cur = conn.cursor()
+    n = 0
+    for b in breakdown:
+        cur.execute("""
+            INSERT INTO price_quote_source
+                (card_id, source, currency, price_usd, sample_count, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (card_id, source, fetched_at) DO NOTHING
+        """, (card_id, b["source"], b["currency"], b["price_usd"],
+              b["sample_count"], fetched_at))
+        n += 1
+    return n
+
+
+def _record_disagreement(conn, *, card_id: str, disagreement: dict,
+                         fetched_at: int) -> None:
+    """Log a price_disagreement marker into bg_worker_run.
+
+    Why piggy-back on bg_worker_run rather than a new table: the
+    operator's data-import dashboard already surfaces bg_worker_run
+    rows; adding a `worker_type='price_disagreement'` filter shows
+    every divergent card without any new schema or admin code. Each
+    marker is one row whose worker_id holds the card_id and notes
+    holds a JSON blob of the per-source prices.
+    """
+    import json as _json  # local — keep module import surface clean
+    note = _json.dumps({
+        "card_id": card_id,
+        "ratio":   disagreement["ratio"],
+        "min_usd": disagreement["min_usd"],
+        "max_usd": disagreement["max_usd"],
+        "sources": disagreement["sources"],
+    }, ensure_ascii=False)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO bg_worker_run
+            (worker_type, worker_id, started_at, ended_at,
+             items_claimed, items_ok, items_failed, notes)
+        VALUES ('price_disagreement', %s, %s, %s, %s, %s, %s, %s)
+    """, (card_id[:200], fetched_at, fetched_at,
+          disagreement["source_count"],
+          # ok = sources within the median band; failed = sources
+          # outside it. We don't compute that breakdown here — the
+          # operator gets the full list in `notes` and can eyeball.
+          0, disagreement["source_count"], note[:4000]))
+
+
 class PriceRefreshWorker(Worker):
     TASK_TYPE = "price_refresh"
 
@@ -360,8 +530,41 @@ class PriceRefreshWorker(Worker):
             return {"status": "NO_DATA", "tier": tier,
                     "sources_tried": sources_used}
 
+        # ── T021: per-source breakdown + disagreement detection ──
+        # Best-effort and isolated — a malformed listings_sample
+        # must NOT prevent the worker from marking the price-refresh
+        # task itself COMPLETED. The whole point of the breakdown
+        # table is observability; failing the parent job because
+        # the observability layer hiccuped would be backwards.
+        breakdown: list[dict] = []
+        disagreement: dict | None = None
+        try:
+            sample = quote.get("listings_sample") or []
+            breakdown = _per_source_breakdown(sample)
+            if breakdown:
+                # Use the quote's own fetched_at when present so the
+                # breakdown row aligns with the price_quotes cache row
+                # for join-able trend queries. Fall back to wallclock.
+                fetched_at_ms = int(quote.get("fetched_at") or 0)
+                fetched_at = (fetched_at_ms // 1000 if fetched_at_ms
+                              else int(time.time()))
+                _record_breakdown(self.conn, card_id=card_id,
+                                  breakdown=breakdown,
+                                  fetched_at=fetched_at)
+                disagreement = _detect_disagreement(breakdown)
+                if disagreement is not None:
+                    _record_disagreement(self.conn, card_id=card_id,
+                                         disagreement=disagreement,
+                                         fetched_at=fetched_at)
+                self.conn.commit()
+        except Exception as e:  # noqa: BLE001 — observability isolation
+            log.warning("[price_refresh] breakdown skipped for %s/%s: %s",
+                        sid, num, e)
+
         return {"status": "OK", "tier": tier,
                 "median_usd": median_usd,
                 "sample_count": sample_count,
                 "source_count": int(quote.get("source_count") or 0),
-                "sources_used": sources_used}
+                "sources_used": sources_used,
+                "breakdown_sources": len(breakdown),
+                "disagreement": disagreement}

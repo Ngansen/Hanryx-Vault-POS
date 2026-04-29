@@ -667,6 +667,41 @@ CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
 """
 
 
+# ─── Per-source price breakdown ───────────────────────────────────────────
+#
+# price_aggregator stores ONE row per query in price_quotes — the median
+# across every source. That's the right number to quote at the booth, but
+# it hides a class of failure that bites us regularly: one source
+# (typically a single thin auction on tcgkorea) skewing the median 2-3×
+# higher than every other source agrees on.
+#
+# This table records a per-source slice so we can A) graph divergence
+# over time, and B) auto-flag cards whose sources disagree by more than
+# 1.5×. The 1.5× threshold is empirical: TCG market prices rarely
+# disagree more than that in a healthy market — once they do, it's
+# almost always a stale listing that needs a manual fetch.
+#
+# Keyed on (card_id, source, fetched_at) — fetched_at is in the key so
+# we keep history for trend analysis. Cleanup of old rows is a future
+# concern; at ~5 sources × ~daily refresh × 50k cards × 4 bytes ≈ 4 MB/yr
+# the table grows slowly enough that an annual prune is fine.
+DDL_PRICE_QUOTE_SOURCE = """
+CREATE TABLE IF NOT EXISTS price_quote_source (
+    card_id       TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    currency      TEXT NOT NULL DEFAULT 'USD',
+    price_usd     NUMERIC(12,4),
+    sample_count  INTEGER NOT NULL DEFAULT 0,
+    fetched_at    BIGINT  NOT NULL,
+    PRIMARY KEY (card_id, source, fetched_at)
+);
+CREATE INDEX IF NOT EXISTS idx_price_quote_source_card
+    ON price_quote_source (card_id, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_price_quote_source_recent
+    ON price_quote_source (fetched_at DESC);
+"""
+
+
 # ─── Public entry points ──────────────────────────────────────────────────
 
 _ALL_DDL = [
@@ -696,6 +731,7 @@ _ALL_DDL = [
     ("discovery_log",           DDL_DISCOVERY_LOG),
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
+    ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
 ]
 
 

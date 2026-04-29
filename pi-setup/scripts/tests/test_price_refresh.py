@@ -500,5 +500,401 @@ class ProcessTest(unittest.TestCase):
         self.assertEqual(out["tier"], "catalogue")
 
 
+# ─── T021: per-source breakdown helpers ────────────────────────────────
+
+
+from workers.price_refresh import (  # noqa: E402
+    _per_source_breakdown,
+    _detect_disagreement,
+    _record_breakdown,
+    _record_disagreement,
+    DEFAULT_DISAGREEMENT_THRESHOLD,
+)
+
+
+class PerSourceBreakdownTests(unittest.TestCase):
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(_per_source_breakdown([]), [])
+        self.assertEqual(_per_source_breakdown(None), [])  # type: ignore
+
+    def test_single_source_yields_one_row(self):
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 12.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 14.0, "currency": "USD"},
+        ]
+        out = _per_source_breakdown(sample)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["source"], "ebay_sold")
+        self.assertEqual(out[0]["price_usd"], 12.0)   # median of [10,12,14]
+        self.assertEqual(out[0]["sample_count"], 3)
+        self.assertEqual(out[0]["currency"], "USD")
+
+    def test_even_count_uses_mean_of_two_middles(self):
+        # Median of [10, 12, 14, 16] = (12+14)/2 = 13
+        sample = [
+            {"source": "ebay_sold", "price_usd": p, "currency": "USD"}
+            for p in (10, 12, 14, 16)
+        ]
+        out = _per_source_breakdown(sample)
+        self.assertEqual(out[0]["price_usd"], 13.0)
+
+    def test_multiple_sources_each_get_own_median(self):
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 14.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 100.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 102.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 104.0, "currency": "USD"},
+        ]
+        out = _per_source_breakdown(sample)
+        # Sorted alphabetically by source — deterministic ordering matters
+        # for the operator's eye when scanning the dashboard.
+        self.assertEqual([b["source"] for b in out],
+                         ["ebay_sold", "tcgplayer"])
+        d = {b["source"]: b for b in out}
+        self.assertEqual(d["ebay_sold"]["price_usd"], 12.0)
+        self.assertEqual(d["tcgplayer"]["price_usd"], 102.0)
+        self.assertEqual(d["ebay_sold"]["sample_count"], 2)
+        self.assertEqual(d["tcgplayer"]["sample_count"], 3)
+
+    def test_skips_listings_without_source(self):
+        sample = [
+            {"price_usd": 10.0},                          # no source
+            {"source": "", "price_usd": 11.0},            # empty source
+            {"source": "ebay_sold", "price_usd": 12.0},
+        ]
+        out = _per_source_breakdown(sample)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["source"], "ebay_sold")
+
+    def test_skips_zero_or_missing_price(self):
+        sample = [
+            {"source": "ebay_sold", "price_usd": 0},
+            {"source": "ebay_sold", "price_usd": None},
+            {"source": "ebay_sold", "price_usd": "not-a-number"},
+            {"source": "ebay_sold", "price_usd": 12.0},
+        ]
+        out = _per_source_breakdown(sample)
+        self.assertEqual(out[0]["sample_count"], 1)
+        self.assertEqual(out[0]["price_usd"], 12.0)
+
+    def test_modal_currency_used(self):
+        # Three USD, one JPY — currency should be USD.
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 11.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 12.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 13.0, "currency": "JPY"},
+        ]
+        out = _per_source_breakdown(sample)
+        self.assertEqual(out[0]["currency"], "USD")
+
+    def test_missing_currency_defaults_to_usd(self):
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0},  # no currency
+        ]
+        self.assertEqual(_per_source_breakdown(sample)[0]["currency"], "USD")
+
+
+class DetectDisagreementTests(unittest.TestCase):
+
+    def test_single_source_never_disagrees(self):
+        bd = [{"source": "ebay_sold", "price_usd": 100.0,
+               "currency": "USD", "sample_count": 5}]
+        self.assertIsNone(_detect_disagreement(bd))
+
+    def test_within_threshold_returns_none(self):
+        # 100 vs 140 → ratio 1.4 → within 1.5 threshold
+        bd = [
+            {"source": "ebay_sold", "price_usd": 100.0,
+             "currency": "USD", "sample_count": 5},
+            {"source": "tcgplayer", "price_usd": 140.0,
+             "currency": "USD", "sample_count": 5},
+        ]
+        self.assertIsNone(_detect_disagreement(bd))
+
+    def test_exactly_at_threshold_is_not_disagreement(self):
+        # ratio == 1.5 → strict greater-than means NOT a disagreement.
+        bd = [
+            {"source": "a", "price_usd": 100.0,
+             "currency": "USD", "sample_count": 1},
+            {"source": "b", "price_usd": 150.0,
+             "currency": "USD", "sample_count": 1},
+        ]
+        self.assertIsNone(_detect_disagreement(bd))
+
+    def test_above_threshold_returns_dict(self):
+        bd = [
+            {"source": "ebay_sold", "price_usd": 100.0,
+             "currency": "USD", "sample_count": 5},
+            {"source": "tcgkorea", "price_usd": 250.0,
+             "currency": "USD", "sample_count": 2},
+        ]
+        d = _detect_disagreement(bd)
+        self.assertIsNotNone(d)
+        assert d is not None  # for type checker
+        self.assertEqual(d["ratio"], 2.5)
+        self.assertEqual(d["min_usd"], 100.0)
+        self.assertEqual(d["max_usd"], 250.0)
+        self.assertEqual(d["source_count"], 2)
+        self.assertEqual({s["source"] for s in d["sources"]},
+                         {"ebay_sold", "tcgkorea"})
+
+    def test_zero_min_returns_none_no_div_by_zero(self):
+        bd = [
+            {"source": "a", "price_usd": 0.0,
+             "currency": "USD", "sample_count": 1},
+            {"source": "b", "price_usd": 100.0,
+             "currency": "USD", "sample_count": 1},
+        ]
+        # The helper filters zero-priced rows out first → only one
+        # valid source left → no disagreement (single source).
+        self.assertIsNone(_detect_disagreement(bd))
+
+    def test_custom_threshold(self):
+        bd = [
+            {"source": "a", "price_usd": 100.0,
+             "currency": "USD", "sample_count": 1},
+            {"source": "b", "price_usd": 110.0,
+             "currency": "USD", "sample_count": 1},
+        ]
+        # 1.1× ratio → not flagged at default 1.5, but flagged at 1.05
+        self.assertIsNone(_detect_disagreement(bd))
+        d = _detect_disagreement(bd, threshold=1.05)
+        self.assertIsNotNone(d)
+
+    def test_default_threshold_constant_is_1_5(self):
+        # Locking the empirical threshold so a future "tighten this"
+        # change is a deliberate test update, not a silent shift.
+        self.assertEqual(DEFAULT_DISAGREEMENT_THRESHOLD, 1.5)
+
+
+class RecordHelperTests(unittest.TestCase):
+
+    def test_record_breakdown_inserts_one_row_per_source(self):
+        conn = FakeConn()
+        bd = [
+            {"source": "ebay_sold", "price_usd": 12.0,
+             "currency": "USD", "sample_count": 3},
+            {"source": "tcgplayer", "price_usd": 14.0,
+             "currency": "USD", "sample_count": 5},
+        ]
+        n = _record_breakdown(conn, card_id="sv2:47",
+                              breakdown=bd, fetched_at=1745000000)
+        self.assertEqual(n, 2)
+        inserts = [(s, p) for s, p in conn.executes
+                   if "INSERT INTO price_quote_source" in s]
+        self.assertEqual(len(inserts), 2)
+        # ON CONFLICT clause must be present so a re-run is a no-op.
+        for sql, _ in inserts:
+            self.assertIn("ON CONFLICT (card_id, source, fetched_at) "
+                          "DO NOTHING", sql)
+        # First insert params: card_id, source, currency, price, count, ts
+        _, params = inserts[0]
+        self.assertEqual(params[0], "sv2:47")
+        self.assertEqual(params[1], "ebay_sold")
+        self.assertEqual(params[2], "USD")
+        self.assertEqual(params[3], 12.0)
+        self.assertEqual(params[4], 3)
+        self.assertEqual(params[5], 1745000000)
+
+    def test_record_breakdown_empty_is_noop(self):
+        conn = FakeConn()
+        n = _record_breakdown(conn, card_id="sv2:47",
+                              breakdown=[], fetched_at=1)
+        self.assertEqual(n, 0)
+        self.assertEqual(conn.executes, [])
+
+    def test_record_disagreement_inserts_bg_worker_run_marker(self):
+        conn = FakeConn()
+        d = {
+            "ratio": 2.5, "min_usd": 100.0, "max_usd": 250.0,
+            "source_count": 2,
+            "sources": [
+                {"source": "ebay_sold", "price_usd": 100.0},
+                {"source": "tcgkorea", "price_usd": 250.0},
+            ],
+        }
+        _record_disagreement(conn, card_id="sv2:47",
+                             disagreement=d, fetched_at=1745000000)
+        inserts = [(s, p) for s, p in conn.executes
+                   if "INSERT INTO bg_worker_run" in s]
+        self.assertEqual(len(inserts), 1)
+        sql, params = inserts[0]
+        self.assertIn("'price_disagreement'", sql)
+        # worker_id holds the card_id so admin can grep by card.
+        self.assertEqual(params[0], "sv2:47")
+        # started_at == ended_at == fetched_at — these are point-in-
+        # time markers, not duration runs.
+        self.assertEqual(params[1], 1745000000)
+        self.assertEqual(params[2], 1745000000)
+        # items_claimed = source_count
+        self.assertEqual(params[3], 2)
+        # notes is JSON containing both source prices
+        import json
+        note = json.loads(params[6])
+        self.assertEqual(note["card_id"], "sv2:47")
+        self.assertEqual(note["ratio"], 2.5)
+        self.assertEqual(len(note["sources"]), 2)
+
+
+# ─── T021: process() integration ────────────────────────────────────────
+
+
+class ProcessBreakdownIntegrationTests(unittest.TestCase):
+    """Verify process() wires breakdown + disagreement detection
+    into the DB without breaking any existing return contract."""
+
+    def _task(self, sid="sv2", num="47"):
+        return {"task_id": 1, "task_type": "price_refresh",
+                "task_key": f"sv2/47:catalogue",
+                "payload": {"set_id": sid, "card_number": num,
+                            "tier": "catalogue"}, "attempts": 0}
+
+    def _quote(self, *, sample, sample_count=None,
+               fetched_at=1745000000_000):
+        return {
+            "median_usd": 12.0,
+            "nm_median_usd": 12.0,
+            "sample_count": sample_count if sample_count is not None
+                            else len(sample),
+            "source_count": len({s["source"] for s in sample
+                                 if s.get("source")}),
+            "sources_used": sorted({s["source"] for s in sample
+                                    if s.get("source")}),
+            "listings_sample": sample,
+            "fetched_at": fetched_at,
+        }
+
+    def test_breakdown_inserted_when_sample_present(self):
+        conn = FakeConn()
+        # Stub the cards_master name lookup
+        conn.queue_one(("Pikachu", "", "", ""))
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 12.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 14.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 16.0, "currency": "USD"},
+        ]
+        fake = FakeQuoteFn(result=self._quote(sample=sample))
+        w = PriceRefreshWorker(conn, quote_fn=fake)
+        out = w.process(self._task())
+        self.assertEqual(out["status"], "OK")
+        self.assertEqual(out["breakdown_sources"], 2)
+        # No disagreement: ebay median 11, tcgplayer median 15 → 1.36×
+        self.assertIsNone(out["disagreement"])
+        inserts = [s for s, _ in conn.executes
+                   if "INSERT INTO price_quote_source" in s]
+        self.assertEqual(len(inserts), 2)
+        # No bg_worker_run marker for the no-disagreement case.
+        self.assertFalse(any("'price_disagreement'" in s
+                             for s, _ in conn.executes))
+
+    def test_disagreement_inserts_bg_worker_run_marker(self):
+        conn = FakeConn()
+        conn.queue_one(("Pikachu", "", "", ""))
+        sample = [
+            {"source": "ebay_sold", "price_usd": 100.0, "currency": "USD"},
+            {"source": "tcgkorea", "price_usd": 300.0, "currency": "USD"},
+        ]
+        fake = FakeQuoteFn(result=self._quote(sample=sample))
+        w = PriceRefreshWorker(conn, quote_fn=fake)
+        out = w.process(self._task())
+        self.assertEqual(out["status"], "OK")
+        self.assertIsNotNone(out["disagreement"])
+        self.assertEqual(out["disagreement"]["ratio"], 3.0)
+        markers = [(s, p) for s, p in conn.executes
+                   if "INSERT INTO bg_worker_run" in s
+                   and "'price_disagreement'" in s]
+        self.assertEqual(len(markers), 1)
+
+    def test_no_data_skips_breakdown_entirely(self):
+        # NO_DATA early-return must not even attempt a breakdown
+        # write. Belt-and-braces: zero sample listings means there's
+        # nothing to break down anyway.
+        conn = FakeConn()
+        conn.queue_one(("Pikachu", "", "", ""))
+        fake = FakeQuoteFn(result={
+            "median_usd": None, "sample_count": 0,
+            "source_count": 0, "sources_used": ["ebay_sold"],
+            "listings_sample": [], "fetched_at": 0,
+        })
+        w = PriceRefreshWorker(conn, quote_fn=fake)
+        out = w.process(self._task())
+        self.assertEqual(out["status"], "NO_DATA")
+        self.assertFalse(any("INSERT INTO price_quote_source" in s
+                             for s, _ in conn.executes))
+
+    def test_breakdown_uses_quote_fetched_at_when_present(self):
+        conn = FakeConn()
+        conn.queue_one(("Pikachu", "", "", ""))
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "ebay_sold", "price_usd": 12.0, "currency": "USD"},
+        ]
+        # Quote's fetched_at is in milliseconds — worker must convert
+        # to seconds for the BIGINT column (matches the convention in
+        # the rest of the schema).
+        fake = FakeQuoteFn(result=self._quote(
+            sample=sample, fetched_at=1745000000_000))
+        w = PriceRefreshWorker(conn, quote_fn=fake)
+        w.process(self._task())
+        inserts = [(s, p) for s, p in conn.executes
+                   if "INSERT INTO price_quote_source" in s]
+        self.assertEqual(inserts[0][1][5], 1745000000)  # seconds
+
+    def test_breakdown_failure_does_not_fail_the_task(self):
+        # If the breakdown insert raises (DB hiccup, weird payload),
+        # the worker must STILL return OK for the underlying refresh
+        # — observability must never break the parent job.
+        conn = FakeConn()
+        conn.queue_one(("Pikachu", "", "", ""))
+        sample = [
+            {"source": "ebay_sold", "price_usd": 10.0, "currency": "USD"},
+            {"source": "tcgplayer", "price_usd": 12.0, "currency": "USD"},
+        ]
+        fake = FakeQuoteFn(result=self._quote(sample=sample))
+
+        original_execute = FakeCursor.execute
+        def fail_on_breakdown(self, sql, params=None):
+            if "INSERT INTO price_quote_source" in sql:
+                raise RuntimeError("simulated DB error")
+            return original_execute(self, sql, params)
+
+        with mock.patch.object(FakeCursor, "execute", fail_on_breakdown):
+            w = PriceRefreshWorker(conn, quote_fn=fake)
+            out = w.process(self._task())
+        # The refresh task itself succeeds even though breakdown failed.
+        self.assertEqual(out["status"], "OK")
+        self.assertEqual(out["breakdown_sources"], 2)
+
+
+# ─── T021: DDL contract ────────────────────────────────────────────────
+
+
+class PriceQuoteSourceDDLTests(unittest.TestCase):
+
+    def test_ddl_registered(self):
+        from unified import schema
+        self.assertIn("price_quote_source",
+                      [name for name, _ in schema._ALL_DDL])
+
+    def test_ddl_has_required_columns(self):
+        from unified import schema
+        ddl = schema.DDL_PRICE_QUOTE_SOURCE
+        for col in ("card_id", "source", "currency", "price_usd",
+                    "sample_count", "fetched_at"):
+            self.assertIn(col, ddl)
+        # Composite PK so a single fetched_at can hold N source rows
+        # AND we keep history across runs.
+        self.assertIn("PRIMARY KEY (card_id, source, fetched_at)", ddl)
+        # Indexes for the two operator queries: per-card history and
+        # global recent activity.
+        self.assertIn("idx_price_quote_source_card", ddl)
+        self.assertIn("idx_price_quote_source_recent", ddl)
+
+
 if __name__ == "__main__":
     unittest.main()
