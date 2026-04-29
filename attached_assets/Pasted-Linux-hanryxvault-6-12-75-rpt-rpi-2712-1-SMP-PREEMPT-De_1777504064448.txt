@@ -1,0 +1,90 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed Apr 29 22:38:56 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ lsblk
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0         7:0    0    2G  0 loop 
+mmcblk0     179:0    0 59.5G  0 disk 
+├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
+└─mmcblk0p2 179:2    0   59G  0 part /
+zram0       254:0    0    2G  0 disk [SWAP]
+ngansen@hanryxvault:~ $ dmesg | grep -i nvme
+[    0.000000] Kernel command line: reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=0  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:BD:9D:38 vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=6e827fca-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles ds=nocloud;i=rpi-imager-1775177442601 cfg80211.ieee80211_regdom=IS
+ngansen@hanryxvault:~ $ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+ngansen@hanryxvault:~ $     lsblk
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0         7:0    0    2G  0 loop 
+mmcblk0     179:0    0 59.5G  0 disk 
+├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
+└─mmcblk0p2 179:2    0   59G  0 part /
+zram0       254:0    0    2G  0 disk [SWAP]
+ngansen@hanryxvault:~ $ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+ngansen@hanryxvault:~ $ ngansen@hanryxvault:~ $ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+ngansen@hanryxvault:~ $
+-bash: ngansen@hanryxvault:~: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: ngansen@hanryxvault:~: command not found
+ngansen@hanryxvault:~ $ ngansen@hanryxvault:~ $ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+ngansen@hanryxvault:~ $
+-bash: ngansen@hanryxvault:~: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: Bus: command not found
+-bash: ngansen@hanryxvault:~: command not found
+ngansen@hanryxvault:~ $ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+ngansen@hanryxvault:~ $ lsdsk
+-bash: lsdsk: command not found
+ngansen@hanryxvault:~ $ lsdk
+-bash: lsdk: command not found
+ngansen@hanryxvault:~ $     lsblk
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0         7:0    0    2G  0 loop 
+mmcblk0     179:0    0 59.5G  0 disk 
+├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
+└─mmcblk0p2 179:2    0   59G  0 part /
+zram0       254:0    0    2G  0 disk [SWAP]
+ngansen@hanryxvault:~ $     lsblk
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0         7:0    0    2G  0 loop 
+mmcblk0     179:0    0 59.5G  0 disk 
+├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
+└─mmcblk0p2 179:2    0   59G  0 part /
+zram0       254:0    0    2G  0 disk [SWAP]
+ngansen@hanryxvault:~ $ 
