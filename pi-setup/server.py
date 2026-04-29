@@ -9549,10 +9549,10 @@ def _format_receipt(
     disclosure = (conf.get("receipt_disclosure") or "").strip()
     if not disclosure:
         disclosure = (
-            "All sales are final. No refunds, returns, or exchanges.\n"
-            "Cards are inspected and graded at point of sale; condition\n"
-            "is accepted as-is once the receipt is issued.\n"
-            "Authenticity guaranteed on every card we sell."
+            "All sales are final. No refunds, returns, or exchanges. "
+            "Cards are inspected and graded at point of sale; condition is "
+            "accepted as-is once the receipt is issued. Authenticity is "
+            "guaranteed on every card we sell."
         )
 
     # ── Paper-width-aware layout ─────────────────────────────────────────────
@@ -20246,7 +20246,7 @@ def _load_receipt_settings() -> dict:
         # blank lines between paragraphs. Wraps automatically to paper width.
         "disclosure":               "",
         # 1 = customer copy only.  2 = customer + merchant copy.
-        "print_copies":             "1",
+        "print_copies":             "2",
         # When printing 2 copies, omit the disclosure block on the merchant
         # copy (saves ~1.5" of paper per sale; the merchant already knows the
         # policy). "1"/"0" string for HTML form compatibility.
