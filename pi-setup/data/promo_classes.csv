@@ -1,0 +1,16 @@
+Global Promo ID,Promo Name,Promo Category,English Variant,Japanese Variant,Korean Variant,Chinese Variant,EN Code,JP Code,KR Code,CN Code,Language Coverage,Notes
+P-001,Pikachu Promo,Movie Promo,Pikachu,Pikachu,피카츄,皮卡丘,SM234,プロモ,SM-P,SM-P,EN/JP/KR/CN,Base global Pikachu promo structure
+P-002,Eevee Promo,Product Promo,Eevee,Eievui,이브이,伊布,SWSH promo,プロモ,S-P,S-P,EN/JP/KR/CN,Common cross-region promo type
+P-003,Charizard Event,Event Promo,Charizard,Charizard,리자몽,喷火龙,SWSH260,プロモ,SV-P,SV-P,EN/JP/KR/CN,Tournament/event stamped variants
+P-004,Mew Anniversary,Anniversary Promo,Mew,Mew,뮤,梦幻,SM-P,プロモ,SM-P,SM-P,EN/JP/KR/CN,Anniversary reprint class
+P-005,Pikachu Illustrator,Special Contest,Pikachu Illustrator,イラストレーター,일러스트레이터,插画家,N/A,コロコロ,KR-P,CN-P,JP/EN partial,Rarest category (Corocoro origin)
+P-006,League Promo Set,League Promo,League Set,ジムプロモ,리그 프로모,联盟赠卡,SWSH-P,プロモ,SV-P,SV-P,EN/JP/KR/CN,Rotating league distribution
+P-007,McDonald's Promo,Fast Food Promo,McDonald's Set,マクドナルド,맥도날드,麦当劳,MC-P,プロモ,KR-MC,CN-MC,EN/JP/KR/CN,Global fast food collaboration set
+P-008,Pre-Release Promo,Pre-Release,Prerelease Card,プレリリース,프리릴리즈,预发行卡,PR,PR,PR,PR,EN/JP/KR/CN,Sealed event kits
+P-009,Corocoro Promo,Magazine Promo,Corocoro Promo,コロコロ,코로코로,コロコロ,JP-EXCL,コロコロ,KR-EXCL,CN-EXCL,JP/KR/CN,Japan-exclusive magazine distribution
+P-010,Vending Series,Vending Machine,Vending Set,自販機シリーズ,자판기 시리즈,自贩机系列,V-1,V-1,KR-V,CN-V,JP/KR/CN,Japan vending machine exclusives
+P-011,World Championship Promo,Championship,Worlds Promo,世界大会,월드챔피언십,世界锦标赛,WCS,WCS,WCS,WCS,EN/JP/KR/CN,Official competitive season cards
+P-012,Staff Promo,Staff Only,Staff Card,スタッフ限定,스태프 전용,工作人员卡,STAFF,STAFF,STAFF,STAFF,JP/EN partial,Event staff exclusives
+P-013,Stadium Promo,Event Stadium,Stadium Promo,ジムリーダー,체육관,道馆卡,ST,ST,ST,ST,EN/JP/KR/CN,Tournament venue distribution
+P-014,Box Promo,Tin/Box Promo,Box Promo,ボックス特典,박스 특전,盒装赠卡,BX,BX,BX,BX,EN/JP/KR/CN,Product bundle promos
+P-015,Special Illustration Rare,Modern Promo,SIR Promo,スペシャルアート,특별일러스트,特殊插画,SIR,SIR,SIR,SIR,EN/JP/KR/CN,Modern SV-era classification
