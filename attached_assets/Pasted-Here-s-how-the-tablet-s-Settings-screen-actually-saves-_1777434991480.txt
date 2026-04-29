@@ -1,0 +1,34 @@
+Here's how the tablet's Settings screen actually saves both, and where I'd look if either ever stops showing on a receipt:
+
+Logo
+Where it's saved: app filesDir/receipt_logo.png (sandboxed, no permission needed, survives reboots).
+
+How Settings saves it (SettingsScreen.kt L1351–1377):
+
+User taps STORE LOGO → BROWSE → Android photo picker opens.
+The selected image is decoded off the main thread, downscaled to 576 px wide (matches 80 mm thermal raster width, so it prints crisp), and written as PNG to that file.
+The preview card on the Settings page refreshes immediately. REMOVE just deletes the file.
+How the receipt reads it (MainViewModel.kt L3540–3552, runs at every checkout):
+
+Reads receipt_logo.png from filesDir.
+Hard cap: 250 KB. If the file is larger, it's silently dropped — no logo appears on the print and there's no warning.
+If the file is fine, encodes it as base64 and includes it in the print payload.
+⚠️ One gotcha worth knowing. The Settings downscale only caps width (576 px) — height scales proportionally. A very tall portrait logo (e.g. 1000 × 3000) downscales to 576 × 1728, which at PNG level 100 can land between 200–400 KB. If a logo ever picks fine in Settings but doesn't print, that 250 KB cap is the most likely cause. Easy fix: bump the cap to 600 KB, or also cap the height in the Settings save step.
+
+QR code
+Where it's saved: vault_pos_prefs SharedPreferences:
+
+receipt_qr → the URL/text string (default https://hanryxvault.app)
+receipt_qr_enabled → on/off boolean (default true)
+How Settings saves it (SettingsScreen.kt L1295–1316 → MainViewModel.kt L2103–2118):
+
+Switch toggle → POSIntent.ToggleReceiptQr → writes receipt_qr_enabled pref.
+URL text field → POSIntent.SetCustomReceiptQrData → writes receipt_qr pref on every keystroke (so it's always in sync, no Save button needed).
+How the receipt uses it (MainViewModel.kt L3560–3561):
+
+Sends qrEnabled and qrData (only if non-blank) in the print payload.
+The Pi generates the QR image with the qrcode library, rasterises it to ~60% of paper width, and prints it just above "Thank you!".
+TL;DR — to verify either is working
+On the tablet, open Settings → scroll to PRINT QR ON RECEIPT (toggle should be on, URL field should have your text) and RECEIPT LOGO (you should see the white preview card). If both look right and the receipt is still missing them, it's the 250 KB logo cap or the Pi side. The whole pipeline is one round-trip — no separate fetch from the Pi for either asset.
+
+Want me to bump the logo cap to 600 KB and add a height limit in Settings so it can't silently drop again?
