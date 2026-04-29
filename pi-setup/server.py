@@ -4612,8 +4612,23 @@ def card_image_resolve():
         return 3
     candidates.sort(key=_rank)
 
+    # Lazy re-check: even if the consolidator recorded local="", the file
+    # may have just been mirrored by sync_card_mirror.py. Re-derive the
+    # local path on every request so newly-downloaded files become
+    # available immediately, no consolidator re-run required.
+    try:
+        from unified.local_images import local_path_for as _resolve_local
+    except Exception:
+        _resolve_local = None  # type: ignore
+
     for c in candidates:
         local = (c.get("local") or "").strip()
+        if not local and _resolve_local:
+            try:
+                local = _resolve_local(c.get("src", ""), c.get("url", ""),
+                                       set_id=set_id)
+            except Exception:
+                local = ""
         if local and os.path.isfile(local):
             try:
                 resp = send_file(local, conditional=True)

@@ -90,20 +90,48 @@ def _kr_local_with_set(url: str, set_id: Optional[str]) -> str:
     return str(candidate) if candidate.is_file() else ""
 
 
+def _from_cdn(url: str) -> str:
+    """Resolve any HTTP(S) URL via the generic CDN mirror at
+    <USB_ROOT>/cdn/<host>/<path>. This is what makes JP / TCGdex /
+    pokemoncard.co.kr / etc. fully offline once `sync_card_mirror.py`
+    has run with Phase C."""
+    if not url:
+        return ""
+    try:
+        p = urlparse(url)
+    except Exception:
+        return ""
+    host = (p.netloc or "").lower()
+    rel = unquote(p.path or "").lstrip("/")
+    if not host or not rel:
+        return ""
+    candidate = USB_ROOT / "cdn" / host / rel
+    return str(candidate) if candidate.is_file() else ""
+
+
 # Map of source_id → resolver. Each resolver takes (url, hints_dict)
-# and returns a local path string ("" if not found).
+# and returns a local path string ("" if not found). Resolvers try the
+# source-specific layout first, then fall back to the generic CDN mirror
+# so a freshly-downloaded URL becomes available without code changes.
+def _kr_resolver(u, h):
+    return _kr_local_with_set(u, h.get("set_id")) or _from_cdn(u)
+
+def _gh_or_cdn(u, h):
+    return _from_github(u) or _from_cdn(u)
+
 _RESOLVERS = {
-    "kr_official":  lambda u, h: _kr_local_with_set(u, h.get("set_id")),
-    "chs_official": lambda u, h: _from_github(u),
-    "pocket_off":   lambda u, h: _from_github(u),
-    "pocket_lt":    lambda u, h: _from_github(u),
-    # tcgdex/tcg_api/jp_pokell/jp_pcc are CDN-hosted; no local mirror today.
-    "tcgdex":       lambda u, h: "",
-    "tcg_api":      lambda u, h: "",
-    "jp_pokell":    lambda u, h: "",
-    "jp_pcc":       lambda u, h: "",
-    "eng_xlsx":     lambda u, h: "",
-    "jp_xlsx":      lambda u, h: "",
+    "kr_official":  _kr_resolver,
+    "chs_official": _gh_or_cdn,
+    "pocket_off":   _gh_or_cdn,
+    "pocket_lt":    _gh_or_cdn,
+    # JP + TCGdex are CDN-hosted: served by the cdn/ mirror once
+    # sync_card_mirror.py Phase C has downloaded them.
+    "tcgdex":       lambda u, h: _from_cdn(u),
+    "tcg_api":      lambda u, h: _from_cdn(u),
+    "jp_pokell":    lambda u, h: _from_cdn(u),
+    "jp_pcc":       lambda u, h: _from_cdn(u),
+    "eng_xlsx":     lambda u, h: _from_cdn(u),
+    "jp_xlsx":      lambda u, h: _from_cdn(u),
 }
 
 
