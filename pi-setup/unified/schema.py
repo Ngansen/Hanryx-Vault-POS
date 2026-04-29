@@ -587,6 +587,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_discovery_queue_pending_report
  WHERE kind = 'report' AND status = 'pending';
 """
 
+DDL_MIRROR_FETCH_FAILURE = """
+CREATE TABLE IF NOT EXISTS mirror_fetch_failure (
+    -- One row per UNIQUE source URL that sync_card_mirror has ever
+    -- attempted. Acts as both the failure log AND the success
+    -- ledger for those URLs (resolved_at flips when a later attempt
+    -- finally succeeds). Operators triage with:
+    --
+    --   SELECT * FROM mirror_fetch_failure
+    --    WHERE resolved_at IS NULL
+    --    ORDER BY attempt_count DESC, last_attempt_at DESC;
+    --
+    -- And historical "what URLs have rotted at least once" with:
+    --
+    --   SELECT * FROM mirror_fetch_failure
+    --    WHERE attempt_count >= 3
+    --    ORDER BY attempt_count DESC;
+    url             TEXT PRIMARY KEY,
+    src             TEXT,             -- 'kr_cardimg', 'jp_pcc', 'tcgo', etc.
+    dest_path       TEXT,             -- final on-disk destination
+    last_status     TEXT NOT NULL,    -- 'http-404', 'too-small', 'err-URLError', 'ok', 'skip-exists'
+    attempt_count   INTEGER NOT NULL DEFAULT 1,
+    first_seen_at   BIGINT NOT NULL,
+    last_attempt_at BIGINT NOT NULL,
+    resolved_at     BIGINT            -- NULL while still broken
+);
+-- Partial index keeps the unresolved triage query O(broken) instead
+-- of O(everything-ever-attempted) — Phase C alone has ~120k URLs.
+CREATE INDEX IF NOT EXISTS idx_mirror_fetch_failure_unresolved
+    ON mirror_fetch_failure (last_attempt_at DESC, attempt_count DESC)
+ WHERE resolved_at IS NULL;
+"""
+
+
 DDL_DISCOVERY_LOG = """
 CREATE TABLE IF NOT EXISTS discovery_log (
     log_id          BIGSERIAL PRIMARY KEY,
@@ -632,6 +665,7 @@ _ALL_DDL = [
     ("card_language_extra",     DDL_CARD_LANGUAGE_EXTRA),
     ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
+    ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
 ]
 
 

@@ -66,6 +66,10 @@ from urllib.parse import unquote, urlparse
 import urllib.error
 import urllib.request
 
+# Sibling module — the persistent failure log helper. Imported eagerly
+# (no postgres dep) so the absence of psycopg2 doesn't break Phase A.
+from scripts.mirror_failure_log import record_mirror_outcome  # noqa: E402
+
 log = logging.getLogger("sync_card_mirror")
 
 MIRROR_ROOT = Path(os.environ.get("MIRROR_ROOT", "/mnt/cards"))
@@ -118,6 +122,56 @@ def _dir_size(p: Path) -> int:
     except OSError:
         pass
     return total
+
+
+def _open_failure_log_conn():
+    """Best-effort connect to DATABASE_URL for failure-log writes.
+
+    Returns a psycopg2 connection or None when DATABASE_URL is unset
+    or psycopg2 isn't importable on this host. The downloader treats
+    None as "skip the persistent log, console-debug only" — Phase A
+    runs on the bare Pi host without the docker venv and doesn't
+    have psycopg2, so this can't be a hard failure.
+
+    autocommit=False — the helper commits per outcome, which is the
+    right granularity for an interrupted run (every recorded outcome
+    is durable when the next outcome lands)."""
+    db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if not db_url:
+        log.info("[sync] DATABASE_URL not set — failure log disabled "
+                 "(downloads will still run, just no persistent triage)")
+        return None
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        log.info("[sync] psycopg2 not importable on this host — failure "
+                 "log disabled. Install with `pip install psycopg2-binary` "
+                 "inside the consolidator container venv to enable.")
+        return None
+    try:
+        conn = psycopg2.connect(db_url)
+        return conn
+    except Exception as e:
+        log.warning("[sync] failure-log connect failed (%s) — proceeding "
+                    "without persistent log", e)
+        return None
+
+
+def _record_outcome_safe(conn, *, url: str, src: str, dest: Path,
+                         ok: bool, status: str) -> None:
+    """Wrap record_mirror_outcome so any DB hiccup is visible but
+    NEVER aborts the download loop. The downloader's first job is
+    to mirror files; the failure log is observability on top of
+    that."""
+    if conn is None:
+        return
+    try:
+        record_mirror_outcome(
+            conn, url=url, src=src, dest_path=str(dest),
+            ok=ok, status=status,
+        )
+    except Exception as e:
+        log.debug("[sync] failure-log write skipped for %s: %s", url, e)
 
 
 def _safe_run(cmd: list[str], cwd: Optional[Path] = None) -> tuple[int, str]:
@@ -233,26 +287,40 @@ def phase_b() -> None:
     img_root = kr_root / "card_img"
     img_root.mkdir(exist_ok=True)
 
+    # Optional persistent failure log — None when DATABASE_URL or
+    # psycopg2 isn't available (Pi host vs. consolidator container).
+    failure_conn = _open_failure_log_conn()
     n_total = n_ok = n_skip = n_fail = 0
     t0 = time.time()
-    for json_path, url in _iter_kr_card_urls(kr_root):
-        if _interrupted:
-            log.warning("[B] interrupted at #%d", n_total)
-            break
-        n_total += 1
-        base = os.path.basename(unquote(urlparse(url).path)) or f"unknown-{n_total}.jpg"
-        dest = img_root / base
-        ok, status = _download(url, dest)
-        if ok and status == "skip-exists":
-            n_skip += 1
-        elif ok:
-            n_ok += 1
-            if n_ok % 50 == 0:
-                log.info("[B] %d new, %d skipped, %d failed (%.1fs)",
-                         n_ok, n_skip, n_fail, time.time() - t0)
-        else:
-            n_fail += 1
-            log.debug("[B] fail %s → %s (%s)", json_path.name, base, status)
+    try:
+        for json_path, url in _iter_kr_card_urls(kr_root):
+            if _interrupted:
+                log.warning("[B] interrupted at #%d", n_total)
+                break
+            n_total += 1
+            base = os.path.basename(unquote(urlparse(url).path)) \
+                or f"unknown-{n_total}.jpg"
+            dest = img_root / base
+            ok, status = _download(url, dest)
+            _record_outcome_safe(failure_conn, url=url, src="kr_cardimg",
+                                 dest=dest, ok=ok, status=status)
+            if ok and status == "skip-exists":
+                n_skip += 1
+            elif ok:
+                n_ok += 1
+                if n_ok % 50 == 0:
+                    log.info("[B] %d new, %d skipped, %d failed (%.1fs)",
+                             n_ok, n_skip, n_fail, time.time() - t0)
+            else:
+                n_fail += 1
+                log.debug("[B] fail %s → %s (%s)",
+                          json_path.name, base, status)
+    finally:
+        if failure_conn is not None:
+            try:
+                failure_conn.close()
+            except Exception:
+                pass
 
     log.info("[B] done — %d total, %d new, %d skipped, %d failed (%s on disk)",
              n_total, n_ok, n_skip, n_fail, _human_bytes(_dir_size(img_root)))
@@ -321,27 +389,40 @@ def phase_c(limit: Optional[int]) -> None:
     cdn_root = MIRROR_ROOT / "cdn"
     cdn_root.mkdir(parents=True, exist_ok=True)
 
+    # Separate failure-log connection — _iter_cdn_candidates owns a
+    # server-side cursor on its own connection, so committing per
+    # outcome on that conn would interfere with the streamed read.
+    failure_conn = _open_failure_log_conn()
     n_total = n_ok = n_skip = n_fail = 0
     by_src: dict[str, int] = {}
     t0 = time.time()
-    for src, url in _iter_cdn_candidates(db_url, limit):
-        if _interrupted:
-            log.warning("[C] interrupted at #%d", n_total)
-            break
-        n_total += 1
-        dest = _cdn_dest(url)
-        ok, status = _download(url, dest)
-        if ok and status == "skip-exists":
-            n_skip += 1
-        elif ok:
-            n_ok += 1
-            by_src[src] = by_src.get(src, 0) + 1
-            if n_ok % 100 == 0:
-                log.info("[C] %d new, %d skipped, %d failed (%.1fs)",
-                         n_ok, n_skip, n_fail, time.time() - t0)
-        else:
-            n_fail += 1
-            log.debug("[C] fail src=%s %s (%s)", src, url, status)
+    try:
+        for src, url in _iter_cdn_candidates(db_url, limit):
+            if _interrupted:
+                log.warning("[C] interrupted at #%d", n_total)
+                break
+            n_total += 1
+            dest = _cdn_dest(url)
+            ok, status = _download(url, dest)
+            _record_outcome_safe(failure_conn, url=url, src=src,
+                                 dest=dest, ok=ok, status=status)
+            if ok and status == "skip-exists":
+                n_skip += 1
+            elif ok:
+                n_ok += 1
+                by_src[src] = by_src.get(src, 0) + 1
+                if n_ok % 100 == 0:
+                    log.info("[C] %d new, %d skipped, %d failed (%.1fs)",
+                             n_ok, n_skip, n_fail, time.time() - t0)
+            else:
+                n_fail += 1
+                log.debug("[C] fail src=%s %s (%s)", src, url, status)
+    finally:
+        if failure_conn is not None:
+            try:
+                failure_conn.close()
+            except Exception:
+                pass
 
     log.info("[C] done — %d total, %d new, %d skipped, %d failed (%s on disk)",
              n_total, n_ok, n_skip, n_fail, _human_bytes(_dir_size(cdn_root)))
