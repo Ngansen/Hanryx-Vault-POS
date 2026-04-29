@@ -587,6 +587,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_discovery_queue_pending_report
  WHERE kind = 'report' AND status = 'pending';
 """
 
+DDL_MIRROR_FETCH_FAILURE = """
+CREATE TABLE IF NOT EXISTS mirror_fetch_failure (
+    -- One row per UNIQUE source URL that sync_card_mirror has ever
+    -- attempted. Acts as both the failure log AND the success
+    -- ledger for those URLs (resolved_at flips when a later attempt
+    -- finally succeeds). Operators triage with:
+    --
+    --   SELECT * FROM mirror_fetch_failure
+    --    WHERE resolved_at IS NULL
+    --    ORDER BY attempt_count DESC, last_attempt_at DESC;
+    --
+    -- And historical "what URLs have rotted at least once" with:
+    --
+    --   SELECT * FROM mirror_fetch_failure
+    --    WHERE attempt_count >= 3
+    --    ORDER BY attempt_count DESC;
+    url             TEXT PRIMARY KEY,
+    src             TEXT,             -- 'kr_cardimg', 'jp_pcc', 'tcgo', etc.
+    dest_path       TEXT,             -- final on-disk destination
+    last_status     TEXT NOT NULL,    -- 'http-404', 'too-small', 'err-URLError', 'ok', 'skip-exists'
+    attempt_count   INTEGER NOT NULL DEFAULT 1,
+    first_seen_at   BIGINT NOT NULL,
+    last_attempt_at BIGINT NOT NULL,
+    resolved_at     BIGINT            -- NULL while still broken
+);
+-- Partial index keeps the unresolved triage query O(broken) instead
+-- of O(everything-ever-attempted) — Phase C alone has ~120k URLs.
+CREATE INDEX IF NOT EXISTS idx_mirror_fetch_failure_unresolved
+    ON mirror_fetch_failure (last_attempt_at DESC, attempt_count DESC)
+ WHERE resolved_at IS NULL;
+"""
+
+
 DDL_DISCOVERY_LOG = """
 CREATE TABLE IF NOT EXISTS discovery_log (
     log_id          BIGSERIAL PRIMARY KEY,
@@ -602,6 +635,70 @@ CREATE INDEX IF NOT EXISTS idx_discovery_log_queue
     ON discovery_log (queue_id);
 CREATE INDEX IF NOT EXISTS idx_discovery_log_attempted_at
     ON discovery_log (attempted_at DESC);
+"""
+
+
+# ─── KR set completeness audit ────────────────────────────────────────────
+#
+# The kr_set_audit worker walks the cloned ptcg-kr-db repo and compares
+# its canonical (set_id, card_number) inventory against the cards_master
+# rows that landed for those same set_ids. Per-set diff is materialised
+# here so the operator can see, at a glance, which sets are short and
+# which numbers are missing — the difference between "Iono SAR is gone"
+# and "32 numbers are gone" matters when triaging a bad import run.
+#
+# missing_numbers[] = canonical - cards_master  (we have less than upstream)
+# extra_numbers[]   = cards_master - canonical  (set_id alias drift)
+#
+# extra_numbers being non-empty is interesting: it usually means a
+# ref_set_alias rule sent the wrong source set into this set_id. We don't
+# auto-correct — just expose it.
+DDL_KR_SET_GAP = """
+CREATE TABLE IF NOT EXISTS kr_set_gap (
+    set_id           TEXT PRIMARY KEY,
+    expected_count   INTEGER NOT NULL DEFAULT 0,
+    actual_count     INTEGER NOT NULL DEFAULT 0,
+    missing_numbers  JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    extra_numbers    JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
+    ON kr_set_gap (audited_at DESC);
+"""
+
+
+# ─── Per-source price breakdown ───────────────────────────────────────────
+#
+# price_aggregator stores ONE row per query in price_quotes — the median
+# across every source. That's the right number to quote at the booth, but
+# it hides a class of failure that bites us regularly: one source
+# (typically a single thin auction on tcgkorea) skewing the median 2-3×
+# higher than every other source agrees on.
+#
+# This table records a per-source slice so we can A) graph divergence
+# over time, and B) auto-flag cards whose sources disagree by more than
+# 1.5×. The 1.5× threshold is empirical: TCG market prices rarely
+# disagree more than that in a healthy market — once they do, it's
+# almost always a stale listing that needs a manual fetch.
+#
+# Keyed on (card_id, source, fetched_at) — fetched_at is in the key so
+# we keep history for trend analysis. Cleanup of old rows is a future
+# concern; at ~5 sources × ~daily refresh × 50k cards × 4 bytes ≈ 4 MB/yr
+# the table grows slowly enough that an annual prune is fine.
+DDL_PRICE_QUOTE_SOURCE = """
+CREATE TABLE IF NOT EXISTS price_quote_source (
+    card_id       TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    currency      TEXT NOT NULL DEFAULT 'USD',
+    price_usd     NUMERIC(12,4),
+    sample_count  INTEGER NOT NULL DEFAULT 0,
+    fetched_at    BIGINT  NOT NULL,
+    PRIMARY KEY (card_id, source, fetched_at)
+);
+CREATE INDEX IF NOT EXISTS idx_price_quote_source_card
+    ON price_quote_source (card_id, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_price_quote_source_recent
+    ON price_quote_source (fetched_at DESC);
 """
 
 
@@ -632,6 +729,9 @@ _ALL_DDL = [
     ("card_language_extra",     DDL_CARD_LANGUAGE_EXTRA),
     ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
+    ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
+    ("kr_set_gap",              DDL_KR_SET_GAP),
+    ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
 ]
 
 

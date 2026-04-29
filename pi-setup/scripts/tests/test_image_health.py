@@ -303,6 +303,146 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(rv["status"], "ALL_MISSING")
 
 
+# ── Auto-enqueue (image_health → image_mirror loop closure) ──────
+
+
+class AutoEnqueueMirrorTests(unittest.TestCase):
+    """Verifies the image_health → image_mirror handoff. Whenever the
+    aggregate status indicates at least one broken `local` path, the
+    worker must INSERT an image_mirror task with ON CONFLICT DO NOTHING
+    keyed on (task_type, task_key) so re-detection is idempotent."""
+
+    def _run_with(self, paths_meta, *, rowcount_for_enqueue=1):
+        conn = FakeConn()
+        conn.fetchone_queue = [(paths_meta,)]
+        # rowcount sequence: cursor 1 is the SELECT (no rowcount),
+        # cursor 2 is the image_health_check INSERT (no assertion),
+        # cursor 3 (when triggered) is the image_mirror INSERT.
+        # We feed three values so each execute() consumes one.
+        conn.rowcount_queue = [0, 0, rowcount_for_enqueue]
+        w = image_health.ImageHealthWorker(conn)
+        rv = w.process({
+            "task_id": 1, "task_type": "image_health",
+            "task_key": "sv2/47",
+            "payload": {"set_id": "sv2", "card_number": "47"},
+            "attempts": 0,
+        })
+        return conn, rv
+
+    def _enqueue_sql(self, conn):
+        """Return the (sql, params) pair of the image_mirror INSERT,
+        or None if no enqueue happened."""
+        for cur in conn.cursors:
+            for sql, params in cur.executed:
+                if "INSERT INTO bg_task_queue" in sql \
+                        and "image_mirror" in sql:
+                    return sql, params
+        return None
+
+    def test_all_missing_enqueues_image_mirror(self):
+        conn, rv = self._run_with([
+            {"src": "tcgo", "lang": "en", "url": "u1",
+             "local": "/no/such/a.png"},
+            {"src": "scry", "lang": "en", "url": "u2",
+             "local": "/no/such/b.png"},
+        ])
+        self.assertEqual(rv["status"], "ALL_MISSING")
+        self.assertTrue(rv.get("mirror_enqueued"))
+        enq = self._enqueue_sql(conn)
+        self.assertIsNotNone(enq, "expected an image_mirror INSERT")
+        sql, params = enq
+        self.assertIn("ON CONFLICT (task_type, task_key) DO NOTHING", sql)
+        self.assertIn("'PENDING'", sql)
+        # task_key is "<set>/<num>" — first param
+        self.assertEqual(params[0], "sv2/47")
+        # set_id and card_number flow into the JSONB payload
+        self.assertEqual(params[1], "sv2")
+        self.assertEqual(params[2], "47")
+        # 4th param is created_at — must be an int seconds-since-epoch
+        self.assertIsInstance(params[3], int)
+        self.assertGreater(params[3], 1_700_000_000)
+
+    def test_all_corrupt_enqueues_image_mirror(self):
+        # Two existing files with bytes but no recognised magic.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            f.write(b"GARBAGE_NOT_AN_IMAGE_FORMAT_HEADER_FOO" * 4)
+            bad1 = f.name
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            f.write(b"GARBAGE_NOT_AN_IMAGE_FORMAT_HEADER_BAR" * 4)
+            bad2 = f.name
+        try:
+            conn, rv = self._run_with([
+                {"src": "tcgo", "lang": "en", "url": "u1", "local": bad1},
+                {"src": "scry", "lang": "en", "url": "u2", "local": bad2},
+            ])
+            self.assertEqual(rv["status"], "ALL_CORRUPT")
+            self.assertTrue(rv.get("mirror_enqueued"))
+            self.assertIsNotNone(self._enqueue_sql(conn))
+        finally:
+            os.unlink(bad1)
+            os.unlink(bad2)
+
+    def test_partial_enqueues_image_mirror(self):
+        # One real PNG path (OK) + one missing path → PARTIAL → enqueue.
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(PNG_1x1 * 4)
+            real_path = f.name
+        try:
+            conn, rv = self._run_with([
+                {"src": "tcgo", "lang": "en", "url": "u1",
+                 "local": real_path},
+                {"src": "scry", "lang": "en", "url": "u2",
+                 "local": "/no/such/file.png"},
+            ])
+            # PARTIAL when Pillow accepts the micro-PNG; ALL_CORRUPT
+            # when Pillow rejects it. Both must enqueue.
+            self.assertIn(rv["status"], ("PARTIAL", "ALL_CORRUPT"))
+            self.assertTrue(rv.get("mirror_enqueued"))
+            self.assertIsNotNone(self._enqueue_sql(conn))
+        finally:
+            os.unlink(real_path)
+
+    def test_no_paths_does_not_enqueue(self):
+        # image_url_alt entries all have empty `local` → NO_PATHS,
+        # which is excluded from the trigger set.
+        conn, rv = self._run_with([
+            {"src": "x", "lang": "en", "url": "u1", "local": ""},
+        ])
+        self.assertEqual(rv["status"], "NO_PATHS")
+        self.assertNotIn("mirror_enqueued", rv)
+        self.assertIsNone(self._enqueue_sql(conn))
+
+    def test_missing_card_does_not_enqueue(self):
+        # cards_master row is gone — early return before status compute.
+        conn = FakeConn()
+        conn.fetchone_queue = [None]
+        w = image_health.ImageHealthWorker(conn)
+        rv = w.process({
+            "task_id": 1, "task_type": "image_health",
+            "task_key": "sv2/47",
+            "payload": {"set_id": "sv2", "card_number": "47"},
+            "attempts": 0,
+        })
+        self.assertEqual(rv["status"], "MISSING_CARD")
+        self.assertIsNone(self._enqueue_sql(conn))
+
+    def test_already_pending_collapses_to_no_flag(self):
+        # ON CONFLICT (task_type, task_key) DO NOTHING → rowcount==0
+        # when an image_mirror task is already PENDING for this card.
+        # process() must NOT advertise mirror_enqueued in that case;
+        # the result dict is the operator's signal that something new
+        # was created vs. coalesced.
+        conn, rv = self._run_with([
+            {"src": "tcgo", "lang": "en", "url": "u1",
+             "local": "/no/such/a.png"},
+        ], rowcount_for_enqueue=0)
+        self.assertEqual(rv["status"], "ALL_MISSING")
+        # The INSERT was attempted (we want the audit record), but
+        # the upsert collapsed → no flag.
+        self.assertIsNone(rv.get("mirror_enqueued"))
+        self.assertIsNotNone(self._enqueue_sql(conn))
+
+
 class SeedTests(unittest.TestCase):
 
     def test_seed_uses_not_exists_guard(self):

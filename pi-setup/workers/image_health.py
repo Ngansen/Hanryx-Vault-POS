@@ -140,6 +140,20 @@ def check_one_path(path: str) -> dict:
             "size_bytes": st.st_size, "fmt": fmt}
 
 
+# Aggregate statuses that indicate the card has at least one broken
+# `local` path and is therefore worth handing to image_mirror for a
+# re-fetch attempt. OK and NO_PATHS are excluded — OK has nothing to
+# do, NO_PATHS has no canonical URL to fetch from. MISSING_CARD is
+# excluded too: the cards_master row is gone, image_mirror would
+# also short-circuit on its own MISSING_CARD branch.
+_MIRROR_TRIGGER_STATUSES: frozenset[str] = frozenset({
+    "ALL_MISSING",
+    "ALL_EMPTY",
+    "ALL_CORRUPT",
+    "PARTIAL",
+})
+
+
 def aggregate_status(results: list[dict]) -> str:
     if not results:
         return "NO_PATHS"
@@ -260,8 +274,50 @@ class ImageHealthWorker(Worker):
 
         status = aggregate_status(results)
         self._record(sid, num, status, results)
-        return {"status": status, "paths_checked": len(results),
-                "paths_ok": sum(1 for r in results if r["status"] == "OK")}
+        enqueued = False
+        if status in _MIRROR_TRIGGER_STATUSES:
+            # Close the loop: hand the broken card off to image_mirror
+            # so it can re-fetch from the canonical CDN URL. ON
+            # CONFLICT (task_type, task_key) DO NOTHING means re-
+            # detection on the next nightly pass collapses to a no-op
+            # while a previous attempt is still PENDING / RUNNING /
+            # exhausted-with-attempts. The bg_task_queue's
+            # max_attempts=3 caps the per-card retry count for free.
+            enqueued = self._enqueue_mirror(sid, num)
+        result = {
+            "status": status,
+            "paths_checked": len(results),
+            "paths_ok": sum(1 for r in results if r["status"] == "OK"),
+        }
+        if enqueued:
+            result["mirror_enqueued"] = True
+        return result
+
+    def _enqueue_mirror(self, sid: str, num: str) -> bool:
+        """Insert an image_mirror task. Returns True when a new row
+        was created, False when the upsert collapsed to an existing
+        PENDING / RUNNING task (rowcount==0).
+
+        We intentionally enqueue from a SEPARATE cursor in the same
+        transaction as _record so both the audit row and the recovery
+        task land atomically — either both visible after commit or
+        neither, no half-applied state where image_health_check
+        flagged rot but image_mirror never got the work."""
+        cur = self.conn.cursor()
+        cur.execute("""
+            INSERT INTO bg_task_queue
+                (task_type, task_key, payload, status, created_at)
+            VALUES (
+                'image_mirror',
+                %s,
+                jsonb_build_object('set_id', %s::text,
+                                   'card_number', %s::text),
+                'PENDING',
+                %s
+            )
+            ON CONFLICT (task_type, task_key) DO NOTHING
+        """, (f"{sid}/{num}", sid, num, int(time.time())))
+        return (cur.rowcount or 0) > 0
 
     def _record(self, sid: str, num: str, status: str,
                 results: list[dict]) -> None:

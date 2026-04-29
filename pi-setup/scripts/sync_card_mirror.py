@@ -66,6 +66,10 @@ from urllib.parse import unquote, urlparse
 import urllib.error
 import urllib.request
 
+# Sibling module — the persistent failure log helper. Imported eagerly
+# (no postgres dep) so the absence of psycopg2 doesn't break Phase A.
+from scripts.mirror_failure_log import record_mirror_outcome  # noqa: E402
+
 log = logging.getLogger("sync_card_mirror")
 
 MIRROR_ROOT = Path(os.environ.get("MIRROR_ROOT", "/mnt/cards"))
@@ -120,6 +124,56 @@ def _dir_size(p: Path) -> int:
     return total
 
 
+def _open_failure_log_conn():
+    """Best-effort connect to DATABASE_URL for failure-log writes.
+
+    Returns a psycopg2 connection or None when DATABASE_URL is unset
+    or psycopg2 isn't importable on this host. The downloader treats
+    None as "skip the persistent log, console-debug only" — Phase A
+    runs on the bare Pi host without the docker venv and doesn't
+    have psycopg2, so this can't be a hard failure.
+
+    autocommit=False — the helper commits per outcome, which is the
+    right granularity for an interrupted run (every recorded outcome
+    is durable when the next outcome lands)."""
+    db_url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if not db_url:
+        log.info("[sync] DATABASE_URL not set — failure log disabled "
+                 "(downloads will still run, just no persistent triage)")
+        return None
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        log.info("[sync] psycopg2 not importable on this host — failure "
+                 "log disabled. Install with `pip install psycopg2-binary` "
+                 "inside the consolidator container venv to enable.")
+        return None
+    try:
+        conn = psycopg2.connect(db_url)
+        return conn
+    except Exception as e:
+        log.warning("[sync] failure-log connect failed (%s) — proceeding "
+                    "without persistent log", e)
+        return None
+
+
+def _record_outcome_safe(conn, *, url: str, src: str, dest: Path,
+                         ok: bool, status: str) -> None:
+    """Wrap record_mirror_outcome so any DB hiccup is visible but
+    NEVER aborts the download loop. The downloader's first job is
+    to mirror files; the failure log is observability on top of
+    that."""
+    if conn is None:
+        return
+    try:
+        record_mirror_outcome(
+            conn, url=url, src=src, dest_path=str(dest),
+            ok=ok, status=status,
+        )
+    except Exception as e:
+        log.debug("[sync] failure-log write skipped for %s: %s", url, e)
+
+
 def _safe_run(cmd: list[str], cwd: Optional[Path] = None) -> tuple[int, str]:
     """Run a subprocess, return (rc, combined output). Never raises."""
     try:
@@ -132,21 +186,76 @@ def _safe_run(cmd: list[str], cwd: Optional[Path] = None) -> tuple[int, str]:
 
 
 def _download(url: str, dest: Path, *, timeout: int = 30,
-              min_size: int = 256) -> tuple[bool, str]:
+              min_size: int = 256, revalidate: bool = True
+              ) -> tuple[bool, str]:
     """
     Download `url` to `dest`. Returns (ok, status). Atomic: writes to
     dest.tmp first, fsyncs, renames. Files smaller than `min_size` bytes
     are treated as failed (CDNs sometimes return 1-byte error stubs).
+
+    revalidate=True (default):
+        When `dest` already exists, send `If-Modified-Since: <mtime>`
+        and treat HTTP 304 as success (status='not-modified', no
+        write). On 200, replace the file and stamp its mtime from the
+        response Last-Modified header so the next IMS round-trip is
+        cheap. The first re-run after a full sync becomes thousands
+        of free 304s instead of thousands of zero-cost
+        skip-exists shortcuts that hide silent upstream churn.
+
+    revalidate=False:
+        Pure resume mode — if `dest` exists with size >= min_size we
+        short-circuit with 'skip-exists' and never hit the network.
+        Use when there is no upstream worth checking (Phase A is
+        already covered by `git pull`; this flag exists so a future
+        offline-only refresh can opt out entirely).
+
+    Why a parameter rather than always-revalidate: a fresh Pi spinning
+    up at a trade-show venue with flaky WiFi shouldn't be required to
+    HEAD every one of ~50k images before serving them locally. The
+    operator can flip `revalidate=False` from the cron one-liner for
+    the truly-offline case.
     """
+    # Lazy import — `email.utils` is stdlib but the imports stay
+    # local so the (rare) hostile-environment case where stdlib
+    # email is shadowed still loads sync_card_mirror enough for
+    # Phase A git work to run.
+    from email.utils import formatdate, parsedate_to_datetime
+
+    existing_mtime: float | None = None
     if dest.exists() and dest.stat().st_size >= min_size:
-        return True, "skip-exists"
+        if not revalidate:
+            return True, "skip-exists"
+        existing_mtime = dest.stat().st_mtime
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
+    headers: dict[str, str] = {"User-Agent": USER_AGENT}
+    if existing_mtime is not None:
+        # RFC 7232 §3.3 — usegmt=True for the IMF-fixdate format the
+        # spec mandates ("Wed, 21 Oct 2015 07:28:00 GMT"). Servers
+        # that strict-parse will reject the local-tz form.
+        headers["If-Modified-Since"] = formatdate(existing_mtime,
+                                                  usegmt=True)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status == 304:
+                # 304 has no body — server confirms our copy is
+                # still fresh. No write, no atomicity dance, just
+                # bump our local mtime to "now" so the next IMS
+                # round trip uses an up-to-date floor.
+                try:
+                    now = time.time()
+                    os.utime(dest, (now, now))
+                except OSError:
+                    pass
+                return True, "not-modified"
             if r.status >= 400:
                 return False, f"http-{r.status}"
+            # Capture Last-Modified BEFORE we close the response —
+            # urllib's response object is single-pass and the headers
+            # vanish once .read() returns on some platforms.
+            last_modified = r.headers.get("Last-Modified")
             with open(tmp, "wb") as f:
                 shutil.copyfileobj(r, f, length=64 * 1024)
                 f.flush()
@@ -155,8 +264,35 @@ def _download(url: str, dest: Path, *, timeout: int = 30,
             tmp.unlink(missing_ok=True)
             return False, "too-small"
         os.replace(tmp, dest)
+        # Stamp the file's mtime from the server's Last-Modified so
+        # our next IMS request matches what the upstream thinks the
+        # version is. If the header is missing or unparseable we leave
+        # the OS-default mtime (= now) which is also fine — the
+        # tradeoff is one extra full-body refresh on the next cycle.
+        if last_modified:
+            try:
+                dt = parsedate_to_datetime(last_modified)
+                if dt is not None:
+                    os.utime(dest, (dt.timestamp(), dt.timestamp()))
+            except (TypeError, ValueError, OSError):
+                # Bad date or unsupported FS — non-fatal. The file
+                # is correctly downloaded; we just lose the IMS
+                # optimisation for one cycle.
+                pass
         return True, "ok"
     except urllib.error.HTTPError as e:
+        # Some servers (notably older nginx defaults) return 304 as
+        # an HTTPError rather than a normal response. Treat it the
+        # same — 304 is a successful conditional GET regardless of
+        # which urllib branch surfaces it.
+        if e.code == 304:
+            try:
+                now = time.time()
+                os.utime(dest, (now, now))
+            except OSError:
+                pass
+            tmp.unlink(missing_ok=True)
+            return True, "not-modified"
         tmp.unlink(missing_ok=True)
         return False, f"http-{e.code}"
     except Exception as e:
@@ -233,26 +369,40 @@ def phase_b() -> None:
     img_root = kr_root / "card_img"
     img_root.mkdir(exist_ok=True)
 
+    # Optional persistent failure log — None when DATABASE_URL or
+    # psycopg2 isn't available (Pi host vs. consolidator container).
+    failure_conn = _open_failure_log_conn()
     n_total = n_ok = n_skip = n_fail = 0
     t0 = time.time()
-    for json_path, url in _iter_kr_card_urls(kr_root):
-        if _interrupted:
-            log.warning("[B] interrupted at #%d", n_total)
-            break
-        n_total += 1
-        base = os.path.basename(unquote(urlparse(url).path)) or f"unknown-{n_total}.jpg"
-        dest = img_root / base
-        ok, status = _download(url, dest)
-        if ok and status == "skip-exists":
-            n_skip += 1
-        elif ok:
-            n_ok += 1
-            if n_ok % 50 == 0:
-                log.info("[B] %d new, %d skipped, %d failed (%.1fs)",
-                         n_ok, n_skip, n_fail, time.time() - t0)
-        else:
-            n_fail += 1
-            log.debug("[B] fail %s → %s (%s)", json_path.name, base, status)
+    try:
+        for json_path, url in _iter_kr_card_urls(kr_root):
+            if _interrupted:
+                log.warning("[B] interrupted at #%d", n_total)
+                break
+            n_total += 1
+            base = os.path.basename(unquote(urlparse(url).path)) \
+                or f"unknown-{n_total}.jpg"
+            dest = img_root / base
+            ok, status = _download(url, dest)
+            _record_outcome_safe(failure_conn, url=url, src="kr_cardimg",
+                                 dest=dest, ok=ok, status=status)
+            if ok and status == "skip-exists":
+                n_skip += 1
+            elif ok:
+                n_ok += 1
+                if n_ok % 50 == 0:
+                    log.info("[B] %d new, %d skipped, %d failed (%.1fs)",
+                             n_ok, n_skip, n_fail, time.time() - t0)
+            else:
+                n_fail += 1
+                log.debug("[B] fail %s → %s (%s)",
+                          json_path.name, base, status)
+    finally:
+        if failure_conn is not None:
+            try:
+                failure_conn.close()
+            except Exception:
+                pass
 
     log.info("[B] done — %d total, %d new, %d skipped, %d failed (%s on disk)",
              n_total, n_ok, n_skip, n_fail, _human_bytes(_dir_size(img_root)))
@@ -321,27 +471,40 @@ def phase_c(limit: Optional[int]) -> None:
     cdn_root = MIRROR_ROOT / "cdn"
     cdn_root.mkdir(parents=True, exist_ok=True)
 
+    # Separate failure-log connection — _iter_cdn_candidates owns a
+    # server-side cursor on its own connection, so committing per
+    # outcome on that conn would interfere with the streamed read.
+    failure_conn = _open_failure_log_conn()
     n_total = n_ok = n_skip = n_fail = 0
     by_src: dict[str, int] = {}
     t0 = time.time()
-    for src, url in _iter_cdn_candidates(db_url, limit):
-        if _interrupted:
-            log.warning("[C] interrupted at #%d", n_total)
-            break
-        n_total += 1
-        dest = _cdn_dest(url)
-        ok, status = _download(url, dest)
-        if ok and status == "skip-exists":
-            n_skip += 1
-        elif ok:
-            n_ok += 1
-            by_src[src] = by_src.get(src, 0) + 1
-            if n_ok % 100 == 0:
-                log.info("[C] %d new, %d skipped, %d failed (%.1fs)",
-                         n_ok, n_skip, n_fail, time.time() - t0)
-        else:
-            n_fail += 1
-            log.debug("[C] fail src=%s %s (%s)", src, url, status)
+    try:
+        for src, url in _iter_cdn_candidates(db_url, limit):
+            if _interrupted:
+                log.warning("[C] interrupted at #%d", n_total)
+                break
+            n_total += 1
+            dest = _cdn_dest(url)
+            ok, status = _download(url, dest)
+            _record_outcome_safe(failure_conn, url=url, src=src,
+                                 dest=dest, ok=ok, status=status)
+            if ok and status == "skip-exists":
+                n_skip += 1
+            elif ok:
+                n_ok += 1
+                by_src[src] = by_src.get(src, 0) + 1
+                if n_ok % 100 == 0:
+                    log.info("[C] %d new, %d skipped, %d failed (%.1fs)",
+                             n_ok, n_skip, n_fail, time.time() - t0)
+            else:
+                n_fail += 1
+                log.debug("[C] fail src=%s %s (%s)", src, url, status)
+    finally:
+        if failure_conn is not None:
+            try:
+                failure_conn.close()
+            except Exception:
+                pass
 
     log.info("[C] done — %d total, %d new, %d skipped, %d failed (%s on disk)",
              n_total, n_ok, n_skip, n_fail, _human_bytes(_dir_size(cdn_root)))
