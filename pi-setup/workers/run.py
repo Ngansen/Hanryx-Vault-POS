@@ -55,6 +55,8 @@ from workers.base import Worker  # noqa: E402
 from workers.image_health import ImageHealthWorker  # noqa: E402
 from workers.language_helper import LanguageEnrichWorker  # noqa: E402
 from workers.data_analyst import DataAnalystWorker  # noqa: E402
+from workers.clip_embedder import ClipEmbedderWorker  # noqa: E402
+from workers.ocr_indexer import OcrIndexerWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -66,9 +68,9 @@ WORKERS: dict[str, type[Worker]] = {
     "image_health":  ImageHealthWorker,
     "lang_enrich":   LanguageEnrichWorker,
     "data_analysis": DataAnalystWorker,
+    "clip_embed":    ClipEmbedderWorker,
+    "ocr_index":     OcrIndexerWorker,
     # 'image_mirror':  ImageMirrorWorker,    # Slice 12
-    # 'clip_embed':    ClipEmbedderWorker,   # Slice 10
-    # 'ocr_index':     OcrIndexerWorker,     # Slice 11
 }
 
 
@@ -92,6 +94,18 @@ def build_worker(name: str, conn, args) -> Worker:
         return LanguageEnrichWorker(conn, recheck_after_s=recheck_s, **common)
     if name == "data_analysis":
         return DataAnalystWorker(conn, recheck_after_s=recheck_s, **common)
+    if name == "clip_embed":
+        return ClipEmbedderWorker(conn,
+                                  recheck_after_s=recheck_s,
+                                  model_path=args.clip_model_path,
+                                  model_id=args.clip_model_id,
+                                  **common)
+    if name == "ocr_index":
+        return OcrIndexerWorker(conn,
+                                recheck_after_s=recheck_s,
+                                model_id=args.ocr_model_id,
+                                lang_hint=args.ocr_lang_hint,
+                                **common)
 
     return cls(conn, **common)
 
@@ -118,8 +132,26 @@ def main() -> int:
                     help="Loop mode: exit after this many empty passes "
                          "(useful for tests / drain-and-exit invocations)")
     ap.add_argument("--recheck-after-days", type=int,
-                    help="image_health: re-check cards last seen more than "
-                         "N days ago (default: 7)")
+                    help="re-check tasks whose last successful run was more "
+                         "than N days ago (default per-worker: image_health=7, "
+                         "lang_enrich=30, data_analysis=1, clip_embed=90, "
+                         "ocr_index=90)")
+    ap.add_argument("--clip-model-path", type=str, default=None,
+                    help="clip_embed: override path to clip-vit-b32.onnx "
+                         "(default: $CLIP_MODEL_PATH or /mnt/cards/models/"
+                         "clip-vit-b32.onnx)")
+    ap.add_argument("--clip-model-id", type=str, default=None,
+                    help="clip_embed: override model_id tag stored alongside "
+                         "embeddings (default: clip-vit-b32-onnx-1.0)")
+    ap.add_argument("--ocr-model-id", type=str, default=None,
+                    help="ocr_index: override model_id tag (default: "
+                         "paddleocr-ppocrv4-1.0)")
+    ap.add_argument("--ocr-lang-hint", type=str, default=None,
+                    choices=["kr", "jp", "chs", "en"],
+                    help="ocr_index: pin every task to this language instead "
+                         "of auto-picking per card (KR > JP > CHS > EN). "
+                         "Useful for back-fill passes (e.g. JP overlay text "
+                         "on a Korean print).")
     args = ap.parse_args()
 
     if args.list:
