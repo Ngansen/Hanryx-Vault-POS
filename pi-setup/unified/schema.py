@@ -239,6 +239,30 @@ CREATE INDEX IF NOT EXISTS idx_ref_set_alias_chs  ON ref_set_alias (UPPER(code_c
 CREATE INDEX IF NOT EXISTS idx_ref_set_alias_era  ON ref_set_alias (era);
 """
 
+DDL_REF_PROMO_CLASS = """
+CREATE TABLE IF NOT EXISTS ref_promo_class (
+    class_id        TEXT PRIMARY KEY,           -- 'P-001', 'P-002', …
+    promo_name      TEXT NOT NULL DEFAULT '',   -- 'Pikachu Promo'
+    promo_category  TEXT NOT NULL DEFAULT '',   -- 'Movie Promo' / 'Anniversary Promo' / …
+    variant_en      TEXT NOT NULL DEFAULT '',
+    variant_jp      TEXT NOT NULL DEFAULT '',
+    variant_kr      TEXT NOT NULL DEFAULT '',
+    variant_chs     TEXT NOT NULL DEFAULT '',
+    code_en         TEXT NOT NULL DEFAULT '',   -- 'SM234', 'SM-P', 'PR', 'WCS', 'STAFF', …
+    code_jp         TEXT NOT NULL DEFAULT '',   -- 'プロモ' (catch-all for most), 'コロコロ', etc.
+    code_kr         TEXT NOT NULL DEFAULT '',   -- 'SM-P', 'S-P', 'SV-P', 'KR-MC', …
+    code_chs        TEXT NOT NULL DEFAULT '',
+    lang_coverage   TEXT NOT NULL DEFAULT '',   -- 'EN/JP/KR/CN' or partial
+    notes           TEXT NOT NULL DEFAULT '',
+    imported_at     BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_promo_class_en   ON ref_promo_class (UPPER(code_en));
+CREATE INDEX IF NOT EXISTS idx_promo_class_jp   ON ref_promo_class (UPPER(code_jp));
+CREATE INDEX IF NOT EXISTS idx_promo_class_kr   ON ref_promo_class (UPPER(code_kr));
+CREATE INDEX IF NOT EXISTS idx_promo_class_chs  ON ref_promo_class (UPPER(code_chs));
+CREATE INDEX IF NOT EXISTS idx_promo_class_cat  ON ref_promo_class (promo_category);
+"""
+
 DDL_REF_VARIANT_TERMS = """
 CREATE TABLE IF NOT EXISTS ref_variant_terms (
     variant_code    TEXT PRIMARY KEY,                -- 'MBH', 'PBH', '1ED', 'STD', 'SAR', 'RH', ...
@@ -425,6 +449,7 @@ _ALL_DDL = [
     ("src_tcgdex_multi",        DDL_SRC_TCGDEX_MULTI),
     ("ref_set_mapping",         DDL_REF_SET_MAPPING),
     ("ref_set_alias",           DDL_REF_SET_ALIAS),
+    ("ref_promo_class",         DDL_REF_PROMO_CLASS),
     ("ref_variant_terms",       DDL_REF_VARIANT_TERMS),
     ("ref_promo_provenance",    DDL_REF_PROMO_PROVENANCE),
     ("ref_pokedex_species",     DDL_REF_POKEDEX_SPECIES),

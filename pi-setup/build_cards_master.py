@@ -586,6 +586,104 @@ def _read_set_alias_map(cur) -> dict:
     return out
 
 
+def _read_promo_class_index(cur) -> dict[str, list[dict]]:
+    """Returns {CODE_UPPER: [class_dict, …]} indexed by the union of all
+    four region columns of ref_promo_class.
+
+    Multi-valued by design — one promo bucket code maps to MANY global
+    promo classes:
+      - JP 'プロモ' is a catch-all that covers ~13 of the 15 known
+        global classes (Pikachu Promo, Eevee Promo, Charizard Event, …)
+      - EN 'SM-P' covers both the Mew Anniversary class and any other
+        SM-era promo that re-uses the bucket
+    The consolidator uses the LIST length to decide whether enrichment
+    is precise (single match → use the class name as promo_source) or
+    coarse (multi-match → flag as 'Promo bucket (N candidates)' and
+    record all class IDs in source_refs for later disambiguation).
+
+    This data deliberately does NOT feed _read_set_canonicaliser_map:
+    blindly merging two cards because they share 'プロモ' would be
+    catastrophic. Promo classes are read-only enrichment.
+
+    Empty dict when ref_promo_class is missing → enrichment becomes a
+    no-op, preserving current behaviour on a fresh DB.
+    """
+    out: dict[str, list[dict]] = defaultdict(list)
+    try:
+        cur.execute("""
+            SELECT class_id, promo_name, promo_category,
+                   variant_en, variant_jp, variant_kr, variant_chs,
+                   code_en, code_jp, code_kr, code_chs,
+                   lang_coverage, notes
+              FROM ref_promo_class
+        """)
+    except psycopg2.errors.UndefinedTable:
+        return {}
+    except psycopg2.Error as e:
+        log.warning("[consolidator] _read_promo_class_index failed: %s", e)
+        return {}
+    for row in cur.fetchall():
+        rec = dict(row)
+        seen_for_row: set[str] = set()
+        for col in ("code_en", "code_jp", "code_kr", "code_chs"):
+            code = (rec.get(col) or "").strip()
+            if not code:
+                continue
+            cu = code.upper()
+            # A single ref_promo_class row can repeat the same code
+            # across regions (e.g. EN=KR=CN='SM-P'). Don't add the
+            # row twice to the same key.
+            if cu in seen_for_row:
+                continue
+            seen_for_row.add(cu)
+            out[cu].append(rec)
+    return dict(out)
+
+
+def _enrich_promo_class(out: dict, src_refs: dict, set_id: str,
+                        promo_classes: dict[str, list[dict]]) -> None:
+    """In-place enrichment of `out["promo_source"]` from ref_promo_class.
+
+    Only fires when out["promo_source"] is empty (so the per-card
+    ref_promo_provenance lookup always wins — that's higher fidelity).
+    Behaviour by match count:
+      0 matches → no-op
+      1 match  → out["promo_source"] = '<Category>: <Name>'
+      N>1      → out["promo_source"] = 'Promo bucket (N candidate classes)'
+                  src_refs["promo_source"] records all candidate IDs
+
+    Empty `promo_classes` index makes this a guaranteed no-op, so the
+    consolidator stays safe on a fresh DB without ref_promo_class
+    loaded yet. Critically, the bucket-collapse (Slice 7 canonicaliser)
+    NEVER merges promo cards together because ref_promo_class is held
+    out of the canonicaliser map by design — multi-region 'プロモ' /
+    'SM-P' are catch-alls and merging them would corrupt cards_master.
+    """
+    if out.get("promo_source"):
+        return
+    if not promo_classes:
+        return
+    spine_upper = (set_id or "").upper()
+    matches = promo_classes.get(spine_upper, [])
+    if not matches:
+        return
+    if len(matches) == 1:
+        cls = matches[0]
+        cat  = (cls.get("promo_category") or "Promo").strip() or "Promo"
+        name = (cls.get("promo_name") or cls.get("class_id") or "").strip()
+        out["promo_source"] = f"{cat}: {name}" if name else cat
+        src_refs["promo_source"] = (
+            f"ref_promo_class:{cls.get('class_id', '?')}"
+        )
+        return
+    # Multi-match: bucket. Record every candidate class ID for later
+    # disambiguation by name / art / OCR.
+    ids = sorted({(c.get("class_id") or "").strip()
+                  for c in matches if (c.get("class_id") or "").strip()})
+    out["promo_source"] = f"Promo bucket ({len(matches)} candidate classes)"
+    src_refs["promo_source"] = "ref_promo_class:" + ",".join(ids)
+
+
 def _read_set_canonicaliser_map(cur) -> dict:
     """Returns {ANY_CODE_UPPER: canonical_set_id_lowercase}.
 
@@ -746,6 +844,7 @@ def build_cards_master(db_conn) -> dict:
     set_alias_map = _read_set_alias_map(cur)
     canon_map     = _read_set_canonicaliser_map(cur)
     canonicalise  = _build_canonicaliser(canon_map)
+    promo_classes = _read_promo_class_index(cur)
 
     # Re-key jp_cards_json from upper-edition to canonical so its keys
     # align with the spine's canonical (set_id, card_number) form. The
@@ -764,8 +863,10 @@ def build_cards_master(db_conn) -> dict:
     log.info("[consolidator] jp_cards_json: %d keys, set_alias_map: %d codes, "
              "canon_map: %d codes",
              len(jp_cards_json), len(set_alias_map), len(canon_map))
-    log.info("[consolidator] eng_ex: %d, jp_ex: %d, ref_dex: %d, ref_promo: %d",
-             len(eng_ex), len(jp_ex), len(ref_dex), len(ref_promo))
+    log.info("[consolidator] eng_ex: %d, jp_ex: %d, ref_dex: %d, ref_promo: %d, "
+             "promo_classes: %d codes",
+             len(eng_ex), len(jp_ex), len(ref_dex), len(ref_promo),
+             len(promo_classes))
 
     # ── Spine: one row per CANONICAL (set_id, card_number) ──
     # Source dicts keep their ORIGINAL set_ids (never rewritten) so the
@@ -900,6 +1001,12 @@ def build_cards_master(db_conn) -> dict:
             out["promo_source"] = promos[0].get("source_category", "")
             src_refs["promo_source"] = _src_id_for("ref_dex", promos[0]) \
                 .replace("ref_pokedex_species", "ref_promo_provenance")
+
+        # ref_promo_class enrichment — when the per-card ref_promo
+        # provenance lookup above missed but the spine's set_id matches
+        # a known promo bucket. See _enrich_promo_class() above for
+        # full rationale.
+        _enrich_promo_class(out, src_refs, set_id, promo_classes)
 
         # Image candidates: walk every source's image_url. Critically,
         # local_path_for() receives the ORIGINAL source-dict set_id (from
