@@ -296,3 +296,37 @@ The ollama-data volume is intentionally NOT migrated: keeping it on
 SD means the assistant container still comes up and answers "I'm
 offline" if the USB drive is unplugged, instead of failing to start.
 
+## Live OCR pipeline (tablet snapshot → text)
+
+When the operator points the tablet camera at a card a customer is
+buying or selling, three small modules in `pi-setup/workers/` run
+in series to turn that snapshot into recognised text:
+
+| Module                      | Role                                       |
+| --------------------------- | ------------------------------------------ |
+| `image_preprocess.py`       | Crops to the card, rotates landscape →     |
+|                             | portrait, normalises contrast (CLAHE on    |
+|                             | LAB L-channel). Lossless PNG output.       |
+| `live_ocr.py`               | Synchronous PaddleOCR pass with KR-first   |
+|                             | auto-detect and early-exit on confident    |
+|                             | matches. Reuses the same per-language      |
+|                             | model cache as the batch `ocr_indexer`.    |
+| `ocr_pipeline.py`           | One-call wrapper: preprocess → live_ocr,   |
+|                             | with automatic fallback to the original    |
+|                             | image if preprocessing fails (e.g. cv2     |
+|                             | not installed).                            |
+
+The tablet API hands off to `OcrPipeline.ocr_snapshot(bytes)` and
+gets back a single dict with `full_text`, `lang_hint`, per-line
+confidences, the crop bbox in original-image coordinates, and a
+`source` field (`"preprocessed"` or `"original"`) so the UI knows
+whether a retry without preprocessing might help.
+
+All three modules lazy-import their heavy dependencies (cv2 +
+numpy for the preprocessor, paddleocr for the OCR engine), so a
+fresh Pi without those packages still imports them cleanly and
+returns `{"ok": False, "error": "NO_LIB"}` instead of crashing the
+worker process. Tests inject fake `cv2_module` / `np_module` /
+`paddle_factory` arguments so the suite runs in milliseconds
+without the ~250 MB install.
+
