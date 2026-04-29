@@ -239,6 +239,61 @@ CREATE INDEX IF NOT EXISTS idx_ref_set_alias_chs  ON ref_set_alias (UPPER(code_c
 CREATE INDEX IF NOT EXISTS idx_ref_set_alias_era  ON ref_set_alias (era);
 """
 
+DDL_CARD_IMAGE_EMBEDDING = """
+CREATE TABLE IF NOT EXISTS card_image_embedding (
+    set_id        TEXT NOT NULL,
+    card_number   TEXT NOT NULL,
+    -- Which image was embedded — recorded for debug & re-embed detection
+    -- when the image file changes (e.g. mirror downloaded a sharper copy).
+    image_path    TEXT NOT NULL DEFAULT '',
+    image_src     TEXT NOT NULL DEFAULT '',     -- 'tcgo|en' style src tag from image_url_alt
+    -- Model fingerprint so multiple embedding generations can co-exist
+    -- (e.g. ViT-B/32 today, ViT-L/14 next quarter) and the recognizer
+    -- can pick the model it was built against.
+    model_id      TEXT NOT NULL,                -- 'clip-vit-b32-onnx-1.0'
+    -- Embedding stored as REAL[] (native PG array). No pgvector dep —
+    -- the recognizer service fetches rows for its model_id and builds
+    -- an in-memory index at startup; cosine search runs in Python.
+    -- We can switch to pgvector later without changing the schema's
+    -- value semantics, just by adding a generated `embedding_v vector`
+    -- column populated by trigger.
+    embedding     REAL[] NOT NULL DEFAULT '{}'::REAL[],
+    embedding_dim INTEGER NOT NULL DEFAULT 0,
+    norm_before   REAL NOT NULL DEFAULT 0,      -- L2 norm before normalisation (debug)
+    failure       TEXT NOT NULL DEFAULT '',     -- '' = OK; else 'NO_MODEL'|'NO_LIB'|'BAD_IMAGE'|'ORT_ERROR:<...>'
+    created_at    BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, card_number, model_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cie_model    ON card_image_embedding (model_id);
+-- Partial index makes it cheap to find every card that needs a re-try
+-- after a model install / data rescue without scanning the table.
+CREATE INDEX IF NOT EXISTS idx_cie_failure  ON card_image_embedding (failure)
+    WHERE failure <> '';
+"""
+
+DDL_CARD_OCR = """
+CREATE TABLE IF NOT EXISTS card_ocr (
+    set_id        TEXT NOT NULL,
+    card_number   TEXT NOT NULL,
+    -- Language hint passed to the OCR engine ('japan', 'korean', 'ch',
+    -- 'en'); recorded so multi-language cards can co-exist (a foil JP
+    -- card with English Pokémon-name overlay benefits from BOTH passes).
+    lang_hint     TEXT NOT NULL,
+    model_id      TEXT NOT NULL,                -- 'paddleocr-ppocrv4-1.0'
+    image_path    TEXT NOT NULL DEFAULT '',
+    full_text     TEXT NOT NULL DEFAULT '',     -- joined text for trigram fuzzy search
+    lines         JSONB NOT NULL DEFAULT '[]'::jsonb,  -- [{text, conf, bbox:[x1,y1,x2,y2,x3,y3,x4,y4]}, ...]
+    line_count    INTEGER NOT NULL DEFAULT 0,
+    avg_conf      REAL NOT NULL DEFAULT 0,
+    failure       TEXT NOT NULL DEFAULT '',
+    created_at    BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, card_number, lang_hint, model_id)
+);
+CREATE INDEX IF NOT EXISTS idx_card_ocr_lang     ON card_ocr (lang_hint);
+CREATE INDEX IF NOT EXISTS idx_card_ocr_failure  ON card_ocr (failure)
+    WHERE failure <> '';
+"""
+
 DDL_CARD_LANGUAGE_EXTRA = """
 CREATE TABLE IF NOT EXISTS card_language_extra (
     set_id          TEXT NOT NULL,
@@ -485,6 +540,15 @@ CREATE INDEX IF NOT EXISTS idx_cards_master_name_chs_trgm
     ON cards_master USING gin (name_chs gin_trgm_ops);
 """
 
+# OCR full_text needs trigram for fuzzy "I scanned a card and the
+# name reads almost-but-not-quite right" lookups. Same best-effort
+# pattern as cards_master — pg_trgm should be present at server
+# startup but we don't want OCR-table creation to fail without it.
+DDL_CARD_OCR_TRGM = """
+CREATE INDEX IF NOT EXISTS idx_card_ocr_full_text_trgm
+    ON card_ocr USING gin (full_text gin_trgm_ops);
+"""
+
 
 # ─── Continuous Discovery v1 (D1) ─────────────────────────────────────────
 # Queue of sets/cards/operator-reports awaiting auto-import; written by the
@@ -563,6 +627,8 @@ _ALL_DDL = [
     ("bg_task_queue",           DDL_BG_TASK_QUEUE),
     ("bg_worker_run",           DDL_BG_WORKER_RUN),
     ("image_health_check",      DDL_IMAGE_HEALTH_CHECK),
+    ("card_image_embedding",    DDL_CARD_IMAGE_EMBEDDING),
+    ("card_ocr",                DDL_CARD_OCR),
     ("card_language_extra",     DDL_CARD_LANGUAGE_EXTRA),
     ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
@@ -588,6 +654,7 @@ def init_unified_schema(db_conn) -> dict:
     trgm_ok = False
     try:
         cur.execute(DDL_CARDS_MASTER_TRGM)
+        cur.execute(DDL_CARD_OCR_TRGM)
         db_conn.commit()
         trgm_ok = True
     except Exception as e:
