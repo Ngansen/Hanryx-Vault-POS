@@ -116,6 +116,23 @@ jobs:
       - name: Verify VCS pins in requirements-vcs.txt are full 40-char SHAs
         run: python3 pi-setup/scripts/check-vcs-pins-are-full-shas.py
 
+      # Unit tests pin the SHA checker's classification contract: the
+      # FULL_SHA_RE regex (full lowercase 40-char hex passes; short SHA,
+      # uppercase, mixed case, branch name, tag, slashed branch, empty
+      # string, and 41-char strings all fail), the GIT_PIN_RE extractor
+      # (stops at `#` egg fragments and whitespace, ignores plain https
+      # links, finds every pin on its own line), and the comment-skip
+      # rule in main() (a full-line comment containing `@main` example
+      # text must NOT be misread as a real bad pin). Without these, a
+      # sloppy edit to either regex could silently start letting branch
+      # names back through and the only signal would be a broken Pi
+      # rebuild weeks later. Uses the stdlib unittest runner so the job
+      # needs no extra pip install; only the SHA-pin test file is
+      # selected so an unrelated test failure in the shared tests/
+      # directory doesn't gate this job.
+      - name: Run unit tests for the VCS-pin SHA checker
+        run: python3 -m unittest pi-setup.scripts.tests.test_check_vcs_pins_are_full_shas -v
+
   image-pins-resolve:
     name: Verify Docker Hub image pins still resolve
     runs-on: ubuntu-latest
