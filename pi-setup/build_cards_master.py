@@ -524,6 +524,35 @@ def _first_int(v):
     return _safe_int_or_none(v)
 
 
+def _read_jp_cards_json(cur) -> dict:
+    """Returns {(edition, numero): [list of records]} from src_jp_cards_json.
+
+    Multiple records per key are common (different scrapes of the same
+    physical card across reprints with the same JP set + dex#). The
+    backfill takes the first match — this source is name-only fallback,
+    not a primary join, so collisions are tolerable.
+
+    Returns {} if the table doesn't exist yet (importer hasn't run) so
+    the consolidator stays runnable on a fresh DB.
+    """
+    out: dict[tuple, list[dict]] = {}
+    try:
+        cur.execute("""
+            SELECT card_id, name, edition, description, element, health, numero
+              FROM src_jp_cards_json
+             WHERE name <> '' AND edition <> '' AND numero IS NOT NULL
+        """)
+    except psycopg2.errors.UndefinedTable:
+        return out
+    except psycopg2.Error as e:
+        log.warning("[consolidator] _read_jp_cards_json failed: %s", e)
+        return out
+    for row in cur.fetchall():
+        key = (row["edition"], row["numero"])
+        out.setdefault(key, []).append(dict(row))
+    return out
+
+
 def _src_id_for(source_id: str, src_row: dict) -> str:
     """Stringify the source row's PK for source_refs auditability."""
     if source_id == "tcgdex":
@@ -575,6 +604,7 @@ def build_cards_master(db_conn) -> dict:
     jp_ex = _read_jp_ex(cur)
     ref_dex = _read_ref_dex(cur)
     ref_promo = _read_ref_promo(cur)
+    jp_cards_json = _read_jp_cards_json(cur)
 
     for name, d in sources.items():
         log.info("[consolidator] %s: %d rows", name, len(d))
@@ -630,6 +660,27 @@ def build_cards_master(db_conn) -> dict:
                     if v:
                         out[field] = v
                         src_refs[field] = _src_id_for("ref_dex", dex_row)
+
+        # JP cards.json backfill — fills name_jp / hp / energy_type when
+        # every higher-priority source missed this card. Joins by
+        # (set_id == JP edition, pokedex_id == numero); silently no-ops
+        # when the spine's set_id came from an EN source whose code
+        # doesn't match the JP edition. See unified/priority.py docstring
+        # for why this lives outside PRIORITY (no card_number to join).
+        if dex_id and jp_cards_json:
+            jp_recs = jp_cards_json.get((set_id, dex_id), [])
+            if jp_recs:
+                rec = jp_recs[0]
+                ref = f"src_jp_cards_json:{rec.get('card_id', '?')}"
+                if not out.get("name_jp") and rec.get("name"):
+                    out["name_jp"] = rec["name"]
+                    src_refs["name_jp"] = ref
+                if out.get("hp") in (None, 0) and rec.get("health"):
+                    out["hp"] = rec["health"]
+                    src_refs["hp"] = ref
+                if not out.get("energy_type") and rec.get("element"):
+                    out["energy_type"] = rec["element"]
+                    src_refs["energy_type"] = ref
 
         # Aggregate fields (collect every non-empty value)
         ex_codes: list[dict] = []

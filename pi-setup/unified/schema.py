@@ -137,6 +137,26 @@ CREATE INDEX IF NOT EXISTS idx_src_jp_pcc_namejp  ON src_jp_pokemoncardcom (name
 CREATE INDEX IF NOT EXISTS idx_src_jp_pcc_setnum  ON src_jp_pokemoncardcom (set_code, card_number);
 """
 
+DDL_SRC_JP_CARDS_JSON = """
+CREATE TABLE IF NOT EXISTS src_jp_cards_json (
+    card_id     TEXT PRIMARY KEY,                  -- pokemon-card-jp-database internal numeric id
+    name        TEXT NOT NULL DEFAULT '',          -- JP card name (kana/kanji)
+    edition     TEXT NOT NULL DEFAULT '',          -- JP set code (e.g. SV2a, M1L, SVG)
+    dimension   TEXT NOT NULL DEFAULT '',          -- height/weight blurb (Pokémon only)
+    description TEXT NOT NULL DEFAULT '',          -- flavour text (JP)
+    element     TEXT NOT NULL DEFAULT '',          -- energy_type
+    health      INTEGER,                           -- HP (Pokémon only)
+    numero      INTEGER,                           -- national pokedex number
+    attacks     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    raw         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    imported_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_src_jp_cards_json_edition_numero
+    ON src_jp_cards_json (edition, numero);
+CREATE INDEX IF NOT EXISTS idx_src_jp_cards_json_name
+    ON src_jp_cards_json (name);
+"""
+
 DDL_SRC_POCKET_LIMITLESS = """
 CREATE TABLE IF NOT EXISTS src_pocket_limitless (
     src_id        BIGSERIAL PRIMARY KEY,
@@ -378,6 +398,7 @@ _ALL_DDL = [
     ("src_jp_ex_codes",         DDL_SRC_JP_EX_CODES),
     ("src_jp_xlsx",             DDL_SRC_JP_XLSX),
     ("src_jp_pokemoncardcom",   DDL_SRC_JP_PCC),
+    ("src_jp_cards_json",       DDL_SRC_JP_CARDS_JSON),
     ("src_pocket_limitless",    DDL_SRC_POCKET_LIMITLESS),
     ("src_tcgdex_multi",        DDL_SRC_TCGDEX_MULTI),
     ("ref_set_mapping",         DDL_REF_SET_MAPPING),
