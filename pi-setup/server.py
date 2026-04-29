@@ -9601,10 +9601,14 @@ def _format_receipt(
         out += _PR_LF
         out += _render_logo_raster(emblem_b64, paper_w, max_w_frac=0.42)
 
-    # Optional header logo from the tablet (rare — usually we use the emblem).
-    logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
-    if logo_b64:
-        out += _render_logo_raster(logo_b64, paper_w)
+    # Optional header logo from the tablet — suppressed whenever the Pi has
+    # its own dragon emblem so we don't double-stack two crests on the
+    # receipt (the tablet's stored logo is often a big solid-black square
+    # with the wordmark and just wastes paper next to the emblem).
+    if not emblem_b64:
+        logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
+        if logo_b64:
+            out += _render_logo_raster(logo_b64, paper_w)
     out += _PR_LF
 
     # Store name (double height) + tagline
