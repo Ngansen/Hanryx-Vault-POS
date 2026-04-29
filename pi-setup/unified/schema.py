@@ -638,6 +638,35 @@ CREATE INDEX IF NOT EXISTS idx_discovery_log_attempted_at
 """
 
 
+# ─── KR set completeness audit ────────────────────────────────────────────
+#
+# The kr_set_audit worker walks the cloned ptcg-kr-db repo and compares
+# its canonical (set_id, card_number) inventory against the cards_master
+# rows that landed for those same set_ids. Per-set diff is materialised
+# here so the operator can see, at a glance, which sets are short and
+# which numbers are missing — the difference between "Iono SAR is gone"
+# and "32 numbers are gone" matters when triaging a bad import run.
+#
+# missing_numbers[] = canonical - cards_master  (we have less than upstream)
+# extra_numbers[]   = cards_master - canonical  (set_id alias drift)
+#
+# extra_numbers being non-empty is interesting: it usually means a
+# ref_set_alias rule sent the wrong source set into this set_id. We don't
+# auto-correct — just expose it.
+DDL_KR_SET_GAP = """
+CREATE TABLE IF NOT EXISTS kr_set_gap (
+    set_id           TEXT PRIMARY KEY,
+    expected_count   INTEGER NOT NULL DEFAULT 0,
+    actual_count     INTEGER NOT NULL DEFAULT 0,
+    missing_numbers  JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    extra_numbers    JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
+    ON kr_set_gap (audited_at DESC);
+"""
+
+
 # ─── Public entry points ──────────────────────────────────────────────────
 
 _ALL_DDL = [
@@ -666,6 +695,7 @@ _ALL_DDL = [
     ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
+    ("kr_set_gap",              DDL_KR_SET_GAP),
 ]
 
 
