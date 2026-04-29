@@ -1197,12 +1197,19 @@ def _enrich_clip_matches(matches: list, db) -> list:
     for m in matches:
         row = db.execute(
             "SELECT qr_code, name, price, stock, variant, condition, category, "
-            "set_code, image_url FROM inventory WHERE qr_code=%s",
+            "set_code, card_number, image_url FROM inventory WHERE qr_code=%s",
             (m["qr_code"],)
         ).fetchone()
         if not row:
             continue
         card  = dict(row)
+        # Route image_url through /card/image so the kiosk and scanner UIs
+        # get a local USB file when available and a 302-redirect to the
+        # network URL otherwise. Keep the original network URL on a side
+        # field so consumers that need the raw remote URL still have it.
+        if card.get("set_code") and card.get("card_number"):
+            card["image_url_remote"] = card.get("image_url") or ""
+            card["image_url"] = _card_image_src(card)
         v     = card.get("variant") or "normal"
         price = _apply_variant_multiplier(float(card.get("price") or 0), v)
         out.append({"card": card, "price": price, "confidence": m["confidence"]})
@@ -6286,6 +6293,23 @@ def card_lookup_post():
     return jsonify({"results": results, "count": len(results)})
 
 
+def _card_image_src(card: dict, lang: str = "") -> str:
+    """
+    Pick the best `<img src>` for a card: when we have set_code + card_number,
+    route through /card/image so the resolver can serve a local USB file
+    (instant, works offline) and fall back to a 302-redirect to the network
+    URL only when no mirror exists. Falls back to the raw image URL only if
+    we lack the keys to call the resolver.
+    """
+    set_code = (card.get("setCode") or card.get("set_code")
+                or card.get("set_id") or "").strip()
+    card_no  = (card.get("cardNumber") or card.get("card_number") or "").strip()
+    if set_code and card_no:
+        suffix = f"&lang={lang}" if lang else ""
+        return f"/card/image?set_id={set_code}&card_number={card_no}{suffix}"
+    return (card.get("imageUrl") or card.get("image_url") or "").strip()
+
+
 def _kiosk_push_lookup(card: dict):
     """Push a card lookup result to the kiosk display for the customer to see."""
     # ── Live price-comparison across Asian + EU sources (best effort) ───────
@@ -6319,7 +6343,7 @@ def _kiosk_push_lookup(card: dict):
         "mode":       "lookup",
         "card_name":  card.get("name", ""),
         "card_price": float(card.get("price") or 0),
-        "card_image": card.get("imageUrl") or card.get("image_url") or "",
+        "card_image": _card_image_src(card),
         "card_rarity": card.get("rarity") or "",
         "card_set":   card.get("setCode") or card.get("set_code") or "",
         "card_number": card.get("cardNumber") or card.get("card_number") or "",
@@ -19989,12 +20013,15 @@ def scan_intelligent_select():
         return jsonify({"error": "qr_code required"}), 400
     db  = get_db()
     row = db.execute(
-        "SELECT qr_code, name, price, stock, variant, condition, category, set_code, image_url "
+        "SELECT qr_code, name, price, stock, variant, condition, category, set_code, card_number, image_url "
         "FROM inventory WHERE qr_code=%s", (qr_code,)
     ).fetchone()
     if not row:
         return jsonify({"error": "Card not found"}), 404
     card  = dict(row)
+    if card.get("set_code") and card.get("card_number"):
+        card["image_url_remote"] = card.get("image_url") or ""
+        card["image_url"] = _card_image_src(card)
     v     = variant or card.get("variant") or "normal"
     price = _apply_variant_multiplier(float(card.get("price") or 0), v)
     return jsonify({"card": card, "price": price, "variant": v,
