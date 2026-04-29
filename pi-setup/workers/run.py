@@ -53,6 +53,8 @@ import psycopg2  # noqa: E402
 
 from workers.base import Worker  # noqa: E402
 from workers.image_health import ImageHealthWorker  # noqa: E402
+from workers.language_helper import LanguageEnrichWorker  # noqa: E402
+from workers.data_analyst import DataAnalystWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -61,7 +63,9 @@ log = logging.getLogger("workers.run")
 # Registry. To add a new helper: import its class and add an entry here.
 # The string key is what the operator types on the CLI.
 WORKERS: dict[str, type[Worker]] = {
-    "image_health": ImageHealthWorker,
+    "image_health":  ImageHealthWorker,
+    "lang_enrich":   LanguageEnrichWorker,
+    "data_analysis": DataAnalystWorker,
     # 'image_mirror':  ImageMirrorWorker,    # Slice 12
     # 'clip_embed':    ClipEmbedderWorker,   # Slice 10
     # 'ocr_index':     OcrIndexerWorker,     # Slice 11
@@ -76,14 +80,18 @@ def build_worker(name: str, conn, args) -> Worker:
     if args.batch_size is not None:
         common["batch_size"] = args.batch_size
 
+    # All three concrete workers share the same `recheck_after_days`
+    # semantic — the only differences are their defaults, which the
+    # classes themselves own. Pass-through when the operator overrides.
+    recheck_s = (args.recheck_after_days * 86400
+                 if args.recheck_after_days is not None else None)
+
     if name == "image_health":
-        return ImageHealthWorker(
-            conn,
-            recheck_after_s=(args.recheck_after_days * 86400
-                             if args.recheck_after_days is not None
-                             else None),
-            **common,
-        )
+        return ImageHealthWorker(conn, recheck_after_s=recheck_s, **common)
+    if name == "lang_enrich":
+        return LanguageEnrichWorker(conn, recheck_after_s=recheck_s, **common)
+    if name == "data_analysis":
+        return DataAnalystWorker(conn, recheck_after_s=recheck_s, **common)
 
     return cls(conn, **common)
 

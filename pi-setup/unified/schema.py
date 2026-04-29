@@ -239,6 +239,50 @@ CREATE INDEX IF NOT EXISTS idx_ref_set_alias_chs  ON ref_set_alias (UPPER(code_c
 CREATE INDEX IF NOT EXISTS idx_ref_set_alias_era  ON ref_set_alias (era);
 """
 
+DDL_CARD_LANGUAGE_EXTRA = """
+CREATE TABLE IF NOT EXISTS card_language_extra (
+    set_id          TEXT NOT NULL,
+    card_number     TEXT NOT NULL,
+    -- Romanisations (ASCII representation of CJK pronunciations)
+    romaji_jp       TEXT NOT NULL DEFAULT '',     -- pykakasi (Japanese → Latin)
+    romaji_jp_status TEXT NOT NULL DEFAULT '',    -- 'OK' | 'EMPTY_INPUT' | 'JP_LIB_MISSING' | 'ERROR:<...>'
+    pinyin_chs      TEXT NOT NULL DEFAULT '',     -- pypinyin (Simplified Chinese → Pinyin with tone numbers)
+    pinyin_chs_status TEXT NOT NULL DEFAULT '',
+    hangul_roman    TEXT NOT NULL DEFAULT '',     -- Revised Romanization (Korean → Latin) — built-in pure Python
+    hangul_roman_status TEXT NOT NULL DEFAULT '',
+    -- Cross-language backfills derived during this run, recorded so
+    -- admin can see which name came from where without diffing.
+    backfilled_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- Library-version stamps so re-running with newer libs is detectable
+    library_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enriched_at     BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, card_number)
+);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_romaji  ON card_language_extra (romaji_jp);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_pinyin  ON card_language_extra (pinyin_chs);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_hangul  ON card_language_extra (hangul_roman);
+"""
+
+DDL_DATA_ANALYSIS_REPORT = """
+CREATE TABLE IF NOT EXISTS data_analysis_report (
+    report_id      BIGSERIAL PRIMARY KEY,
+    report_kind    TEXT NOT NULL,         -- 'completeness' | 'language_coverage' | 'image_coverage'
+                                          -- | 'top_gap_sets' | 'rarity_distribution' | 'duplicates'
+    payload        JSONB NOT NULL,
+    rows_examined  BIGINT NOT NULL DEFAULT 0,
+    notes          TEXT NOT NULL DEFAULT '',
+    generated_at   BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_data_analysis_kind  ON data_analysis_report (report_kind, generated_at DESC);
+-- Convenience view: latest snapshot of each report kind, what the
+-- admin dashboard would render. CREATE OR REPLACE makes it cheap to
+-- evolve the projection in future slices.
+CREATE OR REPLACE VIEW data_analysis_latest AS
+SELECT DISTINCT ON (report_kind) *
+  FROM data_analysis_report
+ ORDER BY report_kind, generated_at DESC;
+"""
+
 DDL_BG_TASK_QUEUE = """
 CREATE TABLE IF NOT EXISTS bg_task_queue (
     task_id        BIGSERIAL PRIMARY KEY,
@@ -519,6 +563,8 @@ _ALL_DDL = [
     ("bg_task_queue",           DDL_BG_TASK_QUEUE),
     ("bg_worker_run",           DDL_BG_WORKER_RUN),
     ("image_health_check",      DDL_IMAGE_HEALTH_CHECK),
+    ("card_language_extra",     DDL_CARD_LANGUAGE_EXTRA),
+    ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
 ]
 
