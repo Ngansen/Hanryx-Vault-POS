@@ -9318,6 +9318,32 @@ def _open_printer():
     return None, "cups", conf
 
 
+def _open_printer_with_retry(max_attempts: int = 5, interval_s: float = 0.4):
+    """Try _open_printer up to `max_attempts` times with `interval_s` between.
+
+    Survives a USB cable that's been briefly unplugged or is mid-replug
+    when a print fires (operator nudged it, replugged it, immediately
+    tried to reprint). Total wait at defaults: ~1.6 s before falling
+    back to CUPS — short enough that an actually-unplugged printer still
+    fails fast, long enough that udev has time to recreate /dev/usb/lp0
+    after a hot-replug.
+    """
+    fh, path, conf = _open_printer()
+    if fh is not None:
+        return fh, path, conf
+    for attempt in range(1, max_attempts):
+        time.sleep(interval_s)
+        fh, path, conf = _open_printer()
+        if fh is not None:
+            try:
+                log.info("[print] device %s recovered after %d retr%s",
+                         path, attempt, "y" if attempt == 1 else "ies")
+            except Exception:
+                pass
+            return fh, path, conf
+    return fh, path, conf  # likely (None, "cups", conf)
+
+
 # ── Logo + QR raster helpers ────────────────────────────────────────────────
 # The tablet (MainViewModel.kt) sends an optional store logo and an optional
 # customer-facing QR code inside the /print/receipt JSON body:
@@ -9760,8 +9786,12 @@ def _do_print(sale: dict):
     you already know your own return policy. Both copies use the same
     enriched item list (DB lookup once) so they're identical apart from the
     COPY label and the disclosure block.
+
+    Uses _open_printer_with_retry so a brief USB hot-replug (operator nudged
+    the cable) doesn't fail the print — we'll wait up to ~1.6 s for the
+    device node to come back before falling through to CUPS.
     """
-    fh, path, conf = _open_printer()
+    fh, path, conf = _open_printer_with_retry()
 
     # Merge rich receipt settings (store name, instagram, footer, etc.)
     rs = _load_receipt_settings()
@@ -9822,10 +9852,31 @@ def _do_print(sale: dict):
             log.warning("[print] network printer %s:%s unreachable — falling back to local devices", net_host, net_port)
 
         if fh is not None:
-            fh.write(receipt_bytes)
-            fh.flush()
-            fh.close()
-            log.info("[print] Receipt sent to %s", path)
+            try:
+                fh.write(receipt_bytes)
+                fh.flush()
+                fh.close()
+                log.info("[print] Receipt sent to %s", path)
+            except OSError as werr:
+                # Cable disconnected mid-write or device went away. Close, wait
+                # for udev to recreate the node, reopen, and try one more time.
+                log.warning("[print] write to %s failed (%s) — reopening once", path, werr)
+                try: fh.close()
+                except Exception: pass
+                time.sleep(0.5)
+                fh2, path2, _ = _open_printer_with_retry()
+                if fh2 is not None and path2 != "cups":
+                    try:
+                        fh2.write(receipt_bytes)
+                        fh2.flush()
+                        fh2.close()
+                        log.info("[print] Receipt sent to %s on retry", path2)
+                    except OSError as werr2:
+                        log.error("[print] retry write to %s also failed: %s", path2, werr2)
+                        try: fh2.close()
+                        except Exception: pass
+                else:
+                    log.error("[print] no printer available after retry — receipt lost")
 
         elif path == "cups":
             # Write temp file and submit via lp
