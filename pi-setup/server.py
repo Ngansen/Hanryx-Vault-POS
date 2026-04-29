@@ -9278,7 +9278,7 @@ def _load_printer_conf() -> dict:
         "printer_network_host": os.environ.get("PRINTER_NETWORK_HOST"),
         "printer_network_port": int(os.environ.get("PRINTER_NETWORK_PORT", "9100")),
         "receipt_header":   "HanryxVault",
-        "receipt_subheader": "Korean Pokémon TCG Specialists",
+        "receipt_subheader": "Korean Pokemon TCG Specialists",
         "receipt_footer":   "hanryxvault.cards",
         # Paper width in millimetres — "58" (most compact thermal printers,
         # 384 px / 32 chars wide) or "80" (MUNBYN P047 etc., 576 px / 42 chars).
@@ -9545,9 +9545,15 @@ def _format_receipt(
       • Branded thank-you line
     """
     header     = (conf.get("receipt_header")     or "HanryxVault").encode()
-    subheader  = (conf.get("receipt_subheader")  or "Korean Pokémon TCG Specialists").encode()
-    footer     = (conf.get("receipt_footer")     or "hanryxvault.cards").encode()
+    subheader  = (conf.get("receipt_subheader")  or "Korean Pokemon TCG Specialists").encode()
     disclosure = (conf.get("receipt_disclosure") or "").strip()
+    if not disclosure:
+        disclosure = (
+            "All sales are final. No refunds, returns, or exchanges.\n"
+            "Cards are inspected and graded at point of sale; condition\n"
+            "is accepted as-is once the receipt is issued.\n"
+            "Authenticity guaranteed on every card we sell."
+        )
 
     # ── Paper-width-aware layout ─────────────────────────────────────────────
     # 58 mm = 32 chars / 384 px wide.  80 mm = 42 chars / 576 px wide.
@@ -9590,7 +9596,12 @@ def _format_receipt(
     out = bytearray()
     out += _PR_INIT
 
-    # Header logo (sent by tablet as base64 PNG/JPEG).
+    # Dragon emblem at the very top (above the store name).
+    if emblem_b64:
+        out += _PR_LF
+        out += _render_logo_raster(emblem_b64, paper_w, max_w_frac=0.42)
+
+    # Optional header logo from the tablet (rare — usually we use the emblem).
     logo_b64 = sale.get("logoBase64") or sale.get("logo_base64")
     if logo_b64:
         out += _render_logo_raster(logo_b64, paper_w)
@@ -9681,25 +9692,15 @@ def _format_receipt(
 
     out += div_thick
 
-    # ── Footer (centered) ────────────────────────────────────────────────────
-    out += _PR_CENTER
-    out += f"{footer.decode()}\n".encode()
-    out += _PR_LEFT
-
     # ── Disclosure (optional, skipped on merchant copy) ──────────────────────
     if include_disclosure and disclosure:
         import textwrap
-        out += _PR_LF
         out += _PR_CENTER + _PR_BOLD_ON + b"DISCLOSURE\n" + _PR_BOLD_OFF + _PR_LEFT
         for raw_para in disclosure.split("\n"):
             wrapped = textwrap.wrap(raw_para, width=char_w) or [""]
             for line in wrapped:
                 out += (line + "\n").encode()
-
-    # ── Dragon emblem (small seal above QR) ──────────────────────────────────
-    if emblem_b64:
         out += _PR_LF
-        out += _render_logo_raster(emblem_b64, paper_w, max_w_frac=0.28)
 
     # ── QR code (smaller — 40% of paper width) ───────────────────────────────
     qr_enabled = sale.get("qrEnabled")
@@ -9707,6 +9708,7 @@ def _format_receipt(
         qr_enabled = sale.get("qr_enabled", False)
     qr_data = (sale.get("qrData") or sale.get("qr_data") or "").strip()
     if qr_enabled and qr_data:
+        out += _PR_CENTER + _PR_BOLD_ON + b"Check out the vault\n" + _PR_BOLD_OFF + _PR_LEFT
         out += _render_qr_raster(qr_data, paper_w, max_w_frac=0.40)
 
     # ── Thank-you (re-assert center after raster blocks left-align) ──────────
@@ -9760,7 +9762,7 @@ def _do_print(sale: dict):
     # Merge rich receipt settings (store name, instagram, footer, etc.)
     rs = _load_receipt_settings()
     conf["receipt_header"]     = rs.get("store_name", conf.get("receipt_header", "HanryxVault"))
-    conf["receipt_subheader"]  = rs.get("tagline",    conf.get("receipt_subheader", "Korean Pokémon TCG Specialists"))
+    conf["receipt_subheader"]  = rs.get("tagline",    conf.get("receipt_subheader", "Korean Pokemon TCG Specialists"))
     footer_parts = [p for p in [rs.get("website"), rs.get("instagram"), rs.get("phone")] if p]
     conf["receipt_footer"]     = "  |  ".join(footer_parts) if footer_parts else rs.get("footer_msg", "hanryxvault.cards")
     conf["paper_width"]        = rs.get("paper_width", "80")
@@ -20232,7 +20234,7 @@ _RECEIPT_SETTINGS_KEY = "receipt_settings_v2"
 def _load_receipt_settings() -> dict:
     defaults = {
         "store_name":               "HanryxVault",
-        "tagline":                  "Korean Pokémon TCG Specialists",
+        "tagline":                  "Korean Pokemon TCG Specialists",
         "website":                  "hanryxvault.cards",
         "instagram":                "",
         "phone":                    "",
@@ -20296,7 +20298,7 @@ def admin_receipt_page():
     </div>
     <div>
       <label>Tagline</label>
-      <input name="tagline" value="{s['tagline']}" placeholder="Korean Pokémon TCG Specialists">
+      <input name="tagline" value="{s['tagline']}" placeholder="Korean Pokemon TCG Specialists">
     </div>
     <div>
       <label>Website</label>
@@ -20376,7 +20378,7 @@ def admin_receipt_save():
         copies = "1"
     settings = {
         "store_name":               request.form.get("store_name",  "HanryxVault").strip(),
-        "tagline":                  request.form.get("tagline",     "Korean Pokémon TCG Specialists").strip(),
+        "tagline":                  request.form.get("tagline",     "Korean Pokemon TCG Specialists").strip(),
         "website":                  request.form.get("website",     "").strip(),
         "instagram":                request.form.get("instagram",   "").strip(),
         "phone":                    request.form.get("phone",       "").strip(),
@@ -21837,7 +21839,7 @@ _KIOSK_SETTINGS_PATH = "/data/kiosk_settings.json"
 _KIOSK_DEFAULT: dict = {
     "enabled":           True,
     "store_name":        "HanryxVault",
-    "tagline":           "Korean Pokémon TCG Specialists",
+    "tagline":           "Korean Pokemon TCG Specialists",
     "idle_message":      "Welcome to the Vault",
     "show_social":       True,
     "instagram":         "@hanryxvault",
@@ -24877,7 +24879,7 @@ def admin_kiosk_save():
     settings = {
         "enabled":          bool(request.form.get("enabled")),
         "store_name":       request.form.get("store_name",   "HanryxVault").strip(),
-        "tagline":          request.form.get("tagline",      "Korean Pokémon TCG Specialists").strip(),
+        "tagline":          request.form.get("tagline",      "Korean Pokemon TCG Specialists").strip(),
         "idle_message":     request.form.get("idle_message", "Welcome!").strip(),
         "show_social":      bool(request.form.get("show_social")),
         "instagram":        request.form.get("instagram",    "").strip(),
