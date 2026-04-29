@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""
+workers/run.py — CLI launcher for HanryxVault background helpers.
+
+Usage
+-----
+  # Drain the queue once (suitable for cron):
+  python3 -m workers.run image_health --once
+
+  # Seed the queue from current cards_master state, then drain:
+  python3 -m workers.run image_health --seed --once
+
+  # Stay resident — process any work as it appears:
+  python3 -m workers.run image_health --loop
+
+  # Cap loop runs (testing): exit after N idle passes
+  python3 -m workers.run image_health --loop --max-idle 3
+
+  # Override batch size:
+  python3 -m workers.run image_health --once --batch-size 200
+
+  # List registered workers:
+  python3 -m workers.run --list
+
+Environment:
+  DATABASE_URL — required for any actual work
+
+Each helper module registers itself in WORKERS below. New helpers
+can be added in three lines:
+  1. import the class
+  2. add it to WORKERS
+  3. add an arg-passing block in build_worker() if it takes custom kwargs
+
+Designed so cron entries like
+    */15 * * * *  /usr/bin/docker compose exec -T server python3 \\
+                  -m workers.run image_health --seed --once
+are the entire deployment story.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+sys.path.insert(0, str(REPO))
+
+import psycopg2  # noqa: E402
+
+from workers.base import Worker  # noqa: E402
+from workers.image_health import ImageHealthWorker  # noqa: E402
+from workers.language_helper import LanguageEnrichWorker  # noqa: E402
+from workers.data_analyst import DataAnalystWorker  # noqa: E402
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("workers.run")
+
+# Registry. To add a new helper: import its class and add an entry here.
+# The string key is what the operator types on the CLI.
+WORKERS: dict[str, type[Worker]] = {
+    "image_health":  ImageHealthWorker,
+    "lang_enrich":   LanguageEnrichWorker,
+    "data_analysis": DataAnalystWorker,
+    # 'image_mirror':  ImageMirrorWorker,    # Slice 12
+    # 'clip_embed':    ClipEmbedderWorker,   # Slice 10
+    # 'ocr_index':     OcrIndexerWorker,     # Slice 11
+}
+
+
+def build_worker(name: str, conn, args) -> Worker:
+    """Instantiate the named worker. Each helper that takes custom
+    kwargs (recheck_after_days, etc.) gets its own block here."""
+    cls = WORKERS[name]
+    common = {}
+    if args.batch_size is not None:
+        common["batch_size"] = args.batch_size
+
+    # All three concrete workers share the same `recheck_after_days`
+    # semantic — the only differences are their defaults, which the
+    # classes themselves own. Pass-through when the operator overrides.
+    recheck_s = (args.recheck_after_days * 86400
+                 if args.recheck_after_days is not None else None)
+
+    if name == "image_health":
+        return ImageHealthWorker(conn, recheck_after_s=recheck_s, **common)
+    if name == "lang_enrich":
+        return LanguageEnrichWorker(conn, recheck_after_s=recheck_s, **common)
+    if name == "data_analysis":
+        return DataAnalystWorker(conn, recheck_after_s=recheck_s, **common)
+
+    return cls(conn, **common)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("worker", nargs="?",
+                    help="Worker type to run (see --list)")
+    ap.add_argument("--list", action="store_true",
+                    help="List registered workers and exit")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--once", action="store_true",
+                      help="Process one batch then exit (cron mode)")
+    mode.add_argument("--loop", action="store_true",
+                      help="Stay resident and keep polling (default)")
+    ap.add_argument("--seed", action="store_true",
+                    help="Run the worker's seed() before processing")
+    ap.add_argument("--seed-only", action="store_true",
+                    help="Run seed() and exit without processing")
+    ap.add_argument("--batch-size", type=int,
+                    help="Override Worker.BATCH_SIZE")
+    ap.add_argument("--max-idle", type=int,
+                    help="Loop mode: exit after this many empty passes "
+                         "(useful for tests / drain-and-exit invocations)")
+    ap.add_argument("--recheck-after-days", type=int,
+                    help="image_health: re-check cards last seen more than "
+                         "N days ago (default: 7)")
+    args = ap.parse_args()
+
+    if args.list:
+        for name, cls in sorted(WORKERS.items()):
+            print(f"  {name:14s}  {cls.__module__}.{cls.__name__}")
+        return 0
+
+    if not args.worker:
+        ap.print_help()
+        return 2
+
+    if args.worker not in WORKERS:
+        log.error("Unknown worker %r. Use --list to see registered helpers.",
+                  args.worker)
+        return 2
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        log.error("DATABASE_URL is not set")
+        return 1
+
+    with psycopg2.connect(url) as conn:
+        worker = build_worker(args.worker, conn, args)
+
+        if args.seed or args.seed_only:
+            n = worker.seed()
+            log.info("[%s] seed() enqueued %d task(s)", args.worker, n)
+            if args.seed_only:
+                print(json.dumps({"seeded": n}, indent=2))
+                return 0
+
+        if args.once:
+            stats = worker.run_once()
+            print(json.dumps({"once": stats}, indent=2))
+            return 0
+
+        # Default = loop
+        log.info("[%s] entering loop (max_idle=%s)",
+                 args.worker, args.max_idle)
+        try:
+            totals = worker.run_forever(max_idle_passes=args.max_idle)
+        except KeyboardInterrupt:
+            log.info("[%s] interrupted by user", args.worker)
+            return 130
+        print(json.dumps({"loop": totals}, indent=2))
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

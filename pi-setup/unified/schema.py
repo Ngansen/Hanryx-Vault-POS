@@ -239,6 +239,111 @@ CREATE INDEX IF NOT EXISTS idx_ref_set_alias_chs  ON ref_set_alias (UPPER(code_c
 CREATE INDEX IF NOT EXISTS idx_ref_set_alias_era  ON ref_set_alias (era);
 """
 
+DDL_CARD_LANGUAGE_EXTRA = """
+CREATE TABLE IF NOT EXISTS card_language_extra (
+    set_id          TEXT NOT NULL,
+    card_number     TEXT NOT NULL,
+    -- Romanisations (ASCII representation of CJK pronunciations)
+    romaji_jp       TEXT NOT NULL DEFAULT '',     -- pykakasi (Japanese → Latin)
+    romaji_jp_status TEXT NOT NULL DEFAULT '',    -- 'OK' | 'EMPTY_INPUT' | 'JP_LIB_MISSING' | 'ERROR:<...>'
+    pinyin_chs      TEXT NOT NULL DEFAULT '',     -- pypinyin (Simplified Chinese → Pinyin with tone numbers)
+    pinyin_chs_status TEXT NOT NULL DEFAULT '',
+    hangul_roman    TEXT NOT NULL DEFAULT '',     -- Revised Romanization (Korean → Latin) — built-in pure Python
+    hangul_roman_status TEXT NOT NULL DEFAULT '',
+    -- Cross-language backfills derived during this run, recorded so
+    -- admin can see which name came from where without diffing.
+    backfilled_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- Library-version stamps so re-running with newer libs is detectable
+    library_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enriched_at     BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, card_number)
+);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_romaji  ON card_language_extra (romaji_jp);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_pinyin  ON card_language_extra (pinyin_chs);
+CREATE INDEX IF NOT EXISTS idx_card_lang_extra_hangul  ON card_language_extra (hangul_roman);
+"""
+
+DDL_DATA_ANALYSIS_REPORT = """
+CREATE TABLE IF NOT EXISTS data_analysis_report (
+    report_id      BIGSERIAL PRIMARY KEY,
+    report_kind    TEXT NOT NULL,         -- 'completeness' | 'language_coverage' | 'image_coverage'
+                                          -- | 'top_gap_sets' | 'rarity_distribution' | 'duplicates'
+    payload        JSONB NOT NULL,
+    rows_examined  BIGINT NOT NULL DEFAULT 0,
+    notes          TEXT NOT NULL DEFAULT '',
+    generated_at   BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_data_analysis_kind  ON data_analysis_report (report_kind, generated_at DESC);
+-- Convenience view: latest snapshot of each report kind, what the
+-- admin dashboard would render. CREATE OR REPLACE makes it cheap to
+-- evolve the projection in future slices.
+CREATE OR REPLACE VIEW data_analysis_latest AS
+SELECT DISTINCT ON (report_kind) *
+  FROM data_analysis_report
+ ORDER BY report_kind, generated_at DESC;
+"""
+
+DDL_BG_TASK_QUEUE = """
+CREATE TABLE IF NOT EXISTS bg_task_queue (
+    task_id        BIGSERIAL PRIMARY KEY,
+    task_type      TEXT NOT NULL,                  -- 'image_health' | 'clip_embed' | 'ocr_index' | 'image_mirror'
+    task_key       TEXT NOT NULL DEFAULT '',       -- caller-defined unique identity per (type, key) — e.g. 'sv2/47'
+    payload        JSONB NOT NULL DEFAULT '{}',    -- worker-specific input
+    priority       INTEGER NOT NULL DEFAULT 100,   -- lower = sooner
+    status         TEXT NOT NULL DEFAULT 'PENDING',-- PENDING / CLAIMED / DONE / FAILED
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    max_attempts   INTEGER NOT NULL DEFAULT 3,
+    claimed_at     BIGINT,
+    claimed_by     TEXT NOT NULL DEFAULT '',       -- '<hostname>:<pid>'
+    completed_at   BIGINT,
+    last_error     TEXT NOT NULL DEFAULT '',
+    created_at     BIGINT NOT NULL DEFAULT 0,
+    UNIQUE (task_type, task_key)
+);
+-- Hot path: claim next batch of pending tasks of a given type.
+CREATE INDEX IF NOT EXISTS idx_bg_task_pending
+    ON bg_task_queue (task_type, priority, created_at)
+    WHERE status = 'PENDING';
+-- Reaper: find tasks stuck in CLAIMED past their timeout.
+CREATE INDEX IF NOT EXISTS idx_bg_task_claimed
+    ON bg_task_queue (status, claimed_at)
+    WHERE status = 'CLAIMED';
+-- Admin: review failures.
+CREATE INDEX IF NOT EXISTS idx_bg_task_failed
+    ON bg_task_queue (task_type, completed_at DESC)
+    WHERE status = 'FAILED';
+"""
+
+DDL_BG_WORKER_RUN = """
+CREATE TABLE IF NOT EXISTS bg_worker_run (
+    run_id          BIGSERIAL PRIMARY KEY,
+    worker_type     TEXT NOT NULL,
+    worker_id       TEXT NOT NULL DEFAULT '',     -- '<hostname>:<pid>'
+    started_at      BIGINT NOT NULL,
+    ended_at        BIGINT,
+    items_claimed   INTEGER NOT NULL DEFAULT 0,
+    items_ok        INTEGER NOT NULL DEFAULT 0,
+    items_failed    INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_bg_worker_run_type ON bg_worker_run (worker_type, started_at DESC);
+"""
+
+DDL_IMAGE_HEALTH_CHECK = """
+CREATE TABLE IF NOT EXISTS image_health_check (
+    set_id         TEXT NOT NULL,
+    card_number    TEXT NOT NULL,
+    status         TEXT NOT NULL,                 -- 'OK' | 'PARTIAL' | 'NO_PATHS' | 'ALL_MISSING' | 'ALL_EMPTY' | 'ALL_CORRUPT' | 'MISSING_CARD'
+    paths_checked  INTEGER NOT NULL DEFAULT 0,
+    paths_ok       INTEGER NOT NULL DEFAULT 0,
+    details        JSONB NOT NULL DEFAULT '[]'::jsonb,  -- per-path [{path, status, size_bytes}]
+    checked_at     BIGINT NOT NULL,
+    PRIMARY KEY (set_id, card_number, checked_at)       -- keep history so admin can see when an image went missing
+);
+CREATE INDEX IF NOT EXISTS idx_health_card    ON image_health_check (set_id, card_number, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_status  ON image_health_check (status, checked_at DESC);
+"""
+
 DDL_REF_PROMO_CLASS = """
 CREATE TABLE IF NOT EXISTS ref_promo_class (
     class_id        TEXT PRIMARY KEY,           -- 'P-001', 'P-002', …
@@ -455,6 +560,11 @@ _ALL_DDL = [
     ("ref_pokedex_species",     DDL_REF_POKEDEX_SPECIES),
     ("cards_master",            DDL_CARDS_MASTER),
     ("discovery_queue",         DDL_DISCOVERY_QUEUE),
+    ("bg_task_queue",           DDL_BG_TASK_QUEUE),
+    ("bg_worker_run",           DDL_BG_WORKER_RUN),
+    ("image_health_check",      DDL_IMAGE_HEALTH_CHECK),
+    ("card_language_extra",     DDL_CARD_LANGUAGE_EXTRA),
+    ("data_analysis_report",    DDL_DATA_ANALYSIS_REPORT),
     ("discovery_log",           DDL_DISCOVERY_LOG),
 ]
 
