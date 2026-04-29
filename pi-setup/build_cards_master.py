@@ -525,7 +525,9 @@ def _first_int(v):
 
 
 def _read_jp_cards_json(cur) -> dict:
-    """Returns {(edition, numero): [list of records]} from src_jp_cards_json.
+    """Returns {(EDITION_UPPER, numero): [list of records]} from
+    src_jp_cards_json. Edition is uppercased for case-insensitive joins
+    against arbitrary spine set_ids.
 
     Multiple records per key are common (different scrapes of the same
     physical card across reprints with the same JP set + dex#). The
@@ -548,8 +550,39 @@ def _read_jp_cards_json(cur) -> dict:
         log.warning("[consolidator] _read_jp_cards_json failed: %s", e)
         return out
     for row in cur.fetchall():
-        key = (row["edition"], row["numero"])
+        key = ((row["edition"] or "").strip().upper(), row["numero"])
         out.setdefault(key, []).append(dict(row))
+    return out
+
+
+def _read_set_alias_map(cur) -> dict:
+    """Returns {CODE_UPPER: set(CODE_UPPER, …)} — every set code mapped to
+    every other regional code for the same set. Used by the JP backfill
+    so a spine row whose set_id is the EN code (e.g. 'sv2') can still
+    find JP records keyed by 'SV2'. Empty if ref_set_alias is missing.
+
+    Symmetric: every code is in its own bucket, so callers can do a
+    single dict lookup without worrying about direction.
+    """
+    out: dict[str, set[str]] = {}
+    try:
+        cur.execute("""
+            SELECT code_en, code_jp, code_kr, code_chs
+              FROM ref_set_alias
+        """)
+    except psycopg2.errors.UndefinedTable:
+        return out
+    except psycopg2.Error as e:
+        log.warning("[consolidator] _read_set_alias_map failed: %s", e)
+        return out
+    for row in cur.fetchall():
+        codes = {(row[k] or "").strip().upper()
+                 for k in ("code_en", "code_jp", "code_kr", "code_chs")}
+        codes.discard("")
+        if len(codes) < 2:
+            continue
+        for c in codes:
+            out.setdefault(c, set()).update(codes)
     return out
 
 
@@ -605,9 +638,12 @@ def build_cards_master(db_conn) -> dict:
     ref_dex = _read_ref_dex(cur)
     ref_promo = _read_ref_promo(cur)
     jp_cards_json = _read_jp_cards_json(cur)
+    set_alias_map = _read_set_alias_map(cur)
 
     for name, d in sources.items():
         log.info("[consolidator] %s: %d rows", name, len(d))
+    log.info("[consolidator] jp_cards_json: %d keys, set_alias_map: %d codes",
+             len(jp_cards_json), len(set_alias_map))
     log.info("[consolidator] eng_ex: %d, jp_ex: %d, ref_dex: %d, ref_promo: %d",
              len(eng_ex), len(jp_ex), len(ref_dex), len(ref_promo))
 
@@ -662,16 +698,29 @@ def build_cards_master(db_conn) -> dict:
                         src_refs[field] = _src_id_for("ref_dex", dex_row)
 
         # JP cards.json backfill — fills name_jp / hp / energy_type when
-        # every higher-priority source missed this card. Joins by
-        # (set_id == JP edition, pokedex_id == numero); silently no-ops
-        # when the spine's set_id came from an EN source whose code
-        # doesn't match the JP edition. See unified/priority.py docstring
-        # for why this lives outside PRIORITY (no card_number to join).
+        # every higher-priority source missed this card. Tries the
+        # spine's set_id first; if that misses and ref_set_alias has
+        # cross-region codes for it, walks every alias (so an EN-coded
+        # spine row like 'sv2' still finds JP records keyed by 'SV2').
+        # See unified/priority.py docstring for why this lives outside
+        # PRIORITY (cards.json has no card_number to join on).
         if dex_id and jp_cards_json:
-            jp_recs = jp_cards_json.get((set_id, dex_id), [])
+            spine_norm = (set_id or "").strip().upper()
+            try_codes: list[str] = [spine_norm] if spine_norm else []
+            for alt in set_alias_map.get(spine_norm, ()):
+                if alt and alt not in try_codes:
+                    try_codes.append(alt)
+            jp_recs: list[dict] = []
+            matched_via = ""
+            for code in try_codes:
+                jp_recs = jp_cards_json.get((code, dex_id), [])
+                if jp_recs:
+                    matched_via = code
+                    break
             if jp_recs:
                 rec = jp_recs[0]
-                ref = f"src_jp_cards_json:{rec.get('card_id', '?')}"
+                via = "" if matched_via == spine_norm else f" via {matched_via}"
+                ref = f"src_jp_cards_json:{rec.get('card_id', '?')}{via}"
                 if not out.get("name_jp") and rec.get("name"):
                     out["name_jp"] = rec["name"]
                     src_refs["name_jp"] = ref

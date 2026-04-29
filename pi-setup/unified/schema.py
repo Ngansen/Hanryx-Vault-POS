@@ -217,6 +217,28 @@ CREATE TABLE IF NOT EXISTS ref_set_mapping (
 );
 """
 
+DDL_REF_SET_ALIAS = """
+CREATE TABLE IF NOT EXISTS ref_set_alias (
+    alias_id      BIGSERIAL PRIMARY KEY,
+    name_en       TEXT NOT NULL DEFAULT '',
+    name_jp       TEXT NOT NULL DEFAULT '',
+    name_kr       TEXT NOT NULL DEFAULT '',
+    name_chs      TEXT NOT NULL DEFAULT '',
+    code_en       TEXT NOT NULL DEFAULT '',     -- e.g. SV1, SWSH1, BS, HF
+    code_jp       TEXT NOT NULL DEFAULT '',     -- e.g. SV1, SM8.5, EXP
+    code_kr       TEXT NOT NULL DEFAULT '',
+    code_chs      TEXT NOT NULL DEFAULT '',
+    relationship  TEXT NOT NULL DEFAULT '',     -- '=' '~' '+' 'EN only'
+    era           TEXT NOT NULL DEFAULT '',     -- WOTC / EX / DP / BW / XY / SM / SWSH / SV
+    imported_at   BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_ref_set_alias_en   ON ref_set_alias (UPPER(code_en));
+CREATE INDEX IF NOT EXISTS idx_ref_set_alias_jp   ON ref_set_alias (UPPER(code_jp));
+CREATE INDEX IF NOT EXISTS idx_ref_set_alias_kr   ON ref_set_alias (UPPER(code_kr));
+CREATE INDEX IF NOT EXISTS idx_ref_set_alias_chs  ON ref_set_alias (UPPER(code_chs));
+CREATE INDEX IF NOT EXISTS idx_ref_set_alias_era  ON ref_set_alias (era);
+"""
+
 DDL_REF_VARIANT_TERMS = """
 CREATE TABLE IF NOT EXISTS ref_variant_terms (
     variant_code    TEXT PRIMARY KEY,                -- 'MBH', 'PBH', '1ED', 'STD', 'SAR', 'RH', ...
@@ -402,6 +424,7 @@ _ALL_DDL = [
     ("src_pocket_limitless",    DDL_SRC_POCKET_LIMITLESS),
     ("src_tcgdex_multi",        DDL_SRC_TCGDEX_MULTI),
     ("ref_set_mapping",         DDL_REF_SET_MAPPING),
+    ("ref_set_alias",           DDL_REF_SET_ALIAS),
     ("ref_variant_terms",       DDL_REF_VARIANT_TERMS),
     ("ref_promo_provenance",    DDL_REF_PROMO_PROVENANCE),
     ("ref_pokedex_species",     DDL_REF_POKEDEX_SPECIES),

@@ -1,0 +1,110 @@
+English Set,Japanese Set,Korean (Translated),Chinese (Translated),EN Abbrev,JP Code,KR Abbrev,CN Abbrev,Relationship,Era
+Base Set,Expansion Pack,베이스 세트,基础套装,BS,EXP,BS,BS,=,WOTC
+Jungle,Jungle,정글,丛林,JU,JU,JU,JU,=,WOTC
+Fossil,Fossil,화석,化石,FO,FO,FO,FO,=,WOTC
+Base Set 2,(EN only),베이스 세트 2,基础套装2,BS2,N/A,BS2,BS2,EN only,WOTC
+Team Rocket,Team Rocket,로켓단,火箭队,TR,TR,TR,TR,=,WOTC
+Gym Heroes,Leader's Stadium,체육관 영웅,道馆英雄,GH,LS,GH,GH,+,WOTC
+Gym Heroes,Challenge from the Darkness,체육관 영웅,黑暗挑战,GH,CD,GH,GH,~,WOTC
+Gym Challenge,Challenge from the Darkness,체육관 챌린지,黑暗挑战,GC,CD,GC,GC,+,WOTC
+Gym Challenge,Leader's Stadium,체육관 챌린지,道馆英雄,GC,LS,GC,GC,~,WOTC
+Neo Genesis,Gold Silver New World,네오 제네시스,金银新世界,NG,GSNW,NG,NG,=,WOTC
+Neo Discovery,Crossing the Ruins,네오 디스커버리,遗迹穿越,ND,CR,ND,ND,~,WOTC
+Neo Discovery,Darkness and to Light,네오 디스커버리,黑暗到光明,ND,DTL,ND,ND,~,WOTC
+Neo Revelation,Awakening Legends,네오 레벌레이션,觉醒传说,NR,AL,NR,NR,~,WOTC
+Neo Revelation,Darkness and to Light,네오 레벌레이션,黑暗到光明,NR,DTL,NR,NR,~,WOTC
+Neo Destiny,Darkness and to Light,네오 데스티니,黑暗到光明,ND2,DTL,ND2,ND2,~,WOTC
+Legendary Collection,(EN only),전설 컬렉션,传说合集,LC,N/A,LC,LC,EN only,WOTC
+
+Ruby & Sapphire,ADV Expansion Pack,루비 사파이어,红宝石蓝宝石,RS,ADV1,RS,RS,=,EX
+Sandstorm,Miracle of the Desert,모래폭풍,沙漠奇迹,SS,ADV2,SS,SS,=,EX
+Dragon,Dragon Expansion,드래곤,龙扩展,DR,ADV3,DR,DR,=,EX
+Team Magma vs Aqua,Team Magma vs Aqua,마그마 vs 아쿠아,熔岩队对水舰队,MA,ADV4,MA,MA,=,EX
+Hidden Legends,Flight of Legends,숨겨진 전설,飞翔传说,HL,ADV5,HL,HL,=,EX
+FireRed & LeafGreen,FRLG,파이어레드 리프그린,火红叶绿,FRLG,ADV6,FRLG,FRLG,=,EX
+Team Rocket Returns,Rocket Gang Returns,로켓단의 귀환,火箭队归来,TRR,ADV7,TRR,TRR,=,EX
+Deoxys,Deoxys,디옥시스,代欧奇希斯,DX,ADV8,DX,DX,=,EX
+Emerald,Emerald Gift,에메랄드,绿宝石,EM,EM,EM,EM,~,EX
+Unseen Forces,Golden Sky,보이지 않는 힘,黄金天空,UF,ADV9,UF,UF,+,EX
+Unseen Forces,Silver Ocean,보이지 않는 힘,白银海洋,UF,ADV9,UF,UF,+,EX
+Delta Species,Holon Research Tower,델타 종,代欧种,DS,ADV10,DS,DS,=,EX
+Legend Maker,Mirage Forest,전설 제작자,幻影森林,LM,ADV11,LM,LM,=,EX
+Holon Phantoms,Holon Phantom,홀론 팬텀,幻影研究所,HP,ADV12,HP,HP,=,EX
+Crystal Guardians,Offense and Defense,크리스탈 가디언,攻守对决,CG,ADV13,CG,CG,~,EX
+Dragon Frontiers,Dragon Frontiers,드래곤 프론티어,龙的边境,DF,ADV14,DF,DF,=,EX
+Power Keepers,(Reprints),파워 키퍼,力量守护者,PK,N/A,PK,PK,EN only,EX
+
+Diamond & Pearl,DP1,다이아몬드 펄,钻石珍珠,DP,DP1,DP,DP,=,DP
+Mysterious Treasures,DP2,신비한 보물,神秘宝藏,MT,DP2,MT,MT,=,DP
+Secret Wonders,DP3,비밀의 놀라움,神秘奇迹,SW,DP3,SW,SW,=,DP
+Great Encounters,DP4,대격돌,激烈对战,GE,DP4,GE,GE,+,DP
+Great Encounters,DP5,대격돌,激烈对战,GE,DP5,GE,GE,+,DP
+Majestic Dawn,DP6,장엄한 새벽,华丽黎明,MD,DP6,MD,MD,~,DP
+Legends Awakened,DP7,전설의 각성,传说觉醒,LA,DP7,LA,LA,=,DP
+Stormfront,DP8,폭풍전야,风暴前线,SF,DP8,SF,SF,=,DP
+Platinum,Pt1,플래티넘,白金,PT,PT1,PT,PT,=,DP
+Rising Rivals,Pt2,라이징 라이벌,崛起对手,RR,PT2,RR,RR,=,DP
+Supreme Victors,Pt3,최고의 승자,至尊胜者,SV,PT3,SV,SV,=,DP
+Arceus,Pt4,아르세우스,阿尔宙斯,AR,PT4,AR,AR,=,DP
+
+Black & White,BW1,블랙 화이트,黑白,BW,BW1,BW,BW,+,BW
+Emerging Powers,BW2,떠오르는 힘,新势力,EP,BW2,EP,EP,~,BW
+Noble Victories,BW3,고귀한 승리,崇高胜利,NV,BW3,NV,NV,~,BW
+Next Destinies,BW4,미래의 운명,未来命运,ND,BW4,ND,ND,=,BW
+Dark Explorers,BW5,어둠의 탐험,黑暗探险,DE,BW5,DE,DE,=,BW
+Dragons Exalted,BW6,드래곤의 위엄,龙之崛起,DE2,BW6,DE2,DE2,+,BW
+Boundaries Crossed,BW7,경계의 교차,边界突破,BC,BW7,BC,BC,+,BW
+Plasma Storm,BW8,플라스마 스톰,等离子风暴,PS,BW8,PS,PS,=,BW
+Plasma Freeze,BW9,플라스마 프리즈,等离子冰冻,PF,BW9,PF,PF,=,BW
+Plasma Blast,BW10,플라스마 블라스트,等离子爆破,PB,BW10,PB,PB,=,BW
+
+XY,XY1,XY,XY,XY,XY1,XY,XY,+,XY
+Flashfire,XY2,플래시파이어,闪焰队,FF,XY2,FF,FF,=,XY
+Furious Fists,XY3,격노의 주먹,愤怒拳头,FF2,XY3,FF2,FF2,=,XY
+Phantom Forces,XY4,팬텀 포스,幻影力量,PF,XY4,PF,PF,=,XY
+Primal Clash,XY5,원시의 충돌,原始冲突,PC,XY5,PC,PC,+,XY
+Roaring Skies,XY6,하늘의 포효,天怒之空,RS,XY6,RS,RS,=,XY
+Ancient Origins,XY7,고대의 기원,远古起源,AO,XY7,AO,AO,=,XY
+BREAKthrough,XY8,BREAK 돌파,突破进化,BT,XY8,BT,BT,+,XY
+BREAKpoint,XY9,BREAK 지점,突破点,BP,XY9,BP,BP,=,XY
+Fates Collide,XY10,운명의 충돌,命运交汇,FC,XY10,FC,FC,~,XY
+Evolutions,XY-Promo,진화,进化,EV,XY-P,EV,EV,EN only,XY
+
+Sun & Moon,SM1,썬 문,太阳月亮,SM,SM1,SM,SM,+,SM
+Guardians Rising,SM2,수호자의 부상,守护者崛起,GR,SM2,GR,GR,+,SM
+Burning Shadows,SM3,타오르는 그림자,燃烧的暗影,BS,SM3,BS,BS,=,SM
+Crimson Invasion,SM4,진홍의 침공,赤色入侵,CI,SM4,CI,CI,=,SM
+Ultra Prism,SM5,울트라 프리즘,究极稜镜,UP,SM5,UP,UP,+,SM
+Forbidden Light,SM6,금단의 빛,禁忌之光,FL,SM6,FL,FL,=,SM
+Celestial Storm,SM7,천공의 폭풍,天体风暴,CS,SM7,CS,CS,=,SM
+Lost Thunder,SM8,잃어버린 천둥,失落闪电,LT,SM8,LT,LT,=,SM
+Team Up,SM9,팀업,组合力量,TU,SM9,TU,TU,=,SM
+Unbroken Bonds,SM10,끊어지지 않은 유대,不破之绊,UB,SM10,UB,UB,=,SM
+Unified Minds,SM11,통합된 마음,统一思想,UM,SM11,UM,UM,=,SM
+Cosmic Eclipse,SM12,우주의 일식,宇宙日食,CE,SM12,CE,CE,=,SM
+Hidden Fates,SM8.5,숨겨진 운명,隐藏命运,HF,SM8.5,HF,HF,=,SM
+
+Sword & Shield,SWSH1,소드 실드,剑盾,SS,SWSH1,SS,SS,+,SWSH
+Rebel Clash,SWSH2,반란의 충돌,反抗之战,RC,SWSH2,RC,RC,=,SWSH
+Darkness Ablaze,SWSH3,어둠의 불꽃,黑暗爆炎,DA,SWSH3,DA,DA,=,SWSH
+Vivid Voltage,SWSH4,선명한 전압,绚丽伏特,VV,SWSH4,VV,VV,=,SWSH
+Battle Styles,SWSH5,배틀 스타일,战斗风格,BS2,SWSH5,BS2,BS2,+,SWSH
+Chilling Reign,SWSH6,냉기의 지배,冰雪统治,CR,SWSH6,CR,CR,+,SWSH
+Evolving Skies,SWSH7,진화하는 하늘,进化天空,ES,SWSH7,ES,ES,=,SWSH
+Fusion Strike,SWSH8,퓨전 스트라이크,融合连击,FS,SWSH8,FS,FS,=,SWSH
+Brilliant Stars,SWSH9,빛나는 별,璀璨星辰,BS3,SWSH9,BS3,BS3,=,SWSH
+Astral Radiance,SWSH10,천상의 빛,星界辉光,AR,SWSH10,AR,AR,+,SWSH
+Lost Origin,SWSH11,잃어버린 기원,失落起源,LO,SWSH11,LO,LO,=,SWSH
+Silver Tempest,SWSH12,은빛 폭풍,银色风暴,ST,SWSH12,ST,ST,=,SWSH
+Crown Zenith,SWSH12a,왕관의 정점,皇冠顶点,CZ,SWSH12a,CZ,CZ,=,SWSH
+
+Scarlet & Violet,SV1,스칼렛 바이올렛,朱紫,SV,SV1,SV,SV,+,SV
+Paldea Evolved,SV2,팔데아 진화,帕底亚进化,PE,SV2,PE,PE,+,SV
+Obsidian Flames,SV3,흑요석 불꽃,黑曜火焰,OF,SV3,OF,OF,=,SV
+Paradox Rift,SV4,패러독스 리프트,悖论裂缝,PR,SV4,PR,PR,+,SV
+Paldean Fates,SV4a,팔데아 운명,帕底亚命运,PF,SV4a,PF,PF,=,SV
+Temporal Forces,SV5,시간의 힘,时间力量,TF,SV5,TF,TF,+,SV
+Twilight Masquerade,SV6,황혼의 가면무도회,暮光假面舞会,TM,SV6,TM,TM,=,SV
+Shrouded Fable,SV6a,베일의 전설,笼罩传说,SF2,SV6a,SF2,SF2,=,SV
+Stellar Crown,SV7,별의 왕관,星辉王冠,SC,SV7,SC,SC,=,SV
+Surging Sparks,SV8,폭발하는 불꽃,奔涌火花,SS2,SV8,SS2,SS2,=,SV
