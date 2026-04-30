@@ -420,8 +420,45 @@ class TestResolveSetId(unittest.TestCase):
         sql, params = conn.executed[3]
         self.assertIn("aliases @>", sql)
         # JSONB containment requires the needle wrapped as a JSON array
-        # of one string — assert the exact wire shape.
+        # of one string — assert the exact wire shape (json.dumps of a
+        # plain ASCII needle yields no extra escaping).
         self.assertEqual(params, ('["PAL"]',))
+
+    def test_alias_needle_with_double_quote_escaped_safely(self):
+        # Earlier f-string-based JSON construction produced invalid
+        # JSON for needles containing `"`, which threw inside the
+        # except-fallback and silently bypassed the alias branch.
+        # json.dumps escapes the quote so the lookup actually runs.
+        conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
+        out = resolve_set_id(conn, 'A"B')
+        self.assertEqual(out, "sv2")
+        # Wire shape: JSON array of one string with the quote escaped.
+        sql, params = conn.executed[3]
+        self.assertIn("aliases @>", sql)
+        self.assertEqual(params, (r'["A\"B"]',))
+
+    def test_alias_needle_with_backslash_escaped_safely(self):
+        # Same hardening for backslashes — the operator might paste a
+        # set name that legitimately contains one, and we shouldn't
+        # silently skip the alias branch when they do.
+        conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
+        out = resolve_set_id(conn, 'A\\B')
+        self.assertEqual(out, "sv2")
+        sql, params = conn.executed[3]
+        self.assertIn("aliases @>", sql)
+        self.assertEqual(params, (r'["A\\B"]',))
+
+    def test_alias_needle_unicode_preserved_not_escaped(self):
+        # ensure_ascii=False means non-ASCII characters in operator
+        # input (Korean / Japanese / Chinese set names mapped as
+        # aliases) survive the JSON serialisation as themselves, not
+        # \uXXXX escapes — keeps the JSONB literal compact and
+        # matches how the import worker writes them.
+        conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
+        out = resolve_set_id(conn, "팔데아")
+        self.assertEqual(out, "sv2")
+        _, params = conn.executed[3]
+        self.assertEqual(params, ('["팔데아"]',))
 
     def test_no_match_returns_raw_input(self):
         # Unknown sets must not block en-match — fall back to the raw

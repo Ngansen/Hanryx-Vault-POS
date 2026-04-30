@@ -25,6 +25,7 @@ Public surface:
 """
 from __future__ import annotations
 
+import json
 from typing import Optional, Sequence
 from urllib.parse import urlencode
 
@@ -143,12 +144,16 @@ def resolve_set_id(db, raw_set: str) -> str:
 
         # 3. Operator-curated aliases (ptcgo codes, abbreviations).
         # `aliases` is JSONB array of strings; the @> containment check
-        # uses the trgm-free path so this stays cheap.
+        # uses the trgm-free path so this stays cheap. We serialise the
+        # needle through json.dumps so quotes / backslashes / control
+        # characters in operator-pasted set names can't malform the
+        # JSONB literal and silently bypass the alias branch.
         try:
+            needle_json = json.dumps([needle], ensure_ascii=False)
             cur.execute(
                 "SELECT set_id FROM ref_set_mapping "
                 " WHERE aliases @> %s::jsonb LIMIT 1",
-                (f'["{needle}"]',),
+                (needle_json,),
             )
             row = cur.fetchone()
             if row:
