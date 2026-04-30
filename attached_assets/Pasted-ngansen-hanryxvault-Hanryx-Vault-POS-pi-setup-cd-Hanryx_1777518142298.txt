@@ -1,0 +1,61 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && \
+  git fetch origin && \
+  echo "=== HEAD: $(git rev-parse --short HEAD) | origin/main: $(git rev-parse --short origin/main) | behind by $(git rev-list --count HEAD..origin/main) commit(s) ===" && \
+  echo && \
+  git log origin/main --since='24 hours ago' \
+    --pretty=format:'%h  %ad  %an  %s' \
+    --date=format:'%m-%d %H:%M' \
+    --reverse
+=== HEAD: 8984f2a | origin/main: 8984f2a | behind by 0 commit(s) ===
+
+907aba3  04-28 22:21  Ngansen  receipt: dragon emblem on top + transparent/lightened, drop URL footer, add "Check out the vault" above QR, default disclosure, ASCII-safe Pokemon tagline
+88b8d4e  04-28 22:31  Ngansen  receipt: crisper dragon (no wash + halo killed), flowing disclosure (no hard breaks), default to 2 copies
+9ba9d1d  04-28 23:02  Ngansen  receipt: suppress tablet logo when dragon emblem is present (no double-stack)
+eea66a3  04-28 23:12  Ngansen  print: bulletproof USB hot-replug — open retry (~1.6s) + write retry on OSError
+9aa785c  04-28 23:59  Ngansen  Slice 1+2: TCGdex Rosetta image_url_alt aggregation + local image resolver
+bcd8c85  04-29 06:04  Ngansen  Slice 3: Wire kiosk + scanner UIs through /card/image resolver
+:...skipping...
+907aba3  04-28 22:21  Ngansen  receipt: dragon emblem on top + transparent/lightened, drop URL footer, add "Check out the vault" above QR, default disclosure, ASCII-safe Pokemon tagline
+88b8d4e  04-28 22:31  Ngansen  receipt: crisper dragon (no wash + halo killed), flowing disclosure (no hard breaks), default to 2 copies
+9ba9d1d  04-28 23:02  Ngansen  receipt: suppress tablet logo when dragon emblem is present (no double-stack)
+eea66a3  04-28 23:12  Ngansen  print: bulletproof USB hot-replug — open retry (~1.6s) + write retry on OSError
+9aa785c  04-28 23:59  Ngansen  Slice 1+2: TCGdex Rosetta image_url_alt aggregation + local image resolver
+bcd8c85  04-29 06:04  Ngansen  Slice 3: Wire kiosk + scanner UIs through /card/image resolver
+051ed14  04-29 12:51  Ngansen  Slice 4: Offline-first card mirror — sync script + JP/CDN resolvers
+78a6735  04-29 13:06  Ngansen  Slice 5: pull pokemon-card-jp-database into consolidator
+d2afe2e  04-29 14:27  Ngansen  Slice 6: cross-region set alias map for JP backfill
+418265f  04-29 14:41  Ngansen  Slice 7: canonical-key spine collapses cross-region duplicates
+1f2804b  04-29 14:49  Ngansen  Slice 8: ref_promo_class — global promo bucket reference
+cfa2094  04-29 15:15  Ngansen  Slice 9: background worker framework + 3 helpers (264 tests)
+0c66281  04-29 15:30  Ngansen  Slices 10+11: CLIP visual lookup + PaddleOCR text indexer (329 tests)
+ac9572f  04-29 16:00  Ngansen  Slice 12: PriceRefreshWorker — bulk-prefill price cache for offline POS
+04b37f6  04-29 16:09  Ngansen  Drive migration: tests, one-time mover script, README update
+:
+907aba3  04-28 22:21  Ngansen  receipt: dragon emblem on top + transparent/lightened, drop URL footer, add "Check out the vault" above QR, default disclosure, ASCII-safe Pokemon tagline
+88b8d4e  04-28 22:31  Ngansen  receipt: crisper dragon (no wash + halo killed), flowing disclosure (no hard breaks), default to 2 copies
+9ba9d1d  04-28 23:02  Ngansen  receipt: suppress tablet logo when dragon emblem is present (no double-stack)
+eea66a3  04-28 23:12  Ngansen  print: bulletproof USB hot-replug — open retry (~1.6s) + write retry on OSError
+9aa785c  04-28 23:59  Ngansen  Slice 1+2: TCGdex Rosetta image_url_alt aggregation + local image resolver
+bcd8c85  04-29 06:04  Ngansen  Slice 3: Wire kiosk + scanner UIs through /card/image resolver
+051ed14  04-29 12:51  Ngansen  Slice 4: Offline-first card mirror — sync script + JP/CDN resolvers
+78a6735  04-29 13:06  Ngansen  Slice 5: pull pokemon-card-jp-database into consolidator
+d2afe2e  04-29 14:27  Ngansen  Slice 6: cross-region set alias map for JP backfill
+418265f  04-29 14:41  Ngansen  Slice 7: canonical-key spine collapses cross-region duplicates
+1f2804b  04-29 14:49  Ngansen  Slice 8: ref_promo_class — global promo bucket reference
+cfa2094  04-29 15:15  Ngansen  Slice 9: background worker framework + 3 helpers (264 tests)
+0c66281  04-29 15:30  Ngansen  Slices 10+11: CLIP visual lookup + PaddleOCR text indexer (329 tests)
+ac9572f  04-29 16:00  Ngansen  Slice 12: PriceRefreshWorker — bulk-prefill price cache for offline POS
+04b37f6  04-29 16:09  Ngansen  Drive migration: tests, one-time mover script, README update
+7504958  04-29 16:37  Ngansen  Slice 13 — LiveOcrEngine for synchronous tablet-snapshot OCR
+9af121d  04-29 16:42  Ngansen  Slice 14 — ImagePreprocessor for OCR-grade snapshot cleanup
+efbe01a  04-29 16:46  Ngansen  Slice 15 — OcrPipeline: snapshot → preprocess → live OCR, in one call
+4196aee  04-29 17:15  Ngansen  Slice 16 — image_mirror worker: re-fetch rotted card images
+9057a0c  04-29 17:18  Ngansen  Slice 17 — image_health auto-enqueues image_mirror tasks
+eb8d05d  04-29 17:23  Ngansen  Slice 18 — persistent failure log for sync_card_mirror
+fdf5d3a  04-29 17:28  Ngansen  Slice 19 — image_thumbnailer (200/800 WEBP tiers)
+36002c0  04-29 17:34  Ngansen  Slice 20 — KR set completeness audit
+2282c2b  04-29 17:41  Ngansen  Slice 21: per-source price quote breakdown + disagreement detection
+ffb809d  04-29 17:45  Ngansen  Slice 22: HTTP If-Modified-Since revalidation in sync_card_mirror
+9ef4b75  04-29 20:55  Ngansen  docs(sync_card_mirror): fix MIRROR_ROOT example to /mnt/cards
+8984f2a  04-29 20:59  Ngansen  fix(pricing): align language multipliers with spec (KR=0.55, JP=0.80)
+(END)
