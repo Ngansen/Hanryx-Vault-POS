@@ -25,7 +25,7 @@ if size > 0. Ctrl-C is safe — partial files are deleted. Failed downloads
 are logged but never abort the whole run.
 
 Usage:
-    MIRROR_ROOT=/mnt/ugreen/cards \\
+    MIRROR_ROOT=/mnt/cards \\
     DATABASE_URL=postgresql://hanryx:...@db:5432/hanryx \\
         python3 sync_card_mirror.py [--phase A|B|C|all] [--limit N]
 
