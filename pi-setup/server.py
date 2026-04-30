@@ -7507,7 +7507,7 @@ def admin_sync_scanner():
 # ---------------------------------------------------------------------------
 
 @app.route("/card/identify-image", methods=["POST"])
-@require_admin
+@require_api_token
 def card_identify_image():
     """
     POST /card/identify-image
