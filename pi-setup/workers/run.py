@@ -61,6 +61,7 @@ from workers.price_refresh import PriceRefreshWorker  # noqa: E402
 from workers.image_mirror import ImageMirrorWorker  # noqa: E402
 from workers.image_thumbnailer import ImageThumbnailerWorker  # noqa: E402
 from workers.kr_set_audit import KrSetAuditWorker  # noqa: E402
+from workers.cross_region_aliaser import CrossRegionAliaserWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -78,6 +79,7 @@ WORKERS: dict[str, type[Worker]] = {
     "image_mirror":    ImageMirrorWorker,
     "image_thumbnail": ImageThumbnailerWorker,
     "kr_set_audit":    KrSetAuditWorker,
+    "cross_region_alias": CrossRegionAliaserWorker,
 }
 
 

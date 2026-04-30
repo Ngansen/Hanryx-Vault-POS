@@ -667,6 +667,66 @@ CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
 """
 
 
+# ─── Cross-region card alias map (TC ↔ SC ↔ KR ↔ JP ↔ EN) ─────────────────
+#
+# Single canonical row per physical card across every region we sell at
+# the booth. The canonical_key is a stable string derived from the JP
+# coordinates — `f"jp:{jp_set_id}:{jp_card_num}"`. JP is the spine
+# because every Pokémon TCG release ships in JP first and the JP set
+# codes are the most stable (KR sometimes renames, TC rebrands every
+# couple of years, SC has the Tencent rename of 2023). One spine, many
+# mouths.
+#
+# Per-region columns are nullable strings — most cards are not printed
+# in every region, and a NOT NULL constraint would block partial linkage
+# (which is the common case during a set's first week, when JP exists
+# but TC/KR don't yet).
+#
+# match_method records WHICH heuristic produced the link:
+#   'manual'      — operator override at /mnt/cards/manual_aliases.json.
+#                   Always wins; aliaser refuses to overwrite manual rows.
+#   'set_abbrev'  — set abbreviation in canonical_sets JSON (e.g. TC
+#                   "SV1S" → JP "SV1S") + same card number. High
+#                   confidence, default 1.0.
+#   'clip'        — visual CLIP cosine similarity ≥ 0.92 against the JP
+#                   equivalent. confidence = the actual cosine score so
+#                   the operator can sort low-confidence rows for review.
+#   'unmatched'   — best-effort attempt failed; row exists for audit
+#                   trail. All region ids NULL except the one we tried
+#                   to link FROM (so the dashboard can show "47 TC cards
+#                   could not be aliased").
+#
+# last_verified_at lets the nightly aliaser skip rows that were checked
+# recently — only stale rows (or unmatched ones) get re-tried each pass.
+DDL_CARD_ALIAS = """
+CREATE TABLE IF NOT EXISTS card_alias (
+    canonical_key      TEXT PRIMARY KEY,
+    jp_id              TEXT,
+    kr_id              TEXT,
+    en_id              TEXT,
+    zh_tc_id           TEXT,
+    zh_sc_id           TEXT,
+    match_method       TEXT NOT NULL DEFAULT 'unmatched',
+    confidence         REAL NOT NULL DEFAULT 0.0,
+    source             TEXT NOT NULL DEFAULT 'auto',
+    notes              TEXT NOT NULL DEFAULT '',
+    created_at         BIGINT NOT NULL DEFAULT 0,
+    last_verified_at   BIGINT NOT NULL DEFAULT 0,
+    CHECK (match_method IN ('manual', 'set_abbrev', 'clip', 'unmatched'))
+);
+CREATE INDEX IF NOT EXISTS idx_card_alias_jp     ON card_alias (jp_id)
+    WHERE jp_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_kr     ON card_alias (kr_id)
+    WHERE kr_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_zh_tc  ON card_alias (zh_tc_id)
+    WHERE zh_tc_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_zh_sc  ON card_alias (zh_sc_id)
+    WHERE zh_sc_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_method ON card_alias
+    (match_method, last_verified_at DESC);
+"""
+
+
 # ─── Per-source price breakdown ───────────────────────────────────────────
 #
 # price_aggregator stores ONE row per query in price_quotes — the median
@@ -731,6 +791,7 @@ _ALL_DDL = [
     ("discovery_log",           DDL_DISCOVERY_LOG),
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
+    ("card_alias",              DDL_CARD_ALIAS),
     ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
 ]
 
