@@ -38,7 +38,24 @@ LOG_TAG() {
     echo "============================================================"
 }
 
-DC="docker compose exec -T sync"
+DC="docker compose exec -T --workdir /app sync"
+
+# ── Preflight ────────────────────────────────────────────────────────────────
+# Bail early if the sync container is missing or the package layout inside it
+# doesn't match what the run expects. Without this, a misconfigured container
+# silently fails every step and you wake up to an empty mirror.
+LOG_TAG "Preflight: verify sync container + python package layout"
+if ! docker compose ps --status running --services 2>/dev/null | grep -qx sync; then
+    echo "FATAL: sync container is not running."
+    echo "Fix: cd $(pwd) && docker compose up -d   # then re-run this script"
+    exit 2
+fi
+if ! $DC python -c "import scripts.sync_card_mirror, workers.run" 2>&1; then
+    echo "FATAL: scripts/workers packages not importable inside sync container."
+    echo "Diagnostic: $DC pwd && $DC ls /app"
+    exit 3
+fi
+echo "Preflight OK — both 'scripts' and 'workers' packages import cleanly."
 
 LOG_TAG "Phase A: clone source repos (~4h on USB2, ~25min on USB3)"
 $DC python -m scripts.sync_card_mirror --phase A

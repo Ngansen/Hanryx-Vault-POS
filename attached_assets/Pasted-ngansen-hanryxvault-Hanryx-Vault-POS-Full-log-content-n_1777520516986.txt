@@ -1,0 +1,65 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ # Full log content (not just last 10 lines)
+cat /mnt/cards/krsync.log
+
+# Are the docker services actually still up?
+cd ~/Hanryx-Vault-POS/pi-setup && docker compose ps
+
+# Direct sanity check — does compose exec into the sync container work at all?
+docker compose exec -T sync echo "hello from inside sync container"
+
+============================================================
+=== 03:37:36 UTC — Phase A: clone source repos (~4h on USB2, ~25min on USB3)
+============================================================
+time="2026-04-30T03:37:36Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'scripts.sync_card_mirror' (ModuleNotFoundError: No module named 'scripts')
+
+============================================================
+=== 03:37:36 UTC — Phase B: download KR card images (~15min)
+============================================================
+time="2026-04-30T03:37:36Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'scripts.sync_card_mirror' (ModuleNotFoundError: No module named 'scripts')
+
+============================================================
+=== 03:37:37 UTC — Phase C: CDN walk for image_url_alt fallbacks (~10min)
+============================================================
+time="2026-04-30T03:37:37Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'scripts.sync_card_mirror' (ModuleNotFoundError: No module named 'scripts')
+
+============================================================
+=== 03:37:37 UTC — kr_set_audit: completeness vs canonical KR set list
+============================================================
+time="2026-04-30T03:37:37Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:37 UTC — image_health: decode/missing/empty audit (auto-enqueues image_mirror)
+============================================================
+time="2026-04-30T03:37:37Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:37 UTC — image_mirror: drain rot-recovery queue
+============================================================
+time="2026-04-30T03:37:37Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:37 UTC — clip_embed: CLIP visual fingerprints (~14min)
+============================================================
+time="2026-04-30T03:37:37Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:38 UTC — ocr_index: Hangul text indexing (~37min)
+============================================================
+time="2026-04-30T03:37:38Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:38 UTC — image_thumbnail: 200/800 WEBP tiers (~36min)
+============================================================
+time="2026-04-30T03:37:38Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+/opt/venv/bin/python: Error while finding module specification for 'workers.run' (ModuleNotFoundError: No module named 'workers')
+
+============================================================
+=== 03:37:38 UTC — price_refresh: bulk prefill catalogue
