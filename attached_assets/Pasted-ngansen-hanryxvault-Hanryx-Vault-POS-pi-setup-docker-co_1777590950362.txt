@@ -1,0 +1,17 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose ps; echo "---PROBE---"; curl -sS -o /dev/null -w 'alias-suggest HTTP: %{http_code}\n' 'http://localhost:8080/admin/cards/set-alias-suggest?needle=Pladea'; docker compose images pos 2>/dev/null | tail -2
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME                    IMAGE                                                                                                  COMMAND                  SERVICE      CREATED         STATUS                    PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7                                                                                    "/bin/ollama serve"      assistant    3 days ago      Up 21 hours (unhealthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10   "docker-entrypoint.s…"   db           20 hours ago    Up 20 hours (healthy)     5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c    "/entrypoint.sh /usr…"   pgbouncer    20 hours ago    Up 20 hours (healthy)     5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi                                                                                       "/docker-entrypoint.…"   pokeapi      21 hours ago    Up 21 hours (healthy)     80/tcp
+pi-setup-pos-1          pi-setup-pos                                                                                           "/entrypoint.sh"         pos          4 minutes ago   Up 4 minutes (healthy)    0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer                                                                                    "python -u server.py"    recognizer   20 hours ago    Up 20 hours (healthy)     8081/tcp
+pi-setup-redis-1        redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275             "docker-entrypoint.s…"   redis        20 hours ago    Up 20 hours (healthy)     6379/tcp
+pi-setup-storefront-1   pi-setup-storefront                                                                                    "docker-entrypoint.sh"   storefront   20 hours ago    Up 20 hours (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync                                                                                          "/entrypoint.sh pyth…"   sync         19 hours ago    Up 19 hours               8080/tcp
+---PROBE---
+alias-suggest HTTP: 200
+CONTAINER           REPOSITORY          TAG                 PLATFORM            IMAGE ID            SIZE                CREATED
+pi-setup-pos-1      pi-setup-pos        latest              linux/arm64         4181115f6971        436MB               4 minutes ago
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
