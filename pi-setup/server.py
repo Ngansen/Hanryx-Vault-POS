@@ -12852,13 +12852,25 @@ async function loadLangPrices(name, set, number, variant, forceRefresh) {{
 // Everything resolves locally except the eBay deep-link, which is greyed
 // out when the browser reports offline. No part of the card-search or
 // price-display flows depend on this strip succeeding.
-let _matchStripCardKey = null;
+// Monotonic-token stale guard. Each call to begin() returns a fresh
+// token; only the most recent token is "current". Replaces the older
+// per-key string-comparison pattern — clearer intent ("is my work
+// still the latest?") and works even when the same lookup repeats.
+// Reusable for any other async-render path that can race with itself.
+function makeStaleGuard() {{
+  let token = 0;
+  return {{
+    begin:     function () {{ token += 1; return token; }},
+    isCurrent: function (t) {{ return t === token; }},
+  }};
+}}
+
+const _matchStripGuard = makeStaleGuard();
 async function loadMatchStrip(name, set, number, variant) {{
   const strip = document.getElementById('matchStrip');
   if (!strip) return;
-  // Stable key so out-of-order responses don't overwrite a newer card.
-  const key = [name||'', set||'', number||'', variant||''].join('|');
-  _matchStripCardKey = key;
+  // Claim the latest token; any in-flight older call's checks fail.
+  const t = _matchStripGuard.begin();
   strip.style.display = 'flex';
   strip.classList.add('is-loading');
   strip.innerHTML =
@@ -12877,13 +12889,13 @@ async function loadMatchStrip(name, set, number, variant) {{
     // one after JSON parsing. The body parse is itself async (gzip +
     // UTF-8 decode), so a newer card lookup can race in between and
     // we must not paint over its result with our older response.
-    if (_matchStripCardKey !== key) return;   // stale response, drop it
+    if (!_matchStripGuard.isCurrent(t)) return;   // stale response, drop it
     if (!r.ok) {{ renderMatchStrip(null); return; }}
     const j = await r.json();
-    if (_matchStripCardKey !== key) return;   // newer card landed mid-parse
+    if (!_matchStripGuard.isCurrent(t)) return;   // newer card landed mid-parse
     renderMatchStrip(j && j.match ? j.match : null);
   }} catch (e) {{
-    if (_matchStripCardKey === key) renderMatchStrip(null);
+    if (_matchStripGuard.isCurrent(t)) renderMatchStrip(null);
   }}
 }}
 
@@ -12905,6 +12917,16 @@ function renderMatchStrip(m) {{
   const confLabel = conf === 'exact'    ? 'Exact'
                   : conf === 'name_set' ? 'Name + Set'
                   : 'Name only';
+  // Surface how the SET portion was canonicalised so the operator can
+  // tell e.g. "Name+Set match was real" from "Name+Set match because
+  // an alias rescued a typo". Tier-3 (name-only) and any unresolved
+  // set fall through to 'raw' — the tooltip then says so plainly.
+  const sm = (m.set_match || 'raw').toLowerCase();
+  const smTip = sm === 'set_id'     ? 'Set matched directly by ID'
+              : sm === 'name_exact' ? 'Set matched by exact name'
+              : sm === 'name_like'  ? 'Set matched by partial name'
+              : sm === 'alias'      ? 'Set matched via operator-curated alias'
+              :                       'Set not canonicalised — name lookup only';
   const metaBits = [];
   if (m.set_id)      metaBits.push(esc(m.set_id));
   if (m.card_number) metaBits.push('#' + esc(m.card_number));
@@ -12928,7 +12950,9 @@ function renderMatchStrip(m) {{
     '<div class="match-body">' +
       '<div class="match-row1">' +
         '<span class="match-label">Matched as</span>' +
-        '<span class="match-conf ' + esc(conf) + '">' + confLabel + '</span>' +
+        '<span class="match-conf ' + esc(conf) + '" ' +
+          'title="' + esc(smTip) + '" ' +
+          'data-set-match="' + esc(sm) + '">' + confLabel + '</span>' +
       '</div>' +
       '<div class="match-name">' + esc(m.name_en || '(unnamed)') + '</div>' +
       '<div class="match-meta">' + metaLine + '</div>' +
