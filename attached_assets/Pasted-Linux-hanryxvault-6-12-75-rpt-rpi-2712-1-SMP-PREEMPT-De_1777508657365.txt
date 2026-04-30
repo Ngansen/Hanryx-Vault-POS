@@ -1,0 +1,84 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed Apr 29 22:39:22 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ dmesg | tail -60
+lsusb
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL
+[   25.412947] br-5332d57b369e: port 8(vethc64c44c) entered forwarding state
+[   25.687329] eth0: renamed from veth4908bd1
+[   25.687896] br-5332d57b369e: port 9(veth1e78b2f) entered blocking state
+[   25.687902] br-5332d57b369e: port 9(veth1e78b2f) entered forwarding state
+[   33.810291] br-5332d57b369e: port 6(vethdec5291) entered disabled state
+[   33.810876] veth479d062: renamed from eth0
+[   33.864511] br-5332d57b369e: port 6(vethdec5291) entered blocking state
+[   33.864528] br-5332d57b369e: port 6(vethdec5291) entered forwarding state
+[   33.900831] br-5332d57b369e: port 6(vethdec5291) entered disabled state
+[   33.906181] vethdec5291 (unregistering): left allmulticast mode
+[   33.906195] vethdec5291 (unregistering): left promiscuous mode
+[   33.906208] br-5332d57b369e: port 6(vethdec5291) entered disabled state
+[   34.580321] br-5332d57b369e: port 9(veth1e78b2f) entered disabled state
+[   34.580517] veth4908bd1: renamed from eth0
+[   34.612791] br-5332d57b369e: port 9(veth1e78b2f) entered blocking state
+[   34.612800] br-5332d57b369e: port 9(veth1e78b2f) entered forwarding state
+[   34.661732] br-5332d57b369e: port 9(veth1e78b2f) entered disabled state
+[   34.663082] veth1e78b2f (unregistering): left allmulticast mode
+[   34.663098] veth1e78b2f (unregistering): left promiscuous mode
+[   34.663109] br-5332d57b369e: port 9(veth1e78b2f) entered disabled state
+[   38.488087] veth24c94fe: renamed from eth0
+[   38.488258] br-5332d57b369e: port 2(veth479cd67) entered disabled state
+[   38.519129] br-5332d57b369e: port 2(veth479cd67) entered blocking state
+[   38.519143] br-5332d57b369e: port 2(veth479cd67) entered forwarding state
+[   38.622053] br-5332d57b369e: port 2(veth479cd67) entered disabled state
+[   38.623600] veth479cd67 (unregistering): left allmulticast mode
+[   38.623608] veth479cd67 (unregistering): left promiscuous mode
+[   38.623614] br-5332d57b369e: port 2(veth479cd67) entered disabled state
+[   39.143847] warning: `ThreadPoolForeg' uses wireless extensions which will stop working for Wi-Fi 7 hardware; use nl80211
+[   39.640212] br-5332d57b369e: port 2(veth0e3c0c4) entered blocking state
+[   39.640222] br-5332d57b369e: port 2(veth0e3c0c4) entered disabled state
+[   39.640237] veth0e3c0c4: entered allmulticast mode
+[   39.640298] veth0e3c0c4: entered promiscuous mode
+[   39.709676] br-5332d57b369e: port 6(vetha8974b6) entered blocking state
+[   39.709689] br-5332d57b369e: port 6(vetha8974b6) entered disabled state
+[   39.709704] vetha8974b6: entered allmulticast mode
+[   39.709834] vetha8974b6: entered promiscuous mode
+[   39.755189] eth0: renamed from veth9b28b86
+[   39.756023] br-5332d57b369e: port 2(veth0e3c0c4) entered blocking state
+[   39.756031] br-5332d57b369e: port 2(veth0e3c0c4) entered forwarding state
+[   39.807533] eth0: renamed from veth11dca32
+[   39.808416] br-5332d57b369e: port 6(vetha8974b6) entered blocking state
+[   39.808424] br-5332d57b369e: port 6(vetha8974b6) entered forwarding state
+[   45.762894] br-5332d57b369e: port 9(vethf701782) entered blocking state
+[   45.762905] br-5332d57b369e: port 9(vethf701782) entered disabled state
+[   45.762926] vethf701782: entered allmulticast mode
+[   45.763427] vethf701782: entered promiscuous mode
+[   45.795208] eth0: renamed from vethcf3db1e
+[   45.796195] br-5332d57b369e: port 9(vethf701782) entered blocking state
+[   45.796204] br-5332d57b369e: port 9(vethf701782) entered forwarding state
+[  520.738080] usb 4-1: USB disconnect, device number 2
+[  520.738618] EXT4-fs (sda1): shut down requested (2)
+[  520.743537] Aborting journal on device sda1-8.
+[  520.743561] device offline error, dev sda, sector 239337474 op 0x1:(WRITE) flags 0x9800 phys_seg 1 prio class 2
+[  520.743567] Buffer I/O error on dev sda1, logical block 29917184, lost sync page write
+[  520.743573] JBD2: I/O error when updating journal superblock for sda1-8.
+[  553.002216] usb usb4-port1: config error
+[ 1890.670333] usb usb4-port1: config error
+[ 2513.243002] usb usb4-port1: config error
+[ 7178.943064] usb usb4-port1: config error
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+NAME         SIZE TYPE FSTYPE MOUNTPOINT     MODEL
+loop0          2G loop swap                  
+mmcblk0     59.5G disk                       
+├─mmcblk0p1  512M part vfat   /boot/firmware 
+└─mmcblk0p2   59G part ext4   /              
+zram0          2G disk swap   [SWAP]         
+ngansen@hanryxvault:~ $ 
