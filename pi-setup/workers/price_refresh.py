@@ -39,7 +39,7 @@ and the seed checks fetched_at to know what's stale. Adding a
 parallel "card_price" table would just duplicate state and
 require a second source of truth.
 
-Lang multipliers (JP=0.55, KR=0.40, …) live in server.py's
+Lang multipliers (JP=0.80, KR=0.55, …) live in server.py's
 _LANGUAGE_PRICE_RULES and are applied at display time — the
 worker stores raw USD/Near-Mint baselines so the aggregator
 cache is language-agnostic and the operator can tune the
