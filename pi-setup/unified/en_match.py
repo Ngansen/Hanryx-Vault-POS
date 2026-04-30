@@ -237,6 +237,15 @@ _SELECT_COLS = (
     "  FROM cards_master "
 )
 
+# How many candidate rows we pull per tier so the operator can be
+# warned about ambiguity. We don't need the full set — just enough to
+# know "is this 1 of 1, 1 of a few, or 1 of many?". 11 means we can
+# faithfully say "1 of 10" and use ">10" semantics for anything
+# beyond that. The chosen row is always the first one returned (the
+# ORDER BY pins which row that is); the rest are counted for the
+# `candidate_count` field on the response.
+_CANDIDATE_FETCH_CAP = 11
+
 
 def resolve_en_match(
     db,
@@ -283,19 +292,26 @@ def resolve_en_match(
         num_norm = normalise_number(number)
 
         # 1. exact (set_id + card_number)
+        # Note: cards_master is UNIQUE(set_id, card_number, variant_code)
+        # so this CAN return more than one row when the same printed
+        # number ships in multiple variants (holo, reverse holo, master
+        # ball pattern, etc.). The candidate_count surfaces that so the
+        # operator can disambiguate before pricing.
         if set_code and num_norm:
             cur.execute(
                 _SELECT_COLS +
                 " WHERE set_id = %s "
                 "   AND (card_number = %s OR card_number = %s) "
                 "   AND name_en <> '' "
-                " LIMIT 1",
-                (set_code, num_norm, number),
+                " LIMIT %s",
+                (set_code, num_norm, number, _CANDIDATE_FETCH_CAP),
             )
-            row = cur.fetchone()
-            if row:
-                return build_match_response(row, confidence="exact",
-                                            set_match=set_match)
+            rows = cur.fetchall()
+            if rows:
+                return build_match_response(
+                    rows[0], confidence="exact",
+                    set_match=set_match,
+                    candidate_count=len(rows))
 
         # 2. name + set
         if name and set_code:
@@ -307,13 +323,15 @@ def resolve_en_match(
                 "        name_jp   ILIKE %s OR name_chs ILIKE %s OR "
                 "        name_cht  ILIKE %s) "
                 " ORDER BY length(name_en) ASC "
-                " LIMIT 1",
-                (set_code,) + (f"%{name}%",) * 5,
+                " LIMIT %s",
+                (set_code,) + (f"%{name}%",) * 5 + (_CANDIDATE_FETCH_CAP,),
             )
-            row = cur.fetchone()
-            if row:
-                return build_match_response(row, confidence="name_set",
-                                            set_match=set_match)
+            rows = cur.fetchall()
+            if rows:
+                return build_match_response(
+                    rows[0], confidence="name_set",
+                    set_match=set_match,
+                    candidate_count=len(rows))
 
         # 3. name only
         if name:
@@ -324,16 +342,18 @@ def resolve_en_match(
                 "        name_jp   ILIKE %s OR name_chs ILIKE %s OR "
                 "        name_cht  ILIKE %s) "
                 " ORDER BY length(name_en) ASC "
-                " LIMIT 1",
-                (f"%{name}%",) * 5,
+                " LIMIT %s",
+                (f"%{name}%",) * 5 + (_CANDIDATE_FETCH_CAP,),
             )
-            row = cur.fetchone()
-            if row:
+            rows = cur.fetchall()
+            if rows:
                 # Tier-3 ignored set_code entirely, so the set-resolution
                 # tier is moot — flag it explicitly to avoid implying a
                 # trust signal we didn't earn.
-                return build_match_response(row, confidence="name",
-                                            set_match="raw")
+                return build_match_response(
+                    rows[0], confidence="name",
+                    set_match="raw",
+                    candidate_count=len(rows))
     finally:
         try:
             cur.close()
@@ -349,6 +369,7 @@ def build_match_response(
     row: Sequence,
     confidence: str = "name",
     set_match: str = "raw",
+    candidate_count: int = 1,
 ) -> dict:
     """
     Shape the cards_master row into the JSON the frontend consumes.
@@ -364,6 +385,12 @@ def build_match_response(
     booth surfaces it as a tooltip so the operator can tell at a
     glance whether the set was canonicalised confidently or whether
     it fell through to the raw input.
+
+    `candidate_count` is how many cards_master rows the resolver tier
+    actually matched (capped at _CANDIDATE_FETCH_CAP = 11, so any
+    value of 11 should be read as "11 or more"). The booth renders
+    "1 of N" alongside the confidence chip whenever this is > 1 so
+    the operator knows to disambiguate before locking in a price.
     """
     name_en, set_id, card_number, rarity, artist, _image_url = row
 
@@ -392,4 +419,5 @@ def build_match_response(
         "ebay_sold_url":   ebay_sold_url,
         "confidence":      confidence,
         "set_match":       set_match,
+        "candidate_count": candidate_count,
     }

@@ -12098,6 +12098,10 @@ def admin_market():
   .match-conf.exact{{background:#0f2a0f;color:#4ade80}}
   .match-conf.name_set{{background:#1a2840;color:#93c5fd}}
   .match-conf.name{{background:#241a0f;color:#fbbf24}}
+  /* Ambiguity badge — sits next to the conf chip when more than one
+     cards_master row matched the resolver tier. Amber rather than
+     red because a match still happened, just not a unique one. */
+  .match-cand{{font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:.5px;background:#2a1f0a;color:#fbbf24;margin-left:6px;cursor:help}}
   .match-name{{font-size:14px;font-weight:800;color:#e0e0e0;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
   .match-meta{{font-size:11px;color:#94a3b8;line-height:1.3}}
   .match-meta .sep{{color:#475569;margin:0 5px}}
@@ -12927,6 +12931,22 @@ function renderMatchStrip(m) {{
               : sm === 'name_like'  ? 'Set matched by partial name'
               : sm === 'alias'      ? 'Set matched via operator-curated alias'
               :                       'Set not canonicalised — name lookup only';
+  // Ambiguity badge — the resolver pulled up to 11 candidates per
+  // tier and reports the count here. Anything > 1 means there were
+  // multiple cards_master rows the operator might have meant; we
+  // surface "1 of N" so they can think twice before pricing. The
+  // backend caps at 11, so we render "1 of 10+" in that case rather
+  // than implying we know the exact size of a long list.
+  const cc = Number(m.candidate_count) || 1;
+  let candBadge = '';
+  if (cc > 1) {{
+    const ccLabel = cc >= 11 ? '1 of 10+' : ('1 of ' + cc);
+    const ccTip = 'Multiple cards matched — pick again from the chips below ' +
+                  'or narrow the set/number to disambiguate';
+    candBadge = '<span class="match-cand" title="' + esc(ccTip) + '" ' +
+                'data-candidate-count="' + esc(String(cc)) + '">' +
+                esc(ccLabel) + '</span>';
+  }}
   const metaBits = [];
   if (m.set_id)      metaBits.push(esc(m.set_id));
   if (m.card_number) metaBits.push('#' + esc(m.card_number));
@@ -12953,6 +12973,7 @@ function renderMatchStrip(m) {{
         '<span class="match-conf ' + esc(conf) + '" ' +
           'title="' + esc(smTip) + '" ' +
           'data-set-match="' + esc(sm) + '">' + confLabel + '</span>' +
+        candBadge +
       '</div>' +
       '<div class="match-name">' + esc(m.name_en || '(unnamed)') + '</div>' +
       '<div class="match-meta">' + metaLine + '</div>' +
