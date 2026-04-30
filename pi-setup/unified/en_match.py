@@ -14,19 +14,22 @@ and pi-setup/docs/USB_OFFLINE_DB.md for the offline-first design.
 Public surface:
     normalise_number(raw)              -> str
     resolve_set_id(db, raw_set)        -> str
+    resolve_set_id_with_source(db,     -> (str, str)   # (set_id, source_label)
+                               raw_set)
     resolve_en_match(db, name, set,    -> dict | None
                      number)
     build_match_response(row,
-                         set_id,
-                         card_number)  -> dict
+                         confidence,
+                         set_match)    -> dict
 
 `db` is any DB-API 2.0 connection that yields a cursor with .execute()
 + .fetchone() — psycopg2 in production, a fake in tests.
 """
 from __future__ import annotations
 
-import json
-from typing import Optional, Sequence
+import re
+import unicodedata
+from typing import Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 
@@ -54,11 +57,48 @@ def normalise_number(raw: str) -> str:
 
 # ── Set-id canonicaliser ─────────────────────────────────────────────────
 
-def resolve_set_id(db, raw_set: str) -> str:
+# Source labels surfaced in the en-match response so the booth operator
+# can tell *how* a set was canonicalised. Stable strings — the frontend
+# tooltip and any future audit/log consumer should be able to depend on
+# these exact values. New tiers must be added here too.
+_SET_SOURCES = ("set_id", "name_exact", "name_like", "alias", "raw")
+
+
+def _normalise_set_needle(raw: str) -> str:
+    """
+    Defensive normalisation of an operator-pasted set string.
+
+    Handles the common shapes that silently bypass tier-1 / tier-2
+    lookups in practice — all of which we've seen happen at the booth:
+
+      * Hangul / kana arriving *decomposed* from clipboard (ㅍ + ㅏ + ㄹ
+        instead of pre-composed 팔). NFC re-composition fixes this so
+        the equality check against ref_set_mapping.name_kr actually hits.
+      * NBSP (U+00A0) injected by some clipboards in place of a regular
+        space — invisible to the operator but breaks exact match.
+      * Fullwidth space (U+3000) from East Asian input methods.
+      * Trailing / leading whitespace and runs of internal whitespace.
+
+    Crucially does NOT use NFKC — that would also flatten compatibility
+    characters (ﬁ → fi, ⅠⅡⅢ → 123, fullwidth Latin → Latin) which can
+    corrupt legitimate set names that happen to contain them. NFC is
+    the safe choice for a lookup key.
+    """
+    if not raw:
+        return raw
+    s = unicodedata.normalize("NFC", raw)
+    # Map non-breaking + fullwidth spaces to plain space, then collapse runs.
+    s = s.replace("\u00a0", " ").replace("\u3000", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def resolve_set_id_with_source(db, raw_set: str) -> Tuple[str, str]:
     """
     Map whatever the frontend sent — a TCGdex set_id, a ptcgo code, a
     human-readable set name in any of the five languages, or a known
-    alias — into the canonical `cards_master.set_id` value.
+    alias — into the canonical `cards_master.set_id` value, and report
+    *which* tier matched so the booth can surface the trust signal.
 
     The /admin/market page hands us `t2.set.name` (e.g. "Scarlet &
     Violet—Paldea Evolved") for the language-pricing eBay query, and
@@ -67,23 +107,28 @@ def resolve_set_id(db, raw_set: str) -> str:
     tier-2 always miss and we silently fall through to the risky
     name-only tier-3.
 
-    Resolution order against `ref_set_mapping`:
-      1. Literal set_id (case-insensitive) — already canonical.
-      2. Human name in any of name_en/kr/jp/chs/cht (case-insensitive
-         exact, then ILIKE substring as a last resort).
-      3. Aliases JSONB — operator-curated alternates (ptcgo codes,
-         abbreviations, legacy names).
+    Resolution order against `ref_set_mapping` (returned source label
+    matches the position):
+      1. "set_id"     — literal set_id (case-insensitive).
+      2. "name_exact" — exact match in name_en/kr/jp/chs/cht
+                        (case-insensitive).
+      3. "name_like"  — ILIKE substring across the same five columns.
+      4. "alias"      — case-insensitive match against the JSONB
+                        aliases array (operator-curated alternates:
+                        ptcgo codes, abbreviations, legacy names).
+      5. "raw"        — nothing matched. Falls back to the un-normalised
+                        raw input so a fresh install with an empty
+                        `ref_set_mapping` still behaves like the
+                        pre-resolver code path.
 
-    Falls back to the raw value when nothing matches so that a fresh
-    install with an empty `ref_set_mapping` still works the same as
-    before this fix. The cursor is opened and closed locally so the
-    caller can keep reusing its own.
+    Returns (set_id, source). The cursor is opened and closed locally
+    so the caller can keep reusing its own.
     """
     if not raw_set:
-        return raw_set
-    needle = raw_set.strip()
+        return raw_set, "raw"
+    needle = _normalise_set_needle(raw_set)
     if not needle:
-        return raw_set
+        return raw_set, "raw"
 
     cur = db.cursor()
     try:
@@ -96,12 +141,12 @@ def resolve_set_id(db, raw_set: str) -> str:
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], "set_id"
         except Exception:
             # ref_set_mapping might not exist on a brand-new install. Don't
             # blow up the whole match — just fall back to the raw input
             # below so we behave like the pre-resolver code path.
-            return raw_set
+            return raw_set, "raw"
 
         # 2. Exact human-name match across all five languages first
         # (cheaper + more accurate than ILIKE), then ILIKE substring as a
@@ -119,9 +164,9 @@ def resolve_set_id(db, raw_set: str) -> str:
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], "name_exact"
         except Exception:
-            return raw_set
+            return raw_set, "raw"
 
         try:
             like = f"%{needle}%"
@@ -138,35 +183,49 @@ def resolve_set_id(db, raw_set: str) -> str:
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], "name_like"
         except Exception:
-            return raw_set
+            return raw_set, "raw"
 
         # 3. Operator-curated aliases (ptcgo codes, abbreviations).
-        # `aliases` is JSONB array of strings; the @> containment check
-        # uses the trgm-free path so this stays cheap. We serialise the
-        # needle through json.dumps so quotes / backslashes / control
-        # characters in operator-pasted set names can't malform the
-        # JSONB literal and silently bypass the alias branch.
+        # `aliases` is a JSONB array of strings. We expand it with
+        # jsonb_array_elements_text and compare lower(alias) to
+        # lower(needle) — case-insensitive, matching the rest of the
+        # resolver, and robust to existing case-mixed alias data
+        # without needing a backfill. Bonus: no JSONB literal to
+        # construct, so quote/backslash/unicode in the needle are
+        # bound as a normal text param with zero escape risk.
         try:
-            needle_json = json.dumps([needle], ensure_ascii=False)
             cur.execute(
                 "SELECT set_id FROM ref_set_mapping "
-                " WHERE aliases @> %s::jsonb LIMIT 1",
-                (needle_json,),
+                " WHERE EXISTS ( "
+                "    SELECT 1 FROM jsonb_array_elements_text(aliases) AS a "
+                "     WHERE lower(a) = lower(%s) "
+                " ) LIMIT 1",
+                (needle,),
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], "alias"
         except Exception:
-            return raw_set
+            return raw_set, "raw"
     finally:
         try:
             cur.close()
         except Exception:
             pass
 
-    return raw_set
+    return raw_set, "raw"
+
+
+def resolve_set_id(db, raw_set: str) -> str:
+    """
+    Backwards-compatible thin wrapper around resolve_set_id_with_source
+    for callers that don't care about the source label. New code should
+    prefer the tuple-returning version so the booth can surface the
+    trust signal.
+    """
+    return resolve_set_id_with_source(db, raw_set)[0]
 
 
 # ── SQL-driven resolver ──────────────────────────────────────────────────
@@ -205,13 +264,19 @@ def resolve_en_match(
 
     `set_code` is canonicalised through ref_set_mapping first so that
     callers can pass in any of {set_id, ptcgo code, human set name in
-    any language} and the tier-1/tier-2 SQL still hits.
+    any language} and the tier-1/tier-2 SQL still hits. The matched
+    set-resolution tier is surfaced as `set_match` on the response so
+    the booth can render a trust tooltip ("matched via alias", etc.).
     """
     # Canonicalise the set identifier BEFORE we open the main cursor so
     # the cursor we use for the SELECTs only sees a clean set_id. The
-    # resolver opens its own short-lived cursor internally.
+    # resolver opens its own short-lived cursor internally. We capture
+    # the source label here even when set_code is empty so the response
+    # is consistent across callers.
     if set_code:
-        set_code = resolve_set_id(db, set_code)
+        set_code, set_match = resolve_set_id_with_source(db, set_code)
+    else:
+        set_match = "raw"
 
     cur = db.cursor()
     try:
@@ -229,7 +294,8 @@ def resolve_en_match(
             )
             row = cur.fetchone()
             if row:
-                return build_match_response(row, confidence="exact")
+                return build_match_response(row, confidence="exact",
+                                            set_match=set_match)
 
         # 2. name + set
         if name and set_code:
@@ -246,7 +312,8 @@ def resolve_en_match(
             )
             row = cur.fetchone()
             if row:
-                return build_match_response(row, confidence="name_set")
+                return build_match_response(row, confidence="name_set",
+                                            set_match=set_match)
 
         # 3. name only
         if name:
@@ -262,7 +329,11 @@ def resolve_en_match(
             )
             row = cur.fetchone()
             if row:
-                return build_match_response(row, confidence="name")
+                # Tier-3 ignored set_code entirely, so the set-resolution
+                # tier is moot — flag it explicitly to avoid implying a
+                # trust signal we didn't earn.
+                return build_match_response(row, confidence="name",
+                                            set_match="raw")
     finally:
         try:
             cur.close()
@@ -277,6 +348,7 @@ def resolve_en_match(
 def build_match_response(
     row: Sequence,
     confidence: str = "name",
+    set_match: str = "raw",
 ) -> dict:
     """
     Shape the cards_master row into the JSON the frontend consumes.
@@ -286,6 +358,12 @@ def build_match_response(
     The eBay URL targets *sold + completed* listings (LH_Sold=1 +
     LH_Complete=1) because that's what determines trade-in pricing,
     not aspirational asks.
+
+    `set_match` is the resolution tier from resolve_set_id_with_source
+    ("set_id" / "name_exact" / "name_like" / "alias" / "raw"). The
+    booth surfaces it as a tooltip so the operator can tell at a
+    glance whether the set was canonicalised confidently or whether
+    it fell through to the raw input.
     """
     name_en, set_id, card_number, rarity, artist, _image_url = row
 
@@ -313,4 +391,5 @@ def build_match_response(
         "image_local_url": image_local_url,
         "ebay_sold_url":   ebay_sold_url,
         "confidence":      confidence,
+        "set_match":       set_match,
     }

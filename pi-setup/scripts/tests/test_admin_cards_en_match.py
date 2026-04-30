@@ -18,10 +18,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from unified.en_match import (   # noqa: E402
+    _normalise_set_needle,
     build_match_response,
     normalise_number,
     resolve_en_match,
     resolve_set_id,
+    resolve_set_id_with_source,
 )
 
 
@@ -418,47 +420,61 @@ class TestResolveSetId(unittest.TestCase):
         self.assertEqual(out, "sv2")
         self.assertEqual(len(conn.executed), 4)
         sql, params = conn.executed[3]
-        self.assertIn("aliases @>", sql)
-        # JSONB containment requires the needle wrapped as a JSON array
-        # of one string — assert the exact wire shape (json.dumps of a
-        # plain ASCII needle yields no extra escaping).
-        self.assertEqual(params, ('["PAL"]',))
+        # The alias branch expands the JSONB array with
+        # jsonb_array_elements_text and case-insensitively compares
+        # each element to the needle — no JSONB literal involved, so
+        # the needle is bound as a plain text param.
+        self.assertIn("jsonb_array_elements_text", sql)
+        self.assertIn("lower(a) = lower", sql)
+        self.assertEqual(params, ("PAL",))
 
-    def test_alias_needle_with_double_quote_escaped_safely(self):
-        # Earlier f-string-based JSON construction produced invalid
-        # JSON for needles containing `"`, which threw inside the
-        # except-fallback and silently bypassed the alias branch.
-        # json.dumps escapes the quote so the lookup actually runs.
+    def test_alias_lookup_is_case_insensitive(self):
+        # Operator-curated alias might be stored as "pal" while the
+        # operator types "PAL" (or vice versa). The other resolver
+        # tiers are all case-insensitive (UPPER=UPPER / ILIKE), so
+        # the alias branch must match — otherwise tier-4 silently
+        # diverges from tier-1/2/3 and the operator gets confused
+        # about why the same input behaves differently set to set.
+        conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
+        out = resolve_set_id(conn, "PaL")
+        self.assertEqual(out, "sv2")
+        sql, params = conn.executed[3]
+        # Both sides of the comparison are wrapped in lower() so case
+        # mismatches between needle and stored alias both resolve.
+        self.assertIn("lower(a) = lower(%s)", sql)
+        self.assertEqual(params, ("PaL",))
+
+    def test_alias_needle_with_double_quote_bound_as_text(self):
+        # Pre-EXISTS the alias branch built a JSONB literal from the
+        # needle, which broke (silently fell back to raw) on quotes.
+        # The new EXISTS form binds the needle as a normal text param
+        # — psycopg2 does the escaping, no JSON construction in our
+        # code, so quotes / backslashes / control chars are safe by
+        # construction.
         conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
         out = resolve_set_id(conn, 'A"B')
         self.assertEqual(out, "sv2")
-        # Wire shape: JSON array of one string with the quote escaped.
         sql, params = conn.executed[3]
-        self.assertIn("aliases @>", sql)
-        self.assertEqual(params, (r'["A\"B"]',))
+        self.assertIn("jsonb_array_elements_text", sql)
+        # Bare needle, no JSON wrapping.
+        self.assertEqual(params, ('A"B',))
 
-    def test_alias_needle_with_backslash_escaped_safely(self):
-        # Same hardening for backslashes — the operator might paste a
-        # set name that legitimately contains one, and we shouldn't
-        # silently skip the alias branch when they do.
+    def test_alias_needle_with_backslash_bound_as_text(self):
         conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
         out = resolve_set_id(conn, 'A\\B')
         self.assertEqual(out, "sv2")
         sql, params = conn.executed[3]
-        self.assertIn("aliases @>", sql)
-        self.assertEqual(params, (r'["A\\B"]',))
+        self.assertIn("jsonb_array_elements_text", sql)
+        self.assertEqual(params, ('A\\B',))
 
-    def test_alias_needle_unicode_preserved_not_escaped(self):
-        # ensure_ascii=False means non-ASCII characters in operator
-        # input (Korean / Japanese / Chinese set names mapped as
-        # aliases) survive the JSON serialisation as themselves, not
-        # \uXXXX escapes — keeps the JSONB literal compact and
-        # matches how the import worker writes them.
+    def test_alias_needle_unicode_bound_as_text(self):
+        # Korean / Japanese / Chinese needles flow through verbatim;
+        # no JSON serialisation, so \uXXXX escaping is impossible.
         conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
         out = resolve_set_id(conn, "팔데아")
         self.assertEqual(out, "sv2")
         _, params = conn.executed[3]
-        self.assertEqual(params, ('["팔데아"]',))
+        self.assertEqual(params, ("팔데아",))
 
     def test_no_match_returns_raw_input(self):
         # Unknown sets must not block en-match — fall back to the raw
@@ -548,6 +564,236 @@ class TestResolverIntegration(unittest.TestCase):
         self.assertEqual(m["confidence"], "name")
         tier1_sql, tier1_params = conn.cards_master_executed[0]
         self.assertIn("made-up-set", tier1_params)
+
+
+# ── Operator-paste normalisation ─────────────────────────────────────────
+
+class TestNormaliseSetNeedle(unittest.TestCase):
+    """
+    Defensive normalisation sits at the top of resolve_set_id and is
+    the cheapest fix for "operator typed it right but the lookup
+    missed" complaints. Each test pins one shape we've actually seen
+    cause a silent fall-through in the booth.
+    """
+
+    def test_empty_returned_unchanged(self):
+        # Empty / None paths short-circuit before normalisation so the
+        # caller can use `if not s:` to distinguish "nothing to look
+        # up" from "nothing matched".
+        self.assertEqual(_normalise_set_needle(""),   "")
+        self.assertEqual(_normalise_set_needle(None), None)
+
+    def test_nfc_recomposes_decomposed_hangul(self):
+        # macOS clipboard paste of Korean text often arrives in NFD
+        # (jamo decomposition): 'ㅍㅏㄹ' as three code points instead
+        # of the single pre-composed '팔'. Without NFC the equality
+        # check against ref_set_mapping.name_kr (which IS pre-composed)
+        # silently misses.
+        decomposed = "\u1111\u1161\u11af"   # NFD form of 팔 (U+D314)
+        composed   = "\ud314"
+        self.assertEqual(_normalise_set_needle(decomposed), composed)
+
+    def test_nfc_recomposes_decomposed_kana(self):
+        # Same shape for Japanese voiced kana — 'ガ' (U+30AC) often
+        # arrives as 'カ' + combining voicing mark (U+30AB U+3099).
+        decomposed = "\u30ab\u3099"
+        composed   = "\u30ac"
+        self.assertEqual(_normalise_set_needle(decomposed), composed)
+
+    def test_nbsp_collapsed_to_space(self):
+        # Non-breaking space sneaks in from copy-paste off web pages.
+        # Invisible to the operator but breaks tier-2 exact match.
+        self.assertEqual(_normalise_set_needle("Paldea\u00a0Evolved"),
+                         "Paldea Evolved")
+
+    def test_fullwidth_space_collapsed_to_space(self):
+        # East Asian input methods produce U+3000 (fullwidth space).
+        self.assertEqual(_normalise_set_needle("팔데아\u3000진화"),
+                         "팔데아 진화")
+
+    def test_internal_whitespace_runs_collapsed(self):
+        # Tabs, double-spaces from sloppy paste — collapsed so they
+        # don't show up as distinct from a single-space needle.
+        self.assertEqual(_normalise_set_needle("Paldea  \t  Evolved"),
+                         "Paldea Evolved")
+
+    def test_trailing_and_leading_whitespace_stripped(self):
+        self.assertEqual(_normalise_set_needle("  Paldea Evolved  "),
+                         "Paldea Evolved")
+
+    def test_does_not_use_nfkc(self):
+        # NFKC would flatten ﬁ → fi, ⅠⅡⅢ → 123 etc. — destructive
+        # for legitimate set names that happen to contain those.
+        # Pin the safe (NFC-only) behaviour so we don't accidentally
+        # regress to NFKC during a future "be more aggressive" pass.
+        self.assertEqual(_normalise_set_needle("ﬁre"), "ﬁre")
+        self.assertEqual(_normalise_set_needle("Ⅰ"),    "Ⅰ")
+
+    def test_nfc_normalised_needle_drives_the_lookup(self):
+        # End-to-end: a decomposed-Korean operator paste must land on
+        # the SAME row as the pre-composed form. Without NFC at the
+        # top of resolve_set_id the tier-2 SQL gets the decomposed
+        # bytes and misses the pre-composed name_kr.
+        decomposed = "\u1111\u1161\u11af\u1103\u1166\u110b\u1161"  # NFD '팔데아'
+        conn = FakeConn(resolver_queue=[None, ("sv2",)])
+        out = resolve_set_id(conn, decomposed)
+        self.assertEqual(out, "sv2")
+        # tier-2 (exact human-name) saw the *composed* needle, not the
+        # raw decomposed paste.
+        _, params = conn.executed[1]
+        self.assertEqual(params, ("팔데아",) * 5)
+
+
+# ── Source-label tracking (resolve_set_id_with_source) ───────────────────
+
+class TestResolveSetIdWithSource(unittest.TestCase):
+    """
+    The tuple-returning resolver reports which tier matched so the
+    booth can render a "Set matched via: alias" tooltip on the
+    Matched-as strip. Source labels are part of the public surface
+    and must stay stable — operator-facing tooltip text and any
+    future audit log will key off them.
+    """
+
+    CANON = ("sv2",)
+
+    def test_set_id_tier_reports_set_id_source(self):
+        conn = FakeConn(resolver_queue=[self.CANON])
+        sid, source = resolve_set_id_with_source(conn, "sv2")
+        self.assertEqual(sid, "sv2")
+        self.assertEqual(source, "set_id")
+
+    def test_name_exact_tier_reports_name_exact_source(self):
+        conn = FakeConn(resolver_queue=[None, self.CANON])
+        sid, source = resolve_set_id_with_source(conn, "Paldea Evolved")
+        self.assertEqual(sid, "sv2")
+        self.assertEqual(source, "name_exact")
+
+    def test_name_like_tier_reports_name_like_source(self):
+        conn = FakeConn(resolver_queue=[None, None, self.CANON])
+        sid, source = resolve_set_id_with_source(
+            conn, "Scarlet & Violet—Paldea Evolved")
+        self.assertEqual(sid, "sv2")
+        self.assertEqual(source, "name_like")
+
+    def test_alias_tier_reports_alias_source(self):
+        conn = FakeConn(resolver_queue=[None, None, None, self.CANON])
+        sid, source = resolve_set_id_with_source(conn, "PAL")
+        self.assertEqual(sid, "sv2")
+        self.assertEqual(source, "alias")
+
+    def test_no_match_reports_raw_source(self):
+        # Tier label "raw" tells the booth to show a low-trust badge
+        # — the strip rendered from this didn't actually canonicalise.
+        conn = FakeConn(resolver_queue=[None, None, None, None])
+        sid, source = resolve_set_id_with_source(conn, "wholly-unknown")
+        self.assertEqual(sid, "wholly-unknown")
+        self.assertEqual(source, "raw")
+
+    def test_empty_input_reports_raw_source(self):
+        # Defensive — caller might pass "" / None when set is unknown.
+        # Source must still be present (frontend doesn't have to
+        # guard for missing keys).
+        conn = FakeConn()
+        self.assertEqual(resolve_set_id_with_source(conn, ""),   ("", "raw"))
+        self.assertEqual(resolve_set_id_with_source(conn, None), (None, "raw"))
+
+    def test_db_error_reports_raw_source(self):
+        # ref_set_mapping doesn't exist on a fresh install — the
+        # except-fallback must still report a source so the response
+        # shape is consistent.
+        class BoomCursor(FakeCursor):
+            def execute(self, sql, params=None):
+                raise RuntimeError("relation does not exist")
+
+        class BoomConn(FakeConn):
+            def cursor(self):
+                return BoomCursor(self)
+
+        conn = BoomConn()
+        sid, source = resolve_set_id_with_source(conn, "sv2")
+        self.assertEqual(sid, "sv2")
+        self.assertEqual(source, "raw")
+
+    def test_resolve_set_id_wrapper_returns_just_set_id(self):
+        # Backwards-compat: existing callers (and the existing tests
+        # above) get the bare string back. Only new code that needs
+        # the source label uses the tuple-returning version.
+        conn = FakeConn(resolver_queue=[self.CANON])
+        self.assertEqual(resolve_set_id(conn, "sv2"), "sv2")
+
+
+# ── set_match propagation through the en-match response ─────────────────
+
+class TestSetMatchPropagation(unittest.TestCase):
+    """
+    The set-resolution tier must reach the response dict so the
+    booth can render a tooltip on the Matched-as strip telling the
+    operator how confidently the set was canonicalised.
+    """
+
+    EXACT_ROW = ("Charizard ex", "sv2", "199", "SIR", "Yuu Nishida", "")
+
+    def test_set_match_reflects_alias_resolution(self):
+        # Resolver hits on tier-4 (alias). Card lookup is exact.
+        # The response should report set_match='alias'.
+        conn = FakeConn(
+            fetchone_queue=[self.EXACT_ROW],
+            resolver_queue=[None, None, None, ("sv2",)],
+        )
+        m = resolve_en_match(conn, "Charizard", "PAL", "199")
+        self.assertEqual(m["confidence"], "exact")
+        self.assertEqual(m["set_match"], "alias")
+
+    def test_set_match_reflects_name_exact_resolution(self):
+        conn = FakeConn(
+            fetchone_queue=[self.EXACT_ROW],
+            resolver_queue=[None, ("sv2",)],
+        )
+        m = resolve_en_match(conn, "Charizard", "Paldea Evolved", "199")
+        self.assertEqual(m["set_match"], "name_exact")
+
+    def test_set_match_is_raw_when_resolver_misses(self):
+        # Tier-1/2 still get the raw input — but the trust signal
+        # must reflect that we never canonicalised.
+        conn = FakeConn(
+            fetchone_queue=[self.EXACT_ROW],
+            resolver_queue=[None, None, None, None],
+        )
+        m = resolve_en_match(conn, "Charizard", "made-up-set", "199")
+        self.assertEqual(m["set_match"], "raw")
+
+    def test_set_match_is_raw_for_tier3_name_only_match(self):
+        # Tier-3 ignores set_code entirely — surfacing a non-raw
+        # set_match here would mislead the operator into trusting
+        # a set tier that wasn't actually used in the card lookup.
+        conn = FakeConn(
+            fetchone_queue=[None, None, self.EXACT_ROW],
+            resolver_queue=[self.EXACT_ROW[1:2]],  # 'sv2' resolved
+        )
+        m = resolve_en_match(conn, "Charizard", "sv2", "999")
+        self.assertEqual(m["confidence"], "name")
+        self.assertEqual(m["set_match"], "raw")
+
+    def test_set_match_is_raw_when_no_set_code_supplied(self):
+        # Some card-lookup callers only have a name. With set_code
+        # empty, tier-1 + tier-2 are skipped (their preconditions
+        # require set_code) and only tier-3 runs — one cards_master
+        # query. The set_match label must still be present so the
+        # frontend doesn't have to guard for a missing key.
+        conn = FakeConn(fetchone_queue=[self.EXACT_ROW])
+        m = resolve_en_match(conn, "Charizard", "", "")
+        self.assertIsNotNone(m)
+        self.assertIn("set_match", m)
+        self.assertEqual(m["set_match"], "raw")
+
+    def test_build_match_response_default_set_match_is_raw(self):
+        # Defensive default for any direct caller of build_match_response
+        # — older code that pre-dates the set_match field still gets
+        # a present-but-low-trust label rather than KeyError downstream.
+        out = build_match_response(self.EXACT_ROW)
+        self.assertEqual(out["set_match"], "raw")
+        self.assertEqual(out["confidence"], "name")
 
 
 if __name__ == "__main__":
