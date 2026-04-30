@@ -2349,9 +2349,13 @@ _NOW_MS_PG = "(EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT"
 # ---------------------------------------------------------------------------
 
 _LANGUAGE_PRICE_RULES: dict = {
-    "English": 1.0,  "EN": 1.0,
-    "Japanese": 0.55, "JP": 0.55,
-    "Korean": 0.40,   "KR": 0.40,
+    # Per the canonical pricing spec: KR sells at 55% of EN, JP at 80% of EN.
+    # Any change here MUST also update test_pricing_rules.py, which pins the
+    # values so the spec can't silently drift again (regression caught on
+    # 2026-04-30 — code had KR=0.40 / JP=0.55).
+    "English": 1.0,   "EN": 1.0,
+    "Japanese": 0.80, "JP": 0.80,
+    "Korean": 0.55,   "KR": 0.55,
 }
 _ITEM_TYPE_UNDERCUT: dict = {
     "Single": 0.95,
