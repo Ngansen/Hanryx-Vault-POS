@@ -10,7 +10,15 @@ __pycache__/
 nginx/
 systemd/
 satellite/
-scripts/
+# scripts/ — DO NOT exclude. The directory contains both host-only shell
+# helpers (add-vpn-client.sh, setup-bluetooth-printer.sh, etc.) AND
+# container-runnable Python modules (scripts/sync_card_mirror.py and
+# scripts/mirror_failure_log.py) that are imported as `scripts.*`.
+# Excluding the whole directory broke `python -m scripts.sync_card_mirror`
+# inside the sync container with ModuleNotFoundError. The .sh helpers
+# are harmless dead weight in the image (~100 KB total); the .py modules
+# are required. If you need to keep host-only files out, list them
+# individually below instead of excluding the directory.
 install.sh
 setup-*.sh
 README.md
