@@ -667,6 +667,23 @@ CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
 """
 
 
+# en_set_gap mirrors kr_set_gap but its canonical source is the
+# `src_tcgdex_multi` table (TCGdex API loader), not a filesystem walk.
+# Same shape so the same operator playbook works against either table.
+DDL_EN_SET_GAP = """
+CREATE TABLE IF NOT EXISTS en_set_gap (
+    set_id           TEXT PRIMARY KEY,
+    expected_count   INTEGER NOT NULL DEFAULT 0,
+    actual_count     INTEGER NOT NULL DEFAULT 0,
+    missing_numbers  JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    extra_numbers    JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_en_set_gap_audited
+    ON en_set_gap (audited_at DESC);
+"""
+
+
 # ─── Cross-region card alias map (TC ↔ SC ↔ KR ↔ JP ↔ EN) ─────────────────
 #
 # Single canonical row per physical card across every region we sell at
@@ -828,6 +845,7 @@ _ALL_DDL = [
     ("discovery_log",           DDL_DISCOVERY_LOG),
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
+    ("en_set_gap",              DDL_EN_SET_GAP),
     ("card_alias",              DDL_CARD_ALIAS),
     ("zh_set_gap",              DDL_ZH_SET_GAP),
     ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
