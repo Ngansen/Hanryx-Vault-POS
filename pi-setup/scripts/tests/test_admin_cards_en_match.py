@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from unified.en_match import (   # noqa: E402
+    _CANDIDATE_FETCH_CAP,
     _normalise_set_needle,
     build_match_response,
     normalise_number,
@@ -36,13 +37,30 @@ class FakeCursor:
     The cursor inspects each SQL string and routes it to the matching
     response queue on the FakeConn:
 
-      * `ref_set_mapping`  → drains `resolver_queue`  (set-id canonicaliser)
-      * everything else    → drains `fetchone_queue`  (cards_master tiers)
+      * `ref_set_mapping`  → drains `resolver_queue`  (set-id canonicaliser
+                             via `fetchone()`)
+      * everything else    → drains `fetchone_queue`  (cards_master tiers
+                             via `fetchall()`)
 
     This split keeps the pre-resolver tests behaviourally unchanged
     (their resolver_queue is empty → resolver misses → falls back to
     the raw set_code) and lets resolver-specific tests exercise the
     canonicaliser without staging dummy cards_master responses.
+
+    Backward compat for fetchall(): the cards_master tier SELECTs now
+    call `cur.fetchall()` (so the resolver can count candidates), but
+    the existing tests stage a single row tuple per tier in
+    fetchone_queue. We accept both:
+
+      * a tuple/list of column values  → wrapped as `[row]`
+      * a list of row tuples           → returned verbatim (use this
+                                          shape for ambiguity tests
+                                          that need candidate_count > 1)
+      * None                           → returned as `[]`
+
+    The tuple-vs-list-of-tuples test is "is the first element itself
+    a tuple/list?". That's unambiguous because cards_master rows are
+    always 6-tuples of scalars (str/None), never nested.
     """
     def __init__(self, conn):
         self.conn = conn
@@ -66,6 +84,18 @@ class FakeCursor:
 
     def fetchone(self):
         return self._next_one
+
+    def fetchall(self):
+        item = self._next_one
+        if item is None:
+            return []
+        # Already a list of rows (each row is itself a tuple/list of
+        # column values) — pass through.
+        if isinstance(item, list) and item and isinstance(item[0], (list, tuple)):
+            return item
+        # Single row tuple (legacy shape) — wrap so the caller still
+        # gets one match.
+        return [item]
 
     def close(self):
         self.closed = True
@@ -228,10 +258,18 @@ class TestSqlComposition(unittest.TestCase):
         for col in ("name_en", "name_kr", "name_jp", "name_chs", "name_cht"):
             self.assertIn(f"{col} ILIKE %s", sql_flat,
                           f"missing ILIKE on {col}")
-        # 1 set_code + 5 name patterns = 6 params.
-        self.assertEqual(len(params), 6)
-        # All 5 patterns are wildcarded with the same name string.
-        self.assertEqual(params[1:], ("%リザードン%",) * 5)
+        # 1 set_code + 5 name patterns + 1 LIMIT cap = 7 params.
+        # The LIMIT %s comes last so the resolver can pull a small
+        # window of candidates and report ambiguity via candidate_count.
+        self.assertEqual(len(params), 7)
+        self.assertIn("LIMIT %s", sql_flat)
+        # Middle 5 patterns are wildcarded with the same name string.
+        self.assertEqual(params[1:6], ("%リザードン%",) * 5)
+        # Trailing param is the candidate-fetch cap (small int, so any
+        # accidental binding swap with the needle is obvious).
+        self.assertIsInstance(params[6], int)
+        self.assertGreaterEqual(params[6], 2)
+        self.assertLessEqual(params[6], 100)
 
     def test_name_branch_orders_by_shortest_name_en(self):
         # "Charizard ex" should win over "Charizard ex VMAX" when both
@@ -794,6 +832,167 @@ class TestSetMatchPropagation(unittest.TestCase):
         out = build_match_response(self.EXACT_ROW)
         self.assertEqual(out["set_match"], "raw")
         self.assertEqual(out["confidence"], "name")
+
+
+# ── candidate_count surfacing ────────────────────────────────────────────
+
+
+class TestCandidateCount(unittest.TestCase):
+    """
+    Each tier of resolve_en_match pulls up to _CANDIDATE_FETCH_CAP rows
+    so the operator gets a "1 of N" warning when the resolver wasn't
+    decisive. The chosen row is always rows[0] (the ORDER BY pins which
+    one); the rest are counted into `candidate_count` on the response.
+
+    This is the booth's last line of defence against pricing the wrong
+    variant — a Charizard #4 with multiple holo/reverse-holo printings
+    in one set must NOT silently lock onto rows[0] without warning the
+    operator that other matches existed.
+    """
+    R1 = ("Charizard ex",      "sv2", "4", "Double Rare",
+          "5ban Graphics", "https://x/c1.png")
+    R2 = ("Charizard ex (RH)", "sv2", "4", "Double Rare",
+          "5ban Graphics", "https://x/c2.png")
+    R3 = ("Charizard ex (MB)", "sv2", "4", "Double Rare",
+          "5ban Graphics", "https://x/c3.png")
+
+    # 1. exact (set + number) ---------------------------------------------
+
+    def test_exact_tier_unique_match_reports_count_1(self):
+        # Single variant of the printed number — operator can lock in
+        # the price without further disambiguation.
+        conn = FakeConn([self.R1])
+        out = resolve_en_match(conn, "", "sv2", "4")
+        self.assertEqual(out["confidence"], "exact")
+        self.assertEqual(out["candidate_count"], 1)
+
+    def test_exact_tier_multi_variant_reports_actual_count(self):
+        # Same printed number, multiple variant_codes (holo / reverse
+        # holo / master ball pattern). All three rows come back; the
+        # frontend must surface "1 of 3" so the operator knows to pick
+        # the right variant chip before pricing.
+        conn = FakeConn([[self.R1, self.R2, self.R3]])
+        out = resolve_en_match(conn, "", "sv2", "4")
+        self.assertEqual(out["confidence"], "exact")
+        self.assertEqual(out["candidate_count"], 3)
+        # Picked row is the first (preserves existing tier-1 contract:
+        # we don't reorder, we just count what came back).
+        self.assertEqual(out["name_en"], "Charizard ex")
+
+    def test_exact_tier_passes_limit_param_to_sql(self):
+        # Defensive — a missing LIMIT %s would let one weird set with
+        # 200 numbered cards stream the entire row set into Python
+        # before we ever get to count.
+        conn = FakeConn([self.R1])
+        resolve_en_match(conn, "", "sv2", "4")
+        sql, params = conn.cards_master_executed[0]
+        self.assertIn("LIMIT %s", sql)
+        # LIMIT is the last param, exact value pinned to the cap.
+        self.assertEqual(params[-1], _CANDIDATE_FETCH_CAP)
+
+    # 2. name + set --------------------------------------------------------
+
+    def test_name_set_tier_reports_candidate_count(self):
+        # Tier-1 misses (None), tier-2 returns 2 fuzzy hits.
+        conn = FakeConn([None, [self.R1, self.R2]])
+        out = resolve_en_match(conn, "Charizard", "sv2", "999")
+        self.assertEqual(out["confidence"], "name_set")
+        self.assertEqual(out["candidate_count"], 2)
+
+    def test_name_set_tier_singleton_reports_count_1(self):
+        conn = FakeConn([None, self.R1])
+        out = resolve_en_match(conn, "Charizard", "sv2", "999")
+        self.assertEqual(out["confidence"], "name_set")
+        self.assertEqual(out["candidate_count"], 1)
+
+    def test_name_set_tier_passes_limit_param_last(self):
+        conn = FakeConn([None, self.R1])
+        resolve_en_match(conn, "Charizard", "sv2", "999")
+        sql, params = conn.cards_master_executed[1]
+        self.assertIn("LIMIT %s", sql)
+        self.assertEqual(params[-1], _CANDIDATE_FETCH_CAP)
+
+    # 3. name only ---------------------------------------------------------
+
+    def test_name_only_tier_reports_candidate_count(self):
+        # Tier-1 + tier-2 don't apply (no set); tier-3 returns 3 hits
+        # across multiple sets.
+        conn = FakeConn([[self.R1, self.R2, self.R3]])
+        out = resolve_en_match(conn, "Charizard", "", "")
+        self.assertEqual(out["confidence"], "name")
+        self.assertEqual(out["candidate_count"], 3)
+
+    def test_name_only_tier_passes_limit_param_last(self):
+        conn = FakeConn([self.R1])
+        resolve_en_match(conn, "Charizard", "", "")
+        sql, params = conn.cards_master_executed[0]
+        self.assertIn("LIMIT %s", sql)
+        self.assertEqual(params[-1], _CANDIDATE_FETCH_CAP)
+
+    # Cap-saturation semantics -------------------------------------------
+
+    def test_candidate_count_caps_at_fetch_cap_for_huge_result_sets(self):
+        # If the booth searches "Pikachu" (hundreds of printings),
+        # the SQL LIMIT caps us at _CANDIDATE_FETCH_CAP = 11. The
+        # frontend then renders ">10" instead of an exact number it
+        # can't trust — so we assert the cap value here directly so
+        # the JS strip's "10+" threshold stays honest.
+        big_result = [self.R1] * _CANDIDATE_FETCH_CAP
+        conn = FakeConn([big_result])
+        out = resolve_en_match(conn, "Pikachu", "", "")
+        self.assertEqual(out["candidate_count"], _CANDIDATE_FETCH_CAP)
+        self.assertEqual(_CANDIDATE_FETCH_CAP, 11,
+                         "JS strip's '10+' label hard-codes 11 — keep aligned")
+
+    # Response builder default -------------------------------------------
+
+    def test_build_match_response_default_candidate_count_is_1(self):
+        # Direct callers that pre-date this field still get a
+        # present value rather than KeyError on the frontend.
+        out = build_match_response(self.R1)
+        self.assertEqual(out["candidate_count"], 1)
+
+    def test_build_match_response_passes_through_explicit_count(self):
+        out = build_match_response(self.R1, candidate_count=7)
+        self.assertEqual(out["candidate_count"], 7)
+
+
+# ── JS strip alignment with backend ───────────────────────────────────────
+
+
+class TestJsStripAlignment(unittest.TestCase):
+    """The renderMatchStrip JS in server.py reads m.candidate_count and
+    renders an amber "1 of N" badge when it's > 1. These tests pin
+    that the JS still references the correct field name and that the
+    "10+" cap matches the backend cap — drift between the two would
+    silently mis-render the booth's last ambiguity warning."""
+
+    def setUp(self):
+        server_py = ROOT / "server.py"
+        self.src = server_py.read_text(encoding="utf-8")
+
+    def test_js_reads_candidate_count_field(self):
+        self.assertIn("m.candidate_count", self.src,
+                      "renderMatchStrip should read m.candidate_count")
+
+    def test_js_renders_match_cand_badge(self):
+        self.assertIn("class=\"match-cand\"", self.src,
+                      "renderMatchStrip must emit a <span class=match-cand>")
+
+    def test_js_styles_match_cand_class(self):
+        # Without a CSS rule the badge would render as unstyled inline
+        # text — defeating the visual warning purpose.
+        self.assertIn(".match-cand", self.src,
+                      "missing .match-cand CSS rule")
+
+    def test_js_10plus_threshold_matches_backend_cap(self):
+        # Backend caps at _CANDIDATE_FETCH_CAP=11; JS labels anything
+        # >= 11 as "10+". If someone bumps the cap to 51, the JS must
+        # be updated too — this test catches the drift.
+        self.assertIn("cc >= 11", self.src,
+                      "JS '10+' threshold must align with "
+                      "_CANDIDATE_FETCH_CAP=11 in unified/en_match.py")
+        self.assertEqual(_CANDIDATE_FETCH_CAP, 11)
 
 
 if __name__ == "__main__":

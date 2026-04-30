@@ -83,6 +83,17 @@ _LANG_TO_COL: dict[str, str] = {
 
 _API_BASE = "https://api.tcgdex.net/v2"
 
+# Cap on per-set detail GETs in a single run. The per-language /sets
+# endpoint doesn't expose serie.name (era) or releaseDate, so to fill
+# those we have to GET /{lang}/sets/{set_id} once per set. There are
+# ~250 sets total; on a fresh Pi the first run would burn 250 round
+# trips back-to-back if uncapped. This cap means full backfill takes
+# at most ceil(250/50) = 5 runs (i.e. 5 days at the daily cadence),
+# which is a fine trade for a steady booth uplink. After backfill
+# is complete the cap is irrelevant — only newly-discovered sets
+# need a detail GET, usually 0-2 per run.
+_MAX_DETAIL_FETCHES_PER_RUN = 50
+
 
 def _fetch_sets(lang: str, *, timeout: int = 30) -> list[dict]:
     """Fetch the full set list for one language. Returns [] on failure
@@ -116,6 +127,64 @@ def _fetch_sets(lang: str, *, timeout: int = 30) -> list[dict]:
         return []
 
 
+def _fetch_set_detail(
+    set_id: str, *, lang: str = "en", timeout: int = 30,
+) -> Optional[dict]:
+    """Fetch one set's detail document. Returns None on any failure
+    so the backfill loop can keep going to the next set.
+
+    The /sets list endpoint only returns id + name + cardCount + logo.
+    The era + release date live on the per-set detail document
+    (`serie.name` and `releaseDate`). EN is the safe default for the
+    detail GET — TCGdex publishes EN serie names for every set, even
+    JP-only ones (the serie metadata is shared across regions).
+    """
+    import requests
+    url = f"{_API_BASE}/{lang}/sets/{set_id}"
+    headers = {
+        "User-Agent": "HanryxVault-POS/1.0 (set-mapping-import)",
+        "Accept":     "application/json",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, dict):
+            log.warning("[set-import] detail %s: expected dict, got %s",
+                        set_id, type(data).__name__)
+            return None
+        return data
+    except Exception as e:
+        # Per-set failure is normal — TCGdex 404s on a few obscure
+        # legacy sets. We log at info to keep the daily noise down.
+        log.info("[set-import] detail %s failed: %s", set_id, e)
+        return None
+
+
+def _extract_era_and_year(detail: dict) -> tuple[str, str]:
+    """Pull (era, release_year) from a /sets/{id} detail document.
+
+    era ← `serie.name` if present and non-empty (TCGdex's serie is
+    its closest analogue to our era column — "Scarlet & Violet",
+    "Sword & Shield", "Sun & Moon", etc.).
+    release_year ← first 4 chars of `releaseDate` if it parses as
+    YYYY-MM-DD, else ''. We deliberately keep release_year as text
+    in the schema so '2026' and 'TBD' both fit.
+
+    Both default to '' so callers can OR-merge with COALESCE.
+    """
+    era = ""
+    serie = detail.get("serie") if isinstance(detail, dict) else None
+    if isinstance(serie, dict):
+        era = (serie.get("name") or "").strip()
+
+    year = ""
+    rel = (detail.get("releaseDate") or "").strip() if isinstance(detail, dict) else ""
+    if len(rel) >= 4 and rel[:4].isdigit():
+        year = rel[:4]
+    return era, year
+
+
 def _merge_languages(
     fetch_fn: Callable[[str], list[dict]],
 ) -> tuple[dict[str, dict], dict[str, int]]:
@@ -141,6 +210,77 @@ def _merge_languages(
                 # column when this run sees an empty one.
                 slot[col] = name
     return merged, per_lang_counts
+
+
+# Backfill UPDATE for the era + release_year columns. Run AFTER the
+# main per-language UPSERT loop so it only touches rows that already
+# exist. UPDATE-not-UPSERT means a transient detail-GET success can't
+# accidentally insert a phantom row that the main loop never saw.
+# COALESCE/NULLIF preserves an operator-curated era when TCGdex
+# returns ''; we only ever fill blanks, never overwrite curated text.
+_BACKFILL_UPDATE_SQL = """
+UPDATE ref_set_mapping
+   SET era          = COALESCE(NULLIF(%s, ''), era),
+       release_year = COALESCE(NULLIF(%s, ''), release_year),
+       imported_at  = %s
+ WHERE set_id = %s
+"""
+
+
+def _backfill_era_year(
+    cur,
+    fetch_detail_fn: Callable[[str], Optional[dict]],
+    *,
+    max_sets: int = _MAX_DETAIL_FETCHES_PER_RUN,
+    now_fn: Callable[[], int] = lambda: int(time.time()),
+) -> dict:
+    """Fill blank era / release_year columns from TCGdex per-set details.
+
+    Selects up to `max_sets` rows whose era OR release_year is blank,
+    fetches /{lang}/sets/{set_id} for each, extracts metadata, and
+    UPDATEs only blank columns (operator-curated values are preserved
+    via COALESCE/NULLIF in _BACKFILL_UPDATE_SQL).
+
+    Per-set fetch failures are tolerated and counted (`backfill_failed`).
+    Returns a per-run summary the caller can fold into its task result.
+    """
+    cur.execute("""
+        SELECT set_id
+          FROM ref_set_mapping
+         WHERE era = '' OR release_year = ''
+         ORDER BY imported_at DESC, set_id
+         LIMIT %s
+    """, (max_sets,))
+    candidates: list[str] = []
+    for row in (cur.fetchall() or []):
+        sid = row[0] if not isinstance(row, dict) else row.get("set_id")
+        if sid:
+            candidates.append(sid)
+
+    fetched = 0
+    updated = 0
+    failed = 0
+    for sid in candidates:
+        detail = fetch_detail_fn(sid)
+        fetched += 1
+        if not detail:
+            failed += 1
+            continue
+        era, year = _extract_era_and_year(detail)
+        if not era and not year:
+            # TCGdex returned the detail but neither field was usable.
+            # Don't UPDATE (we'd only churn imported_at).
+            continue
+        cur.execute(_BACKFILL_UPDATE_SQL, (era, year, now_fn(), sid))
+        if (cur.rowcount or 0) > 0:
+            updated += 1
+
+    return {
+        "backfill_candidates": len(candidates),
+        "backfill_fetched":    fetched,
+        "backfill_updated":    updated,
+        "backfill_failed":     failed,
+    }
 
 
 # UPSERT pinned out so the column order stays in lockstep with the
@@ -182,15 +322,20 @@ class SetMappingImportWorker(Worker):
         *,
         today_fn: Optional[Callable[[], str]] = None,
         fetch_fn: Optional[Callable[[str], list[dict]]] = None,
+        fetch_detail_fn: Optional[Callable[[str], Optional[dict]]] = None,
+        max_detail_fetches_per_run: int = _MAX_DETAIL_FETCHES_PER_RUN,
         **kw,
     ):
         super().__init__(conn, **kw)
-        # Both injectable for deterministic tests — fetch_fn lets us
-        # replace the live HTTP call with canned responses, today_fn
-        # lets us pin the seed task_key.
+        # All three are injectable for deterministic tests:
+        #   * today_fn   — pin the seed task_key
+        #   * fetch_fn   — replace live /sets HTTP calls with canned data
+        #   * fetch_detail_fn — replace live /sets/{id} HTTP calls
         self._today_fn = today_fn or (
             lambda: datetime.datetime.utcnow().strftime("%Y-%m-%d"))
         self._fetch_fn = fetch_fn or _fetch_sets
+        self._fetch_detail_fn = fetch_detail_fn or _fetch_set_detail
+        self._max_detail_fetches_per_run = max_detail_fetches_per_run
 
     # ── Worker contract ──────────────────────────────────────────
 
@@ -246,12 +391,32 @@ class SetMappingImportWorker(Worker):
                 now,
             ))
             written += 1
+
+        # Backfill era + release_year for the rows we just touched.
+        # Runs AFTER the main UPSERT loop so the backfill always sees
+        # at least the freshest set list. Bounded by
+        # _max_detail_fetches_per_run so a fresh Pi spreads detail
+        # fetches over a handful of runs instead of stalling for
+        # minutes on the first one. Safe to skip on per-set fetch
+        # failures — we just retry next run.
+        backfill_stats = _backfill_era_year(
+            cur,
+            self._fetch_detail_fn,
+            max_sets=self._max_detail_fetches_per_run,
+        )
+
+        # ONE commit at the end — the main UPSERT and any backfill
+        # UPDATEs land atomically together so a Pi-side power loss
+        # in the middle either leaves last-run state or this-run
+        # state, never half-and-half.
         self.conn.commit()
 
-        log.info("[set-import] wrote %d set(s) (per-lang counts: %s)",
-                 written, per_lang_counts)
+        log.info(
+            "[set-import] wrote %d set(s) (per-lang counts: %s, backfill: %s)",
+            written, per_lang_counts, backfill_stats)
         return {
             "status":          "OK",
             "sets_imported":   written,
             "per_lang_counts": per_lang_counts,
+            **backfill_stats,
         }
