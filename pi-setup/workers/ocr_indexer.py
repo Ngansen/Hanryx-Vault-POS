@@ -53,12 +53,27 @@ from .base import Worker, WorkerError
 
 log = logging.getLogger("workers.ocr_indexer")
 
-# cards_master language suffix → PaddleOCR `lang=` argument.
+# cards_master language suffix / CLI --ocr-lang-hint → PaddleOCR
+# `lang=` argument.
+#
+# Why both `chs` and `zh-sim`?
+#   `chs` was the original key, picked up by `pick_primary_lang` from
+#   the existing `cards_master.name_chs` column. After ZH-2 introduced
+#   a TC vs SC split (`/mnt/cards/zh/zh-tc/` vs `/zh-sc/`) the operator
+#   needs an explicit way to OCR each variant differently — Traditional
+#   needs the `chinese_cht` PP-OCRv4 pack; Simplified is fine on `ch`.
+#   `zh-sim` is therefore a deliberate alias of `chs` (same Paddle
+#   model, same `~/.paddleocr` cache dir under PaddleOCR's hood) so an
+#   operator can run `--ocr-lang-hint zh-sim` against the SC mirror
+#   without touching name_chs-tagged legacy KR-pack rows. `chs` stays
+#   as the auto-pick for backward compat.
 PADDLE_LANG_MAP: dict[str, str] = {
-    "kr":  "korean",
-    "jp":  "japan",
-    "chs": "ch",     # PP-OCRv4 ch model handles simplified
-    "en":  "en",
+    "kr":     "korean",
+    "jp":     "japan",
+    "chs":    "ch",            # legacy alias; auto-picked from name_chs
+    "zh-sim": "ch",             # explicit Simplified, same model as chs
+    "zh-cht": "chinese_cht",    # Traditional — separate PP-OCRv4 pack
+    "en":     "en",
 }
 
 # Tie-break order for picking a card's primary OCR language.
@@ -79,10 +94,18 @@ class OcrIndexerWorker(Worker):
 
     DEFAULT_MODEL_ID = "paddleocr-ppocrv4-1.0"
 
+    # Default location for PaddleOCR per-language model files.
+    # Overridable via the `models_dir` ctor arg or the OCR_MODELS_DIR
+    # env var. Lives on the USB drive next to the CLIP model so a
+    # fresh Pi can be brought up by plugging in the drive — no need
+    # to re-download 50-100MB per language.
+    DEFAULT_MODELS_DIR = "/mnt/cards/models/paddleocr"
+
     def __init__(self, conn, *,
                  model_id: str | None = None,
                  lang_hint: str | None = None,
                  recheck_after_s: int | None = None,
+                 models_dir: str | None = None,
                  paddle_factory: Callable[[str], Any] | None = None,
                  **kw):
         super().__init__(conn, **kw)
@@ -101,6 +124,17 @@ class OcrIndexerWorker(Worker):
         self.recheck_after_s = (recheck_after_s
                                 if recheck_after_s is not None
                                 else self.DEFAULT_RECHECK_AFTER_S)
+
+        # models_dir resolution order: explicit ctor arg → env var →
+        # hard-coded /mnt/cards default. Empty string is treated as
+        # "use PaddleOCR's own ~/.paddleocr default" — gives the
+        # operator an escape hatch if the drive is unavailable and
+        # they want to fall back to in-container caching.
+        if models_dir is not None:
+            self.models_dir = models_dir
+        else:
+            self.models_dir = (os.environ.get("OCR_MODELS_DIR")
+                               or self.DEFAULT_MODELS_DIR)
 
         self._injected_paddle_factory = paddle_factory
         self._ocr_cache: dict[str, Any] = {}
@@ -131,10 +165,28 @@ class OcrIndexerWorker(Worker):
         # Keep a bound reference so we can build per-lang sessions on
         # demand. The PaddleOCR constructor downloads the model the
         # first time it's called per (lang, model_version).
+        models_dir = self.models_dir
         def _factory(lang: str) -> Any:
             # show_log=False keeps the Pi console clean; cls=False is
             # set later at .ocr() call time (no angle classifier).
-            return PaddleOCR(use_angle_cls=False, lang=lang, show_log=False)
+            kwargs: dict[str, Any] = {
+                "use_angle_cls": False,
+                "lang": lang,
+                "show_log": False,
+            }
+            # Point PaddleOCR at /mnt/cards/models/paddleocr/<lang>/
+            # so the per-language detection (det) and recognition
+            # (rec) model files land on the USB drive instead of in
+            # the container's ~/.paddleocr (which gets wiped on every
+            # `docker compose build` and lives on the SD card). If
+            # the dirs are empty PaddleOCR will download into them
+            # on first use; subsequent boots load instantly from the
+            # drive.
+            if models_dir:
+                lang_dir = os.path.join(models_dir, lang)
+                kwargs["det_model_dir"] = os.path.join(lang_dir, "det")
+                kwargs["rec_model_dir"] = os.path.join(lang_dir, "rec")
+            return PaddleOCR(**kwargs)
         self._real_paddle_factory = _factory  # type: ignore[attr-defined]
         self._paddle_loaded = True
         return _factory
