@@ -6450,6 +6450,72 @@ def pipelines_status():
     return jsonify(out)
 
 
+@app.route("/admin/cards/en-match", methods=["GET"])
+def admin_cards_en_match():
+    """
+    Resolve the English-edition equivalent of whatever card the operator
+    is currently looking at, so the language-pricing chips on
+    /admin/market can render a "matched-as" header strip with the actual
+    EN card image, name, set, number, rarity, and artist next to the
+    KR/JP/CHS price percentages.
+
+    The booth is intentionally offline-first — see USB_OFFLINE_DB.md.
+    Every piece of data this endpoint returns resolves locally:
+
+      * name_en / set_id / card_number / rarity / artist come from
+        cards_master in the Pi's Postgres.
+      * image_local_url points at the existing /card/image route, which
+        already serves USB-mirrored files first and only falls back to
+        a network 302 if the image hasn't been mirrored yet.
+      * ebay_sold_url is the only network-dependent piece — it's built
+        server-side so the URL is always present in the response, but
+        the frontend disables the link when navigator.onLine is false
+        (or the fetch to eBay's domain fails). The card-search and
+        price-display flows must stay fully usable without WiFi.
+
+    Match strategy (most-specific wins, returned in `confidence`):
+      1. exact          — set_id + card_number both supplied and matched
+      2. name_set       — name fuzzy-match restricted to a known set
+      3. name           — name fuzzy-match across cards_master
+      4. null           — no row found; frontend renders a placeholder
+
+    Query params:
+      name       card name in any language (KR/JP/CHS/EN) — required
+                 unless set_id+card_number is fully specified
+      set        set code (optional)
+      number     collector number, normalised or raw (optional)
+
+    Returns:
+      { "match": {name_en, set_id, card_number, rarity, artist,
+                  image_local_url, ebay_sold_url, confidence} | null }
+    """
+    from unified.en_match import resolve_en_match
+
+    name      = (request.args.get("name") or "").strip()
+    set_code  = (request.args.get("set")  or "").strip()
+    number    = (request.args.get("number") or "").strip()
+
+    if not name and not (set_code and number):
+        return jsonify({"error": "name or (set+number) required",
+                        "match": None}), 400
+
+    db = None
+    try:
+        db = _direct_db()
+        match = resolve_en_match(db, name, set_code, number)
+    except Exception as exc:
+        log.exception("[admin/cards/en-match] db lookup failed")
+        return jsonify({"error": str(exc), "match": None}), 500
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    return jsonify({"match": match})
+
+
 # ---------------------------------------------------------------------------
 # Card lookup — fuzzy / multi-field search for Pokémon (and any) cards
 # ---------------------------------------------------------------------------
@@ -12018,6 +12084,28 @@ def admin_market():
   /* language grid */
   .lang-wrap{{background:#111827;border:1px solid #1e3a5f;border-radius:10px;padding:14px 16px;margin-bottom:16px}}
   .lang-title{{font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}}
+  /* matched-as header strip — sits above lang-grid, shows the EN card we
+     anchored the language pricing to so the operator can sanity-check
+     the match before reading the percentages. */
+  .match-strip{{display:flex;align-items:stretch;gap:12px;background:#0b1220;border:1px solid #1e3a5f;border-radius:8px;padding:10px;margin-bottom:10px;min-height:96px}}
+  .match-strip.is-loading{{opacity:.55}}
+  .match-img{{flex:0 0 70px;width:70px;height:96px;border-radius:6px;background:#0f172a center/cover no-repeat;border:1px solid #1e293b;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:10px;color:#475569;text-align:center}}
+  .match-img img{{width:100%;height:100%;object-fit:cover;display:block}}
+  .match-body{{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}}
+  .match-row1{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+  .match-label{{font-size:9px;font-weight:700;color:#60a5fa;letter-spacing:1.2px;text-transform:uppercase}}
+  .match-conf{{font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:.5px;text-transform:uppercase}}
+  .match-conf.exact{{background:#0f2a0f;color:#4ade80}}
+  .match-conf.name_set{{background:#1a2840;color:#93c5fd}}
+  .match-conf.name{{background:#241a0f;color:#fbbf24}}
+  .match-name{{font-size:14px;font-weight:800;color:#e0e0e0;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+  .match-meta{{font-size:11px;color:#94a3b8;line-height:1.3}}
+  .match-meta .sep{{color:#475569;margin:0 5px}}
+  .match-actions{{display:flex;align-items:center;gap:8px;margin-top:auto}}
+  .match-ebay{{font-size:11px;font-weight:700;text-decoration:none;padding:4px 10px;border-radius:4px;background:#1a1400;color:#f59e0b;border:1px solid #f59e0b33;transition:.15s}}
+  .match-ebay:hover{{background:#241a00;border-color:#f59e0b66}}
+  .match-ebay.is-offline{{background:#0f0f0f;color:#475569;border-color:#1e1e1e;cursor:not-allowed;pointer-events:none}}
+  .match-offline-note{{font-size:10px;color:#64748b}}
   .lang-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}}
   @media(max-width:600px){{.lang-grid{{grid-template-columns:repeat(3,1fr)}}}}
   @media(max-width:380px){{.lang-grid{{grid-template-columns:repeat(2,1fr)}}}}
@@ -12260,6 +12348,10 @@ def admin_market():
             </div>
           </div>
           <div class="lang-delta" id="langDelta" style="display:none"></div>
+          <!-- Matched-as header: shows the EN-edition card we anchored
+               this language-pricing block to. Hidden until the en-match
+               lookup resolves; failure leaves the chips alone. -->
+          <div class="match-strip" id="matchStrip" style="display:none"></div>
           <div class="lang-grid" id="langGrid"></div>
         </div>
 
@@ -12736,6 +12828,9 @@ async function loadLangPrices(name, set, number, variant, forceRefresh) {{
   _langData = null;
   applyCond();
   _updateLangAge();
+  // Kick off the matched-as lookup in parallel — it doesn't block the
+  // language pricing chips and has its own error handling.
+  loadMatchStrip(name, set, number, variant);
   try {{
     const p = new URLSearchParams({{name}});
     if (set)          p.set('set', set);
@@ -12749,6 +12844,123 @@ async function loadLangPrices(name, set, number, variant, forceRefresh) {{
     applyCond();
     _updateLangAge();
   }} catch(e) {{ /* non-fatal — estimates remain */ }}
+}}
+
+// ── Matched-as header strip ───────────────────────────────────────────────
+// Shows the EN-edition card the language-pricing chips were anchored to,
+// so the operator can sanity-check the match before reading percentages.
+// Everything resolves locally except the eBay deep-link, which is greyed
+// out when the browser reports offline. No part of the card-search or
+// price-display flows depend on this strip succeeding.
+let _matchStripCardKey = null;
+async function loadMatchStrip(name, set, number, variant) {{
+  const strip = document.getElementById('matchStrip');
+  if (!strip) return;
+  // Stable key so out-of-order responses don't overwrite a newer card.
+  const key = [name||'', set||'', number||'', variant||''].join('|');
+  _matchStripCardKey = key;
+  strip.style.display = 'flex';
+  strip.classList.add('is-loading');
+  strip.innerHTML =
+    '<div class="match-img">…</div>' +
+    '<div class="match-body">' +
+      '<div class="match-row1"><span class="match-label">Matched as</span></div>' +
+      '<div class="match-meta">Looking up English edition…</div>' +
+    '</div>';
+  try {{
+    const p = new URLSearchParams();
+    if (name)    p.set('name', name);
+    if (set)     p.set('set', set);
+    if (number)  p.set('number', number);
+    const r = await fetch('/admin/cards/en-match?' + p);
+    if (_matchStripCardKey !== key) return;   // stale response, drop it
+    if (!r.ok) {{ renderMatchStrip(null); return; }}
+    const j = await r.json();
+    renderMatchStrip(j && j.match ? j.match : null);
+  }} catch (e) {{
+    if (_matchStripCardKey === key) renderMatchStrip(null);
+  }}
+}}
+
+function renderMatchStrip(m) {{
+  const strip = document.getElementById('matchStrip');
+  if (!strip) return;
+  strip.classList.remove('is-loading');
+  if (!m) {{
+    // Don't take up booth screen real estate when there's no match —
+    // the chips below already say what we know.
+    strip.style.display = 'none';
+    strip.innerHTML = '';
+    return;
+  }}
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+  const conf = (m.confidence || 'name').toLowerCase();
+  const confLabel = conf === 'exact'    ? 'Exact'
+                  : conf === 'name_set' ? 'Name + Set'
+                  : 'Name only';
+  const metaBits = [];
+  if (m.set_id)      metaBits.push(esc(m.set_id));
+  if (m.card_number) metaBits.push('#' + esc(m.card_number));
+  if (m.rarity)      metaBits.push(esc(m.rarity));
+  const metaLine = metaBits.join('<span class="sep">·</span>');
+  const artistLine = m.artist
+    ? '<div class="match-meta" style="font-size:10px">Illus. ' + esc(m.artist) + '</div>'
+    : '';
+  // navigator.onLine is the cheap up-front check; the offline event
+  // listener below also re-toggles the link if connectivity drops while
+  // the strip is on screen.
+  const offline = !navigator.onLine;
+  const ebayClass = 'match-ebay' + (offline ? ' is-offline' : '');
+  const ebayLabel = offline ? 'eBay sold (offline)' : 'eBay sold ↗';
+  strip.style.display = 'flex';
+  strip.innerHTML =
+    '<div class="match-img">' +
+      '<img src="' + esc(m.image_local_url) + '" alt="" ' +
+        'onerror="this.parentNode.innerHTML=\\'No image\\'" />' +
+    '</div>' +
+    '<div class="match-body">' +
+      '<div class="match-row1">' +
+        '<span class="match-label">Matched as</span>' +
+        '<span class="match-conf ' + esc(conf) + '">' + confLabel + '</span>' +
+      '</div>' +
+      '<div class="match-name">' + esc(m.name_en || '(unnamed)') + '</div>' +
+      '<div class="match-meta">' + metaLine + '</div>' +
+      artistLine +
+      '<div class="match-actions">' +
+        '<a class="' + ebayClass + '" target="_blank" rel="noopener" ' +
+          'href="' + esc(m.ebay_sold_url) + '" ' +
+          'data-ebay-url="' + esc(m.ebay_sold_url) + '">' +
+          ebayLabel +
+        '</a>' +
+        (offline ? '<span class="match-offline-note">No internet — link disabled</span>' : '') +
+      '</div>' +
+    '</div>';
+}}
+
+// Re-toggle the eBay link when connectivity flips. The strip can sit on
+// screen for a long time at a trade show, and WiFi at booths comes and
+// goes — we don't want to require a full re-search to refresh the chip.
+window.addEventListener('online',  _refreshMatchEbay);
+window.addEventListener('offline', _refreshMatchEbay);
+function _refreshMatchEbay() {{
+  const link = document.querySelector('#matchStrip .match-ebay');
+  if (!link) return;
+  const offline = !navigator.onLine;
+  link.classList.toggle('is-offline', offline);
+  link.textContent = offline ? 'eBay sold (offline)' : 'eBay sold ↗';
+  // Keep/restore the offline note next to the link.
+  const actions = link.parentNode;
+  let note = actions.querySelector('.match-offline-note');
+  if (offline && !note) {{
+    note = document.createElement('span');
+    note.className = 'match-offline-note';
+    note.textContent = 'No internet — link disabled';
+    actions.appendChild(note);
+  }} else if (!offline && note) {{
+    note.remove();
+  }}
 }}
 
 function renderTiersOnly(m) {{
