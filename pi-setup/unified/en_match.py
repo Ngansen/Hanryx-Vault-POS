@@ -13,6 +13,7 @@ and pi-setup/docs/USB_OFFLINE_DB.md for the offline-first design.
 
 Public surface:
     normalise_number(raw)              -> str
+    resolve_set_id(db, raw_set)        -> str
     resolve_en_match(db, name, set,    -> dict | None
                      number)
     build_match_response(row,
@@ -50,6 +51,119 @@ def normalise_number(raw: str) -> str:
     return stripped if stripped else "0"
 
 
+# ── Set-id canonicaliser ─────────────────────────────────────────────────
+
+def resolve_set_id(db, raw_set: str) -> str:
+    """
+    Map whatever the frontend sent — a TCGdex set_id, a ptcgo code, a
+    human-readable set name in any of the five languages, or a known
+    alias — into the canonical `cards_master.set_id` value.
+
+    The /admin/market page hands us `t2.set.name` (e.g. "Scarlet &
+    Violet—Paldea Evolved") for the language-pricing eBay query, and
+    that same string flows into our en-match call. cards_master only
+    indexes by canonical set_id, so without this resolver tier-1 +
+    tier-2 always miss and we silently fall through to the risky
+    name-only tier-3.
+
+    Resolution order against `ref_set_mapping`:
+      1. Literal set_id (case-insensitive) — already canonical.
+      2. Human name in any of name_en/kr/jp/chs/cht (case-insensitive
+         exact, then ILIKE substring as a last resort).
+      3. Aliases JSONB — operator-curated alternates (ptcgo codes,
+         abbreviations, legacy names).
+
+    Falls back to the raw value when nothing matches so that a fresh
+    install with an empty `ref_set_mapping` still works the same as
+    before this fix. The cursor is opened and closed locally so the
+    caller can keep reusing its own.
+    """
+    if not raw_set:
+        return raw_set
+    needle = raw_set.strip()
+    if not needle:
+        return raw_set
+
+    cur = db.cursor()
+    try:
+        # 1. Literal set_id — case-insensitive so 'SV2' and 'sv2' both work.
+        try:
+            cur.execute(
+                "SELECT set_id FROM ref_set_mapping "
+                " WHERE UPPER(set_id) = UPPER(%s) LIMIT 1",
+                (needle,),
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        except Exception:
+            # ref_set_mapping might not exist on a brand-new install. Don't
+            # blow up the whole match — just fall back to the raw input
+            # below so we behave like the pre-resolver code path.
+            return raw_set
+
+        # 2. Exact human-name match across all five languages first
+        # (cheaper + more accurate than ILIKE), then ILIKE substring as a
+        # last resort. Sets like "Paldea Evolved" appear under name_en.
+        try:
+            cur.execute(
+                "SELECT set_id FROM ref_set_mapping "
+                " WHERE UPPER(name_en)  = UPPER(%s) "
+                "    OR UPPER(name_kr)  = UPPER(%s) "
+                "    OR UPPER(name_jp)  = UPPER(%s) "
+                "    OR UPPER(name_chs) = UPPER(%s) "
+                "    OR UPPER(name_cht) = UPPER(%s) "
+                " LIMIT 1",
+                (needle,) * 5,
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        except Exception:
+            return raw_set
+
+        try:
+            like = f"%{needle}%"
+            cur.execute(
+                "SELECT set_id FROM ref_set_mapping "
+                " WHERE name_en  ILIKE %s "
+                "    OR name_kr  ILIKE %s "
+                "    OR name_jp  ILIKE %s "
+                "    OR name_chs ILIKE %s "
+                "    OR name_cht ILIKE %s "
+                " ORDER BY length(name_en) ASC "
+                " LIMIT 1",
+                (like,) * 5,
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        except Exception:
+            return raw_set
+
+        # 3. Operator-curated aliases (ptcgo codes, abbreviations).
+        # `aliases` is JSONB array of strings; the @> containment check
+        # uses the trgm-free path so this stays cheap.
+        try:
+            cur.execute(
+                "SELECT set_id FROM ref_set_mapping "
+                " WHERE aliases @> %s::jsonb LIMIT 1",
+                (f'["{needle}"]',),
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        except Exception:
+            return raw_set
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+    return raw_set
+
+
 # ── SQL-driven resolver ──────────────────────────────────────────────────
 
 # Tuple shape returned by every SELECT in resolve_en_match.
@@ -83,7 +197,17 @@ def resolve_en_match(
     no row matches. All three SELECTs filter to rows where name_en is
     non-empty so we never anchor pricing to a card we don't have an
     English name for.
+
+    `set_code` is canonicalised through ref_set_mapping first so that
+    callers can pass in any of {set_id, ptcgo code, human set name in
+    any language} and the tier-1/tier-2 SQL still hits.
     """
+    # Canonicalise the set identifier BEFORE we open the main cursor so
+    # the cursor we use for the SELECTs only sees a clean set_id. The
+    # resolver opens its own short-lived cursor internally.
+    if set_code:
+        set_code = resolve_set_id(db, set_code)
+
     cur = db.cursor()
     try:
         num_norm = normalise_number(number)

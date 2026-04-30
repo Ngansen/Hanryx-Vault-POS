@@ -12873,9 +12873,14 @@ async function loadMatchStrip(name, set, number, variant) {{
     if (set)     p.set('set', set);
     if (number)  p.set('number', number);
     const r = await fetch('/admin/cards/en-match?' + p);
+    // Two stale-response checks: one after the network round-trip and
+    // one after JSON parsing. The body parse is itself async (gzip +
+    // UTF-8 decode), so a newer card lookup can race in between and
+    // we must not paint over its result with our older response.
     if (_matchStripCardKey !== key) return;   // stale response, drop it
     if (!r.ok) {{ renderMatchStrip(null); return; }}
     const j = await r.json();
+    if (_matchStripCardKey !== key) return;   // newer card landed mid-parse
     renderMatchStrip(j && j.match ? j.match : null);
   }} catch (e) {{
     if (_matchStripCardKey === key) renderMatchStrip(null);
