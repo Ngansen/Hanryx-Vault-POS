@@ -1,0 +1,136 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu Apr 30 02:35:45 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup && \
+  echo "=== Container status ===" && \
+  docker compose ps && \
+  echo && \
+  echo "=== Postgres (db) last 40 lines ===" && \
+  docker compose logs --tail=40 db && \
+  echo && \
+  echo "=== Likely waiters (last 20 each) ===" && \
+  docker compose logs --tail=20 pgbouncer pos sync storefront
+=== Container status ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME                    IMAGE                                                                                                  COMMAND                  SERVICE      CREATED          STATUS                      PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7                                                                                    "/bin/ollama serve"      assistant    3 days ago       Up 32 minutes (unhealthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10   "docker-entrypoint.s…"   db           8 minutes ago    Up 7 minutes (healthy)      5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c    "/entrypoint.sh /usr…"   pgbouncer    8 minutes ago    Up 7 minutes (healthy)      5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi                                                                                       "/docker-entrypoint.…"   pokeapi      32 minutes ago   Up 32 minutes (healthy)     80/tcp
+pi-setup-pos-1          pi-setup-pos                                                                                           "/entrypoint.sh"         pos          8 minutes ago    Up 7 minutes (healthy)      0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer                                                                                    "python -u server.py"    recognizer   8 minutes ago    Up 7 minutes (healthy)      8081/tcp
+pi-setup-redis-1        redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275             "docker-entrypoint.s…"   redis        8 minutes ago    Up 7 minutes (healthy)      6379/tcp
+pi-setup-storefront-1   pi-setup-storefront                                                                                    "docker-entrypoint.sh"   storefront   8 minutes ago    Up 7 minutes (unhealthy)    0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync                                                                                          "/entrypoint.sh pyth…"   sync         8 minutes ago    Up 7 minutes                8080/tcp
+
+=== Postgres (db) last 40 lines ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+db-1  | 
+db-1  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+db-1  | 
+db-1  | 2026-04-30 02:56:23.628 UTC [1] LOG:  starting PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit
+db-1  | 2026-04-30 02:56:23.629 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+db-1  | 2026-04-30 02:56:23.629 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+db-1  | 2026-04-30 02:56:23.639 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+db-1  | 2026-04-30 02:56:23.652 UTC [29] LOG:  database system was shut down at 2026-04-30 02:56:10 UTC
+db-1  | 2026-04-30 02:56:23.689 UTC [1] LOG:  database system is ready to accept connections
+db-1  | 2026-04-30 02:56:31.954 UTC [50] WARNING:  there is already a transaction in progress
+db-1  | 2026-04-30 02:56:35.397 UTC [62] ERROR:  relation "users" does not exist at character 54
+db-1  | 2026-04-30 02:56:35.397 UTC [62] STATEMENT:  select "id", "username", "password", "is_admin" from "users" where "users"."username" = $1
+db-1  | 2026-04-30 02:58:31.591 UTC [48] WARNING:  there is already a transaction in progress
+db-1  | 2026-04-30 02:58:31.610 UTC [48] WARNING:  there is already a transaction in progress
+db-1  | 2026-04-30 03:01:23.328 UTC [563] FATAL:  password authentication failed for user "vaultpos"
+db-1  | 2026-04-30 03:01:23.328 UTC [563] DETAIL:  Password does not match for user "vaultpos".
+db-1  |         Connection matched file "/var/lib/postgresql/data/pg_hba.conf" line 128: "host all all all md5"
+db-1  | 2026-04-30 03:01:23.734 UTC [27] LOG:  checkpoint starting: time
+db-1  | 2026-04-30 03:01:34.646 UTC [27] LOG:  checkpoint complete: wrote 112 buffers (0.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=10.885 s, sync=0.010 s, total=10.913 s; sync files=33, longest=0.004 s, average=0.001 s; distance=685 kB, estimate=685 kB; lsn=0/13959F78, redo lsn=0/13959F40
+
+=== Likely waiters (last 20 each) ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  | 127.0.0.1 - - [30/Apr/2026:02:59:35 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1  | 127.0.0.1 - - [30/Apr/2026:02:59:50 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1  | 127.0.0.1 - - [30/Apr/2026:03:00:05 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pgbouncer-1  | admin_users = postgres
+pgbouncer-1  | 
+pgbouncer-1  | # Connection sanity checks, timeouts
+pgbouncer-1  | server_reset_query = DISCARD ALL
+pgbouncer-1  | 
+storefront-1  |     at async /app/dist/index.cjs:231:7990 {
+pos-1        | 127.0.0.1 - - [30/Apr/2026:03:00:20 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+storefront-1  |   length: 104,
+storefront-1  |   severity: 'ERROR',
+pos-1         | {"ts":"2026-04-30T03:00:32","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] refreshed 5 groups, 0 price rows in 0.7s"}
+pgbouncer-1   | # TLS settings
+pgbouncer-1   | 
+pgbouncer-1   | # Dangerous timeouts
+pgbouncer-1   | ################## end file ##################
+pgbouncer-1   | Starting /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini...
+pgbouncer-1   | 2026-04-30 02:56:29.450 UTC [1] LOG kernel file descriptor limit: 1024 (hard: 524288); max_client_conn: 200, max expected fd use: 232
+pgbouncer-1   | 2026-04-30 02:56:29.450 UTC [1] LOG listening on 0.0.0.0:5432
+pgbouncer-1   | 2026-04-30 02:56:29.450 UTC [1] LOG process up: PgBouncer 1.21.0, libevent 2.1.12-stable (epoll), adns: evdns2, tls: OpenSSL 3.1.4 24 Oct 2023
+pgbouncer-1   | 2026-04-30 02:57:29.453 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+pgbouncer-1   | 2026-04-30 02:58:29.451 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:00:35 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:00:50 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:01:05 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:01:20 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:01:35 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:01:50 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:02:05 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:02:20 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:02:35 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:02:51 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:03:06 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:03:21 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:03:36 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:03:51 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pos-1         | 127.0.0.1 - - [30/Apr/2026:03:04:06 +0000] "GET /health HTTP/1.1" 200 316 "-" "curl/7.88.1"
+pgbouncer-1   | 2026-04-30 02:59:29.453 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+storefront-1  |   code: '42P01',
+storefront-1  |   detail: undefined,
+storefront-1  |   hint: undefined,
+storefront-1  |   position: '54',
+storefront-1  |   internalPosition: undefined,
+storefront-1  |   internalQuery: undefined,
+storefront-1  |   where: undefined,
+storefront-1  |   schema: undefined,
+storefront-1  |   table: undefined,
+storefront-1  |   column: undefined,
+storefront-1  |   dataType: undefined,
+pgbouncer-1   | 2026-04-30 03:00:29.453 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+storefront-1  |   constraint: undefined,
+storefront-1  |   file: 'parse_relation.c',
+sync-1        | {"ts":"2026-04-30T03:00:16","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [58/63] fetching 'Ethans Ho-Oh Destined Rivals pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:16","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Ethans Ho-Oh Destined Rivals pokemon' → 0 items, broadening to 'Ethans Ho-Oh pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:17","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1        | {"ts":"2026-04-30T03:00:19","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [59/63] fetching 'Wobbuffet ( Team Rocket ) Scarlet and Violet Promo pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:20","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Wobbuffet ( Team Rocket ) Scarlet and Violet Promo pokemon' → 0 items, broadening to 'Wobbuffet ( Team Rocket ) pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:20","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+pgbouncer-1   | 2026-04-30 03:01:29.450 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+pgbouncer-1   | 2026-04-30 03:02:29.450 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+pgbouncer-1   | 2026-04-30 03:03:29.452 UTC [1] LOG stats: 0 xacts/s, 0 queries/s, 0 client parses/s, 0 server parses/s, 0 binds/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us, wait 0 us
+storefront-1  |   line: '1449',
+storefront-1  |   routine: 'parserOpenTable'
+storefront-1  | }
+storefront-1  | 2:56:35 AM [express] serving on port 3000
+sync-1        | {"ts":"2026-04-30T03:00:23","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [60/63] fetching 'Exacadrill EX Black Bolt pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:23","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Exacadrill EX Black Bolt pokemon' → 0 items, broadening to 'Exacadrill EX pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:23","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1        | {"ts":"2026-04-30T03:00:26","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [61/63] fetching 'Meowth ( Team Rocket) Destined Rivals pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:26","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Meowth ( Team Rocket) Destined Rivals pokemon' → 0 items, broadening to 'Meowth ( Team Rocket) pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:27","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1        | {"ts":"2026-04-30T03:00:29","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [62/63] fetching 'Rotom-EX Phantasmal Flames pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:30","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Rotom-EX Phantasmal Flames pokemon' → 0 items, broadening to 'Rotom-EX pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:30","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1        | {"ts":"2026-04-30T03:00:32","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] refreshed 5 groups, 0 price rows in 0.7s"}
+sync-1        | {"ts":"2026-04-30T03:00:33","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [63/63] fetching 'Scizor ( Korean ) Obsidian Flames pokemon' …"}
+sync-1        | {"ts":"2026-04-30T03:00:33","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Scizor ( Korean ) Obsidian Flames pokemon' → 0 items, broadening to 'Scizor ( Korean ) pokemon'"}
+sync-1        | {"ts":"2026-04-30T03:00:34","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1        | {"ts":"2026-04-30T03:00:36","level":"INFO","logger":"hanryxvault","msg":"[prewarm] complete — 0 warmed, 0 already cached (skipped), 63 total"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
