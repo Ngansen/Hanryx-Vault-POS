@@ -727,6 +727,43 @@ CREATE INDEX IF NOT EXISTS idx_card_alias_method ON card_alias
 """
 
 
+# ─── ZH set completeness audit (TC + SC) ──────────────────────────────────
+#
+# Mirror of kr_set_gap, but composite-keyed because the same `set_id`
+# may legitimately exist in BOTH TC and SC (rare but it happens — the
+# Tencent SC numeric ids are independent of the ptcg.tw TC slug
+# namespace, but they collide for short numeric strings like "1").
+# lang_variant disambiguates and prevents an SC audit from clobbering
+# a TC row.
+#
+# expected_count comes from either (a) the canonical_sets JSON's
+# expected_card_count field when the operator has confirmed it, or
+# (b) the upstream-derived count for SC (PTCG-CHS-Datasets/
+# ptcg_chs_infos.json self-describes). When neither is available the
+# audit writes 0 — which the dashboard renders as "unknown" rather
+# than "100% short" because the comparison would be meaningless.
+#
+# missing_numbers / extra_numbers are JSONB arrays for the same reason
+# kr_set_gap uses them: the dashboard wants to render them as chips.
+DDL_ZH_SET_GAP = """
+CREATE TABLE IF NOT EXISTS zh_set_gap (
+    set_id           TEXT NOT NULL,
+    lang_variant     TEXT NOT NULL,
+    expected_count   INTEGER NOT NULL DEFAULT 0,
+    actual_count     INTEGER NOT NULL DEFAULT 0,
+    missing_numbers  JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    extra_numbers    JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, lang_variant),
+    CHECK (lang_variant IN ('TC', 'SC'))
+);
+CREATE INDEX IF NOT EXISTS idx_zh_set_gap_audited
+    ON zh_set_gap (audited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_zh_set_gap_lang
+    ON zh_set_gap (lang_variant, audited_at DESC);
+"""
+
+
 # ─── Per-source price breakdown ───────────────────────────────────────────
 #
 # price_aggregator stores ONE row per query in price_quotes — the median
@@ -792,6 +829,7 @@ _ALL_DDL = [
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
     ("card_alias",              DDL_CARD_ALIAS),
+    ("zh_set_gap",              DDL_ZH_SET_GAP),
     ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
 ]
 
