@@ -173,18 +173,36 @@ def main() -> int:
     ap.add_argument("--ocr-model-id", type=str, default=None,
                     help="ocr_index: override model_id tag (default: "
                          "paddleocr-ppocrv4-1.0)")
+    # Deliberately NOT constrained with argparse choices=. The
+    # canonical list lives in workers/ocr_indexer.py::PADDLE_LANG_MAP
+    # and the worker constructor validates the hint against that map
+    # at startup, raising ValueError with the full list if rejected.
+    # Hard-coding choices here would have left zh-cht and zh-sim
+    # silently unreachable from CLI even after PADDLE_LANG_MAP grew
+    # them in ZH-5 (zh_full_sync.sh would fail at argparse before
+    # the worker ever ran). Keeping the list in one place avoids
+    # that drift.
     ap.add_argument("--ocr-lang-hint", type=str, default=None,
-                    choices=["kr", "jp", "chs", "en"],
                     help="ocr_index: pin every task to this language instead "
                          "of auto-picking per card (KR > JP > CHS > EN). "
+                         "Valid values are the keys of PADDLE_LANG_MAP "
+                         "(currently: kr, jp, chs, zh-sim, zh-cht, en). "
+                         "zh-sim is an alias of chs (same Simplified pack) "
+                         "indexed under its own lang_hint in card_ocr. "
                          "Useful for back-fill passes (e.g. JP overlay text "
-                         "on a Korean print).")
+                         "on a Korean print, or running both Chinese passes "
+                         "against the ZH mirror).")
     ap.add_argument("--ocr-models-dir", type=str, default=None,
                     help="ocr_index: root dir for PaddleOCR per-language "
                          "model caches (default: $OCR_MODELS_DIR or "
                          "/mnt/cards/models/paddleocr). One subdir per "
-                         "language is created (korean/, japan/, ch/, en/) "
-                         "each holding det/ and rec/ model files. Pass an "
+                         "PaddleOCR language is created (korean/, japan/, "
+                         "ch/, chinese_cht/, en/) each holding det/ and "
+                         "rec/ model files. Note these are PaddleOCR's "
+                         "internal lang names (the values of "
+                         "PADDLE_LANG_MAP), NOT the lang_hint keys — so "
+                         "both --ocr-lang-hint chs and --ocr-lang-hint "
+                         "zh-sim load from the same ch/ subdir. Pass an "
                          "empty string to fall back to PaddleOCR's "
                          "~/.paddleocr default if the drive is unavailable.")
     ap.add_argument("--price-source", type=str, default=None,

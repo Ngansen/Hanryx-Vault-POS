@@ -12,15 +12,19 @@ Two responsibilities, one worker, one nightly run:
 
   2. AUTO-REFRESH (SC only) — read PTCG-CHS-Datasets/ptcg_chs_infos.json
      and reconcile canonical_sets/zh_sc.json against it:
-        * preserve every existing entry whose jp_equivalent_id is
-          non-VERIFY (operator confirmed — never silently revert
-          their work)
-        * for entries whose jp_equivalent_id is still "VERIFY", refresh
-          the upstream-derivable fields (abbreviation, name_zh_sc,
-          release_date, expected_card_count) so the operator gets the
-          best automatic info to base their VERIFY decision on
+        * for EVERY existing entry, refresh the upstream-derivable
+          fields (abbreviation, name_zh_sc, release_date,
+          expected_card_count) — these are upstream-canonical and
+          must not be frozen at a stale snapshot just because the
+          operator confirmed jp_equivalent_id last quarter
+        * preserve jp_equivalent_id and en_equivalent_id verbatim
+          on every existing entry — those are the ONLY operator
+          decisions in this file (which JP/EN release does this SC
+          set physically correspond to?), and the worker must
+          never silently revert that human judgement
         * append new collections from upstream that aren't in zh_sc
           yet, filling jp/en equivalents with the VERIFY sentinel
+          so the operator's audit dashboard surfaces them
      Only writes the file if at least one field actually changed —
      don't bump mtime on a no-op pass.
 
@@ -171,12 +175,15 @@ def _refresh_sc_canonical(
     """Apply the auto-refresh rules to canonical_sets/zh_sc.json.
 
     Rules:
-      * Existing entry with jp_equivalent_id != 'VERIFY' is operator-
-        confirmed — preserve untouched.
-      * Existing entry with jp_equivalent_id == 'VERIFY' refreshes
-        upstream-derivable fields (abbreviation, name_zh_sc,
-        release_date, expected_card_count). jp/en equivalents stay
-        VERIFY (operator decision).
+      * For every existing entry, refresh the upstream-derivable
+        fields (abbreviation, name_zh_sc, release_date,
+        expected_card_count) from upstream. jp_equivalent_id and
+        en_equivalent_id are NEVER touched here regardless of value
+        — they are the operator's confirmed mapping (or 'VERIFY'
+        if not yet decided) and only the operator should change
+        them. preserved_count counts entries where the upstream
+        values matched and nothing was rewritten; refreshed_count
+        counts entries where at least one derivable field moved.
       * New collection from upstream not in canonical → append with
         jp_equivalent_id='VERIFY' and en_equivalent_id='VERIFY'.
 
@@ -222,13 +229,19 @@ def _refresh_sc_canonical(
             changed = True
             continue
 
-        jp_eq = (existing.get("jp_equivalent_id") or "").strip()
-        if jp_eq and jp_eq != VERIFY_SENTINEL:
-            preserved += 1
-            continue
-
-        # Refresh upstream-derivable fields. Compare-then-set so we
-        # only mark `changed` when something actually moves.
+        # Refresh upstream-derivable fields on EVERY existing entry,
+        # whether or not the operator has confirmed jp_equivalent_id.
+        # The protected surface is intentionally narrow: ONLY
+        # jp_equivalent_id and en_equivalent_id are operator
+        # decisions (they encode "is SC set 47 the same physical
+        # release as JP set sv5K?" which only a human can answer).
+        # Everything else (abbreviation, name, release date, card
+        # count) is upstream-canonical and SHOULD reflect the latest
+        # PTCG-CHS-Datasets state on every nightly pass — otherwise
+        # an operator who confirmed jp_equivalent_id three months
+        # ago is permanently frozen at three-month-old card counts.
+        # Compare-then-set so we only mark `changed` when something
+        # actually moves and we don't bump the file mtime on no-ops.
         local_changed = False
         for key, val in (
             ("abbreviation", derived_abbrev),

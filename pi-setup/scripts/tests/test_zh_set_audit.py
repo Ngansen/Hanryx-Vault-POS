@@ -170,30 +170,77 @@ class HelperTests(unittest.TestCase):
 
 
 class RefreshSCTests(unittest.TestCase):
-    def test_preserves_operator_confirmed_entries(self):
-        # Existing entry has jp_equivalent_id='SV1S' (operator
-        # confirmed, NOT VERIFY). Upstream brings a different
-        # commodityCode. Refresh MUST leave the entry alone.
+    def test_preserves_operator_jp_en_equivalents_only(self):
+        # Existing entry has jp_equivalent_id='SV1S' and
+        # en_equivalent_id='SVI' (operator-confirmed mapping).
+        # Upstream brings a different commodityCode and a different
+        # name. The refresh MUST:
+        #   * leave jp_equivalent_id and en_equivalent_id alone (the
+        #     operator's confirmed mapping is sacred — they spent
+        #     human time deciding "SC set 1 == JP SV1S")
+        #   * REFRESH the upstream-derivable fields (abbreviation,
+        #     name_zh_sc, release_date, expected_card_count) — those
+        #     are upstream-canonical and must reflect today's truth,
+        #     not the snapshot the operator confirmed against last
+        #     quarter, otherwise card_count drift would be permanent.
+        # Architect-flagged regression: the original ZH-4 commit
+        # bailed entirely on non-VERIFY entries and lost upstream
+        # refresh value forever once an operator confirmed.
         with tempfile.TemporaryDirectory() as tmp:
             td = Path(tmp)
             cdir = _write_canonical(td, "zh_sc.json", [
                 {"set_id": "1", "abbreviation": "OLD",
                  "jp_equivalent_id": "SV1S",
                  "en_equivalent_id": "SVI",
+                 "expected_card_count": 99,
+                 "release_date": "1999-01-01",
                  "name_zh_sc": "operator-curated"},
             ])
             wrote, preserved, refreshed, appended = _refresh_sc_canonical(
                 canonical_dir=cdir, fname="zh_sc.json",
                 upstream=[{"id": "1", "commodityCode": "NEW",
-                           "name": "upstream-name"}],
+                           "name": "upstream-name",
+                           "salesDate": "2024-12-01",
+                           "cards": [{"number": "1"}, {"number": "2"}]}],
+            )
+            self.assertTrue(wrote)
+            self.assertEqual(refreshed, 1)
+            doc = json.loads((cdir / "zh_sc.json").read_text())
+            entry = doc["sets"][0]
+            # Upstream-derivable fields refreshed:
+            self.assertEqual(entry["abbreviation"], "NEW")
+            self.assertEqual(entry["name_zh_sc"], "upstream-name")
+            self.assertEqual(entry["release_date"], "2024-12-01")
+            self.assertEqual(entry["expected_card_count"], 2)
+            # Operator-decision fields preserved verbatim:
+            self.assertEqual(entry["jp_equivalent_id"], "SV1S")
+            self.assertEqual(entry["en_equivalent_id"], "SVI")
+
+    def test_curated_entry_with_no_upstream_diff_is_noop(self):
+        # Same operator-confirmed entry, but upstream values match
+        # what we already had. Must be a no-op (don't bump mtime).
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            cdir = _write_canonical(td, "zh_sc.json", [
+                {"set_id": "1", "abbreviation": "SV1",
+                 "jp_equivalent_id": "SV1S",
+                 "en_equivalent_id": "SVI",
+                 "expected_card_count": 2,
+                 "release_date": "2023-07-01",
+                 "name_zh_sc": "朱紫"},
+            ])
+            mtime_before = (cdir / "zh_sc.json").stat().st_mtime
+            time.sleep(0.05)
+            wrote, preserved, refreshed, appended = _refresh_sc_canonical(
+                canonical_dir=cdir, fname="zh_sc.json",
+                upstream=[{"id": "1", "commodityCode": "SV1",
+                           "name": "朱紫", "salesDate": "2023-07-01",
+                           "cards": [{"number": "1"}, {"number": "2"}]}],
             )
             self.assertFalse(wrote)
             self.assertEqual(preserved, 1)
             self.assertEqual(refreshed, 0)
-            # File on disk unchanged.
-            doc = json.loads((cdir / "zh_sc.json").read_text())
-            self.assertEqual(doc["sets"][0]["abbreviation"], "OLD")
-            self.assertEqual(doc["sets"][0]["name_zh_sc"], "operator-curated")
+            self.assertEqual((cdir / "zh_sc.json").stat().st_mtime, mtime_before)
 
     def test_refreshes_VERIFY_entries_from_upstream(self):
         with tempfile.TemporaryDirectory() as tmp:

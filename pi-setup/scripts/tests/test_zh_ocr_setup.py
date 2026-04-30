@@ -95,6 +95,44 @@ class PaddleLangMapTests(unittest.TestCase):
 # ── Worker construction ────────────────────────────────────────────────
 
 
+class WorkersRunCliTests(unittest.TestCase):
+    """Architect FIX 1: workers/run.py used to hard-code argparse
+    choices=['kr','jp','chs','en'], which made --ocr-lang-hint
+    zh-cht / zh-sim silently unreachable from CLI even after
+    PADDLE_LANG_MAP grew them — argparse rejected the value before
+    the worker ever validated. These tests pin the new behavior."""
+
+    @staticmethod
+    def _extract_ocr_lang_hint_block(run_py: str) -> str:
+        # The help text contains parentheses (e.g. "(KR > JP > CHS >
+        # EN)"), so a regex like add_argument\(...[^)]*?\) collapses
+        # at the first inner `)`. Slice by sentinel boundaries
+        # instead: from `--ocr-lang-hint"` up to the next
+        # `--ocr-models-dir"` add_argument call.
+        start = run_py.index('"--ocr-lang-hint"')
+        end = run_py.index('"--ocr-models-dir"', start)
+        return run_py[start:end]
+
+    def test_argparse_does_not_restrict_ocr_lang_hint(self):
+        # Source-level guard: the choices= keyword argument must not
+        # appear on the --ocr-lang-hint flag definition. Validation
+        # is delegated to OcrIndexerWorker against PADDLE_LANG_MAP.
+        run_py = (ROOT / "workers" / "run.py").read_text()
+        block = self._extract_ocr_lang_hint_block(run_py)
+        self.assertNotIn("choices=", block,
+                         "FIX 1 regressed: argparse re-restricted the "
+                         "lang hint with choices=, will reject zh-cht "
+                         "before the worker validates")
+
+    def test_help_text_mentions_new_zh_lang_hints(self):
+        # Operator-discoverability: `workers.run --help` should list
+        # the ZH-5 hints so an operator finds them without grepping.
+        run_py = (ROOT / "workers" / "run.py").read_text()
+        block = self._extract_ocr_lang_hint_block(run_py)
+        self.assertIn("zh-cht", block)
+        self.assertIn("zh-sim", block)
+
+
 class WorkerLangHintTests(unittest.TestCase):
     def test_accepts_zh_cht(self):
         # No exception = pass. We don't load Paddle yet (lazy).
@@ -184,6 +222,10 @@ class SetupOcrModelsScriptTests(unittest.TestCase):
     def test_dry_run_makes_no_network_calls(self):
         # We can't easily assert "no network", but we CAN assert that
         # --dry-run does not create model files and prints a plan.
+        # Note the dir we check is the *paddle_lang* dir (chinese_cht),
+        # not the lang_hint key (zh-cht), because the worker reads
+        # from the paddle_lang dir at runtime — FIX 2 in the architect
+        # review.
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
             env["OCR_MODELS_DIR"] = tmp
@@ -194,20 +236,22 @@ class SetupOcrModelsScriptTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("DRY RUN", r.stdout)
             self.assertIn("would fetch", r.stdout)
-            # No actual model dir should have been populated.
-            zh_cht = Path(tmp) / "zh-cht" / "rec" / "inference.pdmodel"
-            self.assertFalse(zh_cht.exists())
+            # No actual model dir under paddle_lang should be populated.
+            self.assertFalse(
+                (Path(tmp) / "chinese_cht" / "rec" / "inference.pdmodel").exists())
+            # And explicitly NOT under the lang_hint key — if this
+            # ever fires, the script regressed back to the old
+            # mis-layout and the worker would never find the models.
+            self.assertFalse(
+                (Path(tmp) / "zh-cht" / "rec" / "inference.pdmodel").exists())
 
     def test_idempotent_skip_when_already_extracted(self):
-        # Pre-stage a fake inference.pdmodel for zh-cht. The script
-        # must NOT touch the network for it. We also pre-stage the
-        # det/ subdir so the script doesn't try to fetch det either.
-        # Then we run for ONLY zh-cht (so no other lang triggers a
-        # download attempt). The run should succeed, both required
-        # files left untouched.
+        # Pre-stage a fake inference.pdmodel under the *paddle_lang*
+        # dir (chinese_cht — what the worker actually reads), not
+        # the lang_hint key. The script must NOT touch the network.
         with tempfile.TemporaryDirectory() as tmp:
             for sub in ("det", "rec"):
-                d = Path(tmp) / "zh-cht" / sub
+                d = Path(tmp) / "chinese_cht" / sub
                 d.mkdir(parents=True)
                 (d / "inference.pdmodel").write_text("FAKE")
                 (d / "inference.pdiparams").write_text("FAKE")
@@ -221,35 +265,110 @@ class SetupOcrModelsScriptTests(unittest.TestCase):
             self.assertIn("[skip]", r.stdout)
             # Files unchanged (would have been replaced by a download).
             self.assertEqual(
-                (Path(tmp) / "zh-cht" / "rec" / "inference.pdmodel").read_text(),
+                (Path(tmp) / "chinese_cht" / "rec" / "inference.pdmodel").read_text(),
                 "FAKE",
             )
 
+    def test_chs_and_zh_sim_share_paddle_dir(self):
+        # chs and zh-sim both map to PaddleOCR `lang="ch"`, so they
+        # MUST share the same on-disk dir (otherwise we'd download
+        # the same ~100MB tarball twice). Pre-stage `ch/` and ask
+        # for both hints; the script should skip both as already
+        # present and log only ONE paddle dir in its summary.
+        with tempfile.TemporaryDirectory() as tmp:
+            for sub in ("det", "rec"):
+                d = Path(tmp) / "ch" / sub
+                d.mkdir(parents=True)
+                (d / "inference.pdmodel").write_text("FAKE")
+            env = os.environ.copy()
+            env["OCR_MODELS_DIR"] = tmp
+            r = subprocess.run(
+                ["bash", str(SETUP_SCRIPT), "chs", "zh-sim"],
+                capture_output=True, text=True, timeout=10, env=env,
+            )
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            # Should mention only one paddle dir even though we
+            # asked for two CLI hints.
+            self.assertIn("paddle dirs:    ch", r.stdout)
+            self.assertIn("1 paddle dir(s) ready", r.stdout)
+
+    @staticmethod
+    def _extract_bash_assoc_block(text: str, name: str) -> str:
+        # bash associative-array bodies can contain inline `# … (…)`
+        # comments whose `)` would terminate a non-greedy `.*?\)`
+        # match prematurely. Use the closing-paren-on-its-own-line
+        # convention as the boundary instead.
+        pattern = (
+            r'declare -A ' + re.escape(name) + r'=\((.*?)^\)\s*$'
+        )
+        m = re.search(pattern, text, flags=re.DOTALL | re.MULTILINE)
+        if m is None:
+            raise AssertionError(
+                f"declare -A {name} block not found (or closing `)` "
+                "is not on its own line — required by this parser)"
+            )
+        return m.group(1)
+
     def test_rec_urls_parity_with_paddle_lang_map(self):
-        # The script's REC_URLS associative array MUST cover every
-        # key in workers/ocr_indexer.py::PADDLE_LANG_MAP. If this
-        # ever drifts, --ocr-lang-hint <new> will fail at OCR time
-        # with FACTORY_ERROR because the rec dir is empty.
+        # Two parity invariants:
+        #   (a) every key in PADDLE_LANG_MAP must appear in the
+        #       script's LANG_HINT_TO_PADDLE map (otherwise the
+        #       lang_hint is unreachable from this script);
+        #   (b) every VALUE in PADDLE_LANG_MAP must appear as a key
+        #       in REC_URLS (otherwise the script doesn't know
+        #       where to download the rec model from);
+        #   (c) the mapping in the script must agree with PADDLE_LANG_MAP
+        #       exactly — if PADDLE_LANG_MAP says `zh-cht→chinese_cht`,
+        #       the script must too.
         text = SETUP_SCRIPT.read_text()
-        # Extract the bash array keys: ["foo"]="...".
-        keys = set(re.findall(r'\["([^"]+)"\]=', text))
+        body = self._extract_bash_assoc_block(text, "LANG_HINT_TO_PADDLE")
+        script_map = dict(re.findall(r'\["([^"]+)"\]="([^"]+)"', body))
+        # (a) + (c) — full agreement on keys and values.
         self.assertEqual(
-            keys, set(PADDLE_LANG_MAP),
-            f"setup-ocr-models.sh REC_URLS keys ({sorted(keys)}) "
-            f"diverged from PADDLE_LANG_MAP ({sorted(PADDLE_LANG_MAP)})",
+            script_map, dict(PADDLE_LANG_MAP),
+            f"setup-ocr-models.sh LANG_HINT_TO_PADDLE diverged from "
+            f"PADDLE_LANG_MAP. Script: {script_map}; Python: "
+            f"{dict(PADDLE_LANG_MAP)}",
+        )
+        # (b) REC_URLS keys cover all unique paddle_lang values.
+        rec_body = self._extract_bash_assoc_block(text, "REC_URLS")
+        rec_keys = set(re.findall(r'\["([^"]+)"\]=', rec_body))
+        self.assertEqual(
+            rec_keys, set(PADDLE_LANG_MAP.values()),
+            f"REC_URLS keys ({sorted(rec_keys)}) don't cover unique "
+            f"PADDLE_LANG_MAP values ({sorted(set(PADDLE_LANG_MAP.values()))})",
         )
 
-    def test_lang_dir_layout_matches_worker_expectation(self):
-        # The worker does:
-        #   lang_dir = os.path.join(models_dir, lang)
-        #   det_model_dir = os.path.join(lang_dir, "det")
-        #   rec_model_dir = os.path.join(lang_dir, "rec")
-        # so the script must write into exactly that layout. We
-        # assert by literal-string check on the script — cheap but
-        # catches a refactor that changes one side without the other.
+    def test_stages_in_paddle_lang_dirs_not_lang_hint_dirs(self):
+        # Architect FIX 2: the worker's _factory builds model paths
+        # from the PaddleOCR `lang=` value (the VALUE of
+        # PADDLE_LANG_MAP), not from the CLI lang_hint key.
+        # Pre-architect-review the script staged by lang_hint, which
+        # silently mis-aligned with runtime. Lock the new behavior
+        # by checking the script uses the resolved $paddle_lang
+        # variable for the dir path.
         text = SETUP_SCRIPT.read_text()
+        # The main loop must iterate over paddle_lang and use it
+        # (not $lang or $hint) to build lang_dir.
+        self.assertIn('lang_dir="$MODELS_DIR/$paddle_lang"', text)
         self.assertIn('"$lang_dir/det"', text)
         self.assertIn('"$lang_dir/rec"', text)
+
+    def test_atomicity_uses_same_fs_staging(self):
+        # Architect FIX 3: mktemp -d defaults to /tmp on a Pi
+        # (tmpfs in RAM), and `mv /tmp/... /mnt/cards/...` is
+        # cross-filesystem — degrades to cp+rm, NOT atomic. The
+        # script must stage under $MODELS_DIR so rename(2) is one
+        # syscall regardless of where the operator mounted the
+        # drive. Also verify there's no `rm -rf "$dest"` BEFORE the
+        # rename, which would open a window of missing-dir on crash.
+        text = SETUP_SCRIPT.read_text()
+        self.assertIn('mktemp -d -p "$MODELS_DIR"', text)
+        # mv must use -T for atomic dir-rename semantics.
+        self.assertIn('mv -T --', text)
+        # No pre-rename rm of the destination dir.
+        self.assertNotIn('rm -rf "$dest"', text)
+        self.assertNotIn('rm -rf -- "$dest"', text)
 
 
 # ── zh_full_sync.sh ────────────────────────────────────────────────────
