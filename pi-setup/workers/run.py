@@ -58,6 +58,9 @@ from workers.data_analyst import DataAnalystWorker  # noqa: E402
 from workers.clip_embedder import ClipEmbedderWorker  # noqa: E402
 from workers.ocr_indexer import OcrIndexerWorker  # noqa: E402
 from workers.price_refresh import PriceRefreshWorker  # noqa: E402
+from workers.image_mirror import ImageMirrorWorker  # noqa: E402
+from workers.image_thumbnailer import ImageThumbnailerWorker  # noqa: E402
+from workers.kr_set_audit import KrSetAuditWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -66,12 +69,15 @@ log = logging.getLogger("workers.run")
 # Registry. To add a new helper: import its class and add an entry here.
 # The string key is what the operator types on the CLI.
 WORKERS: dict[str, type[Worker]] = {
-    "image_health":  ImageHealthWorker,
-    "lang_enrich":   LanguageEnrichWorker,
-    "data_analysis": DataAnalystWorker,
-    "clip_embed":    ClipEmbedderWorker,
-    "ocr_index":     OcrIndexerWorker,
-    "price_refresh": PriceRefreshWorker,
+    "image_health":    ImageHealthWorker,
+    "lang_enrich":     LanguageEnrichWorker,
+    "data_analysis":   DataAnalystWorker,
+    "clip_embed":      ClipEmbedderWorker,
+    "ocr_index":       OcrIndexerWorker,
+    "price_refresh":   PriceRefreshWorker,
+    "image_mirror":    ImageMirrorWorker,
+    "image_thumbnail": ImageThumbnailerWorker,
+    "kr_set_audit":    KrSetAuditWorker,
 }
 
 
