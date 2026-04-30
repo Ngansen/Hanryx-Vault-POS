@@ -326,9 +326,13 @@ class RealTargetFilesTests(unittest.TestCase):
 
 
 def _pin(repo_raw: str, tag: str, digest: str, *, lineno: int = 1) -> "checker.Pin":
+    # ``line`` is the original source-line text. The checker doesn't
+    # consume it, but ``Pin`` is shared with the refresher (which
+    # renders diff hunks from it), so populate a plausible value.
     return checker.Pin(
         file="pi-setup/docker-compose.yml",
         lineno=lineno,
+        line=f"    image: {repo_raw}:{tag}@sha256:{digest}",
         repo_raw=repo_raw,
         repo=checker.canonicalize_repo(repo_raw),
         tag=tag,
@@ -548,10 +552,13 @@ class HttpWithRetriesTests(unittest.TestCase):
 
 class ResolveDigestTests(unittest.TestCase):
     def _patches(self):
-        # Mock fetch_token at module level so only the manifest urlopen
-        # call needs to be queued in each test.
+        # Mock fetch_token at the shared-module level so only the
+        # manifest urlopen call needs to be queued in each test. The
+        # checker calls into ``_docker_registry.resolve_digest``, which
+        # in turn calls the shared ``fetch_token`` directly — patching
+        # the local re-export wouldn't intercept it.
         return (
-            mock.patch.object(checker, "fetch_token", return_value="anon-token"),
+            mock.patch("_docker_registry.fetch_token", return_value="anon-token"),
             mock.patch.object(checker.urllib.request, "urlopen"),
             mock.patch.object(checker.time, "sleep"),
         )

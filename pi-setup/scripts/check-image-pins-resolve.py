@@ -77,154 +77,116 @@ so digests are compared on a like-for-like basis. A registry that has
 retired the multi-arch index but kept a per-arch manifest is treated
 as a tag retirement (we'd silently drop multi-arch pulls if we
 accepted that digest).
+
+Shared registry-lookup code lives in ``_docker_registry.py``: the
+``PIN_RE`` regex, the ``TARGET_FILES`` list, ``canonicalize_repo`` /
+``parse_file``, and the bearer-token + multi-arch-index HEAD-request
+flow are deliberately one-and-the-same for this script and for
+``refresh-image-digests.py``. See the docstring on that module for
+the lock-step contract.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
-import socket
 import sys
-import time
-import urllib.error
-import urllib.request
+import time  # re-exported for tests that mock.patch(checker.time, "sleep")  # noqa: F401
+import urllib.error  # re-exported for test fixtures   # noqa: F401
+import urllib.request  # re-exported for tests that patch urlopen  # noqa: F401
 from typing import NamedTuple
 
+# Hyphenated filenames in this directory aren't importable as Python
+# modules, so the shared module is named with underscores. Adding the
+# script's own directory to sys.path lets us ``import _docker_registry``
+# regardless of how the script is invoked.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Pin syntax ───────────────────────────────────────────────────────────────
-#
-# Match a ``<repo>:<tag>@sha256:<64 hex>`` reference anywhere in a line.
-# Same regex as ``refresh-image-digests.py`` — the two scripts must agree
-# on what counts as a pin or one of them will silently miss something.
-# Repo may include a registry / namespace prefix with slashes; tag is
-# the usual Docker tag charset; digest is exactly 64 lower-case hex
-# chars. The leading lookbehind keeps us from matching the middle of a
-# longer token.
-PIN_RE = re.compile(
-    r"(?:(?<=[\s=:'\"])|(?<=^))"
-    r"(?P<repo>[a-zA-Z0-9][a-zA-Z0-9._\-/]*)"
-    r":(?P<tag>[a-zA-Z0-9_][a-zA-Z0-9._\-]*)"
-    r"@sha256:(?P<digest>[a-fA-F0-9]{64})"
-    # Trailing negative lookahead: a digest must be EXACTLY 64 hex
-    # chars. Without this anchor, a malformed 65+ char digest would
-    # match the leading 64 and silently pass the parser as if it
-    # were a real pin — defeating the whole point of a pin check.
-    r"(?![a-fA-F0-9])"
+# Re-export the shared parser surface verbatim so callers (and the
+# existing unit tests in ``tests/test_check_image_pins_resolve.py``)
+# can keep referring to ``checker.PIN_RE`` / ``checker.parse_file`` /
+# ``checker.canonicalize_repo`` / ``checker.Pin`` / ``checker.TARGET_FILES``
+# without caring that the implementation moved.
+from _docker_registry import (  # noqa: E402
+    MAX_ATTEMPTS,
+    PIN_RE,
+    REGISTRY,
+    TARGET_FILES,
+    Pin,
+    _header,
+    canonicalize_repo,
+    parse_file,
 )
+from _docker_registry import RegistryError as _SharedRegistryError  # noqa: E402
+from _docker_registry import _http_with_retries as _shared_http_with_retries  # noqa: E402
+from _docker_registry import fetch_token as _shared_fetch_token  # noqa: E402
+from _docker_registry import resolve_digest as _shared_resolve_digest  # noqa: E402
 
 
-# ── Files to scan ────────────────────────────────────────────────────────────
-#
-# Same list as ``refresh-image-digests.py``. Adding a new pinned
-# Dockerfile? Add it to BOTH scripts so refresh and check stay in sync.
-TARGET_FILES: tuple[str, ...] = (
-    "pi-setup/Dockerfile",
-    "pi-setup/recognizer/Dockerfile",
-    "pi-setup/pokeapi/Dockerfile",
-    "pi-setup/services/storefront/Dockerfile",
-    "pi-setup/docker-compose.yml",
-)
+# ── Caller-specific constants ────────────────────────────────────────────────
 
-
-# ── Registry constants ───────────────────────────────────────────────────────
-
-REGISTRY = "registry-1.docker.io"
-
-# auth.docker.io issues anonymous pull tokens for any public repo.
-AUTH_TOKEN_URL = (
-    "https://auth.docker.io/token"
-    "?service=registry.docker.io&scope=repository:{repo}:pull"
-)
-
-MANIFEST_URL = "https://{registry}/v2/{repo}/manifests/{tag}"
-
-# Multi-arch image-index media types. Same Accept header as the
-# refresher, so the digest we get back is comparable to the digest
-# pinned in the file (the refresher only ever writes index digests).
-MANIFEST_INDEX_ACCEPT = ", ".join((
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-))
-
+# Each script identifies itself separately in the User-Agent so a
+# registry operator can tell which tool made the request.
 USER_AGENT = (
     "hanryx-pi-setup-check-image-pins-resolve/1.0 "
     "(+https://github.com/Ngansen/hanryx; CI guard for FROM/image: pins)"
 )
 
-HTTP_TIMEOUT_S = 30.0
-MAX_ATTEMPTS = 4
-BACKOFF_S = (2.0, 5.0, 10.0)  # waits between attempts 1→2, 2→3, 3→4
+
+# ── Local exception types ────────────────────────────────────────────────────
+
+# Both subclass the shared ``RegistryError`` so existing ``except`` /
+# ``isinstance`` chains keep working. The split into two types is a
+# **caller-specific** concern (the refresher doesn't care about the
+# distinction; this script does), so it lives here, not in the shared
+# module. ``verify_pins`` below relies on the split to render the
+# more actionable "tag retired upstream" message instead of the
+# generic transient-failure one.
+class TagRetiredError(_SharedRegistryError):
+    """Raised when the registry says the tag no longer exists.
+
+    Surfaces both an HTTP 4xx on the manifest URL ("the tag is gone")
+    and the per-arch-only manifest case ("the multi-arch index this
+    pin needs is gone"). In both cases a fresh ``docker compose pull``
+    on the Pi would fail.
+    """
 
 
-# ── Data ─────────────────────────────────────────────────────────────────────
-
-class Pin(NamedTuple):
-    """One occurrence of a ``name:tag@sha256:<digest>`` reference."""
-    file: str            # repo-root-relative path
-    lineno: int          # 1-indexed
-    repo_raw: str        # as written in the file (e.g. ``python``)
-    repo: str            # canonicalized for registry (e.g. ``library/python``)
-    tag: str
-    digest: str          # current digest (lower-case 64-hex, no ``sha256:`` prefix)
-
-
-class Finding(NamedTuple):
-    """One pin that failed verification, plus a human-readable reason."""
-    pin: Pin
-    reason: str
-
-
-# ── Parsing ──────────────────────────────────────────────────────────────────
-
-def canonicalize_repo(repo_raw: str) -> str:
-    """Docker Hub official images live under the implicit ``library/``
-    prefix; anything with a ``/`` already is namespaced (user/org or a
-    full ``registry.example.com/foo`` path). Same convention as the
-    refresher."""
-    return repo_raw if "/" in repo_raw else f"library/{repo_raw}"
-
-
-def parse_file(rel_path: str, repo_root: str) -> list[Pin]:
-    abs_path = os.path.join(repo_root, rel_path)
-    with open(abs_path, "r", encoding="utf-8") as fh:
-        lines = fh.read().splitlines()
-    out: list[Pin] = []
-    for idx, line in enumerate(lines):
-        for m in PIN_RE.finditer(line):
-            repo_raw = m.group("repo")
-            out.append(Pin(
-                file=rel_path,
-                lineno=idx + 1,
-                repo_raw=repo_raw,
-                repo=canonicalize_repo(repo_raw),
-                tag=m.group("tag"),
-                digest=m.group("digest").lower(),
-            ))
-    return out
-
-
-# ── Registry lookups ─────────────────────────────────────────────────────────
-
-class TagRetiredError(RuntimeError):
-    """Raised when the registry says the tag no longer exists (4xx)."""
-
-
-class RegistryError(RuntimeError):
+class RegistryError(_SharedRegistryError):
     """Raised when the registry call itself fails (network, 5xx after
-    retries, malformed response). Distinct from ``TagRetiredError`` so
-    callers can decide whether to fail the build (we always do, but
-    the distinction shows up in the error message)."""
+    retries, malformed response). Distinct from ``TagRetiredError``
+    so callers can decide whether to fail the build (we always do,
+    but the distinction shows up in the error message).
+    """
 
+
+def _translate(exc: _SharedRegistryError) -> "RegistryError | TagRetiredError":
+    """Wrap a shared ``RegistryError`` in this script's local subclass
+    that mirrors its classification. ``terminal_4xx`` is the "this
+    tag is gone" signal; everything else is a transient/malformed
+    failure that we surface as ``RegistryError``."""
+    cls: type[_SharedRegistryError]
+    cls = TagRetiredError if exc.terminal_4xx else RegistryError
+    new = cls(str(exc))
+    new.network_only = exc.network_only
+    new.terminal_4xx = exc.terminal_4xx
+    return new
+
+
+# ── Registry helpers (thin wrappers over the shared module) ──────────────────
+#
+# These exist as module-level functions so the existing unit tests can
+# call ``checker._http_with_retries`` / ``checker.fetch_token`` /
+# ``checker.resolve_digest`` directly and assert against the local
+# exception subclasses.
 
 def _http_with_retries(
     req: urllib.request.Request,
 ) -> tuple[int, list[tuple[str, str]], bytes]:
     """``urlopen`` with retry / backoff. Returns ``(status, headers,
-    body)`` on a 2xx response. Raises ``TagRetiredError`` on a terminal
-    4xx (other than 429), or ``RegistryError`` on persistent transient
-    failures.
+    body)`` on a 2xx response. Raises ``TagRetiredError`` on a
+    terminal 4xx (other than 429), or ``RegistryError`` on persistent
+    transient failures.
 
     The split is important: a 404 on a manifest URL is a definitive
     "this tag does not exist" answer and means the pin is broken — the
@@ -232,74 +194,24 @@ def _http_with_retries(
     503 is "couldn't ask" and gets retried before being surfaced as a
     different kind of failure.
     """
-    last_err = "no attempts made"
-    for attempt in range(MAX_ATTEMPTS):
-        if attempt > 0:
-            time.sleep(BACKOFF_S[min(attempt - 1, len(BACKOFF_S) - 1)])
-        try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
-                status = resp.status
-                headers = list(resp.getheaders())
-                body = resp.read()
-                if 200 <= status < 300:
-                    return status, headers, body
-                last_err = f"HTTP {status} {resp.reason or ''}".strip()
-        except urllib.error.HTTPError as e:
-            last_err = f"HTTP {e.code} {e.reason or ''}".strip()
-            # 4xx (except rate-limit) is terminal — won't fix itself.
-            # That's the "tag retired" signal we care about.
-            if 400 <= e.code < 500 and e.code != 429:
-                raise TagRetiredError(last_err) from e
-        except urllib.error.URLError as e:
-            last_err = f"network error: {e.reason}"
-        except (TimeoutError, socket.timeout):
-            last_err = f"timeout after {HTTP_TIMEOUT_S:.0f}s"
-        except OSError as e:
-            last_err = f"network error: {e}"
-    raise RegistryError(last_err)
+    try:
+        return _shared_http_with_retries(req)
+    except _SharedRegistryError as e:
+        if isinstance(e, (TagRetiredError, RegistryError)):
+            raise
+        raise _translate(e) from e
 
 
 def fetch_token(repo: str) -> str:
     """Anonymous bearer token for the given repo. ``auth.docker.io``
-    happily issues these for public images — no credentials required."""
-    url = AUTH_TOKEN_URL.format(repo=repo)
-    req = urllib.request.Request(
-        url,
-        method="GET",
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-    )
+    happily issues these for public images — no credentials required.
+    """
     try:
-        _status, _headers, body = _http_with_retries(req)
-    except TagRetiredError as e:
-        # auth.docker.io returns 401 for repos that genuinely don't
-        # exist, but it's not strictly a "tag retired" — re-frame as a
-        # registry error so the message makes sense.
-        raise RegistryError(f"could not fetch auth token: {e}") from e
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError as e:
-        raise RegistryError(
-            f"auth.docker.io returned non-JSON token body: {e}"
-        ) from e
-    # Docker Hub returns ``token``; some other registries that share
-    # the same v2 protocol return ``access_token``. Accept either.
-    token = data.get("token") or data.get("access_token")
-    if not isinstance(token, str) or not token:
-        raise RegistryError(
-            "auth.docker.io returned no token in response body"
-        )
-    return token
-
-
-def _header(headers: list[tuple[str, str]], name: str) -> str:
-    """Case-insensitive header lookup. HTTP header names are
-    case-insensitive but ``HTTPResponse.getheaders()`` preserves the
-    server's casing."""
-    name_lc = name.lower()
-    for k, v in headers:
-        if k.lower() == name_lc:
-            return v.strip()
-    return ""
+        return _shared_fetch_token(repo, user_agent=USER_AGENT)
+    except _SharedRegistryError as e:
+        if isinstance(e, (TagRetiredError, RegistryError)):
+            raise
+        raise _translate(e) from e
 
 
 def resolve_digest(repo: str, tag: str) -> str:
@@ -308,55 +220,24 @@ def resolve_digest(repo: str, tag: str) -> str:
 
     Raises ``TagRetiredError`` if the registry says the tag does not
     exist (404 on the manifest URL, or a 200 but with a per-arch
-    response — we treat that as "the multi-arch index this pin needs is
-    gone"). Raises ``RegistryError`` for transient or malformed-response
-    failures.
+    response — we treat that as "the multi-arch index this pin needs
+    is gone"). Raises ``RegistryError`` for transient or
+    malformed-response failures.
     """
-    token = fetch_token(repo)
-    url = MANIFEST_URL.format(registry=REGISTRY, repo=repo, tag=tag)
-    req = urllib.request.Request(
-        url,
-        method="HEAD",
-        headers={
-            "User-Agent": USER_AGENT,
-            "Authorization": f"Bearer {token}",
-            "Accept": MANIFEST_INDEX_ACCEPT,
-        },
-    )
-    _status, headers, _body = _http_with_retries(req)
+    try:
+        return _shared_resolve_digest(repo, tag, user_agent=USER_AGENT)
+    except _SharedRegistryError as e:
+        if isinstance(e, (TagRetiredError, RegistryError)):
+            raise
+        raise _translate(e) from e
 
-    digest = _header(headers, "Docker-Content-Digest")
-    if not digest:
-        raise RegistryError(
-            "registry response missing Docker-Content-Digest header"
-        )
-    if not digest.startswith("sha256:"):
-        raise RegistryError(
-            f"unexpected digest algorithm in response: {digest!r}"
-        )
-    hex_part = digest.split(":", 1)[1].lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", hex_part):
-        raise RegistryError(
-            f"malformed sha256 digest from registry: {digest!r}"
-        )
 
-    # Multi-arch guardrail: a registry that has dropped the multi-arch
-    # index but kept a single-arch manifest may respond 200 with a
-    # per-arch Content-Type. The digest we'd get is NOT comparable to
-    # what we have pinned (the refresher only ever writes index
-    # digests), so report it as if the tag was retired — the maintainer
-    # needs to bump.
-    content_type = _header(headers, "Content-Type").lower()
-    if content_type and (
-        "manifest.list" not in content_type
-        and "image.index" not in content_type
-    ):
-        raise TagRetiredError(
-            f"registry returned a per-arch manifest ({content_type!r}), "
-            "not the multi-arch index. The pinned multi-arch index "
-            "appears to have been retired upstream."
-        )
-    return hex_part
+# ── Findings ─────────────────────────────────────────────────────────────────
+
+class Finding(NamedTuple):
+    """One pin that failed verification, plus a human-readable reason."""
+    pin: Pin
+    reason: str
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
