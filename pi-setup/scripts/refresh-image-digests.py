@@ -36,6 +36,12 @@ Run from the repository root::
     # Same lookup, but rewrite the files in place.
     python3 pi-setup/scripts/refresh-image-digests.py --write
 
+    # CI escape hatch for a total Docker Hub outage. Passes (with a
+    # WARN) only if EVERY failed lookup is a network/timeout error;
+    # a 4xx for a specific tag still fails, and any digest drift on
+    # tags that DID resolve still fails. See ``--help``.
+    python3 pi-setup/scripts/refresh-image-digests.py --skip-on-network-error
+
 The script never edits a file unless ``--write`` is passed.
 
 Lock-step
@@ -173,6 +179,16 @@ class ProposedUpdate(NamedTuple):
     new_digest: str      # lower-case 64-hex
 
 
+class LookupFailure(NamedTuple):
+    """One ``(repo, tag)`` lookup that the registry refused or that we
+    couldn't reach. ``network_only`` carries the classification from
+    ``ResolveError`` so ``main()`` can decide whether the
+    ``--skip-on-network-error`` escape hatch applies."""
+    key: str             # human-readable "repo:tag"
+    detail: str          # short error description for the operator
+    network_only: bool
+
+
 # ── Parsing ──────────────────────────────────────────────────────────────────
 
 def canonicalize_repo(repo_raw: str) -> str:
@@ -241,7 +257,20 @@ def find_lockstep_drift(pins: list[Pin]) -> list[str]:
 # ── Registry lookups ─────────────────────────────────────────────────────────
 
 class ResolveError(RuntimeError):
-    """Raised when the registry cannot be queried for a given (repo, tag)."""
+    """Raised when the registry cannot be queried for a given (repo, tag).
+
+    ``network_only`` is True iff the failure is a transient network /
+    timeout problem (DNS lookup, connection reset, request timed out)
+    rather than a definitive HTTP response from the registry. The
+    ``--skip-on-network-error`` escape hatch in ``main()`` only
+    suppresses errors with ``network_only=True``; a 404 / 401 / 403
+    still fails the run because a real bad pin won't fix itself by
+    waiting.
+    """
+
+    def __init__(self, msg: str, *, network_only: bool = False) -> None:
+        super().__init__(msg)
+        self.network_only = network_only
 
 
 def _http_with_retries(
@@ -251,6 +280,10 @@ def _http_with_retries(
     on a 2xx response. Raises ``ResolveError`` on a terminal 4xx (other
     than 429) or after exhausting retries on transient failures."""
     last_err = "no attempts made"
+    # Default to non-network until we actually see a network-style
+    # exception — "made no attempts" should not be silently skipped by
+    # --skip-on-network-error.
+    last_network_only = False
     for attempt in range(MAX_ATTEMPTS):
         if attempt > 0:
             time.sleep(BACKOFF_S[min(attempt - 1, len(BACKOFF_S) - 1)])
@@ -262,18 +295,23 @@ def _http_with_retries(
                 if 200 <= status < 300:
                     return status, headers, body
                 last_err = f"HTTP {status} {resp.reason or ''}".strip()
+                last_network_only = False
         except urllib.error.HTTPError as e:
             last_err = f"HTTP {e.code} {e.reason or ''}".strip()
+            last_network_only = False
             # 4xx (except rate-limit) is terminal — won't fix itself.
             if 400 <= e.code < 500 and e.code != 429:
-                raise ResolveError(last_err) from e
+                raise ResolveError(last_err, network_only=False) from e
         except urllib.error.URLError as e:
             last_err = f"network error: {e.reason}"
+            last_network_only = True
         except (TimeoutError, socket.timeout):
             last_err = f"timeout after {HTTP_TIMEOUT_S:.0f}s"
+            last_network_only = True
         except OSError as e:
             last_err = f"network error: {e}"
-    raise ResolveError(last_err)
+            last_network_only = True
+    raise ResolveError(last_err, network_only=last_network_only)
 
 
 def fetch_token(repo: str) -> str:
@@ -372,19 +410,27 @@ def resolve_digest(repo: str, tag: str) -> str:
 
 # ── Apply ────────────────────────────────────────────────────────────────────
 
-def compute_updates(pins: list[Pin]) -> tuple[list[ProposedUpdate], list[str]]:
+def compute_updates(
+    pins: list[Pin],
+) -> tuple[list[ProposedUpdate], list[LookupFailure]]:
     """Resolve each unique ``(repo, tag)`` exactly once and build the
     list of pins whose digest needs refreshing. Returns
-    ``(updates, lookup_errors)``."""
+    ``(updates, lookup_failures)`` — failures preserve the
+    ``network_only`` classification so the caller can decide whether
+    ``--skip-on-network-error`` applies."""
     resolved: dict[tuple[str, str], str] = {}
-    errors: list[str] = []
+    failures: list[LookupFailure] = []
     unique_keys = sorted({(p.repo, p.tag) for p in pins})
     for repo, tag in unique_keys:
         print(f"[refresh] resolving {repo}:{tag} ...", file=sys.stderr)
         try:
             digest = resolve_digest(repo, tag)
         except ResolveError as e:
-            errors.append(f"{repo}:{tag}  ->  {e}")
+            failures.append(LookupFailure(
+                key=f"{repo}:{tag}",
+                detail=str(e),
+                network_only=e.network_only,
+            ))
             print(f"[refresh]   FAIL: {e}", file=sys.stderr)
             continue
         resolved[(repo, tag)] = digest
@@ -397,7 +443,7 @@ def compute_updates(pins: list[Pin]) -> tuple[list[ProposedUpdate], list[str]]:
             continue
         if new != p.digest:
             updates.append(ProposedUpdate(pin=p, new_digest=new))
-    return updates, errors
+    return updates, failures
 
 
 def apply_in_place(updates: list[ProposedUpdate], repo_root: str) -> None:
@@ -484,6 +530,18 @@ def main(argv: list[str]) -> int:
             "a diff to stdout and exit non-zero if any digest would change."
         ),
     )
+    parser.add_argument(
+        "--skip-on-network-error",
+        action="store_true",
+        help=(
+            "Pass (with a warning) if registry-1.docker.io is unreachable "
+            "for ALL failed lookups (DNS / total network outage / timeout). "
+            "A 4xx for a specific tag still fails, and any digest drift on "
+            "tags that DID resolve still fails. Use sparingly — this guard "
+            "is what catches half-bumped pins and silent supply-chain "
+            "re-pushes before the Pi rebuild."
+        ),
+    )
     args = parser.parse_args(argv)
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -522,22 +580,50 @@ def main(argv: list[str]) -> int:
         return 1
 
     # Resolve every unique (repo, tag) and build the list of digest changes.
-    updates, lookup_errors = compute_updates(all_pins)
+    updates, lookup_failures = compute_updates(all_pins)
 
-    if lookup_errors:
-        print("", file=sys.stderr)
-        print(
-            "FAIL: could not resolve one or more tags against the registry. "
-            "Either the tag was deleted upstream (Task #19 catches that on "
-            "every PR), there's a transient network problem, or the tag "
-            "was typo'd in the Dockerfile / compose file.",
-            file=sys.stderr,
-        )
-        for e in lookup_errors:
-            print(f"  {e}", file=sys.stderr)
-        return 1
+    suppressed_network_outage = False
+    if lookup_failures:
+        all_network = all(f.network_only for f in lookup_failures)
+        if args.skip_on_network_error and all_network:
+            # Total registry outage (DNS / connection / timeout) on every
+            # failed lookup. The maintainer asked to bypass — emit a loud
+            # WARN and fall through. We must still process whatever DID
+            # resolve, because real digest drift on the resolved tags is
+            # exactly what we're here to catch and a registry hiccup must
+            # not silently mask it.
+            print("", file=sys.stderr)
+            print(
+                "WARN: registry-1.docker.io appears unreachable for one or "
+                "more tag(s); passing those because --skip-on-network-error "
+                "is set. The following lookups failed:",
+                file=sys.stderr,
+            )
+            for f in lookup_failures:
+                print(f"  - {f.key}: {f.detail}", file=sys.stderr)
+            suppressed_network_outage = True
+        else:
+            print("", file=sys.stderr)
+            print(
+                "FAIL: could not resolve one or more tags against the registry. "
+                "Either the tag was deleted upstream (Task #19 catches that on "
+                "every PR), there's a transient network problem, or the tag "
+                "was typo'd in the Dockerfile / compose file. If this looks "
+                "like a total Docker Hub outage, re-run with "
+                "--skip-on-network-error to pass with a warning. For a "
+                "deleted tag, the fix is to bump to a still-published tag — "
+                "see pi-setup/docs/REPRODUCIBILITY.md §6.",
+                file=sys.stderr,
+            )
+            for f in lookup_failures:
+                print(f"  {f.key}  ->  {f.detail}", file=sys.stderr)
+            return 1
 
     if not updates:
+        if suppressed_network_outage:
+            # Don't claim "all tags verified" — some weren't reachable.
+            # The WARN above already conveyed the partial state.
+            return 0
         unique_count = len({(p.repo, p.tag) for p in all_pins})
         print("")
         print(
@@ -559,9 +645,11 @@ def main(argv: list[str]) -> int:
         return 0
 
     print(
-        f"{len(updates)} digest(s) need refreshing. Re-run with --write "
-        "to apply, or copy the new digests in by hand. (No files were "
-        "modified.)",
+        f"{len(updates)} digest(s) need refreshing. Re-run locally with "
+        "--write to apply (then `docker compose build --no-cache` and "
+        "smoke-test before committing), or copy the new digests in by "
+        "hand. Full bump procedure: pi-setup/docs/REPRODUCIBILITY.md §6. "
+        "(No files were modified.)",
         file=sys.stderr,
     )
     return 1

@@ -10,6 +10,33 @@ on:
     paths:
       - 'pi-setup/**'
       - '.github/workflows/pi-setup-security.yml'
+  # Nightly run is mainly here for the network-dependent jobs that
+  # compare in-tree pins against UPSTREAM state — `image-pins-resolve`
+  # (catches retired tags), `debian-snapshot-date-published` (catches
+  # pruned snapshot dates), and the digest-drift job below (catches
+  # half-bumped pins and silent supply-chain re-pushes against tags
+  # that haven't been edited in this repo at all). A PR-only schedule
+  # would never notice those drifts on a quiet week. The static jobs
+  # (no-insecure-tls, no-plaintext-http, no-floating-tags,
+  # lockfile-drift) ride along — they're cheap and re-running them
+  # nightly costs nothing. The :17 minute offset keeps us out of the
+  # top-of-hour cron stampede on shared GH runners.
+  schedule:
+    - cron: '17 6 * * *'
+  # Manual re-run with the network-outage escape hatches. Only the
+  # drift-on-pinned-tags job actually consumes the input today;
+  # the read-only `image-pins-resolve` and `debian-snapshot-date`
+  # jobs don't expose an equivalent flag (yet). Default is OFF so a
+  # casual "Re-run all jobs" click in the GitHub UI doesn't silently
+  # turn the supply-chain guard into a no-op. Use only after
+  # confirming by hand that registry-1.docker.io is genuinely down.
+  workflow_dispatch:
+    inputs:
+      skip_image_digest_drift_on_network_error:
+        description: 'Pass image-pins-no-digest-drift if Docker Hub is unreachable (use sparingly — bypasses the supply-chain guard for a confirmed outage)'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   no-insecure-tls:
@@ -161,6 +188,74 @@ jobs:
       # either check fails.
       - name: Verify each pinned tag still resolves and digest matches
         run: python3 pi-setup/scripts/check-image-pins-resolve.py
+
+  image-pins-no-digest-drift:
+    name: Detect upstream digest drift on already-pinned tags
+    runs-on: ubuntu-latest
+    # registry-1.docker.io can be slow under load; the script's per-
+    # request retry/backoff plus this generous job timeout keeps the
+    # job from flaking on a routine hiccup. The same per-(repo, tag)
+    # cache the refresher uses means each unique image is one HTTP
+    # round-trip even when several stages pin it.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Why this exists, even though `image-pins-resolve` above already
+      # fails on digest drift:
+      #
+      #   * `image-pins-resolve` is the read-only checker — it answers
+      #     "does the digest in the file still match upstream?" with no
+      #     mutation path.
+      #   * THIS job runs the WRITE-CAPABLE refresher in dry-run mode.
+      #     The dry-run output IS the diff a maintainer would commit if
+      #     they ran `--write` locally, so a failure here lands with the
+      #     exact patch the maintainer needs to review and apply.
+      #
+      # Two failure modes this catches before they reach the Pi:
+      #
+      #   1. Half-bumped pin: a maintainer edited the tag (e.g.
+      #      python:3.11.10 → 3.11.11) but forgot to refresh the digest.
+      #      `docker compose build` on the Pi would refuse the manifest
+      #      mismatch; this job catches it on the PR with a one-line
+      #      diff.
+      #   2. Upstream silently re-pushed an existing tag with different
+      #      bits. Tags are nominally immutable but technically mutable
+      #      on Docker Hub — this is exactly the failure mode the
+      #      digest pin was designed to detect, and surfacing it here
+      #      gives the maintainer a chance to investigate the unexpected
+      #      re-push (real bump? compromised account?) before bumping.
+      #
+      # `--skip-on-network-error` is intentionally NOT passed on PR /
+      # push / scheduled runs: a Docker Hub outage on a single PR
+      # should fail loudly so the maintainer notices, not silently
+      # pass. The only path that enables it is a manual
+      # `workflow_dispatch` re-run with the matching input set to
+      # `true` — meant for the case where a maintainer has confirmed
+      # registry-1.docker.io is genuinely down and just wants the
+      # rest of the workflow to be green. The script itself still
+      # only suppresses lookup errors classified as
+      # `network_only=True`; a 404 for a specific tag, or any digest
+      # drift on tags that DID resolve, still fails.
+      - name: Refresher dry-run — fail if any pinned tag drifted upstream
+        env:
+          # `inputs.*` is the empty string on non-workflow_dispatch
+          # triggers; only literal "true" turns the flag on. Compare
+          # in the shell so a missing input falls through cleanly.
+          SKIP_FLAG_REQUESTED: ${{ inputs.skip_image_digest_drift_on_network_error }}
+        run: |
+          if [ "${SKIP_FLAG_REQUESTED}" = "true" ]; then
+            echo "::warning::Running with --skip-on-network-error per workflow_dispatch input. The script will still fail on any 4xx or on digest drift in tags that DID resolve; only total network-outage failures are suppressed."
+            python3 pi-setup/scripts/refresh-image-digests.py --skip-on-network-error
+          else
+            python3 pi-setup/scripts/refresh-image-digests.py
+          fi
 
   debian-snapshot-date-published:
     name: Verify APT_SNAPSHOT_DATE is published on snapshot.debian.org

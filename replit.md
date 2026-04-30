@@ -245,7 +245,12 @@ runs from the same git SHA produce byte-identical layers:
   rewrites the files in place (`--write`). Enforces the lock-step
   rules — POS Dockerfile builder vs runtime, storefront Dockerfile
   builder vs runtime, and POS vs recognizer Python pin — before
-  touching anything.
+  touching anything. CI runs the same script in dry-run mode on every
+  PR and nightly (`image-pins-no-digest-drift` job in
+  `.github/workflows/pi-setup-security.yml`, Task #31), so a half-bumped
+  pin or a silent upstream re-push of an already-pinned tag is caught
+  before it reaches the Pi; `--skip-on-network-error` is the local
+  escape hatch for a confirmed Docker Hub outage.
 - **`apt-get install`** (Debian images: pos, recognizer, storefront): pinned
   via `snapshot.debian.org` using the `APT_SNAPSHOT_DATE` build arg
   (`pi-setup/Dockerfile`, `pi-setup/recognizer/Dockerfile`,
