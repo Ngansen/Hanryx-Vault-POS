@@ -178,6 +178,17 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Unit tests for the pin checker's PIN_RE / canonicalize_repo /
+      # parse_file / verify_pins contract — network is stubbed, so a
+      # parser regression that would silently skip a real pin fails
+      # here on the PR rather than only on the live registry call.
+      # Run BEFORE the networked verify step so a Docker Hub outage
+      # can never mask a parser regression. Selecting the single test
+      # module avoids gating this job on unrelated tests in
+      # pi-setup/scripts/tests/.
+      - name: Run unit tests for the Docker Hub pin checker
+        run: python3 -m unittest pi-setup.scripts.tests.test_check_image_pins_resolve -v
+
       # For every name:tag@sha256:<digest> pin in pi-setup/, hit
       # registry-1.docker.io and confirm BOTH that the tag still
       # resolves to a manifest (no 404 — i.e. the upstream maintainer

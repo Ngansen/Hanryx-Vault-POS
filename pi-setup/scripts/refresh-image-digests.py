@@ -113,6 +113,11 @@ PIN_RE = re.compile(
     r"(?P<repo>[a-zA-Z0-9][a-zA-Z0-9._\-/]*)"
     r":(?P<tag>[a-zA-Z0-9_][a-zA-Z0-9._\-]*)"
     r"@sha256:(?P<digest>[a-fA-F0-9]{64})"
+    # Trailing negative lookahead: kept in lock-step with
+    # check-image-pins-resolve.py so the two scripts agree on what
+    # counts as a pin. A 65+ hex char digest is malformed and must
+    # not be silently truncated to a 64-char "valid" match.
+    r"(?![a-fA-F0-9])"
 )
 
 

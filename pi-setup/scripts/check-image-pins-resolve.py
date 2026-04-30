@@ -107,6 +107,11 @@ PIN_RE = re.compile(
     r"(?P<repo>[a-zA-Z0-9][a-zA-Z0-9._\-/]*)"
     r":(?P<tag>[a-zA-Z0-9_][a-zA-Z0-9._\-]*)"
     r"@sha256:(?P<digest>[a-fA-F0-9]{64})"
+    # Trailing negative lookahead: a digest must be EXACTLY 64 hex
+    # chars. Without this anchor, a malformed 65+ char digest would
+    # match the leading 64 and silently pass the parser as if it
+    # were a real pin — defeating the whole point of a pin check.
+    r"(?![a-fA-F0-9])"
 )
 
 
