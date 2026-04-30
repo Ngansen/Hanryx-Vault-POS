@@ -667,6 +667,103 @@ CREATE INDEX IF NOT EXISTS idx_kr_set_gap_audited
 """
 
 
+# ─── Cross-region card alias map (TC ↔ SC ↔ KR ↔ JP ↔ EN) ─────────────────
+#
+# Single canonical row per physical card across every region we sell at
+# the booth. The canonical_key is a stable string derived from the JP
+# coordinates — `f"jp:{jp_set_id}:{jp_card_num}"`. JP is the spine
+# because every Pokémon TCG release ships in JP first and the JP set
+# codes are the most stable (KR sometimes renames, TC rebrands every
+# couple of years, SC has the Tencent rename of 2023). One spine, many
+# mouths.
+#
+# Per-region columns are nullable strings — most cards are not printed
+# in every region, and a NOT NULL constraint would block partial linkage
+# (which is the common case during a set's first week, when JP exists
+# but TC/KR don't yet).
+#
+# match_method records WHICH heuristic produced the link:
+#   'manual'      — operator override at /mnt/cards/manual_aliases.json.
+#                   Always wins; aliaser refuses to overwrite manual rows.
+#   'set_abbrev'  — set abbreviation in canonical_sets JSON (e.g. TC
+#                   "SV1S" → JP "SV1S") + same card number. High
+#                   confidence, default 1.0.
+#   'clip'        — visual CLIP cosine similarity ≥ 0.92 against the JP
+#                   equivalent. confidence = the actual cosine score so
+#                   the operator can sort low-confidence rows for review.
+#   'unmatched'   — best-effort attempt failed; row exists for audit
+#                   trail. All region ids NULL except the one we tried
+#                   to link FROM (so the dashboard can show "47 TC cards
+#                   could not be aliased").
+#
+# last_verified_at lets the nightly aliaser skip rows that were checked
+# recently — only stale rows (or unmatched ones) get re-tried each pass.
+DDL_CARD_ALIAS = """
+CREATE TABLE IF NOT EXISTS card_alias (
+    canonical_key      TEXT PRIMARY KEY,
+    jp_id              TEXT,
+    kr_id              TEXT,
+    en_id              TEXT,
+    zh_tc_id           TEXT,
+    zh_sc_id           TEXT,
+    match_method       TEXT NOT NULL DEFAULT 'unmatched',
+    confidence         REAL NOT NULL DEFAULT 0.0,
+    source             TEXT NOT NULL DEFAULT 'auto',
+    notes              TEXT NOT NULL DEFAULT '',
+    created_at         BIGINT NOT NULL DEFAULT 0,
+    last_verified_at   BIGINT NOT NULL DEFAULT 0,
+    CHECK (match_method IN ('manual', 'set_abbrev', 'clip', 'unmatched'))
+);
+CREATE INDEX IF NOT EXISTS idx_card_alias_jp     ON card_alias (jp_id)
+    WHERE jp_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_kr     ON card_alias (kr_id)
+    WHERE kr_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_zh_tc  ON card_alias (zh_tc_id)
+    WHERE zh_tc_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_zh_sc  ON card_alias (zh_sc_id)
+    WHERE zh_sc_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_card_alias_method ON card_alias
+    (match_method, last_verified_at DESC);
+"""
+
+
+# ─── ZH set completeness audit (TC + SC) ──────────────────────────────────
+#
+# Mirror of kr_set_gap, but composite-keyed because the same `set_id`
+# may legitimately exist in BOTH TC and SC (rare but it happens — the
+# Tencent SC numeric ids are independent of the ptcg.tw TC slug
+# namespace, but they collide for short numeric strings like "1").
+# lang_variant disambiguates and prevents an SC audit from clobbering
+# a TC row.
+#
+# expected_count comes from either (a) the canonical_sets JSON's
+# expected_card_count field when the operator has confirmed it, or
+# (b) the upstream-derived count for SC (PTCG-CHS-Datasets/
+# ptcg_chs_infos.json self-describes). When neither is available the
+# audit writes 0 — which the dashboard renders as "unknown" rather
+# than "100% short" because the comparison would be meaningless.
+#
+# missing_numbers / extra_numbers are JSONB arrays for the same reason
+# kr_set_gap uses them: the dashboard wants to render them as chips.
+DDL_ZH_SET_GAP = """
+CREATE TABLE IF NOT EXISTS zh_set_gap (
+    set_id           TEXT NOT NULL,
+    lang_variant     TEXT NOT NULL,
+    expected_count   INTEGER NOT NULL DEFAULT 0,
+    actual_count     INTEGER NOT NULL DEFAULT 0,
+    missing_numbers  JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    extra_numbers    JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0,
+    PRIMARY KEY (set_id, lang_variant),
+    CHECK (lang_variant IN ('TC', 'SC'))
+);
+CREATE INDEX IF NOT EXISTS idx_zh_set_gap_audited
+    ON zh_set_gap (audited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_zh_set_gap_lang
+    ON zh_set_gap (lang_variant, audited_at DESC);
+"""
+
+
 # ─── Per-source price breakdown ───────────────────────────────────────────
 #
 # price_aggregator stores ONE row per query in price_quotes — the median
@@ -731,6 +828,8 @@ _ALL_DDL = [
     ("discovery_log",           DDL_DISCOVERY_LOG),
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
+    ("card_alias",              DDL_CARD_ALIAS),
+    ("zh_set_gap",              DDL_ZH_SET_GAP),
     ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
 ]
 

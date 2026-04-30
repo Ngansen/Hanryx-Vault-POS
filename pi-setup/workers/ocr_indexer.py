@@ -53,12 +53,27 @@ from .base import Worker, WorkerError
 
 log = logging.getLogger("workers.ocr_indexer")
 
-# cards_master language suffix → PaddleOCR `lang=` argument.
+# cards_master language suffix / CLI --ocr-lang-hint → PaddleOCR
+# `lang=` argument.
+#
+# Why both `chs` and `zh-sim`?
+#   `chs` was the original key, picked up by `pick_primary_lang` from
+#   the existing `cards_master.name_chs` column. After ZH-2 introduced
+#   a TC vs SC split (`/mnt/cards/zh/zh-tc/` vs `/zh-sc/`) the operator
+#   needs an explicit way to OCR each variant differently — Traditional
+#   needs the `chinese_cht` PP-OCRv4 pack; Simplified is fine on `ch`.
+#   `zh-sim` is therefore a deliberate alias of `chs` (same Paddle
+#   model, same `~/.paddleocr` cache dir under PaddleOCR's hood) so an
+#   operator can run `--ocr-lang-hint zh-sim` against the SC mirror
+#   without touching name_chs-tagged legacy KR-pack rows. `chs` stays
+#   as the auto-pick for backward compat.
 PADDLE_LANG_MAP: dict[str, str] = {
-    "kr":  "korean",
-    "jp":  "japan",
-    "chs": "ch",     # PP-OCRv4 ch model handles simplified
-    "en":  "en",
+    "kr":     "korean",
+    "jp":     "japan",
+    "chs":    "ch",            # legacy alias; auto-picked from name_chs
+    "zh-sim": "ch",             # explicit Simplified, same model as chs
+    "zh-cht": "chinese_cht",    # Traditional — separate PP-OCRv4 pack
+    "en":     "en",
 }
 
 # Tie-break order for picking a card's primary OCR language.
