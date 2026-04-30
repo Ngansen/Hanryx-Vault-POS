@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from workers import cross_region_aliaser as cra
+from workers.base import WorkerError
 from workers.cross_region_aliaser import (
     CrossRegionAliaserWorker,
     _canonical_key,
@@ -37,6 +38,8 @@ from workers.cross_region_aliaser import (
     _zh_card_id,
     _load_canonical_sets,
     _load_manual_overrides,
+    _load_and_validate_manual_overrides,
+    _validate_manual_overrides,
     _walk_zh_mirror,
     _cosine,
 )
@@ -468,7 +471,10 @@ class ProcessTests(unittest.TestCase):
                     {"set_id": "SV1S", "abbreviation": "SV1S",
                      "jp_equivalent_id": "SV1S"},
                 ],
-                manual=[{"canonical_key": "jp:SV1S:1", "zh_tc_id": "pinned"}],
+                manual=[{
+                    "canonical_key": "jp:SV1S:1",
+                    "zh_tc_id": "zh-tc:operator:SV1S:1",
+                }],
             )
             res = w.process({})
             self.assertEqual(res["manual_overrides_applied"], 1)
@@ -487,19 +493,284 @@ class ProcessTests(unittest.TestCase):
                 f"{[s[:60] for s, _ in inserts]}",
             )
 
-    def test_manual_override_missing_canonical_key_skipped(self):
-        # An override missing both canonical_key AND jp_id must be
-        # logged & skipped, not inserted with a NULL key (would
-        # violate PK).
+    def test_manual_override_missing_canonical_key_aborts_run(self):
+        # FU-1: the lenient pre-validation behaviour silently dropped
+        # orphans, which let the auto-aliaser overwrite them on the
+        # next pass. The strict loader must abort the WHOLE run with
+        # a permanent failure so the operator notices.
         with tempfile.TemporaryDirectory() as tmp:
             td = Path(tmp)
             w, conn = self._setup(
                 td,
                 layout={},
-                manual=[{"zh_tc_id": "orphan"}, {"canonical_key": "jp:X:1"}],
+                manual=[
+                    {"zh_tc_id": "orphan"},      # missing canonical_key
+                    {"canonical_key": "jp:X:1"}, # pins nothing
+                ],
             )
-            res = w.process({})
-            self.assertEqual(res["manual_overrides_applied"], 1)
+            with self.assertRaises(WorkerError) as cm:
+                w.process({})
+            msg = str(cm.exception)
+            # Both errors should be reported in one shot — the operator
+            # shouldn't have to fix-and-rerun N times.
+            self.assertIn("missing 'canonical_key'", msg)
+            self.assertIn("pins nothing", msg)
+            # And NOTHING should have been written to card_alias.
+            inserts = self._alias_inserts(conn)
+            self.assertEqual(
+                inserts, [],
+                "expected zero card_alias writes when validation fails",
+            )
+
+
+# ── FU-1: schema validation of /mnt/cards/manual_aliases.json ──────────
+#
+# These are the failure-mode tests called out in the FU plan. The
+# happy-path coverage is the test_manual_override_writes_first_then_protects
+# test above (it round-trips a fully-valid override through process()).
+
+
+class ValidateManualOverridesTests(unittest.TestCase):
+    """Pure-function tests on _validate_manual_overrides — fast,
+    no FS, no DB. process()-level integration is covered separately."""
+
+    CANONICAL_TC = {
+        "SV1S": {"set_id": "SV1S", "jp_equivalent_id": "SV1S",
+                 "expected_card_count": 78},
+    }
+    CANONICAL_SC = {
+        "1": {"set_id": "1", "jp_equivalent_id": "BW",
+              "expected_card_count": 100},
+    }
+
+    def test_happy_path_no_errors(self):
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:1",
+            "zh_sc_id": "zh-sc:ptcg-chs:1:42",
+            "notes": "operator-confirmed 2026-04-30",
+        }]
+        self.assertEqual(
+            _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC),
+            [],
+        )
+
+    def test_unknown_zh_tc_set_id(self):
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tc_id": "zh-tc:ptcg.tw:NOPE:1",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("zh_tc_id set_id 'NOPE' not found", errs[0])
+
+    def test_unknown_zh_sc_set_id(self):
+        ovs = [{
+            "canonical_key": "jp:BW:1",
+            "zh_sc_id": "zh-sc:ptcg-chs:9999:1",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("zh_sc_id set_id '9999' not found", errs[0])
+
+    def test_card_number_out_of_range(self):
+        # SV1S has expected_card_count=78 in our fixture; pinning #999
+        # is almost certainly an operator typo, not a secret rare.
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:999",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("outside the expected range", errs[0])
+        self.assertIn("1..78", errs[0])
+
+    def test_card_number_in_range_passes(self):
+        ovs = [{
+            "canonical_key": "jp:SV1S:78",
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:78",
+        }]
+        self.assertEqual(
+            _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC),
+            [],
+        )
+
+    def test_duplicate_canonical_key(self):
+        ovs = [
+            {"canonical_key": "jp:SV1S:1",
+             "zh_tc_id": "zh-tc:a:SV1S:1"},
+            {"canonical_key": "jp:SV1S:1",
+             "zh_tc_id": "zh-tc:b:SV1S:1"},
+        ]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("duplicate canonical_key", errs[0])
+        self.assertIn("first seen at override #1", errs[0])
+
+    def test_typo_in_region_key_is_rejected(self):
+        # `zh_tcc_id` looks like `zh_tc_id` — would silently no-op
+        # under the lenient loader.
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tcc_id": "zh-tc:ptcg.tw:SV1S:1",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        # Two errors expected: the typo'd key + "pins nothing" because
+        # the only region attempt was the typo.
+        self.assertEqual(len(errs), 2, errs)
+        self.assertTrue(any("zh_tcc_id" in e for e in errs))
+        self.assertTrue(any("pins nothing" in e for e in errs))
+
+    def test_pins_nothing(self):
+        ovs = [{"canonical_key": "jp:SV1S:1", "notes": "wip"}]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("pins nothing", errs[0])
+
+    def test_canonical_key_wrong_form(self):
+        ovs = [{
+            "canonical_key": "SV1S/1",  # missing jp: prefix and colons
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:1",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("does not match", errs[0])
+
+    def test_jp_id_form_mismatch(self):
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "jp_id": "broken",
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:1",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("jp_id 'broken'", errs[0])
+
+    def test_region_id_wrong_form(self):
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tc_id": "no-colons-here",
+        }]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 1, errs)
+        self.assertIn("'<lang>:<source>:<set_id>:<card_number>'", errs[0])
+
+    def test_non_dict_entry(self):
+        ovs = ["not-a-dict", 42]
+        errs = _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC)
+        self.assertEqual(len(errs), 2, errs)
+        self.assertTrue(any("expected an object" in e for e in errs))
+
+    def test_jp_id_derives_canonical_key(self):
+        # Operators commonly write `jp_id` as their primary key; the
+        # validator should accept that and derive canonical_key from it.
+        ovs = [{
+            "jp_id": "jp:SV1S:1",
+            "zh_tc_id": "zh-tc:ptcg.tw:SV1S:1",
+        }]
+        self.assertEqual(
+            _validate_manual_overrides(ovs, self.CANONICAL_TC, self.CANONICAL_SC),
+            [],
+        )
+
+    def test_expected_card_count_verify_sentinel_skips_range_check(self):
+        # Sets where the operator hasn't confirmed the count yet have
+        # expected_card_count="VERIFY"; we shouldn't reject overrides
+        # against them — the operator might know more than we do.
+        canonical = {"X": {"set_id": "X", "expected_card_count": "VERIFY"}}
+        ovs = [{
+            "canonical_key": "jp:SV1S:1",
+            "zh_tc_id": "zh-tc:src:X:9999",
+        }]
+        self.assertEqual(
+            _validate_manual_overrides(ovs, canonical, self.CANONICAL_SC),
+            [],
+        )
+
+
+class LoadAndValidateManualOverridesTests(unittest.TestCase):
+    """File-level loader tests — exercise the path that turns a JSON
+    file on disk into either a clean override list or a WorkerError."""
+
+    CANONICAL_TC = {"SV1S": {"set_id": "SV1S", "expected_card_count": 78}}
+    CANONICAL_SC: dict[str, dict[str, object]] = {}
+
+    def test_missing_file_returns_empty(self):
+        out = _load_and_validate_manual_overrides(
+            Path("/nonexistent/manual.json"),
+            self.CANONICAL_TC, self.CANONICAL_SC,
+        )
+        self.assertEqual(out, [])
+
+    def test_malformed_json_raises_with_line_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "m.json"
+            # Newline before the offending bracket so lineno > 1, proving
+            # we surface the actual position.
+            p.write_text("{\n  this is not json", encoding="utf-8")
+            with self.assertRaises(WorkerError) as cm:
+                _load_and_validate_manual_overrides(
+                    p, self.CANONICAL_TC, self.CANONICAL_SC,
+                )
+            msg = str(cm.exception)
+            self.assertIn("not valid JSON", msg)
+            # JSONDecodeError on this input reports line 2.
+            self.assertIn("line 2", msg)
+
+    def test_top_level_shape_wrong_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "m.json"
+            p.write_text(json.dumps({"foo": "bar"}), encoding="utf-8")
+            with self.assertRaises(WorkerError) as cm:
+                _load_and_validate_manual_overrides(
+                    p, self.CANONICAL_TC, self.CANONICAL_SC,
+                )
+            self.assertIn("unexpected top-level shape", str(cm.exception))
+
+    def test_overrides_key_not_a_list_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "m.json"
+            p.write_text(json.dumps({"overrides": "oops"}), encoding="utf-8")
+            with self.assertRaises(WorkerError) as cm:
+                _load_and_validate_manual_overrides(
+                    p, self.CANONICAL_TC, self.CANONICAL_SC,
+                )
+            self.assertIn("must be a list", str(cm.exception))
+
+    def test_validation_errors_are_aggregated(self):
+        # Multiple bad entries should all show up in the WorkerError —
+        # the operator shouldn't fix one, rerun, fix the next, rerun.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "m.json"
+            p.write_text(json.dumps([
+                {"canonical_key": "jp:SV1S:1",
+                 "zh_tc_id": "zh-tc:src:NOPE:1"},
+                {"canonical_key": "jp:SV1S:1",
+                 "zh_tc_id": "zh-tc:src:SV1S:2"},
+                {"zh_tc_id": "zh-tc:src:SV1S:3"},
+            ]), encoding="utf-8")
+            with self.assertRaises(WorkerError) as cm:
+                _load_and_validate_manual_overrides(
+                    p, self.CANONICAL_TC, self.CANONICAL_SC,
+                )
+            msg = str(cm.exception)
+            self.assertIn("3 errors", msg)
+            self.assertIn("set_id 'NOPE'", msg)
+            self.assertIn("duplicate canonical_key", msg)
+            self.assertIn("missing 'canonical_key'", msg)
+
+    def test_happy_path_returns_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "m.json"
+            p.write_text(json.dumps([
+                {"canonical_key": "jp:SV1S:1",
+                 "zh_tc_id": "zh-tc:ptcg.tw:SV1S:1"},
+            ]), encoding="utf-8")
+            out = _load_and_validate_manual_overrides(
+                p, self.CANONICAL_TC, self.CANONICAL_SC,
+            )
+            self.assertEqual(len(out), 1)
+            self.assertEqual(out[0]["canonical_key"], "jp:SV1S:1")
 
 
 if __name__ == "__main__":

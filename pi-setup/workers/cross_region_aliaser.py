@@ -48,6 +48,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -145,10 +146,12 @@ def _load_canonical_sets(canonical_dir: Path, fname: str) -> dict[str, dict[str,
 
 
 def _load_manual_overrides(path: Path) -> list[dict[str, Any]]:
-    """Returns a list of override dicts, each containing whatever
-    region ids the operator wants pinned. Missing file → []. Malformed
-    file → [] with a loud warning (the operator just lost their
-    overrides for this run; they need to know)."""
+    """Lenient loader retained for backward-compat with helpers that
+    just want to peek at the file. Returns [] on missing/malformed.
+
+    The worker itself uses _load_and_validate_manual_overrides()
+    instead — strict validation must run BEFORE any DB writes so a
+    typo can't silently route a card to nowhere (FU-1)."""
     if not path.is_file():
         return []
     try:
@@ -163,6 +166,267 @@ def _load_manual_overrides(path: Path) -> list[dict[str, Any]]:
     log.warning("[aliaser] manual overrides has unexpected shape (expected list or "
                 "{overrides:[]}); ignoring")
     return []
+
+
+# ─── Manual-override schema validation (FU-1) ───────────────────────────
+#
+# Manual overrides are operator-curated and win over every auto-strategy.
+# A typo here silently routes a card to nowhere AND survives subsequent
+# nightly passes because the auto-aliaser refuses to clobber manual rows.
+# So we validate the file at worker startup and refuse to start when it's
+# malformed. The validation errors land in bg_task_queue.last_error
+# (via WorkerError → fail(permanent=True)) and surface in the dashboard.
+
+# canonical_key MUST be of the form "jp:<jp_set_id>:<jp_card_num>". We
+# allow letters/digits/underscore/dot/hyphen in set_ids (matches every
+# JP set code we've seen) and digits + optional trailing letter in card
+# numbers (e.g. "001", "12a", "204b" for secret-rare promos).
+_CANONICAL_KEY_RE = re.compile(r"^jp:[A-Za-z0-9._-]+:[0-9]+[A-Za-z]?$")
+
+# Region ids match the convention written by _zh_card_id +
+# kr_set_audit / en_set_audit: "<lang>:<source>:<set_id>:<card_num>".
+_REGION_ID_RE = re.compile(
+    r"^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[0-9]+[A-Za-z]?$"
+)
+
+# Region columns we know about. Anything ending in `_id` that's NOT in
+# this set is treated as a typo (e.g. `zh_tcc_id`, `cn_id`).
+_OVERRIDE_REGION_KEYS = ("kr_id", "en_id", "zh_tc_id", "zh_sc_id")
+_OVERRIDE_KNOWN_KEYS = frozenset(
+    {"canonical_key", "jp_id", "source", "notes"} | set(_OVERRIDE_REGION_KEYS)
+)
+
+
+def _parse_card_num_int(num: str) -> Optional[int]:
+    """Return the leading integer portion of a card number, or None
+    if it has no digits. Used to range-check against expected_card_count
+    in the canonical_sets registry."""
+    m = re.match(r"^([0-9]+)", num or "")
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def _validate_manual_overrides(
+    overrides: list[Any],
+    canonical_tc: dict[str, dict[str, Any]],
+    canonical_sc: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Returns a list of human-readable error strings; empty = valid.
+
+    Per-entry checks:
+      1. Entry is a dict.
+      2. canonical_key is present (or jp_id we can derive it from) AND
+         matches "jp:<set_id>:<card_num>".
+      3. jp_id (if present) matches the canonical_key form.
+      4. At least one region id is pinned (otherwise the row is a no-op).
+      5. Each region id matches "<lang>:<source>:<set_id>:<card_num>".
+      6. zh_tc_id set_id exists in zh_tc.json.
+      7. zh_sc_id set_id exists in zh_sc.json.
+      8. zh_tc_id / zh_sc_id card_number is within the canonical
+         expected_card_count range (when that count is a positive int —
+         skipped for "VERIFY" placeholders).
+      9. Unknown keys ending in `_id` are rejected as typos.
+
+    File-level checks:
+      10. No duplicate canonical_keys across the override list.
+    """
+    errors: list[str] = []
+    seen_keys: dict[str, int] = {}
+    valid_tc_set_ids = set(canonical_tc)
+    valid_sc_set_ids = set(canonical_sc)
+
+    for idx, ov in enumerate(overrides):
+        loc = f"override #{idx + 1}"
+        if not isinstance(ov, dict):
+            errors.append(f"{loc}: expected an object, got {type(ov).__name__}")
+            continue
+
+        # --- canonical_key derivation + form check ---
+        ck = (ov.get("canonical_key") or "").strip()
+        jp_id = (ov.get("jp_id") or "").strip()
+        if not ck and jp_id and jp_id.startswith("jp:"):
+            ck = jp_id
+        if not ck:
+            errors.append(
+                f"{loc}: missing 'canonical_key' (and no jp_id to derive it from)"
+            )
+        elif not _CANONICAL_KEY_RE.match(ck):
+            errors.append(
+                f"{loc}: canonical_key {ck!r} does not match "
+                f"'jp:<set_id>:<card_number>'"
+            )
+        else:
+            prev = seen_keys.get(ck)
+            if prev is not None:
+                errors.append(
+                    f"{loc}: duplicate canonical_key {ck!r} "
+                    f"(first seen at override #{prev + 1})"
+                )
+            else:
+                seen_keys[ck] = idx
+
+        # --- jp_id form check (only if explicitly provided) ---
+        if jp_id and not _CANONICAL_KEY_RE.match(jp_id):
+            errors.append(
+                f"{loc}: jp_id {jp_id!r} does not match "
+                f"'jp:<set_id>:<card_number>'"
+            )
+
+        # --- at least one region id ---
+        present_region_keys = [
+            k for k in _OVERRIDE_REGION_KEYS if (ov.get(k) or "").strip()
+        ]
+        if not present_region_keys:
+            errors.append(
+                f"{loc}: pins nothing — no kr_id / en_id / zh_tc_id / "
+                f"zh_sc_id provided"
+            )
+
+        # --- region id format + cross-check against canonical sets ---
+        for region_key in _OVERRIDE_REGION_KEYS:
+            v = (ov.get(region_key) or "").strip()
+            if not v:
+                continue
+            if not _REGION_ID_RE.match(v):
+                errors.append(
+                    f"{loc}: {region_key} {v!r} does not match "
+                    f"'<lang>:<source>:<set_id>:<card_number>'"
+                )
+                continue
+            try:
+                _lang, _source, set_id, card_num = v.split(":", 3)
+            except ValueError:
+                continue
+
+            canonical_for_region: Optional[dict[str, dict[str, Any]]]
+            if region_key == "zh_tc_id":
+                canonical_for_region = canonical_tc
+                valid_set_ids = valid_tc_set_ids
+                canonical_label = "canonical_sets/zh_tc.json"
+            elif region_key == "zh_sc_id":
+                canonical_for_region = canonical_sc
+                valid_set_ids = valid_sc_set_ids
+                canonical_label = "canonical_sets/zh_sc.json"
+            else:
+                canonical_for_region = None
+                valid_set_ids = set()
+                canonical_label = ""
+
+            if canonical_for_region is not None:
+                if set_id not in valid_set_ids:
+                    errors.append(
+                        f"{loc}: {region_key} set_id {set_id!r} not found "
+                        f"in {canonical_label}"
+                    )
+                else:
+                    # Range-check the card number against the canonical
+                    # expected_card_count when it's a positive integer.
+                    entry = canonical_for_region.get(set_id) or {}
+                    expected_raw = entry.get("expected_card_count")
+                    expected_int: Optional[int] = None
+                    if isinstance(expected_raw, int) and expected_raw > 0:
+                        expected_int = expected_raw
+                    elif isinstance(expected_raw, str):
+                        try:
+                            n = int(expected_raw.strip())
+                            if n > 0:
+                                expected_int = n
+                        except ValueError:
+                            expected_int = None
+                    if expected_int is not None:
+                        n = _parse_card_num_int(card_num)
+                        if n is None or n < 1 or n > expected_int:
+                            errors.append(
+                                f"{loc}: {region_key} card_number "
+                                f"{card_num!r} is outside the expected "
+                                f"range 1..{expected_int} for set "
+                                f"{set_id!r}"
+                            )
+
+        # --- typo guard: any unknown *_id key is rejected ---
+        for k in ov:
+            if k in _OVERRIDE_KNOWN_KEYS:
+                continue
+            if k.endswith("_id"):
+                errors.append(
+                    f"{loc}: unknown key {k!r} (looks like a typo of one "
+                    f"of {sorted(_OVERRIDE_REGION_KEYS + ('jp_id',))})"
+                )
+
+    return errors
+
+
+def _load_and_validate_manual_overrides(
+    path: Path,
+    canonical_tc: dict[str, dict[str, Any]],
+    canonical_sc: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Strict loader: returns the validated override list, or raises
+    WorkerError with a line-numbered explanation when the file is bad.
+
+    Missing file is fine (returns []) — operators with no overrides
+    shouldn't be forced to keep an empty file around.
+    """
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise WorkerError(
+            f"manual_aliases.json at {path} is unreadable: {exc}"
+        ) from exc
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        # JSONDecodeError has .lineno/.colno/.msg — surface them so the
+        # operator can jump straight to the bad spot in their editor.
+        raise WorkerError(
+            f"manual_aliases.json at {path} is not valid JSON "
+            f"(line {exc.lineno} col {exc.colno}): {exc.msg}"
+        ) from exc
+    except ValueError as exc:
+        raise WorkerError(
+            f"manual_aliases.json at {path} is not valid JSON: {exc}"
+        ) from exc
+
+    if isinstance(raw, dict) and "overrides" in raw:
+        overrides = raw.get("overrides")
+    elif isinstance(raw, list):
+        overrides = raw
+    else:
+        raise WorkerError(
+            f"manual_aliases.json at {path} has unexpected top-level shape: "
+            f"expected a JSON array or an object with key 'overrides', "
+            f"got {type(raw).__name__}"
+        )
+
+    if not isinstance(overrides, list):
+        raise WorkerError(
+            f"manual_aliases.json at {path}: 'overrides' must be a list, "
+            f"got {type(overrides).__name__}"
+        )
+
+    errors = _validate_manual_overrides(overrides, canonical_tc, canonical_sc)
+    if errors:
+        # Cap the bullet list so a runaway file (hundreds of typos)
+        # doesn't blow up bg_task_queue.last_error (TEXT but bounded
+        # downstream consumers truncate at 4 KB).
+        cap = 25
+        bullets = "\n  - ".join(errors[:cap])
+        more = ""
+        if len(errors) > cap:
+            more = f"\n  ... and {len(errors) - cap} more"
+        raise WorkerError(
+            f"manual_aliases.json at {path} failed validation "
+            f"({len(errors)} error{'s' if len(errors) != 1 else ''}):\n"
+            f"  - {bullets}{more}"
+        )
+
+    return overrides
 
 
 def _walk_zh_mirror(zh_root: Path) -> Iterable[tuple[str, str, str, str]]:
@@ -300,16 +564,26 @@ class CrossRegionAliaserWorker(Worker):
         bg_worker_run.notes — the admin dashboard surfaces this."""
         now = self._now_fn()
 
-        # 1. Load manual overrides FIRST — they win over everything.
-        overrides = _load_manual_overrides(self._manual_path)
-        manual_count = self._apply_manual_overrides(overrides, now)
-
-        # 2. Build per-lang canonical set lookups: abbreviation/set_id
-        #    → JP equivalent.
+        # 1. Build per-lang canonical set lookups FIRST — we need them
+        #    to validate manual overrides against (FU-1: catch typos
+        #    like a zh_tc_id pointing at a set that doesn't exist).
         per_lang: dict[str, tuple[dict[str, dict[str, Any]], str]] = {}
         for lang_dir, region_col, fname in LANG_DIRS:
             sets = _load_canonical_sets(self._canonical_dir, fname)
             per_lang[lang_dir] = (sets, region_col)
+        canonical_tc = per_lang.get("zh-tc", ({}, ""))[0]
+        canonical_sc = per_lang.get("zh-sc", ({}, ""))[0]
+
+        # 2. Strict-validate + load manual overrides BEFORE writing
+        #    anything to card_alias. A malformed file aborts the whole
+        #    run with a permanent failure (WorkerError) — silently
+        #    dropping operator-curated rows would let the auto-aliaser
+        #    quietly overwrite them on the next pass, which is exactly
+        #    the bug FU-1 calls out.
+        overrides = _load_and_validate_manual_overrides(
+            self._manual_path, canonical_tc, canonical_sc,
+        )
+        manual_count = self._apply_manual_overrides(overrides, now)
 
         # 3. Walk the disk and try to alias each card.
         seen = 0
