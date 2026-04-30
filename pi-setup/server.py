@@ -6194,6 +6194,262 @@ def kr_cards_status():
         return jsonify({"error": str(exc), "count": 0}), 500
 
 
+@app.route("/admin/en-cards/status", methods=["GET"])
+def en_cards_status():
+    """Quick check on EN catalogue coverage.
+
+    EN doesn't have a dedicated `cards_en` table — EN data lives in
+    cards_master.name_en. This endpoint reports:
+      * how many cards_master rows have a non-empty name_en
+      * how many EN rows TCGdex provides as the canonical (src_tcgdex_multi
+        with `names ? 'en'`)
+      * the most recent en_set_gap roll-up (total missing / extra)
+      * a 5-row sample of recently imported EN cards
+    Mirrors the kr-cards/status JSON shape so dashboards reuse the same
+    parser.
+    """
+    try:
+        db = get_db()
+        cnt_row = db.execute(
+            "SELECT COUNT(*) FROM cards_master "
+            "WHERE name_en IS NOT NULL AND name_en <> ''"
+        ).fetchone()
+        cnt = int((cnt_row or [0])[0] or 0)
+
+        # Canonical-side count from TCGdex (NULL-safe: table may be empty
+        # if import_tcgdex hasn't run yet on this Pi).
+        try:
+            tcgdex_row = db.execute(
+                "SELECT COUNT(*) FROM src_tcgdex_multi WHERE names ? 'en'"
+            ).fetchone()
+            tcgdex_en_count = int((tcgdex_row or [0])[0] or 0)
+        except Exception:
+            tcgdex_en_count = 0
+
+        # Latest gap roll-up (single-row aggregate; safe on empty table)
+        try:
+            gap_row = db.execute(
+                "SELECT COALESCE(SUM(expected_count),0), "
+                "       COALESCE(SUM(actual_count),0), "
+                "       COALESCE(SUM(jsonb_array_length(missing_numbers)),0), "
+                "       COALESCE(SUM(jsonb_array_length(extra_numbers)),0), "
+                "       COALESCE(MAX(audited_at),0), "
+                "       COUNT(*) "
+                "FROM en_set_gap"
+            ).fetchone()
+            gap = {
+                "expected_total": int((gap_row or [0])[0] or 0),
+                "actual_total":   int((gap_row or [0,0])[1] or 0),
+                "missing_total":  int((gap_row or [0,0,0])[2] or 0),
+                "extra_total":    int((gap_row or [0,0,0,0])[3] or 0),
+                "last_audited_at": int((gap_row or [0,0,0,0,0])[4] or 0),
+                "sets_audited":   int((gap_row or [0,0,0,0,0,0])[5] or 0),
+            }
+        except Exception:
+            gap = {"expected_total": 0, "actual_total": 0,
+                   "missing_total": 0, "extra_total": 0,
+                   "last_audited_at": 0, "sets_audited": 0}
+
+        sample = db.execute(
+            "SELECT name_en, set_id, card_number, rarity "
+            "FROM cards_master "
+            "WHERE name_en IS NOT NULL AND name_en <> '' "
+            "ORDER BY last_built DESC LIMIT 5"
+        ).fetchall()
+        return jsonify({
+            "count": cnt,
+            "tcgdex_en_count": tcgdex_en_count,
+            "gap": gap,
+            "sample": [
+                {"name": r[0], "set": r[1], "number": r[2], "rarity": r[3]}
+                for r in (sample or [])
+            ],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "count": 0}), 500
+
+
+@app.route("/admin/pipelines/status", methods=["GET"])
+def pipelines_status():
+    """Aggregated, read-only pipeline status across every catalogue.
+
+    Single-curl shortcut for the per-language verification checklist in
+    docs/KR_ZH_VERIFICATION.md. Composes existing helpers and direct SQL
+    in one transaction so a dashboard can poll one endpoint instead of
+    eight. Strictly read-only — no admin mutation surface introduced.
+
+    Response shape:
+      {
+        "kr":  {count, gap:{...}},
+        "chs": {count, gap_sc:{...}},
+        "tc":  {gap_tc:{...}},
+        "jpn": {count},
+        "en":  {count, tcgdex_en_count, gap:{...}},
+        "aliases": {by_match_method:{...}, total},
+        "workers": {<worker_name>: {last_status, last_finished_at,
+                                    failed_in_queue}, ...}
+      }
+    Non-fatal: any sub-section that errors out is reported as
+    {"error": "<msg>"} so a single bad table doesn't blank the
+    whole report.
+    """
+    db = get_db()
+    out: dict = {}
+
+    def _safe_one(sql, default=0):
+        try:
+            row = db.execute(sql).fetchone()
+            return int((row or [default])[0] or default)
+        except Exception:
+            return default
+
+    def _gap_summary(table: str, where: str = "") -> dict:
+        try:
+            row = db.execute(
+                f"SELECT COALESCE(SUM(expected_count),0), "
+                f"       COALESCE(SUM(actual_count),0), "
+                f"       COALESCE(SUM(jsonb_array_length(missing_numbers)),0), "
+                f"       COALESCE(SUM(jsonb_array_length(extra_numbers)),0), "
+                f"       COALESCE(MAX(audited_at),0), "
+                f"       COUNT(*) "
+                f"FROM {table} {where}"
+            ).fetchone()
+            return {
+                "expected_total":   int((row or [0])[0] or 0),
+                "actual_total":     int((row or [0,0])[1] or 0),
+                "missing_total":    int((row or [0,0,0])[2] or 0),
+                "extra_total":      int((row or [0,0,0,0])[3] or 0),
+                "last_audited_at":  int((row or [0,0,0,0,0])[4] or 0),
+                "sets_audited":     int((row or [0,0,0,0,0,0])[5] or 0),
+            }
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    # KR
+    try:
+        import import_kr_cards
+        out["kr"] = {
+            "count": import_kr_cards.kr_cards_count(db),
+            "gap":   _gap_summary("kr_set_gap"),
+        }
+    except Exception as exc:
+        out["kr"] = {"error": str(exc)}
+
+    # CHS (Simplified Chinese)
+    try:
+        import import_chs_cards
+        out["chs"] = {
+            "count":  import_chs_cards.chs_cards_count(db),
+            "gap_sc": _gap_summary("zh_set_gap",
+                                   "WHERE lang_variant = 'SC'"),
+        }
+    except Exception as exc:
+        out["chs"] = {"error": str(exc)}
+
+    # TC (Traditional Chinese — no dedicated cards table; gap-only view)
+    out["tc"] = {
+        "gap_tc": _gap_summary("zh_set_gap", "WHERE lang_variant = 'TC'"),
+    }
+
+    # JPN
+    try:
+        import import_jpn_cards
+        out["jpn"] = {"count": import_jpn_cards.cards_count(db)}
+    except Exception as exc:
+        out["jpn"] = {"error": str(exc)}
+
+    # EN
+    try:
+        out["en"] = {
+            "count": _safe_one(
+                "SELECT COUNT(*) FROM cards_master "
+                "WHERE name_en IS NOT NULL AND name_en <> ''"),
+            "tcgdex_en_count": _safe_one(
+                "SELECT COUNT(*) FROM src_tcgdex_multi "
+                "WHERE names ? 'en'"),
+            "gap":   _gap_summary("en_set_gap"),
+        }
+    except Exception as exc:
+        out["en"] = {"error": str(exc)}
+
+    # Cross-region aliases — break out by match_method so the operator
+    # can see at a glance how many fell back to 'unmatched'.
+    try:
+        rows = db.execute(
+            "SELECT match_method, COUNT(*) FROM card_alias "
+            "GROUP BY match_method"
+        ).fetchall() or []
+        by_method = {(r[0] or "unknown"): int(r[1] or 0) for r in rows}
+        out["aliases"] = {
+            "by_match_method": by_method,
+            "total": sum(by_method.values()),
+        }
+    except Exception as exc:
+        out["aliases"] = {"error": str(exc)}
+
+    # Worker health: one block per audit + alias worker.
+    # bg_worker_run columns are worker_type / started_at / ended_at /
+    # items_claimed / items_ok / items_failed / notes — there is no
+    # `status` column so we derive 'OK' / 'FAILED' / 'NONE' from the
+    # item counters. The string keys here MUST match each Worker
+    # subclass's TASK_TYPE constant verbatim (that's what base.py
+    # writes into worker_type and what seed() puts into task_type).
+    worker_types = (
+        "kr_set_audit",
+        "zh_set_audit",
+        "en_set_audit",
+        "cross_region_alias",
+    )
+    workers: dict = {}
+    for wt in worker_types:
+        block: dict = {}
+        try:
+            row = db.execute(
+                "SELECT ended_at, items_claimed, items_ok, items_failed, "
+                "       COALESCE(notes, '') "
+                "FROM bg_worker_run "
+                "WHERE worker_type = %s "
+                "ORDER BY started_at DESC LIMIT 1",
+                (wt,),
+            ).fetchone()
+            if row:
+                ended_at = int(row[0] or 0) if row[0] is not None else 0
+                claimed = int(row[1] or 0)
+                ok = int(row[2] or 0)
+                failed = int(row[3] or 0)
+                if ended_at == 0:
+                    derived = "RUNNING"
+                elif failed > 0 and ok == 0:
+                    derived = "FAILED"
+                elif failed > 0:
+                    derived = "PARTIAL"
+                else:
+                    derived = "OK"
+                block.update({
+                    "last_status":      derived,
+                    "last_ended_at":    ended_at,
+                    "items_claimed":    claimed,
+                    "items_ok":         ok,
+                    "items_failed":     failed,
+                    "last_notes":       (row[4] or "")[:240],
+                })
+            else:
+                block["last_status"] = "NONE"
+        except Exception as exc:
+            block["error"] = str(exc)
+        try:
+            block["failed_in_queue"] = _safe_one(
+                "SELECT COUNT(*) FROM bg_task_queue "
+                f"WHERE task_type = '{wt}' AND status = 'FAILED'"
+            )
+        except Exception as exc:
+            block["failed_in_queue_error"] = str(exc)
+        workers[wt] = block
+    out["workers"] = workers
+
+    return jsonify(out)
+
+
 # ---------------------------------------------------------------------------
 # Card lookup — fuzzy / multi-field search for Pokémon (and any) cards
 # ---------------------------------------------------------------------------
