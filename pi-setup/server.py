@@ -3046,6 +3046,19 @@ def init_db():
             log.info("[init_db] skipped trigram stmt (%s): %s",
                      stmt.split()[3] if len(stmt.split()) > 3 else "ext", _trgm_exc)
 
+    # ── fuzzystrmatch — powers the operator-curated alias suggester at
+    #     /admin/cards/set-alias-suggest. Best-effort like the trgm
+    #     bootstrap; the suggest endpoint detects missing extension and
+    #     returns 503 with a helpful message rather than 500'ing.
+    try:
+        db.execute("CREATE EXTENSION IF NOT EXISTS fuzzystrmatch")
+        db.commit()
+    except Exception as _fuzzy_exc:
+        try: db.rollback()
+        except Exception: pass
+        log.info("[init_db] fuzzystrmatch ext unavailable "
+                 "(alias suggester will return 503): %s", _fuzzy_exc)
+
     # ── Pull-logic infrastructure tables (delta sync, gap detection, image
     #     cache).  Each module is best-effort: a failure here just disables
     #     the corresponding feature without blocking startup.
@@ -6514,6 +6527,214 @@ def admin_cards_en_match():
                 pass
 
     return jsonify({"match": match})
+
+
+# ---------------------------------------------------------------------------
+# Operator-curated set-alias workflow
+# ---------------------------------------------------------------------------
+#
+# When /admin/cards/en-match returns set_match='raw' it means the operator
+# typed a set name/code we couldn't canonicalise to a ref_set_mapping row.
+# Rather than hand-edit JSON on the Pi, the operator hits these two
+# endpoints from the booth tablet:
+#
+#   1. GET  /admin/cards/set-alias-suggest?needle=<text>
+#      → top 3 ref_set_mapping rows whose name in *any* of the 5
+#        languages is within Levenshtein distance ≤ 2 of <needle>.
+#        Each row carries its current aliases array so the operator
+#        can see what's already curated before adding a new one.
+#
+#   2. POST /admin/cards/set-alias-add  {set_id, alias}
+#      → idempotent append of <alias> into ref_set_mapping.aliases
+#        (case-insensitive dedupe). Returns {added: bool} so the
+#        UI can distinguish "newly added" from "already curated".
+#
+# Both depend on the fuzzystrmatch Postgres extension. The bootstrap
+# in init_db best-effort enables it; the suggest endpoint detects the
+# missing-function case and returns 503 with a helpful message rather
+# than 500'ing.
+
+# Cap needle length before levenshtein() to stay well under the
+# 255-byte input limit of fuzzystrmatch (Korean/Japanese chars are
+# multi-byte so we cap at 64 source chars).
+_ALIAS_NEEDLE_MAX = 100
+_ALIAS_LEV_CAP    = 2
+
+_ALIAS_SUGGEST_SQL = """
+WITH dist AS (
+  SELECT set_id, name_en, name_kr, name_jp, name_chs, name_cht, aliases,
+         CASE WHEN COALESCE(name_en,  '') <> ''
+              THEN levenshtein(lower(left(%s, 64)), lower(left(name_en,  64)))
+              ELSE 999 END AS d_en,
+         CASE WHEN COALESCE(name_kr,  '') <> ''
+              THEN levenshtein(lower(left(%s, 64)), lower(left(name_kr,  64)))
+              ELSE 999 END AS d_kr,
+         CASE WHEN COALESCE(name_jp,  '') <> ''
+              THEN levenshtein(lower(left(%s, 64)), lower(left(name_jp,  64)))
+              ELSE 999 END AS d_jp,
+         CASE WHEN COALESCE(name_chs, '') <> ''
+              THEN levenshtein(lower(left(%s, 64)), lower(left(name_chs, 64)))
+              ELSE 999 END AS d_chs,
+         CASE WHEN COALESCE(name_cht, '') <> ''
+              THEN levenshtein(lower(left(%s, 64)), lower(left(name_cht, 64)))
+              ELSE 999 END AS d_cht
+    FROM ref_set_mapping
+)
+SELECT set_id, name_en, name_kr, name_jp, name_chs, name_cht, aliases,
+       LEAST(d_en, d_kr, d_jp, d_chs, d_cht) AS distance,
+       CASE LEAST(d_en, d_kr, d_jp, d_chs, d_cht)
+            WHEN d_en  THEN 'en'
+            WHEN d_kr  THEN 'kr'
+            WHEN d_jp  THEN 'jp'
+            WHEN d_chs THEN 'chs'
+            WHEN d_cht THEN 'cht'
+            ELSE 'unknown'
+       END AS matched_lang
+  FROM dist
+ WHERE LEAST(d_en, d_kr, d_jp, d_chs, d_cht) <= %s
+ ORDER BY distance ASC, set_id ASC
+ LIMIT 3
+"""
+
+# Idempotent append: only adds the alias if no existing entry in the
+# JSONB array matches case-insensitively. Returns rowcount=1 on add,
+# 0 if the alias is already present (or the set_id doesn't exist).
+_ALIAS_ADD_SQL = """
+UPDATE ref_set_mapping
+   SET aliases = COALESCE(aliases, '[]'::jsonb) || jsonb_build_array(%s::text)
+ WHERE set_id = %s
+   AND NOT EXISTS (
+       SELECT 1
+         FROM jsonb_array_elements_text(COALESCE(aliases, '[]'::jsonb)) AS a
+        WHERE lower(a) = lower(%s)
+   )
+"""
+
+
+@app.route("/admin/cards/set-alias-suggest", methods=["GET"])
+def admin_cards_set_alias_suggest():
+    """
+    Suggest the closest ref_set_mapping rows for an unrecognised set
+    name/code so the operator can curate it as an alias.
+
+    Query params:
+      needle  the unrecognised text the operator just typed — required.
+
+    Returns:
+      { "needle": str,
+        "suggestions": [
+          { "set_id": str, "name_en": str, "name_kr": str, "name_jp": str,
+            "name_chs": str, "name_cht": str,
+            "current_aliases": [str, ...],
+            "distance": int, "matched_lang": "en"|"kr"|"jp"|"chs"|"cht" },
+          ... up to 3
+        ] }
+
+    Returns 503 (not 500) when the fuzzystrmatch extension is missing,
+    so the booth UI can quietly hide the Curate Alias button.
+    """
+    needle = (request.args.get("needle") or "").strip()
+    if not needle:
+        return jsonify({"error": "needle required",
+                        "suggestions": []}), 400
+    if len(needle) > _ALIAS_NEEDLE_MAX:
+        return jsonify({"error": f"needle too long (max {_ALIAS_NEEDLE_MAX} chars)",
+                        "suggestions": []}), 400
+
+    db = None
+    try:
+        db = _direct_db()
+        cur = db.cursor()
+        try:
+            cur.execute(_ALIAS_SUGGEST_SQL,
+                        (needle, needle, needle, needle, needle, _ALIAS_LEV_CAP))
+            rows = cur.fetchall()
+        except Exception as exc:
+            # Most likely cause: fuzzystrmatch extension not installed
+            # on this Postgres image. Roll back the failed txn so the
+            # connection is reusable, then return a friendly 503.
+            try: db.rollback()
+            except Exception: pass
+            log.warning("[admin/cards/set-alias-suggest] suggester failed: %s", exc)
+            return jsonify({
+                "error": ("alias suggester unavailable on this server "
+                          "(fuzzystrmatch extension missing or function error)"),
+                "detail": str(exc),
+                "suggestions": [],
+            }), 503
+
+        suggestions = []
+        for row in rows:
+            (set_id, n_en, n_kr, n_jp, n_chs, n_cht,
+             aliases, distance, matched_lang) = row
+            # `aliases` comes back as a Python list from psycopg2's
+            # JSONB adapter (or None if the column is NULL).
+            suggestions.append({
+                "set_id":          set_id,
+                "name_en":         n_en  or "",
+                "name_kr":         n_kr  or "",
+                "name_jp":         n_jp  or "",
+                "name_chs":        n_chs or "",
+                "name_cht":        n_cht or "",
+                "current_aliases": list(aliases) if aliases else [],
+                "distance":        int(distance),
+                "matched_lang":    matched_lang,
+            })
+        return jsonify({"needle": needle, "suggestions": suggestions})
+    except Exception as exc:
+        log.exception("[admin/cards/set-alias-suggest] db error")
+        return jsonify({"error": str(exc), "suggestions": []}), 500
+    finally:
+        if db is not None:
+            try: db.close()
+            except Exception: pass
+
+
+@app.route("/admin/cards/set-alias-add", methods=["POST"])
+def admin_cards_set_alias_add():
+    """
+    Push <alias> into ref_set_mapping.aliases for <set_id>.
+
+    Body (JSON or form):
+      set_id  canonical set_id from ref_set_mapping — required
+      alias   the alternate name/code the operator wants curated — required
+
+    Returns:
+      { "set_id": str, "alias": str, "added": bool }
+
+    `added` is True only when the alias was newly inserted. If the
+    alias was already present (case-insensitive) or the set_id is
+    unknown, `added` is False — the caller can use this to show
+    "already curated" vs "added" toasts without a second round-trip.
+    """
+    body = request.get_json(silent=True) or request.form or {}
+    set_id = (body.get("set_id") or "").strip()
+    alias  = (body.get("alias")  or "").strip()
+    if not set_id or not alias:
+        return jsonify({"error": "set_id and alias required",
+                        "added": False}), 400
+    if len(alias) > _ALIAS_NEEDLE_MAX:
+        return jsonify({"error": f"alias too long (max {_ALIAS_NEEDLE_MAX} chars)",
+                        "added": False}), 400
+
+    db = None
+    try:
+        db = _direct_db()
+        cur = db.cursor()
+        cur.execute(_ALIAS_ADD_SQL, (alias, set_id, alias))
+        added = bool(cur.rowcount)
+        db.commit()
+        return jsonify({"set_id": set_id, "alias": alias, "added": added})
+    except Exception as exc:
+        try:
+            if db is not None: db.rollback()
+        except Exception: pass
+        log.exception("[admin/cards/set-alias-add] db error")
+        return jsonify({"error": str(exc), "added": False}), 500
+    finally:
+        if db is not None:
+            try: db.close()
+            except Exception: pass
 
 
 # ---------------------------------------------------------------------------
