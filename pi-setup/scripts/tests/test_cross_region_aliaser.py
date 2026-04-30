@@ -673,6 +673,40 @@ class ValidateManualOverridesTests(unittest.TestCase):
             [],
         )
 
+    def test_special_card_number_prefixes_accepted(self):
+        # Regression for the architect-flagged HIGH: the original
+        # regex `[0-9]+[A-Za-z]?$` rejected legitimate card numbers
+        # like Trainer-Gallery ("TG01"), Galarian-Gallery ("GG01"),
+        # and promo prefixes ("SV-P-001"). They're real card numbers
+        # the operator legitimately wants to pin.
+        for card_num in ("TG01", "GG01", "SV-P-001", "204b", "001", "12"):
+            with self.subTest(card_num=card_num):
+                ovs = [{
+                    "canonical_key": f"jp:SV1S:{card_num}",
+                    "zh_tc_id":      f"zh-tc:ptcg.tw:SV1S:{card_num}",
+                }]
+                errs = _validate_manual_overrides(
+                    ovs, self.CANONICAL_TC, self.CANONICAL_SC,
+                )
+                self.assertEqual(
+                    errs, [],
+                    f"card_num {card_num!r} should be accepted; got {errs}",
+                )
+
+    def test_non_numeric_card_number_skips_range_check(self):
+        # TG01 has no leading digits → _parse_card_num_int returns
+        # None → range check is skipped (fail-open). The override
+        # should pass even when expected_card_count is set.
+        canonical = {"X": {"set_id": "X", "expected_card_count": 50}}
+        ovs = [{
+            "canonical_key": "jp:X:TG01",
+            "zh_tc_id": "zh-tc:src:X:TG01",
+        }]
+        self.assertEqual(
+            _validate_manual_overrides(ovs, canonical, self.CANONICAL_SC),
+            [],
+        )
+
     def test_expected_card_count_verify_sentinel_skips_range_check(self):
         # Sets where the operator hasn't confirmed the count yet have
         # expected_card_count="VERIFY"; we shouldn't reject overrides

@@ -177,16 +177,21 @@ def _load_manual_overrides(path: Path) -> list[dict[str, Any]]:
 # malformed. The validation errors land in bg_task_queue.last_error
 # (via WorkerError → fail(permanent=True)) and surface in the dashboard.
 
-# canonical_key MUST be of the form "jp:<jp_set_id>:<jp_card_num>". We
-# allow letters/digits/underscore/dot/hyphen in set_ids (matches every
-# JP set code we've seen) and digits + optional trailing letter in card
-# numbers (e.g. "001", "12a", "204b" for secret-rare promos).
-_CANONICAL_KEY_RE = re.compile(r"^jp:[A-Za-z0-9._-]+:[0-9]+[A-Za-z]?$")
+# canonical_key MUST be of the form "jp:<jp_set_id>:<jp_card_num>". The
+# set-id half is letters/digits/_./- (matches every JP set code we've
+# seen). The card-number half allows the same character set so we accept
+# Trainer-Gallery ("TG01"), Galarian-Gallery ("GG01"), promo prefixes
+# ("SV-P-001"), AND the boring "001" / "204b" forms. Range-checking
+# integer card numbers happens separately, fail-open for non-numeric
+# forms (see _parse_card_num_int below).
+_CANONICAL_KEY_RE = re.compile(r"^jp:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$")
 
 # Region ids match the convention written by _zh_card_id +
 # kr_set_audit / en_set_audit: "<lang>:<source>:<set_id>:<card_num>".
+# Same character-class reasoning as canonical_key for the card-number
+# component — Phase D walkers yield whatever stem the on-disk file has.
 _REGION_ID_RE = re.compile(
-    r"^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[0-9]+[A-Za-z]?$"
+    r"^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$"
 )
 
 # Region columns we know about. Anything ending in `_id` that's NOT in
@@ -198,14 +203,19 @@ _OVERRIDE_KNOWN_KEYS = frozenset(
 
 
 def _parse_card_num_int(num: str) -> Optional[int]:
-    """Return the leading integer portion of a card number, or None
-    if it has no digits. Used to range-check against expected_card_count
-    in the canonical_sets registry."""
-    m = re.match(r"^([0-9]+)", num or "")
-    if not m:
+    """Return the integer value of a *purely numeric* card number, or
+    None for any other shape. Used to range-check against
+    expected_card_count in the canonical_sets registry.
+
+    Returning None for special forms (TG01, GG01, SV-P-001, secret-rare
+    suffixes like "204b") is deliberate: the range check exists to
+    catch typos like "999" vs "099", not to police secret-rare prints
+    that legitimately number past expected_card_count."""
+    s = (num or "").strip()
+    if not s or not s.isdigit():
         return None
     try:
-        return int(m.group(1))
+        return int(s)
     except ValueError:
         return None
 
@@ -338,8 +348,13 @@ def _validate_manual_overrides(
                         except ValueError:
                             expected_int = None
                     if expected_int is not None:
+                        # Fail-open for non-numeric card numbers (TG01,
+                        # GG01, SV-P-001 etc.) — _parse_card_num_int
+                        # returns None for those and we let them through.
+                        # Only flag when we extracted an integer AND it
+                        # falls outside the expected 1..N range.
                         n = _parse_card_num_int(card_num)
-                        if n is None or n < 1 or n > expected_int:
+                        if n is not None and (n < 1 or n > expected_int):
                             errors.append(
                                 f"{loc}: {region_key} card_number "
                                 f"{card_num!r} is outside the expected "
