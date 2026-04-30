@@ -684,6 +684,24 @@ CREATE INDEX IF NOT EXISTS idx_en_set_gap_audited
 """
 
 
+# cards_master_gap captures invariant violations across the unified
+# product table — orphan rows, all-language-blank rows, missing
+# coordinates, etc. One row per violation_type so the admin status
+# dashboard can render a single banner per category. sample_keys
+# stores up to N example master_ids so the operator can jump straight
+# to the offending row in the admin UI without re-running the audit.
+DDL_CARDS_MASTER_GAP = """
+CREATE TABLE IF NOT EXISTS cards_master_gap (
+    violation_type   TEXT PRIMARY KEY,
+    violation_count  INTEGER NOT NULL DEFAULT 0,
+    sample_keys      JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    audited_at       BIGINT  NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cards_master_gap_audited
+    ON cards_master_gap (audited_at DESC);
+"""
+
+
 # ─── Cross-region card alias map (TC ↔ SC ↔ KR ↔ JP ↔ EN) ─────────────────
 #
 # Single canonical row per physical card across every region we sell at
@@ -846,6 +864,7 @@ _ALL_DDL = [
     ("mirror_fetch_failure",    DDL_MIRROR_FETCH_FAILURE),
     ("kr_set_gap",              DDL_KR_SET_GAP),
     ("en_set_gap",              DDL_EN_SET_GAP),
+    ("cards_master_gap",        DDL_CARDS_MASTER_GAP),
     ("card_alias",              DDL_CARD_ALIAS),
     ("zh_set_gap",              DDL_ZH_SET_GAP),
     ("price_quote_source",      DDL_PRICE_QUOTE_SOURCE),
