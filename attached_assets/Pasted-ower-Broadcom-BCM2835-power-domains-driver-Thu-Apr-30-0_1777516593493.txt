@@ -1,0 +1,443 @@
+ower: Broadcom BCM2835 power domains driver
+[Thu Apr 30 02:34:21 2026] Loading iSCSI transport class v2.0-870.
+[Thu Apr 30 02:34:21 2026] usbcore: registered new interface driver lan78xx
+[Thu Apr 30 02:34:21 2026] usbcore: registered new interface driver smsc95xx
+[Thu Apr 30 02:34:21 2026] dwc_otg: version 3.00a 10-AUG-2012 (platform bus)
+[Thu Apr 30 02:34:21 2026] dwc_otg: FIQ enabled
+[Thu Apr 30 02:34:21 2026] dwc_otg: NAK holdoff enabled
+[Thu Apr 30 02:34:21 2026] dwc_otg: FIQ split-transaction FSM enabled
+[Thu Apr 30 02:34:21 2026] Module dwc_common_port init
+[Thu Apr 30 02:34:21 2026] usbcore: registered new interface driver uas
+[Thu Apr 30 02:34:21 2026] usbcore: registered new interface driver usb-storage
+[Thu Apr 30 02:34:21 2026] mousedev: PS/2 mouse device common for all mice
+[Thu Apr 30 02:34:21 2026] rpi-rtc soc@107c000000:rpi_rtc: registered as rtc0
+[Thu Apr 30 02:34:21 2026] rpi-rtc soc@107c000000:rpi_rtc: setting system clock to 1970-01-01T00:00:14 UTC (14)
+[Thu Apr 30 02:34:21 2026] bcm2835-wdt bcm2835-wdt: Poweroff handler already present!
+[Thu Apr 30 02:34:21 2026] bcm2835-wdt bcm2835-wdt: Broadcom BCM2835 watchdog timer
+[Thu Apr 30 02:34:21 2026] sdhci: Secure Digital Host Controller Interface driver
+[Thu Apr 30 02:34:21 2026] sdhci: Copyright(c) Pierre Ossman
+[Thu Apr 30 02:34:21 2026] sdhci-pltfm: SDHCI platform and OF driver helper
+[Thu Apr 30 02:34:21 2026] SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[Thu Apr 30 02:34:21 2026] hid: raw HID events driver (C) Jiri Kosina
+[Thu Apr 30 02:34:21 2026] usbcore: registered new interface driver usbhid
+[Thu Apr 30 02:34:21 2026] usbhid: USB HID core driver
+[Thu Apr 30 02:34:21 2026] hw perfevents: enabled with armv8_cortex_a76 PMU driver, 7 (0,8000003f) counters available
+[Thu Apr 30 02:34:21 2026] NET: Registered PF_PACKET protocol family
+[Thu Apr 30 02:34:21 2026] Key type dns_resolver registered
+[Thu Apr 30 02:34:21 2026] registered taskstats version 1
+[Thu Apr 30 02:34:21 2026] Loading compiled-in X.509 certificates
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 0: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 1: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 2: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 3: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 4: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 5: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 6: null
+[Thu Apr 30 02:34:21 2026] Demotion targets for Node 7: null
+[Thu Apr 30 02:34:21 2026] Key type .fscrypt registered
+[Thu Apr 30 02:34:21 2026] Key type fscrypt-provisioning registered
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie: host bridge /axi/pcie@1000120000 ranges:
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:   No bus range found for /axi/pcie@1000120000, using [bus 00-ff]
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:      MEM 0x1f00000000..0x1ffffffffb -> 0x0000000000
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:      MEM 0x1c00000000..0x1effffffff -> 0x0400000000
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:   IB MEM 0x1f00000000..0x1f003fffff -> 0x0000000000
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:   IB MEM 0x0000000000..0x0fffffffff -> 0x1000000000
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie:   IB MEM 0x1000130000..0x1000130fff -> 0xfffffff000
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie: PCI host bridge to bus 0002:00
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:00: root bus resource [bus 00-ff]
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:00: root bus resource [mem 0x1f00000000-0x1ffffffffb] (bus address [0x00000000-0xfffffffb])
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:00: root bus resource [mem 0x1c00000000-0x1effffffff pref] (bus address [0x400000000-0x6ffffffff])
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: [14e4:2712] type 01 class 0x060400 PCIe Root Port
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: PCI bridge to [bus 00]
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0:   bridge window [mem 0x1f80000000-0x1fbfffffff]
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: PME# supported from D0 D3hot
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: bridge configuration invalid ([bus 00-00]), reconfiguring
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie: clkreq-mode set to default
+[Thu Apr 30 02:34:21 2026] brcm-pcie 1000120000.pcie: link up, 5.0 GT/s PCIe x4 (!SSC)
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: [1de4:0001] type 00 class 0x020000 PCIe Endpoint
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 0 [mem 0xffffc000-0xffffffff]
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 1 [mem 0xffc00000-0xffffffff]
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 2 [mem 0xffff0000-0xffffffff]
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: supports D1
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: PME# supported from D0 D1 D3hot D3cold
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:01: busn_res: [bus 01-ff] end is updated to 01
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: bridge window [mem 0x1f00000000-0x1f005fffff]: assigned
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 1 [mem 0x1f00000000-0x1f003fffff]: assigned
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 2 [mem 0x1f00400000-0x1f0040ffff]: assigned
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: BAR 0 [mem 0x1f00410000-0x1f00413fff]: assigned
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: PCI bridge to [bus 01]
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0:   bridge window [mem 0x1f00000000-0x1f005fffff]
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:00: resource 4 [mem 0x1f00000000-0x1ffffffffb]
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:00: resource 5 [mem 0x1c00000000-0x1effffffff pref]
+[Thu Apr 30 02:34:21 2026] pci_bus 0002:01: resource 1 [mem 0x1f00000000-0x1f005fffff]
+[Thu Apr 30 02:34:21 2026] pci 0002:00:00.0: Max Payload Size set to  256/ 512 (was  128), Max Read Rq  512
+[Thu Apr 30 02:34:21 2026] pci 0002:01:00.0: Max Payload Size set to  256/ 256 (was  128), Max Read Rq  512
+[Thu Apr 30 02:34:21 2026] pcieport 0002:00:00.0: enabling device (0000 -> 0002)
+[Thu Apr 30 02:34:21 2026] pcieport 0002:00:00.0: PME: Signaling with IRQ 38
+[Thu Apr 30 02:34:21 2026] pcieport 0002:00:00.0: AER: enabled with IRQ 38
+[Thu Apr 30 02:34:21 2026] rp1 0002:01:00.0: bar0 len 0x4000, start 0x1f00410000, end 0x1f00413fff, flags, 0x40200
+[Thu Apr 30 02:34:21 2026] rp1 0002:01:00.0: bar1 len 0x400000, start 0x1f00000000, end 0x1f003fffff, flags, 0x40200
+[Thu Apr 30 02:34:21 2026] rp1 0002:01:00.0: enabling device (0000 -> 0002)
+[Thu Apr 30 02:34:21 2026] rp1 0002:01:00.0: chip_id 0x20001927
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005100.iommu: IOVA aperture 0xa00000000..0xb00000000 including DMA offset 0x0
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005100.iommu: bcm2712_iommu_init: DEBUG_INFO = 0x20804774
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005200.iommu: IOVA aperture 0xa00000000..0xa80000000 including DMA offset 0x0
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005200.iommu: bcm2712_iommu_init: DEBUG_INFO = 0x20804774
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005280.iommu: IOVA aperture 0x1a00000000..0x1a80000000 including DMA offset 0x1000000000
+[Thu Apr 30 02:34:21 2026] bcm2712-iommu 1000005280.iommu: bcm2712_iommu_init: DEBUG_INFO = 0x20804774
+[Thu Apr 30 02:34:21 2026] genirq: irq_chip rp1_irq_chip did not update eff. affinity mask of irq 100
+[Thu Apr 30 02:34:21 2026] sdhci-brcmstb 1000fff000.mmc: Got CD GPIO
+[Thu Apr 30 02:34:21 2026] mmc0: CQHCI version 5.10
+[Thu Apr 30 02:34:21 2026] mmc1: CQHCI version 5.10
+[Thu Apr 30 02:34:22 2026] macb 1f00100000.ethernet eth0: Cadence GEM rev 0x00070109 at 0x1f00100000 irq 106 (88:a2:9e:bd:9d:38)
+[Thu Apr 30 02:34:22 2026] dw_axi_dmac_platform 1f00188000.dma: DesignWare AXI DMA Controller, 8 channels
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: new USB bus registered, assigned bus number 1
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: hcc params 0x0240fe6d hci version 0x110 quirks 0x0000808000000810
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: irq 131, io mem 0x1f00200000
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: new USB bus registered, assigned bus number 2
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.0: Host supports USB 3.0 SuperSpeed
+[Thu Apr 30 02:34:22 2026] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.12
+[Thu Apr 30 02:34:22 2026] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[Thu Apr 30 02:34:22 2026] usb usb1: Product: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] usb usb1: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[Thu Apr 30 02:34:22 2026] usb usb1: SerialNumber: xhci-hcd.0
+[Thu Apr 30 02:34:22 2026] hub 1-0:1.0: USB hub found
+[Thu Apr 30 02:34:22 2026] hub 1-0:1.0: 2 ports detected
+[Thu Apr 30 02:34:22 2026] usb usb2: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 6.12
+[Thu Apr 30 02:34:22 2026] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[Thu Apr 30 02:34:22 2026] usb usb2: Product: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] usb usb2: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[Thu Apr 30 02:34:22 2026] usb usb2: SerialNumber: xhci-hcd.0
+[Thu Apr 30 02:34:22 2026] hub 2-0:1.0: USB hub found
+[Thu Apr 30 02:34:22 2026] hub 2-0:1.0: 1 port detected
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: new USB bus registered, assigned bus number 3
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: hcc params 0x0240fe6d hci version 0x110 quirks 0x0000808000000810
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: irq 136, io mem 0x1f00300000
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: new USB bus registered, assigned bus number 4
+[Thu Apr 30 02:34:22 2026] xhci-hcd xhci-hcd.1: Host supports USB 3.0 SuperSpeed
+[Thu Apr 30 02:34:22 2026] usb usb3: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.12
+[Thu Apr 30 02:34:22 2026] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[Thu Apr 30 02:34:22 2026] usb usb3: Product: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] usb usb3: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[Thu Apr 30 02:34:22 2026] usb usb3: SerialNumber: xhci-hcd.1
+[Thu Apr 30 02:34:22 2026] hub 3-0:1.0: USB hub found
+[Thu Apr 30 02:34:22 2026] hub 3-0:1.0: 2 ports detected
+[Thu Apr 30 02:34:22 2026] usb usb4: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 6.12
+[Thu Apr 30 02:34:22 2026] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[Thu Apr 30 02:34:22 2026] usb usb4: Product: xHCI Host Controller
+[Thu Apr 30 02:34:22 2026] usb usb4: Manufacturer: Linux 6.12.75+rpt-rpi-2712 xhci-hcd
+[Thu Apr 30 02:34:22 2026] usb usb4: SerialNumber: xhci-hcd.1
+[Thu Apr 30 02:34:22 2026] hub 4-0:1.0: USB hub found
+[Thu Apr 30 02:34:22 2026] hub 4-0:1.0: 1 port detected
+[Thu Apr 30 02:34:22 2026] of_cfs_init
+[Thu Apr 30 02:34:22 2026] of_cfs_init: OK
+[Thu Apr 30 02:34:22 2026] clk: Disabling unused clocks
+[Thu Apr 30 02:34:22 2026] PM: genpd: Disabling unused power domains
+[Thu Apr 30 02:34:22 2026] mmc0: SDHCI controller on 1000fff000.mmc [1000fff000.mmc] using ADMA 64-bit
+[Thu Apr 30 02:34:22 2026] mmc0: new ultra high speed SDR104 SDXC card at address aaaa
+[Thu Apr 30 02:34:22 2026] mmcblk0: mmc0:aaaa SN64G 59.5 GiB
+[Thu Apr 30 02:34:22 2026]  mmcblk0: p1 p2
+[Thu Apr 30 02:34:22 2026] mmcblk0: mmc0:aaaa SN64G 59.5 GiB (quirks 0x00004000)
+[Thu Apr 30 02:34:22 2026] mmc1: SDHCI controller on 1001100000.mmc [1001100000.mmc] using ADMA 64-bit
+[Thu Apr 30 02:34:22 2026] Freeing unused kernel memory: 2304K
+[Thu Apr 30 02:34:22 2026] Run /init as init process
+[Thu Apr 30 02:34:22 2026]   with arguments:
+[Thu Apr 30 02:34:22 2026]     /init
+[Thu Apr 30 02:34:22 2026]     splash
+[Thu Apr 30 02:34:22 2026]   with environment:
+[Thu Apr 30 02:34:22 2026]     HOME=/
+[Thu Apr 30 02:34:22 2026]     TERM=linux
+[Thu Apr 30 02:34:22 2026]     ds=nocloud;i=rpi-imager-1775177442601
+[Thu Apr 30 02:34:22 2026] mmc1: new ultra high speed DDR50 SDIO card at address 0001
+[Thu Apr 30 02:34:22 2026] usb 1-2: new full-speed USB device number 2 using xhci-hcd
+[Thu Apr 30 02:34:22 2026] brcmstb-i2c 107d508200.i2c:  @97500hz registered in interrupt mode
+[Thu Apr 30 02:34:22 2026] brcmstb-i2c 107d508280.i2c:  @97500hz registered in interrupt mode
+[Thu Apr 30 02:34:22 2026] v3d 1002000000.v3d: [drm] Transparent Hugepage support is recommended for optimal performance on this platform!
+[Thu Apr 30 02:34:22 2026] [drm] Initialized v3d 1.0.0 for 1002000000.v3d on minor 0
+[Thu Apr 30 02:34:22 2026] vc4_hvs 107c580000.hvs: bcm2712_iommu_of_xlate: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4_hvs 107c580000.hvs: bcm2712_iommu_probe_device: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4_hvs 107c580000.hvs: bcm2712_iommu_device_group: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4_hvs 107c580000.hvs: Adding to iommu group 1
+[Thu Apr 30 02:34:22 2026] vc4_hvs 107c580000.hvs: bcm2712_iommu_attach_dev: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bcm2712_iommu_of_xlate: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bcm2712_iommu_probe_device: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bcm2712_iommu_device_group: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: Adding to iommu group 1
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bcm2712_iommu_attach_dev: MMU 1000005200.iommu
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c580000.hvs (ops vc4_hvs_ops [vc4])
+[Thu Apr 30 02:34:22 2026] Registered IR keymap rc-cec
+[Thu Apr 30 02:34:22 2026] rc rc0: vc4-hdmi-0 as /devices/platform/soc@107c000000/107c701400.hdmi/rc/rc0
+[Thu Apr 30 02:34:22 2026] input: vc4-hdmi-0 as /devices/platform/soc@107c000000/107c701400.hdmi/rc/rc0/input0
+[Thu Apr 30 02:34:22 2026] input: vc4-hdmi-0 HDMI Jack as /devices/platform/soc@107c000000/107c701400.hdmi/sound/card0/input1
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c701400.hdmi (ops vc4_hdmi_ops [vc4])
+[Thu Apr 30 02:34:22 2026] Registered IR keymap rc-cec
+[Thu Apr 30 02:34:22 2026] rc rc1: vc4-hdmi-1 as /devices/platform/soc@107c000000/107c706400.hdmi/rc/rc1
+[Thu Apr 30 02:34:22 2026] input: vc4-hdmi-1 as /devices/platform/soc@107c000000/107c706400.hdmi/rc/rc1/input2
+[Thu Apr 30 02:34:22 2026] input: vc4-hdmi-1 HDMI Jack as /devices/platform/soc@107c000000/107c706400.hdmi/sound/card1/input3
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c706400.hdmi (ops vc4_hdmi_ops [vc4])
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c500000.mop (ops vc4_txp_ops [vc4])
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c501000.moplet (ops vc4_txp_ops [vc4])
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c410000.pixelvalve (ops vc4_crtc_ops [vc4])
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: bound 107c411000.pixelvalve (ops vc4_crtc_ops [vc4])
+[Thu Apr 30 02:34:22 2026] [drm] Initialized vc4 0.0.0 for axi:gpu on minor 1
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: [drm] Cannot find any crtc or sizes
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: [drm] Cannot find any crtc or sizes
+[Thu Apr 30 02:34:22 2026] vc4-drm axi:gpu: [drm] Cannot find any crtc or sizes
+[Thu Apr 30 02:34:22 2026] usb 1-2: New USB device found, idVendor=04b8, idProduct=0e20, bcdDevice= 1.00
+[Thu Apr 30 02:34:22 2026] usb 1-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[Thu Apr 30 02:34:22 2026] usb 1-2: Product: TM-m30-ii
+[Thu Apr 30 02:34:22 2026] usb 1-2: Manufacturer: EPSON  
+[Thu Apr 30 02:34:22 2026] usb 1-2: SerialNumber: 544336595922240001
+[Thu Apr 30 02:34:22 2026] EXT4-fs (mmcblk0p2): orphan cleanup on readonly fs
+[Thu Apr 30 02:34:22 2026] EXT4-fs (mmcblk0p2): mounted filesystem d6944274-f2f7-4644-96a4-213c3b367f5c ro with ordered data mode. Quota mode: none.
+[Thu Apr 30 02:34:23 2026] systemd[1]: System time advanced to timestamp on /var/lib/systemd/timesync/clock: Thu 2026-04-30 02:31:36 GMT
+[Thu Apr 30 02:34:23 2026] NET: Registered PF_INET6 protocol family
+[Thu Apr 30 02:34:23 2026] Segment Routing with IPv6
+[Thu Apr 30 02:34:23 2026] In-situ OAM (IOAM) with IPv6
+[Thu Apr 30 02:34:23 2026] systemd[1]: systemd 257.9-1~deb13u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF -XKBCOMMON -UTMP +SYSVINIT +LIBARCHIVE)
+[Thu Apr 30 02:34:23 2026] systemd[1]: Detected architecture arm64.
+[Thu Apr 30 02:34:23 2026] systemd[1]: Hostname set to <hanryxvault>.
+[Thu Apr 30 02:34:23 2026] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[Thu Apr 30 02:34:23 2026] systemd[1]: Using hardware watchdog 'Broadcom BCM2835 Watchdog timer', version 0, device /dev/watchdog0
+[Thu Apr 30 02:34:23 2026] systemd[1]: Watchdog running with a hardware timeout of 1min.
+[Thu Apr 30 02:34:23 2026] zram_generator::config[261]: zram0: system has too much memory (8062MB), limit is 0MB, ignoring.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Queued start job for default target graphical.target.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-rpi\x2dsetup\x2dloop.slice - Slice /system/rpi-setup-loop.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-systemd\x2dzram\x2dsetup.slice - Slice /system/systemd-zram-setup.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice system-wg\x2dquick.slice - Slice /system/wg-quick.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Created slice user.slice - User and Session Slice.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-disk-by\x2dpartuuid-6e827fca\x2d01.device - /dev/disk/by-partuuid/6e827fca-01...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-disk-by\x2duuid-381e39df\x2d5f24\x2d44ad\x2da925\x2d38d5b60e4256.device - /dev/disk/by-uuid/381e39df-5f24-44ad-a925-38d5b60e4256...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-dri-card0.device - /dev/dri/card0...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-dri-renderD128.device - /dev/dri/renderD128...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-ttyAMA10.device - /dev/ttyAMA10...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Expecting device dev-zram0.device - /dev/zram0...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Reached target nss-user-lookup.target - User and Group Name Lookups.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Reached target slices.target - Slice Units.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on rpcbind.socket - RPCbind Server Activation Socket.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[Thu Apr 30 02:34:24 2026] systemd[1]: dev-hugepages.mount - Huge Pages File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/mm/hugepages).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounting run-lock.mount - Legacy Locks Directory /run/lock...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...
+[Thu Apr 30 02:34:24 2026] systemd[1]: auth-rpcgss-module.service - Kernel Module supporting RPCSEC_GSS was skipped because of an unmet condition check (ConditionPathExists=/etc/krb5.keytab).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting keyboard-setup.service - Set the console keyboard layout...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathExists=!/run/initramfs/fsck-root).
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info was skipped because of an unmet condition check (ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-journald.service - Journal Service...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounted dev-mqueue.mount - POSIX Message Queue File System.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounted run-lock.mount - Legacy Locks Directory /run/lock.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounted sys-kernel-tracing.mount - Kernel Trace File System.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[Thu Apr 30 02:34:24 2026] systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[Thu Apr 30 02:34:24 2026] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[Thu Apr 30 02:34:24 2026] systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-tmpfiles-setup-dev-early.service - Create Static Device Nodes in /dev gracefully...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Mounted sys-kernel-config.mount - Kernel Configuration File System.
+[Thu Apr 30 02:34:24 2026] EXT4-fs (mmcblk0p2): re-mounted d6944274-f2f7-4644-96a4-213c3b367f5c r/w.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[Thu Apr 30 02:34:24 2026] fuse: init (API version 7.41)
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished systemd-udev-load-credentials.service - Load udev Rules from Credentials.
+[Thu Apr 30 02:34:24 2026] systemd[1]: regenerate_ssh_host_keys.service - Regenerate SSH host keys was skipped because of an unmet condition check (ConditionFirstBoot=yes).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting rpi-resize-swap-file.service - rpi-resize-var-swap-service - resize swapfile...
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-hwdb-update.service - Rebuild Hardware Database was skipped because of an unmet condition check (ConditionNeedsUpdate=/etc).
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/sys/fs/pstore).
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-random-seed.service - Load/Save OS Random Seed...
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-tpm2-setup.service - TPM SRK Setup was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[Thu Apr 30 02:34:24 2026] systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[Thu Apr 30 02:34:24 2026] zram: Added device: zram0
+[Thu Apr 30 02:34:24 2026] systemd-journald[338]: Collecting audit messages is disabled.
+[Thu Apr 30 02:34:24 2026] i2c_dev: i2c /dev entries driver
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished systemd-random-seed.service - Load/Save OS Random Seed.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Finished systemd-tmpfiles-setup-dev-early.service - Create Static Device Nodes in /dev gracefully.
+[Thu Apr 30 02:34:24 2026] systemd[1]: systemd-sysusers.service - Create System Users was skipped because no trigger condition checks were met.
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-timesyncd.service - Network Time Synchronization...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
+[Thu Apr 30 02:34:24 2026] systemd[1]: Started systemd-journald.service - Journal Service.
+[Thu Apr 30 02:34:24 2026] systemd-journald[338]: Received client request to flush runtime journal.
+[Thu Apr 30 02:34:24 2026] loop0: detected capacity change from 0 to 4194304
+[Thu Apr 30 02:34:24 2026] zram: setup backing device /dev/disk/by-backingfile/var-swap
+[Thu Apr 30 02:34:24 2026] zram0: detected capacity change from 0 to 4194304
+[Thu Apr 30 02:34:24 2026] Adding 2097136k swap on /dev/zram0.  Priority:100 extents:1 across:2097136k SS
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d508500.gpiomem: window base 0x107d508500 size 0x00000040
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d508500.gpiomem: initialised 1 regions as /dev/gpiomem1
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d517c00.gpiomem: window base 0x107d517c00 size 0x00000040
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d517c00.gpiomem: initialised 1 regions as /dev/gpiomem2
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d504100.gpiomem: window base 0x107d504100 size 0x00000020
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d504100.gpiomem: initialised 1 regions as /dev/gpiomem3
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d510700.gpiomem: window base 0x107d510700 size 0x00000020
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 107d510700.gpiomem: initialised 1 regions as /dev/gpiomem4
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 1f000d0000.gpiomem: window base 0x1f000d0000 size 0x00030000
+[Thu Apr 30 02:34:24 2026] rpi-gpiomem 1f000d0000.gpiomem: initialised 1 regions as /dev/gpiomem0
+[Thu Apr 30 02:34:24 2026] rp1-firmware rp1_firmware: RP1 Firmware version 23fca1cd776798b50bd3e640ecb242215778e7f8
+[Thu Apr 30 02:34:24 2026] mc: Linux media interface: v0.10
+[Thu Apr 30 02:34:24 2026] rp1-pio 1f00178000.pio: Created instance as pio0
+[Thu Apr 30 02:34:24 2026] input: pwr_button as /devices/platform/pwr_button/input/input4
+[Thu Apr 30 02:34:24 2026] videodev: Linux video capture interface: v2.00
+[Thu Apr 30 02:34:24 2026] usblp 1-2:1.0: usblp0: USB Bidirectional printer dev 2 if 0 alt 0 proto 2 vid 0x04B8 pid 0x0E20
+[Thu Apr 30 02:34:24 2026] usbcore: registered new interface driver usblp
+[Thu Apr 30 02:34:24 2026] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[Thu Apr 30 02:34:24 2026] pispbe 1000880000.pisp_be: bcm2712_iommu_of_xlate: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] pispbe 1000880000.pisp_be: bcm2712_iommu_probe_device: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] pispbe 1000880000.pisp_be: bcm2712_iommu_device_group: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] pispbe 1000880000.pisp_be: Adding to iommu group 0
+[Thu Apr 30 02:34:24 2026] pispbe 1000880000.pisp_be: bcm2712_iommu_attach_dev: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] Loaded X.509 cert 'benh@debian.org: 577e021cb980e0e820821ba7b54b4961b8b4fadf'
+[Thu Apr 30 02:34:24 2026] Loaded X.509 cert 'romain.perier@gmail.com: 3abbc6ec146e09d1b6016ab9d6cf71dd233f0328'
+[Thu Apr 30 02:34:24 2026] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[Thu Apr 30 02:34:24 2026] Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[Thu Apr 30 02:34:24 2026] cdc_acm 1-2:1.1: ttyACM0: USB ACM device
+[Thu Apr 30 02:34:24 2026] usbcore: registered new interface driver cdc_acm
+[Thu Apr 30 02:34:24 2026] cdc_acm: USB Abstract Control Model driver for USB modems and ISDN adapters
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: bcm2712_iommu_of_xlate: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: bcm2712_iommu_probe_device: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: bcm2712_iommu_device_group: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: Adding to iommu group 0
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: bcm2712_iommu_attach_dev: MMU 1000005100.iommu
+[Thu Apr 30 02:34:24 2026] rpi-hevc-dec 1000800000.codec: Device registered as /dev/video19
+[Thu Apr 30 02:34:24 2026] brcmfmac: F1 signature read @0x18000000=0x15264345
+[Thu Apr 30 02:34:24 2026] brcmfmac: brcmf_fw_alloc_request: using brcm/brcmfmac43455-sdio for chip BCM4345/6
+[Thu Apr 30 02:34:24 2026] usbcore: registered new interface driver brcmfmac
+[Thu Apr 30 02:34:24 2026] Bluetooth: Core ver 2.22
+[Thu Apr 30 02:34:24 2026] NET: Registered PF_BLUETOOTH protocol family
+[Thu Apr 30 02:34:24 2026] Bluetooth: HCI device and connection manager initialized
+[Thu Apr 30 02:34:24 2026] Bluetooth: HCI socket layer initialized
+[Thu Apr 30 02:34:24 2026] Bluetooth: L2CAP socket layer initialized
+[Thu Apr 30 02:34:24 2026] Bluetooth: SCO socket layer initialized
+[Thu Apr 30 02:34:25 2026] Bluetooth: HCI UART driver ver 2.3
+[Thu Apr 30 02:34:25 2026] Bluetooth: HCI UART protocol H4 registered
+[Thu Apr 30 02:34:25 2026] Bluetooth: HCI UART protocol Three-wire (H5) registered
+[Thu Apr 30 02:34:25 2026] hci_uart_bcm serial0-0: supply vbat not found, using dummy regulator
+[Thu Apr 30 02:34:25 2026] hci_uart_bcm serial0-0: supply vddio not found, using dummy regulator
+[Thu Apr 30 02:34:25 2026] Bluetooth: HCI UART protocol Broadcom registered
+[Thu Apr 30 02:34:25 2026] brcmfmac: brcmf_c_process_txcap_blob: no txcap_blob available (err=-2)
+[Thu Apr 30 02:34:25 2026] brcmfmac: brcmf_c_preinit_dcmds: Firmware: BCM4345/6 wl0: Aug 29 2023 01:47:08 version 7.45.265 (28bca26 CY) FWID 01-b677b91b
+[Thu Apr 30 02:34:25 2026] Bluetooth: hci0: BCM: chip id 107
+[Thu Apr 30 02:34:25 2026] Bluetooth: hci0: BCM: features 0x2f
+[Thu Apr 30 02:34:25 2026] Bluetooth: hci0: BCM4345C0
+[Thu Apr 30 02:34:25 2026] Bluetooth: hci0: BCM4345C0 (003.001.025) build 0000
+[Thu Apr 30 02:34:25 2026] Bluetooth: hci0: BCM4345C0 'brcm/BCM4345C0.raspberrypi,5-model-b.hcd' Patch
+[Thu Apr 30 02:34:26 2026] Bluetooth: hci0: BCM: features 0x2f
+[Thu Apr 30 02:34:26 2026] Bluetooth: hci0: BCM43455 37.4MHz Raspberry Pi 3+-0190
+[Thu Apr 30 02:34:26 2026] Bluetooth: hci0: BCM4345C0 (003.001.025) build 0382
+[Thu Apr 30 02:34:26 2026] Bluetooth: hci0: BCM: Using default device address (43:45:c0:00:1f:ac)
+[Thu Apr 30 02:34:27 2026] Bluetooth: BNEP (Ethernet Emulation) ver 1.3
+[Thu Apr 30 02:34:27 2026] Bluetooth: BNEP filters: protocol multicast
+[Thu Apr 30 02:34:27 2026] Bluetooth: BNEP socket layer initialized
+[Thu Apr 30 02:34:27 2026] Bluetooth: MGMT ver 1.23
+[Thu Apr 30 02:34:27 2026] NET: Registered PF_ALG protocol family
+[Thu Apr 30 02:34:27 2026] Bluetooth: RFCOMM TTY layer initialized
+[Thu Apr 30 02:34:27 2026] Bluetooth: RFCOMM socket layer initialized
+[Thu Apr 30 02:34:27 2026] Bluetooth: RFCOMM ver 1.11
+[Thu Apr 30 02:34:29 2026] macb 1f00100000.ethernet eth0: PHY [1f00100000.ethernet-ffffffff:01] driver [Broadcom BCM54213PE] (irq=POLL)
+[Thu Apr 30 02:34:29 2026] macb 1f00100000.ethernet eth0: configuring for phy/rgmii-id link mode
+[Thu Apr 30 02:34:29 2026] macb 1f00100000.ethernet: gem-ptp-timer ptp clock registered.
+[Thu Apr 30 02:34:29 2026] brcmfmac: brcmf_cfg80211_set_power_mgmt: power save enabled
+[Thu Apr 30 02:34:31 2026] tun: Universal TUN/TAP device driver, 1.6
+[Thu Apr 30 02:34:32 2026] usblp0: removed
+[Thu Apr 30 02:34:32 2026] usblp 1-2:1.0: usblp0: USB Bidirectional printer dev 2 if 0 alt 0 proto 2 vid 0x04B8 pid 0x0E20
+[Thu Apr 30 02:34:36 2026] wireguard: WireGuard 1.0.0 loaded. See www.wireguard.com for information.
+[Thu Apr 30 02:34:36 2026] wireguard: Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+[Thu Apr 30 02:34:39 2026] Initializing XFRM netlink socket
+[Thu Apr 30 02:34:39 2026] bridge: filtering via arp/ip/ip6tables is no longer available by default. Update your scripts to load br_netfilter if you need this.
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 1(veth936a9c1) entered blocking state
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 1(veth936a9c1) entered disabled state
+[Thu Apr 30 02:34:40 2026] veth936a9c1: entered allmulticast mode
+[Thu Apr 30 02:34:40 2026] veth936a9c1: entered promiscuous mode
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 2(vethea43b0a) entered blocking state
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 2(vethea43b0a) entered disabled state
+[Thu Apr 30 02:34:40 2026] vethea43b0a: entered allmulticast mode
+[Thu Apr 30 02:34:40 2026] vethea43b0a: entered promiscuous mode
+[Thu Apr 30 02:34:40 2026] eth0: renamed from veth1e6c086
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 1(veth936a9c1) entered blocking state
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 1(veth936a9c1) entered forwarding state
+[Thu Apr 30 02:34:40 2026] eth0: renamed from veth7ff7799
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 2(vethea43b0a) entered blocking state
+[Thu Apr 30 02:34:40 2026] br-5332d57b369e: port 2(vethea43b0a) entered forwarding state
+[Thu Apr 30 02:34:48 2026] br-5332d57b369e: port 3(veth9fc384f) entered blocking state
+[Thu Apr 30 02:34:48 2026] br-5332d57b369e: port 3(veth9fc384f) entered disabled state
+[Thu Apr 30 02:34:48 2026] veth9fc384f: entered allmulticast mode
+[Thu Apr 30 02:34:48 2026] veth9fc384f: entered promiscuous mode
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 4(veth2ca3522) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 4(veth2ca3522) entered disabled state
+[Thu Apr 30 02:34:49 2026] veth2ca3522: entered allmulticast mode
+[Thu Apr 30 02:34:49 2026] veth2ca3522: entered promiscuous mode
+[Thu Apr 30 02:34:49 2026] eth0: renamed from veth9a97bae
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 3(veth9fc384f) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 3(veth9fc384f) entered forwarding state
+[Thu Apr 30 02:34:49 2026] eth0: renamed from veth11239c9
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 4(veth2ca3522) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 4(veth2ca3522) entered forwarding state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 5(veth57fd816) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 5(veth57fd816) entered disabled state
+[Thu Apr 30 02:34:49 2026] veth57fd816: entered allmulticast mode
+[Thu Apr 30 02:34:49 2026] veth57fd816: entered promiscuous mode
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 6(vethac25164) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 6(vethac25164) entered disabled state
+[Thu Apr 30 02:34:49 2026] vethac25164: entered allmulticast mode
+[Thu Apr 30 02:34:49 2026] vethac25164: entered promiscuous mode
+[Thu Apr 30 02:34:49 2026] eth0: renamed from veth95a7143
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 5(veth57fd816) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 5(veth57fd816) entered forwarding state
+[Thu Apr 30 02:34:49 2026] eth0: renamed from vethfa97579
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 6(vethac25164) entered blocking state
+[Thu Apr 30 02:34:49 2026] br-5332d57b369e: port 6(vethac25164) entered forwarding state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 7(veth4f6fedf) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 7(veth4f6fedf) entered disabled state
+[Thu Apr 30 02:34:55 2026] veth4f6fedf: entered allmulticast mode
+[Thu Apr 30 02:34:55 2026] veth4f6fedf: entered promiscuous mode
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 8(veth681037d) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 8(veth681037d) entered disabled state
+[Thu Apr 30 02:34:55 2026] veth681037d: entered allmulticast mode
+[Thu Apr 30 02:34:55 2026] veth681037d: entered promiscuous mode
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 9(vethe5b62a8) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 9(vethe5b62a8) entered disabled state
+[Thu Apr 30 02:34:55 2026] vethe5b62a8: entered allmulticast mode
+[Thu Apr 30 02:34:55 2026] vethe5b62a8: entered promiscuous mode
+[Thu Apr 30 02:34:55 2026] eth0: renamed from veth17d1e79
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 7(veth4f6fedf) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 7(veth4f6fedf) entered forwarding state
+[Thu Apr 30 02:34:55 2026] eth0: renamed from veth7b42429
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 8(veth681037d) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 8(veth681037d) entered forwarding state
+[Thu Apr 30 02:34:55 2026] eth0: renamed from vethef85313
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 9(vethe5b62a8) entered blocking state
+[Thu Apr 30 02:34:55 2026] br-5332d57b369e: port 9(vethe5b62a8) entered forwarding state
+[Thu Apr 30 02:34:59 2026] warning: `ThreadPoolForeg' uses wireless extensions which will stop working for Wi-Fi 7 hardware; use nl80211
