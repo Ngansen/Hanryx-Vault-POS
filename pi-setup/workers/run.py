@@ -64,6 +64,7 @@ from workers.kr_set_audit import KrSetAuditWorker  # noqa: E402
 from workers.cross_region_aliaser import CrossRegionAliaserWorker  # noqa: E402
 from workers.zh_set_audit import ZhSetAuditWorker  # noqa: E402
 from workers.en_set_audit import EnSetAuditWorker  # noqa: E402
+from workers.set_mapping_import import SetMappingImportWorker  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -84,6 +85,7 @@ WORKERS: dict[str, type[Worker]] = {
     "cross_region_alias": CrossRegionAliaserWorker,
     "zh_set_audit":    ZhSetAuditWorker,
     "en_set_audit":    EnSetAuditWorker,
+    "set_mapping_import": SetMappingImportWorker,
 }
 
 
