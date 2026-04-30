@@ -1,0 +1,121 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git log cfa2094^..ffb809d --reverse --stat \
+  --pretty=format:'%n========== %h  %ad  %s ==========%n  by %an' \
+  --date=format:'%Y-%m-%d %H:%M'
+
+========== cfa2094  2026-04-29 15:15  Slice 9: background worker framework + 3 helpers (264 tests) ==========
+  by Ngansen
+ .../tests/test_data_analyst.py   | 286 ++++++
+ .../tests/test_image_health.py   | 324 +++++++
+ .../test_language_helper.py      | 285 ++++++
+ .../tests/test_worker_base.py    | 388 +++++++++
+ pi-setup/unified/schema.py       | 110 +++
+ pi-setup/workers/__init__.py     |  19 +
+ pi-setup/workers/base.py         | 324 +++++++
+ pi-setup/workers/data_analyst.py | 298 +++++++
+ pi-setup/workers/image_health.py | 282 ++++++
+ .../workers/language_helper.py   | 338 +++++++
+ pi-setup/workers/run.py          | 172 ++++
+ 11 files changed, 2826 insertions(+)
+
+
+========== 0c66281  2026-04-29 15:30  Slices 10+11: CLIP visual lookup + PaddleOCR text indexer (329 tests) ==========
+  by Ngansen
+ .../tests/test_clip_embedder.py  | 587 +++++++++
+ .../tests/test_ocr_indexer.py    | 497 +++++++
+ pi-setup/unified/schema.py       |  67 +
+ .../workers/clip_embedder.py     | 480 +++++++
+ pi-setup/workers/ocr_indexer.py  | 471 +++++++
+ pi-setup/workers/run.py          |  40 +-
+ 6 files changed, 2138 insertions(+), 4 deletions(-)
+
+
+========== ac9572f  2026-04-29 16:00  Slice 12: PriceRefreshWorker — bulk-prefill price cache for offline POS ==========
+  by Ngansen
+ .../tests/test_price_refresh.py  | 504 +++++++++
+ .../workers/price_refresh.py     | 367 ++++++
+ pi-setup/workers/run.py          |  50 +-
+ 3 files changed, 920 insertions(+), 1 deletion(-)
+
+
+========== 04b37f6  2026-04-29 16:09  Drive migration: tests, one-time mover script, README update ==========
+  by Ngansen
+ pi-setup/README.md               |  96 +++
+ .../move-volumes-to-drive.sh     | 266 +++++++++
+ .../tests/test_ocr_indexer.py    | 161 +++++
+ 3 files changed, 523 insertions(+)
+
+
+========== 7504958  2026-04-29 16:37  Slice 13 — LiveOcrEngine for synchronous tablet-snapshot OCR ==========
+  by Ngansen
+ .../tests/test_live_ocr.py       | 447 +++++++++
+ pi-setup/workers/live_ocr.py     | 338 +++++++
+ 2 files changed, 785 insertions(+)
+
+
+========== 9af121d  2026-04-29 16:42  Slice 14 — ImagePreprocessor for OCR-grade snapshot cleanup ==========
+  by Ngansen
+ .../test_image_preprocess.py     | 433 +++++++++
+ .../workers/image_preprocess.py  | 361 +++++++
+ 2 files changed, 794 insertions(+)
+
+
+========== efbe01a  2026-04-29 16:46  Slice 15 — OcrPipeline: snapshot → preprocess → live OCR, in one call ==========
+  by Ngansen
+ pi-setup/README.md               |  34 +
+ .../tests/test_ocr_pipeline.py   | 297 +++++++++
+ pi-setup/workers/ocr_pipeline.py | 185 +++++
+ 3 files changed, 516 insertions(+)
+
+
+========== 4196aee  2026-04-29 17:15  Slice 16 — image_mirror worker: re-fetch rotted card images ==========
+  by Ngansen
+ .../tests/test_image_mirror.py   | 496 +++++++++
+ pi-setup/workers/image_mirror.py | 397 +++++++
+ 2 files changed, 893 insertions(+)
+
+
+========== 9057a0c  2026-04-29 17:18  Slice 17 — image_health auto-enqueues image_mirror tasks ==========
+  by Ngansen
+ .../tests/test_image_health.py   | 140 +++++++++
+ pi-setup/workers/image_health.py |  60 +++-
+ 2 files changed, 198 insertions(+), 2 deletions(-)
+
+
+========== eb8d05d  2026-04-29 17:23  Slice 18 — persistent failure log for sync_card_mirror ==========
+  by Ngansen
+ .../mirror_failure_log.py        | 147 ++++++
+ .../scripts/sync_card_mirror.py  | 153 ++++--
+ .../test_mirror_failure_log.py   | 230 +++++++++
+ pi-setup/unified/schema.py       |  34 ++
+ 4 files changed, 528 insertions(+), 36 deletions(-)
+
+
+========== fdf5d3a  2026-04-29 17:28  Slice 19 — image_thumbnailer (200/800 WEBP tiers) ==========
+  by Ngansen
+ .../test_image_thumbnailer.py    | 464 +++++++++
+ .../workers/image_thumbnailer.py | 306 ++++++
+ 2 files changed, 770 insertions(+)
+
+
+========== 36002c0  2026-04-29 17:34  Slice 20 — KR set completeness audit ==========
+  by Ngansen
+ .../tests/test_kr_set_audit.py   | 419 +++++++++
+ pi-setup/unified/schema.py       |  30 +
+ pi-setup/workers/kr_set_audit.py | 220 +++++
+ 3 files changed, 669 insertions(+)
+
+
+========== 2282c2b  2026-04-29 17:41  Slice 21: per-source price quote breakdown + disagreement detection ==========
+  by Ngansen
+ .../tests/test_price_refresh.py  | 396 +++++++++
+ pi-setup/unified/schema.py       |  36 +
+ .../workers/price_refresh.py     | 205 ++++-
+ 3 files changed, 636 insertions(+), 1 deletion(-)
+
+
+========== ffb809d  2026-04-29 17:45  Slice 22: HTTP If-Modified-Since revalidation in sync_card_mirror ==========
+  by Ngansen
+ .../scripts/sync_card_mirror.py  |  88 ++-
+ .../test_sync_card_mirror.py     | 350 +++++++++
+ 2 files changed, 435 insertions(+), 3 deletions(-)
+(END)
