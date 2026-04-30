@@ -1,0 +1,36 @@
+{
+  "_schema": {
+    "version": 1,
+    "doc": "Canonical TC set list. set_id is the ptcg.tw URL slug under /expansions/<set_id>/cards. abbreviation matches the official TC set code printed on cards (often mirrors JP — e.g. SV1S). jp_equivalent_id maps to JP set codes from pokemon-card-jp-database. release_date is ISO 8601. Unknown fields use the literal string \"VERIFY\" until an operator confirms.",
+    "manual_curation": "TC has no Ngansen GitHub fork — this file is hand-curated by the operator from ptcg.tw/expansions. Add new sets here as Pokemon Co Taiwan publishes them. Phase D will not auto-discover new TC sets; ZH-4 (zh_set_audit) compares this list against ptcg.tw/expansions and surfaces a 'new set seen upstream' warning."
+  },
+  "sets": [
+    {
+      "set_id": "VERIFY-sv1s-slug",
+      "abbreviation": "SV1S",
+      "jp_equivalent_id": "SV1S",
+      "en_equivalent_id": "SVI",
+      "expected_card_count": "VERIFY",
+      "release_date": "2023-VERIFY",
+      "name_zh_tc": "VERIFY (緋紅之凜 / Scarlet ex equivalent)"
+    },
+    {
+      "set_id": "VERIFY-sv1v-slug",
+      "abbreviation": "SV1V",
+      "jp_equivalent_id": "SV1V",
+      "en_equivalent_id": "SVI",
+      "expected_card_count": "VERIFY",
+      "release_date": "2023-VERIFY",
+      "name_zh_tc": "VERIFY (堇紫之蒼 / Violet ex equivalent)"
+    },
+    {
+      "set_id": "VERIFY-sv2a-slug",
+      "abbreviation": "SV2A",
+      "jp_equivalent_id": "SV2A",
+      "en_equivalent_id": "MEW",
+      "expected_card_count": "VERIFY",
+      "release_date": "2023-VERIFY",
+      "name_zh_tc": "VERIFY (151 / Pokémon Card 151 equivalent)"
+    }
+  ]
+}

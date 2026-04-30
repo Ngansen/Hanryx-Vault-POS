@@ -1,0 +1,27 @@
+{
+  "_schema": {
+    "version": 1,
+    "doc": "Canonical SC set list. set_id is the Tencent-internal numeric id from PTCG-CHS-Datasets/ptcg_chs_infos.json:collections[].id (string-typed). abbreviation is commodityCode. jp_equivalent_id maps to JP set codes from pokemon-card-jp-database. release_date is ISO 8601. Unknown fields use the literal string \"VERIFY\" until an operator confirms.",
+    "auto_refresh": "ZH-4 (zh_set_audit) will re-derive this file from PTCG-CHS-Datasets/ptcg_chs_infos.json on each run; manual edits to existing entries will be preserved when jp_equivalent_id is non-VERIFY (operator-confirmed) but new collections from upstream will be appended."
+  },
+  "sets": [
+    {
+      "set_id": "1",
+      "abbreviation": "VERIFY",
+      "jp_equivalent_id": "VERIFY",
+      "en_equivalent_id": "VERIFY",
+      "expected_card_count": "VERIFY",
+      "release_date": "VERIFY",
+      "name_zh_sc": "VERIFY (first SC release)"
+    },
+    {
+      "set_id": "460",
+      "abbreviation": "30th-P-01",
+      "jp_equivalent_id": "VERIFY",
+      "en_equivalent_id": "VERIFY",
+      "expected_card_count": "VERIFY",
+      "release_date": "2026-03-20",
+      "name_zh_sc": "30周年庆典 最初的伙伴特别插画闪卡套装 Vol.1"
+    }
+  ]
+}
