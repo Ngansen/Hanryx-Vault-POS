@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~ $ # 1. Is /mnt/cards a real mount, or just a directory on the SD card?
+mount | grep -E 'cards|/mnt'
+df -h /mnt/cards 2>/dev/null || echo 'no /mnt/cards'
+ls -la /mnt/cards | head
+
+# 2. Is the kernel seeing ANY recent USB/SATA event? (last 80 lines)
+dmesg | tail -80
+
+# 3. Anything attached on USB or PCIe right now?
+ls -la /dev/sd* /dev/nvme* 2>/dev/null
+ls /sys/bus/usb/devices/
+
+# 4. fstab — what is the system trying to mount at /mnt/cards on boot?
+grep -E 'cards|UUID|/mnt' /etc/fstab
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   38G   19G  68% /
+total 12
+drwxrwxrwx 3 ngansen ngansen 4096 Apr 29 02:55 .
+drwxr-xr-x 4 root    root    4096 Apr 26 19:42 ..
+drwxrwxrwx 2 ngansen ngansen 4096 Apr 29 02:55 faiss
+1-0:1.0  1-1:1.0  1-1:1.2  3-0:1.0  usb1  usb3
+1-1      1-1:1.1  2-0:1.0  4-0:1.0  usb2  usb4
+PARTUUID=6e827fca-01  /boot/firmware  vfat    defaults          0       2
+PARTUUID=6e827fca-02  /               ext4    defaults,noatime  0       1
+UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail  0  2
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ # A. Watch USB events live in one terminal — leave this running:
+sudo dmesg -w &
+DMESG_PID=$!
+
+# B. Then physically unplug+replug the dock cable from the Pi (count to 3 between).
+#    Wait 5 seconds, then:
+sleep 8
+sudo kill $DMESG_PID 2>/dev/null
+
+# C. Snapshot of state right now
+echo "=== lsusb ==="
+lsusb
+echo "=== USB device tree ==="
+ls -la /sys/bus/usb/devices/
+echo "=== both USB 3 controllers' port states ===" 
+for port in /sys/bus/usb/devices/usb2/2-*/ /sys/butxt /boot/firmware/cmdline.txt 2>/dev/null/config.
+[1] 246955
+=== lsusb ===
+[1]+  Terminated              sudo dmesg -w
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 04b8:0e20 Seiko Epson Corp. TM-m30-ii
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+=== USB device tree ===
+total 0
+drwxr-xr-x 2 root root 0 Apr 30 02:29 .
+drwxr-xr-x 4 root root 0 Jan  1  1970 ..
+lrwxrwxrwx 1 root root 0 Jan  1  1970 1-0:1.0 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-0:1.0
+lrwxrwxrwx 1 root root 0 Apr 29 22:10 1-1 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1
+lrwxrwxrwx 1 root root 0 Apr 29 22:10 1-1:1.0 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1:1.0
+lrwxrwxrwx 1 root root 0 Apr 29 22:10 1-1:1.1 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1:1.1
+lrwxrwxrwx 1 root root 0 Apr 29 22:10 1-1:1.2 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1:1.2
+lrwxrwxrwx 1 root root 0 Jan  1  1970 2-0:1.0 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb2/2-0:1.0
+lrwxrwxrwx 1 root root 0 Jan  1  1970 3-0:1.0 -> ../../../devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-0:1.0
+lrwxrwxrwx 1 root root 0 Jan  1  1970 4-0:1.0 -> ../../../devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb4/4-0:1.0
+lrwxrwxrwx 1 root root 0 Jan  1  1970 usb1 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1
+lrwxrwxrwx 1 root root 0 Jan  1  1970 usb2 -> ../../../devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb2
+lrwxrwxrwx 1 root root 0 Jan  1  1970 usb3 -> ../../../devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3
+lrwxrwxrwx 1 root root 0 Jan  1  1970 usb4 -> ../../../devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb4
+=== both USB 3 controllers' port states ===
+/sys/bus/usb/devices/usb2/2-0:1.0/ -> : speed=
+/sys/bus/usb/devices/usb4/4-0:1.0/ -> : speed=
+=== udev rules touching USB ===
+40-usb_modeswitch.rules
+60-persistent-storage-dm.rules
+60-persistent-storage-mtd.rules
+60-persistent-storage.rules
+60-persistent-storage-tape.rules
+71-ipp-usb.rules
+90-alsa-restore.rules
+=== USB modules blacklisted? ===
+=== USB autosuspend on USB 3 controllers ===
+0
+0
+=== boot config USB lines ===
+/boot/firmware/config.txt:# Enable host mode on the 2711 built-in XHCI USB controller.
+/boot/firmware/config.txt:# This line should be removed if the legacy DWC2 controller is required
+/boot/firmware/config.txt:# (e.g. for USB device mode) or if USB support is not required.
+/boot/firmware/config.txt:otg_mode=1
+/boot/firmware/config.txt:dtoverlay=dwc2,dr_mode=host
+ngansen@hanryxvault:~
