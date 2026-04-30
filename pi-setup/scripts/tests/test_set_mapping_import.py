@@ -32,8 +32,12 @@ if str(ROOT) not in sys.path:
 
 from workers.set_mapping_import import (   # noqa: E402
     SetMappingImportWorker,
+    _BACKFILL_UPDATE_SQL,
     _LANG_TO_COL,
+    _MAX_DETAIL_FETCHES_PER_RUN,
     _UPSERT_SQL,
+    _backfill_era_year,
+    _extract_era_and_year,
     _merge_languages,
 )
 
@@ -53,6 +57,15 @@ class FakeCursor:
         if self.conn.rowcount_queue:
             self.rowcount = self.conn.rowcount_queue.pop(0)
 
+    def fetchall(self):
+        # Backfill SELECTs use fetchall(); existing tests don't queue
+        # any responses and so get []. That's the right default —
+        # an empty candidate set means no backfill happens, which
+        # keeps the pre-backfill assertions correct.
+        if self.conn.fetchall_queue:
+            return self.conn.fetchall_queue.pop(0)
+        return []
+
 
 class FakeConn:
     def __init__(self):
@@ -60,6 +73,7 @@ class FakeConn:
         self.cursors: list[FakeCursor] = []
         self.all_sql: list[tuple[str, object]] = []
         self.rowcount_queue: list[int] = []
+        self.fetchall_queue: list[list] = []
 
     def cursor(self):
         c = FakeCursor(self)
@@ -456,6 +470,357 @@ class RegistrationTests(unittest.TestCase):
             r'"set_mapping_import"\s*:\s*SetMappingImportWorker',
             'WORKERS dict missing "set_mapping_import": SetMappingImportWorker',
         )
+
+
+# ── _extract_era_and_year ────────────────────────────────────────────────
+
+
+class ExtractEraAndYearTests(unittest.TestCase):
+    """Pure-function extraction from a TCGdex /sets/{id} document."""
+
+    def test_pulls_serie_name_as_era(self):
+        era, year = _extract_era_and_year(
+            {"serie": {"id": "sv", "name": "Scarlet & Violet"}})
+        self.assertEqual(era, "Scarlet & Violet")
+        self.assertEqual(year, "")
+
+    def test_pulls_release_year_from_iso_date(self):
+        era, year = _extract_era_and_year({"releaseDate": "2023-06-09"})
+        self.assertEqual(era, "")
+        self.assertEqual(year, "2023")
+
+    def test_full_payload_returns_both(self):
+        era, year = _extract_era_and_year({
+            "serie":       {"name": "Sword & Shield"},
+            "releaseDate": "2020-02-07",
+        })
+        self.assertEqual(era, "Sword & Shield")
+        self.assertEqual(year, "2020")
+
+    def test_empty_serie_name_yields_empty_era(self):
+        era, year = _extract_era_and_year({"serie": {"name": ""}})
+        self.assertEqual(era, "")
+        self.assertEqual(year, "")
+
+    def test_missing_serie_yields_empty_era(self):
+        era, year = _extract_era_and_year({"releaseDate": "2024-01-01"})
+        self.assertEqual(era, "")
+        self.assertEqual(year, "2024")
+
+    def test_serie_as_string_not_dict_is_tolerated(self):
+        # Defensive: TCGdex sometimes returns serie as a bare string.
+        # We don't crash, we just leave era empty.
+        era, year = _extract_era_and_year({"serie": "Scarlet & Violet"})
+        self.assertEqual(era, "")
+
+    def test_garbage_release_date_yields_empty_year(self):
+        # 'TBD' / 'soon' / '' / Q3-2026 — anything not YYYY-prefixed.
+        for bad in ("", "TBD", "soon", "Q3-2026"):
+            with self.subTest(value=bad):
+                _, year = _extract_era_and_year({"releaseDate": bad})
+                self.assertEqual(year, "")
+
+    def test_release_date_with_time_component_still_works(self):
+        _, year = _extract_era_and_year(
+            {"releaseDate": "2024-11-08T00:00:00Z"})
+        self.assertEqual(year, "2024")
+
+    def test_strips_serie_name_whitespace(self):
+        era, _ = _extract_era_and_year(
+            {"serie": {"name": "  Scarlet & Violet  "}})
+        self.assertEqual(era, "Scarlet & Violet")
+
+    def test_none_releasedate_doesnt_crash(self):
+        era, year = _extract_era_and_year({"releaseDate": None})
+        self.assertEqual((era, year), ("", ""))
+
+
+# ── _backfill_era_year ───────────────────────────────────────────────────
+
+
+def make_detail_fn(by_set_id: dict[str, dict | None]):
+    """Return a fetch_detail_fn that serves canned detail dicts and
+    records which set_ids were asked for. Missing keys yield None
+    (simulating a TCGdex 404 / network error)."""
+    asked: list[str] = []
+
+    def fetch(sid: str):
+        asked.append(sid)
+        return by_set_id.get(sid)
+
+    fetch.asked = asked  # type: ignore[attr-defined]
+    return fetch
+
+
+class BackfillEraYearTests(unittest.TestCase):
+
+    def test_no_blank_rows_does_nothing(self):
+        # SELECT returns []; no detail GETs, no UPDATEs.
+        conn = FakeConn()
+        conn.fetchall_queue = [[]]
+        called = make_detail_fn({})
+        stats = _backfill_era_year(conn.cursor(), called)
+        self.assertEqual(stats["backfill_candidates"], 0)
+        self.assertEqual(stats["backfill_fetched"], 0)
+        self.assertEqual(stats["backfill_updated"], 0)
+        self.assertEqual(called.asked, [])
+        # Only the SELECT itself fired — no UPDATE.
+        self.assertFalse(any("UPDATE ref_set_mapping" in s
+                             for s, _ in conn.all_sql))
+
+    def test_select_uses_blank_predicate_and_max_sets_param(self):
+        conn = FakeConn()
+        conn.fetchall_queue = [[]]
+        _backfill_era_year(conn.cursor(),
+                           make_detail_fn({}),
+                           max_sets=17)
+        sql, params = conn.all_sql[0]
+        self.assertIn("FROM ref_set_mapping", sql)
+        # Both predicates must be present (era OR release_year blank);
+        # missing one would let stale rows fall out of the audit.
+        self.assertIn("era = ''", sql)
+        self.assertIn("release_year = ''", sql)
+        self.assertIn("LIMIT %s", sql)
+        # The cap is parameterised, not literal.
+        self.assertEqual(params, (17,))
+
+    def test_uses_default_max_sets_when_unspecified(self):
+        conn = FakeConn()
+        conn.fetchall_queue = [[]]
+        _backfill_era_year(conn.cursor(), make_detail_fn({}))
+        _, params = conn.all_sql[0]
+        self.assertEqual(params, (_MAX_DETAIL_FETCHES_PER_RUN,))
+
+    def test_blank_rows_get_detail_fetched_and_updated(self):
+        conn = FakeConn()
+        conn.fetchall_queue = [[("sv2",), ("sv8p",)]]
+        # Both UPDATEs hit one row each.
+        conn.rowcount_queue = [1, 1]
+        called = make_detail_fn({
+            "sv2":  {"serie": {"name": "Scarlet & Violet"},
+                     "releaseDate": "2023-06-09"},
+            "sv8p": {"serie": {"name": "Scarlet & Violet"},
+                     "releaseDate": "2024-11-08"},
+        })
+        stats = _backfill_era_year(conn.cursor(), called,
+                                   now_fn=lambda: 999)
+        self.assertEqual(stats["backfill_candidates"], 2)
+        self.assertEqual(stats["backfill_fetched"], 2)
+        self.assertEqual(stats["backfill_updated"], 2)
+        self.assertEqual(stats["backfill_failed"], 0)
+        self.assertEqual(called.asked, ["sv2", "sv8p"])
+
+        updates = [(s, p) for s, p in conn.all_sql
+                   if "UPDATE ref_set_mapping" in s]
+        self.assertEqual(len(updates), 2)
+        # Param order: (era, release_year, now, set_id)
+        sql0, p0 = updates[0]
+        self.assertEqual(p0, ("Scarlet & Violet", "2023", 999, "sv2"))
+        # The SQL preserves operator-curated values via COALESCE.
+        self.assertIn("COALESCE(NULLIF(%s, ''), era)", sql0)
+        self.assertIn("COALESCE(NULLIF(%s, ''), release_year)", sql0)
+
+    def test_per_set_fetch_failure_counted_as_failed_no_update(self):
+        # TCGdex 404s on obscure legacy sets. The whole backfill must
+        # not abort — just skip the failed set and keep going.
+        conn = FakeConn()
+        conn.fetchall_queue = [[("sv2",), ("legacy_set",), ("sv8p",)]]
+        conn.rowcount_queue = [1, 1]
+        called = make_detail_fn({
+            "sv2":  {"serie": {"name": "SV"}, "releaseDate": "2023-01-01"},
+            "legacy_set": None,                       # simulated 404
+            "sv8p": {"serie": {"name": "SV"}, "releaseDate": "2024-01-01"},
+        })
+        stats = _backfill_era_year(conn.cursor(), called)
+        self.assertEqual(stats["backfill_candidates"], 3)
+        self.assertEqual(stats["backfill_fetched"], 3)
+        self.assertEqual(stats["backfill_updated"], 2)
+        self.assertEqual(stats["backfill_failed"], 1)
+        # Exactly two UPDATEs — the failed set is skipped silently.
+        updates = [s for s, _ in conn.all_sql
+                   if "UPDATE ref_set_mapping" in s]
+        self.assertEqual(len(updates), 2)
+
+    def test_detail_with_no_usable_metadata_skips_update(self):
+        # TCGdex returned the document but neither serie nor releaseDate
+        # gave us anything. Don't UPDATE — that would just churn
+        # imported_at without filling any blank.
+        conn = FakeConn()
+        conn.fetchall_queue = [[("emptyset",)]]
+        called = make_detail_fn({
+            "emptyset": {"serie": {"name": ""}, "releaseDate": ""},
+        })
+        stats = _backfill_era_year(conn.cursor(), called)
+        self.assertEqual(stats["backfill_candidates"], 1)
+        self.assertEqual(stats["backfill_fetched"], 1)
+        self.assertEqual(stats["backfill_updated"], 0)
+        self.assertEqual(stats["backfill_failed"], 0)
+        self.assertFalse(any("UPDATE ref_set_mapping" in s
+                             for s, _ in conn.all_sql))
+
+    def test_partial_metadata_still_updates_via_coalesce(self):
+        # Only release_year is known; era is blank. The COALESCE in
+        # the SQL preserves any operator-curated era while still
+        # filling the year column.
+        conn = FakeConn()
+        conn.fetchall_queue = [[("sv2",)]]
+        conn.rowcount_queue = [1]
+        called = make_detail_fn({
+            "sv2": {"releaseDate": "2023-06-09"},  # no serie key
+        })
+        stats = _backfill_era_year(conn.cursor(), called)
+        self.assertEqual(stats["backfill_updated"], 1)
+        update = next((s, p) for s, p in conn.all_sql
+                      if "UPDATE ref_set_mapping" in s)
+        _, params = update
+        # Era is '' (will be NULLIF'd → keeps existing); year is '2023'.
+        self.assertEqual(params[0], "")
+        self.assertEqual(params[1], "2023")
+
+    def test_max_sets_caps_the_select_not_the_loop(self):
+        # The cap is enforced at the SQL level (LIMIT). If SELECT
+        # returns 100 anyway (e.g. from a buggy fake), the loop still
+        # processes them all — but in production the SQL guarantees
+        # we don't oversubscribe TCGdex.
+        conn = FakeConn()
+        conn.fetchall_queue = [[]]
+        _backfill_era_year(conn.cursor(), make_detail_fn({}), max_sets=3)
+        sql, params = conn.all_sql[0]
+        self.assertIn("LIMIT %s", sql)
+        self.assertEqual(params[0], 3)
+
+    def test_skips_blank_set_ids_returned_by_select(self):
+        # Defence in depth — if the SELECT ever yields a stray blank,
+        # don't pass it to the detail fetch.
+        conn = FakeConn()
+        conn.fetchall_queue = [[("",), ("sv2",)]]
+        conn.rowcount_queue = [1]
+        called = make_detail_fn({
+            "sv2": {"serie": {"name": "SV"}, "releaseDate": "2023-01-01"},
+        })
+        stats = _backfill_era_year(conn.cursor(), called)
+        self.assertEqual(stats["backfill_candidates"], 1)
+        self.assertEqual(called.asked, ["sv2"])
+
+
+# ── _BACKFILL_UPDATE_SQL contract ────────────────────────────────────────
+
+
+class BackfillUpdateSqlContractTests(unittest.TestCase):
+
+    def test_only_touches_era_release_year_imported_at(self):
+        # Critical: nothing else may be SET — names / aliases / region
+        # must keep their operator-curated values.
+        for col in ("era", "release_year", "imported_at"):
+            self.assertIn(f"{col}", _BACKFILL_UPDATE_SQL)
+        for forbidden in ("name_en", "name_kr", "name_jp", "name_chs",
+                          "name_cht", "aliases", "region", "raw"):
+            self.assertNotIn(f"{forbidden}", _BACKFILL_UPDATE_SQL,
+                             f"{forbidden} must not be in the backfill UPDATE")
+
+    def test_uses_coalesce_nullif_to_preserve_operator_values(self):
+        # Without NULLIF, an empty-string from the API would overwrite
+        # an operator-curated era. With it, '' → NULL → COALESCE
+        # falls back to the existing column.
+        self.assertIn("COALESCE(NULLIF(%s, ''), era)", _BACKFILL_UPDATE_SQL)
+        self.assertIn(
+            "COALESCE(NULLIF(%s, ''), release_year)",
+            _BACKFILL_UPDATE_SQL)
+
+    def test_updates_by_set_id(self):
+        # PK lookup, not full-scan UPDATE.
+        self.assertIn("WHERE set_id = %s", _BACKFILL_UPDATE_SQL)
+
+    def test_is_update_not_upsert(self):
+        # Backfill must NEVER insert — only fill blanks on rows that
+        # already exist (the main UPSERT loop creates them). An
+        # accidental INSERT here would create phantom rows.
+        self.assertNotIn("INSERT", _BACKFILL_UPDATE_SQL.upper())
+        self.assertNotIn("ON CONFLICT", _BACKFILL_UPDATE_SQL.upper())
+
+
+# ── process integration with backfill ────────────────────────────────────
+
+
+class ProcessBackfillIntegrationTests(unittest.TestCase):
+    """End-to-end: the worker calls the backfill helper after the main
+    UPSERT loop, and the backfill stats land in the return dict."""
+
+    def test_process_invokes_backfill_after_upserts(self):
+        conn = FakeConn()
+        # Main UPSERT creates one set; backfill SELECT then yields it
+        # again as a candidate (era/release_year still blank).
+        conn.fetchall_queue = [[("sv2",)]]
+        conn.rowcount_queue = [1]   # the backfill UPDATE
+        fetch = make_fetch_fn({
+            "en": [{"id": "sv2", "name": "Paldea Evolved"}],
+        })
+        details = make_detail_fn({
+            "sv2": {"serie": {"name": "Scarlet & Violet"},
+                    "releaseDate": "2023-06-09"},
+        })
+        w = SetMappingImportWorker(
+            conn, fetch_fn=fetch, fetch_detail_fn=details)
+        out = w.process({})
+        self.assertEqual(out["status"], "OK")
+        self.assertEqual(out["sets_imported"], 1)
+        # Backfill stats merged in.
+        self.assertEqual(out["backfill_candidates"], 1)
+        self.assertEqual(out["backfill_fetched"], 1)
+        self.assertEqual(out["backfill_updated"], 1)
+        self.assertEqual(out["backfill_failed"], 0)
+        # SQL ordering: UPSERT happens before the backfill SELECT.
+        kinds = [
+            "UPSERT" if "INSERT INTO ref_set_mapping" in s
+            else "SELECT" if "FROM ref_set_mapping" in s
+            else "UPDATE" if "UPDATE ref_set_mapping" in s
+            else None
+            for s, _ in conn.all_sql
+        ]
+        kinds = [k for k in kinds if k]
+        self.assertEqual(kinds, ["UPSERT", "SELECT", "UPDATE"])
+        # Still exactly one commit — UPSERT and backfill UPDATE land
+        # atomically together.
+        self.assertEqual(conn.commits, 1)
+
+    def test_empty_source_skips_backfill_entirely(self):
+        # Captive portal — every fetch returns []. Backfill must NOT
+        # run because no merged data means no fresh imported_at, and
+        # we don't want to spend the detail-GET budget against zero
+        # progress.
+        conn = FakeConn()
+        details = make_detail_fn({})
+        w = SetMappingImportWorker(
+            conn, fetch_fn=make_fetch_fn({}), fetch_detail_fn=details)
+        out = w.process({})
+        self.assertEqual(out["status"], "EMPTY_SOURCE")
+        # Backfill not invoked → no detail GETs, no SELECT, no
+        # backfill_* keys leaked into the response.
+        self.assertEqual(details.asked, [])
+        self.assertNotIn("backfill_candidates", out)
+
+    def test_max_detail_fetches_per_run_is_overridable(self):
+        # Operator may want to drop the cap for a one-shot full
+        # backfill on a fast uplink.
+        conn = FakeConn()
+        conn.fetchall_queue = [[]]
+        fetch = make_fetch_fn({
+            "en": [{"id": "sv2", "name": "Paldea Evolved"}],
+        })
+        w = SetMappingImportWorker(
+            conn,
+            fetch_fn=fetch,
+            fetch_detail_fn=make_detail_fn({}),
+            max_detail_fetches_per_run=999,
+        )
+        w.process({})
+        select_sql = next(s for s, _ in conn.all_sql
+                          if "FROM ref_set_mapping" in s
+                          and "LIMIT %s" in s)
+        select_params = next(p for s, p in conn.all_sql
+                             if "FROM ref_set_mapping" in s
+                             and "LIMIT %s" in s)
+        self.assertEqual(select_params, (999,))
 
 
 if __name__ == "__main__":
