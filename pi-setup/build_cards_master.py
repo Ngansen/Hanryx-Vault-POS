@@ -212,12 +212,29 @@ def _read_chs_official(cur) -> dict[tuple, dict]:
     for row in cur.fetchall():
         d = dict(row)
         # collection_number looks like '008/207' — derive set from
-        # commodity_code prefix or punt to the Chinese-master mapping.
+        # commodity_code prefix when available, otherwise fall back to a
+        # synthetic '_chs_orphan' bucket per the consolidator's documented
+        # "never drop a card on the floor" promise (see module docstring).
+        # The upstream PTCG-CHS-Datasets JSON omits commodityCode for
+        # ~94% of cards but always provides collection_number, so without
+        # this fallback the consolidator silently swallows ~16K rows.
         cn = _normalise_card_number(d.get("collection_number") or "")
         cc = _safe_str(d.get("commodity_code"))
-        # Use first letters of commodity_code as set proxy (best-effort)
-        sid = re.match(r"^[A-Za-z]+\d*", cc).group(0).lower() if cc else ""
-        if not sid or not cn: continue
+        sid = ""
+        if cc:
+            m = re.match(r"^[A-Za-z]+\d*", cc)
+            if m:
+                sid = m.group(0).lower()
+        if not sid:
+            # Synthetic orphan bucket. Use card_id as the within-bucket key
+            # so rows do not collide on shared collection_number values
+            # across different real sets (e.g. "008" exists in many sets).
+            sid = "_chs_orphan"
+            orphan_cn = _safe_str(d.get("card_id"))
+            if orphan_cn:
+                cn = orphan_cn
+        if not sid or not cn:
+            continue
         out[(sid, cn)] = d
     return out
 
