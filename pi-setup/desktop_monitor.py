@@ -254,6 +254,270 @@ def run_shell(cmd):
         return ""
 
 
+# ── Extended Pi / system diagnostics (best-effort, all degrade gracefully) ───
+
+MOUNTS_TO_WATCH = ["/", "/mnt/cards", "/boot/firmware"]
+NET_IFACES_SKIP = {"lo"}
+
+
+def pi_hardware():
+    """Pi model, revision, serial, kernel — all best-effort."""
+    out = {"model": "", "revision": "", "serial": "", "kernel": ""}
+    try:
+        with open("/proc/device-tree/model", "rb") as f:
+            out["model"] = f.read().decode("utf-8", errors="ignore").strip("\x00").strip()
+    except Exception:
+        pass
+    try:
+        with open("/proc/cpuinfo") as f:
+            for ln in f:
+                if ln.startswith("Revision"):
+                    out["revision"] = ln.split(":", 1)[1].strip()
+                elif ln.startswith("Serial"):
+                    out["serial"] = ln.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    out["kernel"] = run_shell("uname -r")
+    return out
+
+
+def pi_throttled():
+    """Decode vcgencmd get_throttled bits into human-readable status."""
+    out = {"raw": "", "status": "n/a", "ok": True, "past": False}
+    raw = run_shell("vcgencmd get_throttled 2>/dev/null")
+    if not raw or "=" not in raw:
+        return out
+    try:
+        val = int(raw.split("=", 1)[1], 16)
+        out["raw"] = f"0x{val:x}"
+        # bits 0-3: NOW; bits 16-19: SINCE BOOT
+        now_flags = []
+        if val & (1 << 0): now_flags.append("under-volt")
+        if val & (1 << 1): now_flags.append("arm-cap")
+        if val & (1 << 2): now_flags.append("throttled")
+        if val & (1 << 3): now_flags.append("soft-temp")
+        past_flags = []
+        if val & (1 << 16): past_flags.append("under-volt")
+        if val & (1 << 17): past_flags.append("arm-cap")
+        if val & (1 << 18): past_flags.append("throttled")
+        if val & (1 << 19): past_flags.append("soft-temp")
+        if now_flags:
+            out["status"] = "NOW: " + ", ".join(now_flags)
+            out["ok"] = False
+        elif past_flags:
+            out["status"] = "Past: " + ", ".join(past_flags)
+            out["past"] = True
+        else:
+            out["status"] = "OK — no throttling"
+    except Exception:
+        pass
+    return out
+
+
+def pi_voltages():
+    rails = {}
+    for k in ("core", "sdram_c", "sdram_i", "sdram_p"):
+        v = run_shell(f"vcgencmd measure_volts {k} 2>/dev/null")
+        if v and "=" in v:
+            rails[k] = v.split("=", 1)[1].rstrip("V'\"")
+    return rails
+
+
+def pi_clocks():
+    """MHz for arm/core/v3d/uart/emmc."""
+    out = {}
+    for k in ("arm", "core", "v3d", "emmc"):
+        v = run_shell(f"vcgencmd measure_clock {k} 2>/dev/null")
+        if v and "=" in v:
+            try:
+                out[k] = int(v.split("=", 1)[1]) // 1_000_000
+            except Exception:
+                pass
+    return out
+
+
+def pi_pmic_temp():
+    """PMIC temp on Pi 5 (separate from CPU temp)."""
+    v = run_shell("vcgencmd measure_temp pmic 2>/dev/null")
+    if v and "=" in v:
+        try:
+            return float(v.split("=", 1)[1].rstrip("'C\n "))
+        except Exception:
+            pass
+    return None
+
+
+def cpu_per_core():
+    if HAS_PSUTIL:
+        try:
+            return psutil.cpu_percent(interval=0.2, percpu=True)
+        except Exception:
+            return []
+    return []
+
+
+def cpu_freq_info():
+    out = {"cur": 0, "min": 0, "max": 0, "governor": ""}
+    if HAS_PSUTIL:
+        try:
+            f = psutil.cpu_freq()
+            if f:
+                out["cur"] = round(f.current or 0)
+                out["min"] = round(f.min or 0)
+                out["max"] = round(f.max or 0)
+        except Exception:
+            pass
+    try:
+        with open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor") as f:
+            out["governor"] = f.read().strip()
+    except Exception:
+        pass
+    return out
+
+
+def mem_detail():
+    out = {"used_mb": 0, "avail_mb": 0, "total_mb": 0, "pct": 0.0,
+           "cached_mb": 0, "buffers_mb": 0,
+           "swap_used_mb": 0, "swap_total_mb": 0, "swap_pct": 0.0}
+    if HAS_PSUTIL:
+        try:
+            v = psutil.virtual_memory()
+            out["used_mb"]    = round(v.used      / 1024**2)
+            out["avail_mb"]   = round(v.available / 1024**2)
+            out["total_mb"]   = round(v.total     / 1024**2)
+            out["pct"]        = v.percent
+            out["cached_mb"]  = round(getattr(v, "cached", 0)  / 1024**2)
+            out["buffers_mb"] = round(getattr(v, "buffers", 0) / 1024**2)
+            s = psutil.swap_memory()
+            out["swap_used_mb"]  = round(s.used  / 1024**2)
+            out["swap_total_mb"] = round(s.total / 1024**2)
+            out["swap_pct"]      = s.percent
+        except Exception:
+            pass
+    return out
+
+
+def disks_per_mount(mounts=MOUNTS_TO_WATCH):
+    out = []
+    for m in mounts:
+        if not os.path.exists(m):
+            continue
+        if HAS_PSUTIL:
+            try:
+                d = psutil.disk_usage(m)
+                out.append({
+                    "mount":    m,
+                    "used_gb":  d.used  / 1024**3,
+                    "total_gb": d.total / 1024**3,
+                    "pct":      d.percent,
+                })
+            except Exception:
+                pass
+    return out
+
+
+def net_io_per_iface():
+    """Snapshot bytes_sent / bytes_recv per interface (filters lo)."""
+    out = {}
+    if HAS_PSUTIL:
+        try:
+            for name, c in psutil.net_io_counters(pernic=True).items():
+                if name in NET_IFACES_SKIP:
+                    continue
+                out[name] = (c.bytes_sent, c.bytes_recv)
+        except Exception:
+            pass
+    return out
+
+
+def disk_io_total():
+    """(read_bytes, write_bytes) snapshot."""
+    if HAS_PSUTIL:
+        try:
+            c = psutil.disk_io_counters()
+            if c:
+                return (c.read_bytes, c.write_bytes)
+        except Exception:
+            pass
+    return (0, 0)
+
+
+def top_processes(n=5):
+    """Top N by CPU and by RAM. Caller must warm up cpu_percent first."""
+    out = {"by_cpu": [], "by_ram": []}
+    if not HAS_PSUTIL:
+        return out
+    procs = []
+    try:
+        for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+            try:
+                info = p.info
+                procs.append({
+                    "pid":  info.get("pid", 0),
+                    "name": (info.get("name") or "?")[:24],
+                    "cpu":  info.get("cpu_percent") or 0.0,
+                    "ram":  info.get("memory_percent") or 0.0,
+                })
+            except Exception:
+                continue
+        out["by_cpu"] = sorted(procs, key=lambda x: x["cpu"], reverse=True)[:n]
+        out["by_ram"] = sorted(procs, key=lambda x: x["ram"], reverse=True)[:n]
+    except Exception:
+        pass
+    return out
+
+
+def docker_summary():
+    out = {"running": 0, "stopped": 0, "unhealthy": 0, "lines": []}
+    raw = run_shell(
+        "docker ps -a --format '{{.Names}}|{{.State}}|{{.Status}}' 2>/dev/null"
+    )
+    if not raw:
+        return out
+    for line in raw.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        name, state, status = parts
+        unhealthy = (state == "running" and "unhealthy" in status.lower())
+        if state == "running":
+            out["running"] += 1
+            if unhealthy:
+                out["unhealthy"] += 1
+        else:
+            out["stopped"] += 1
+        out["lines"].append((name, state, status, unhealthy))
+    return out
+
+
+def load_avg_str():
+    try:
+        a, b, c = os.getloadavg()
+        return f"{a:.2f}  {b:.2f}  {c:.2f}"
+    except Exception:
+        return "—"
+
+
+def uptime_short():
+    raw = run_shell("uptime -p")
+    return raw.replace("up ", "") if raw else "—"
+
+
+def tailscale_ip():
+    return run_shell("tailscale ip -4 2>/dev/null | head -1") or ""
+
+
+def fmt_rate(bytes_per_sec):
+    """Human-friendly KiB/MiB/s."""
+    if bytes_per_sec < 0:
+        return "—"
+    if bytes_per_sec >= 1024 * 1024:
+        return f"{bytes_per_sec / 1024**2:6.2f} MiB/s"
+    if bytes_per_sec >= 1024:
+        return f"{bytes_per_sec / 1024:6.1f} KiB/s"
+    return f"{bytes_per_sec:6.0f}  B/s"
+
+
 # ── Main application ──────────────────────────────────────────────────────────
 
 class HanryxMonitor(tk.Tk):
@@ -283,6 +547,17 @@ class HanryxMonitor(tk.Tk):
         else:
             self.geometry("1260x820")
             self.minsize(960, 640)
+
+        # Delta-state for rate computations in extended diagnostics
+        self._last_disk_io     = (0, 0)
+        self._last_disk_io_ts  = 0.0
+        self._last_net_io      = {}
+        self._last_net_io_ts   = 0.0
+        # Re-entry guard: skip a poll tick if the previous _bg_refresh_extras
+        # is still running (vcgencmd + docker shell-outs can occasionally
+        # exceed REFRESH_MS, which would otherwise cause overlapping threads
+        # to clobber the shared rate-delta state).
+        self._extras_busy      = False
 
         self._build_ui()
         self._refresh()
@@ -471,12 +746,13 @@ class HanryxMonitor(tk.Tk):
         for i in range(4):
             p.columnconfigure(i, weight=1)
 
+        # ── Row 0: existing 4 KPI cards ──────────────────────────────────────
         self.c_cpu   = self._card(p, 0, 0, "CPU Usage", "—",   GREEN)
         self.c_temp  = self._card(p, 0, 1, "CPU Temp",  "N/A", ORANGE)
         self.c_ram   = self._card(p, 0, 2, "RAM Used",  "—",   WHITE)
         self.c_disk  = self._card(p, 0, 3, "Disk Used", "—",   WHITE)
 
-        # Progress bars
+        # ── Row 1: existing progress bars ────────────────────────────────────
         bars = tk.Frame(p, bg=BG)
         bars.grid(row=1, column=0, columnspan=4, sticky="ew", padx=8, pady=4)
         bars.columnconfigure(1, weight=1)
@@ -496,10 +772,79 @@ class HanryxMonitor(tk.Tk):
         self.pb_ram,  self.pb_ram_lbl  = bar_row("RAM",  1)
         self.pb_disk, self.pb_disk_lbl = bar_row("Disk", 2)
 
-        # Server info
+        # ── Row 2: NEW — 4 Pi/system mini-cards ─────────────────────────────
+        self.c_pmic     = self._card(p, 2, 0, "PMIC Temp",   "—",  ORANGE)
+        self.c_throttle = self._card(p, 2, 1, "Throttle",    "—",  GREEN)
+        self.c_load     = self._card(p, 2, 2, "Load Avg",    "—",  WHITE)
+        self.c_uptime   = self._card(p, 2, 3, "Uptime",      "—",  WHITE)
+
+        # Helper to build a titled section frame consistent with srv_f below
+        def section(row, title, height_pad=10):
+            f = tk.Frame(p, bg=BG3, padx=14, pady=height_pad,
+                         highlightbackground=BORDER, highlightthickness=1)
+            f.grid(row=row, column=0, columnspan=4, sticky="ew",
+                   padx=14, pady=4)
+            tk.Label(f, text=title, font=("Helvetica", 9),
+                     fg=GREY, bg=BG3).pack(anchor="w")
+            return f
+
+        MONO = ("Courier", 10)
+
+        # ── Row 3: PI HARDWARE (left half) + CLOCKS / VOLTAGES (right half) ─
+        hw_outer = section(3, "PI HARDWARE  /  CLOCKS  /  VOLTAGES")
+        hw_two = tk.Frame(hw_outer, bg=BG3)
+        hw_two.pack(fill="x", pady=(4, 0))
+        hw_two.columnconfigure(0, weight=1)
+        hw_two.columnconfigure(1, weight=1)
+        self.lbl_hw = tk.Label(hw_two, text="Loading…", font=MONO,
+                               fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_hw.grid(row=0, column=0, sticky="nw", padx=(0, 8))
+        self.lbl_clocks = tk.Label(hw_two, text="", font=MONO,
+                                   fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_clocks.grid(row=0, column=1, sticky="nw", padx=(8, 0))
+
+        # ── Row 4: PER-CORE CPU (left) + MEMORY DETAIL (right) ─────────────
+        cm_outer = section(4, "PER-CORE CPU  /  MEMORY DETAIL")
+        cm_two = tk.Frame(cm_outer, bg=BG3)
+        cm_two.pack(fill="x", pady=(4, 0))
+        cm_two.columnconfigure(0, weight=1)
+        cm_two.columnconfigure(1, weight=1)
+        self.lbl_per_core = tk.Label(cm_two, text="Loading…", font=MONO,
+                                     fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_per_core.grid(row=0, column=0, sticky="nw", padx=(0, 8))
+        self.lbl_mem_detail = tk.Label(cm_two, text="", font=MONO,
+                                       fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_mem_detail.grid(row=0, column=1, sticky="nw", padx=(8, 0))
+
+        # ── Row 5: STORAGE per-mount (left) + NETWORK per-iface (right) ────
+        sn_outer = section(5, "STORAGE  /  NETWORK")
+        sn_two = tk.Frame(sn_outer, bg=BG3)
+        sn_two.pack(fill="x", pady=(4, 0))
+        sn_two.columnconfigure(0, weight=1)
+        sn_two.columnconfigure(1, weight=1)
+        self.lbl_storage = tk.Label(sn_two, text="Loading…", font=MONO,
+                                    fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_storage.grid(row=0, column=0, sticky="nw", padx=(0, 8))
+        self.lbl_network = tk.Label(sn_two, text="", font=MONO,
+                                    fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_network.grid(row=0, column=1, sticky="nw", padx=(8, 0))
+
+        # ── Row 6: TOP PROCESSES ────────────────────────────────────────────
+        tp_outer = section(6, "TOP PROCESSES (by CPU then RAM)")
+        self.lbl_top_procs = tk.Label(tp_outer, text="Loading…", font=MONO,
+                                      fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_top_procs.pack(anchor="w", pady=(4, 0))
+
+        # ── Row 7: DOCKER CONTAINERS ────────────────────────────────────────
+        dk_outer = section(7, "DOCKER CONTAINERS")
+        self.lbl_docker = tk.Label(dk_outer, text="Loading…", font=MONO,
+                                   fg=WHITE, bg=BG3, justify="left", anchor="nw")
+        self.lbl_docker.pack(anchor="w", pady=(4, 0))
+
+        # ── Row 8: existing SERVER / DATABASE info ─────────────────────────
         srv_f = tk.Frame(p, bg=BG3, padx=14, pady=10,
                          highlightbackground=BORDER, highlightthickness=1)
-        srv_f.grid(row=2, column=0, columnspan=4, sticky="ew", padx=14, pady=8)
+        srv_f.grid(row=8, column=0, columnspan=4, sticky="ew", padx=14, pady=8)
         tk.Label(srv_f, text="SERVER / DATABASE", font=("Helvetica", 9),
                  fg=GREY, bg=BG3).pack(anchor="w")
         self.lbl_db_info = tk.Label(srv_f, text="Loading…",
@@ -512,7 +857,192 @@ class HanryxMonitor(tk.Tk):
         if IS_WINDOWS:
             tk.Label(p, text="★  Local system stats shown above reflect this Windows machine.",
                      font=("Helvetica", 10, "italic"), fg=GREY, bg=BG
-                     ).grid(row=3, column=0, columnspan=4, padx=14, pady=4, sticky="w")
+                     ).grid(row=9, column=0, columnspan=4, padx=14, pady=4, sticky="w")
+
+    # ── Extended diagnostics polling (runs in background thread) ─────────────
+
+    def _bg_refresh_extras(self):
+        """Collect extended Pi/system diagnostics and post update to UI thread."""
+        # Stagger slightly so we don't fight _bg_refresh's cpu_percent call
+        time.sleep(0.4)
+        now = time.time()
+
+        cores    = cpu_per_core()
+        hw       = pi_hardware()    if IS_PI else {}
+        throttle = pi_throttled()   if IS_PI else {"status": "n/a", "ok": True, "past": False}
+        voltages = pi_voltages()    if IS_PI else {}
+        clocks   = pi_clocks()      if IS_PI else {}
+        pmic     = pi_pmic_temp()   if IS_PI else None
+        freq     = cpu_freq_info()
+        mem      = mem_detail()
+        disks    = disks_per_mount()
+        net      = net_io_per_iface()
+        disk_io  = disk_io_total()
+        procs    = top_processes(5)
+        docker   = docker_summary()
+        load     = load_avg_str()
+        uptime   = uptime_short()
+        ts_ip    = tailscale_ip()
+
+        # Disk I/O rate (bytes/sec) from delta vs last sample
+        disk_io_rate = (-1.0, -1.0)
+        if self._last_disk_io_ts > 0:
+            dt = now - self._last_disk_io_ts
+            if dt > 0:
+                dr = (disk_io[0] - self._last_disk_io[0]) / dt
+                dw = (disk_io[1] - self._last_disk_io[1]) / dt
+                disk_io_rate = (max(0.0, dr), max(0.0, dw))
+        self._last_disk_io    = disk_io
+        self._last_disk_io_ts = now
+
+        # Per-iface network rates from deltas
+        net_rates = {}
+        if self._last_net_io_ts > 0:
+            dt = now - self._last_net_io_ts
+            if dt > 0:
+                for iface, (s, r) in net.items():
+                    if iface in self._last_net_io:
+                        ls, lr = self._last_net_io[iface]
+                        net_rates[iface] = (
+                            max(0.0, (s - ls) / dt),
+                            max(0.0, (r - lr) / dt),
+                        )
+        self._last_net_io    = net
+        self._last_net_io_ts = now
+
+        try:
+            self.after(0, self._update_extras, dict(
+                cores=cores, hw=hw, throttle=throttle, voltages=voltages,
+                clocks=clocks, pmic=pmic, freq=freq, mem=mem, disks=disks,
+                net=net, net_rates=net_rates, disk_io_rate=disk_io_rate,
+                procs=procs, docker=docker, load=load, uptime=uptime,
+                ts_ip=ts_ip,
+            ))
+        except Exception:
+            # Window may have been destroyed mid-update
+            pass
+
+    def _update_extras(self, e):
+        """Apply extended diagnostics dict `e` to the System-tab widgets."""
+        # 4 mini-cards
+        pmic = e["pmic"]
+        self.c_pmic.config(text=f"{pmic:.1f} °C" if pmic is not None else "N/A")
+
+        th = e["throttle"]
+        if not th["ok"]:
+            tcol = RED
+        elif th["past"]:
+            tcol = ORANGE
+        else:
+            tcol = GREEN
+        short = th["status"]
+        if len(short) > 22:
+            short = short[:22] + "…"
+        self.c_throttle.config(text=short, fg=tcol)
+
+        self.c_load.config(text=e["load"])
+        self.c_uptime.config(text=e["uptime"])
+
+        # Pi hardware (left)
+        hw = e["hw"]
+        self.lbl_hw.config(text=(
+            f"  Model    : {hw.get('model', '?') or '(non-Pi host)'}\n"
+            f"  Revision : {hw.get('revision', '?')}\n"
+            f"  Serial   : {hw.get('serial', '?')}\n"
+            f"  Kernel   : {hw.get('kernel', '?')}"
+        ))
+
+        # Clocks / voltages (right)
+        fr = e["freq"]; cl = e["clocks"]; vo = e["voltages"]
+        clock_lines = [
+            f"  Governor : {fr.get('governor', '?')}",
+            f"  CPU Freq : {fr.get('cur', 0)} / {fr.get('max', 0)} MHz",
+        ]
+        if cl:
+            clock_lines.append(
+                f"  Clocks   : arm={cl.get('arm', '?')}MHz  "
+                f"core={cl.get('core', '?')}MHz  v3d={cl.get('v3d', '?')}MHz"
+            )
+        if vo:
+            v_core = vo.get("core", "?")
+            v_sd   = vo.get("sdram_c", "?")
+            clock_lines.append(f"  Voltages : core={v_core}V  sdram_c={v_sd}V")
+        self.lbl_clocks.config(text="\n".join(clock_lines))
+
+        # Per-core CPU (left)
+        cores = e["cores"]
+        if cores:
+            lines = []
+            for i, pct in enumerate(cores):
+                bar_len = max(0, min(20, int(pct / 5)))
+                lines.append(f"  Core {i}: {pct:5.1f}%  " + "█" * bar_len)
+            self.lbl_per_core.config(text="\n".join(lines))
+        else:
+            self.lbl_per_core.config(text="  (per-core data unavailable)")
+
+        # Memory detail (right)
+        m = e["mem"]
+        self.lbl_mem_detail.config(text=(
+            f"  Used    : {m['used_mb']:>6} MB / {m['total_mb']:>6} MB ({m['pct']:.1f}%)\n"
+            f"  Avail   : {m['avail_mb']:>6} MB\n"
+            f"  Cached  : {m['cached_mb']:>6} MB    Buffers: {m['buffers_mb']:>5} MB\n"
+            f"  Swap    : {m['swap_used_mb']:>6} MB / {m['swap_total_mb']:>6} MB ({m['swap_pct']:.1f}%)"
+        ))
+
+        # Storage per-mount + I/O rates (left)
+        slines = []
+        for d in e["disks"]:
+            bar_len = max(0, min(20, int(d["pct"] / 5)))
+            slines.append(
+                f"  {d['mount']:<18} {d['used_gb']:>6.1f}G / "
+                f"{d['total_gb']:>6.1f}G ({d['pct']:5.1f}%)  "
+                + "█" * bar_len
+            )
+        dr, dw = e["disk_io_rate"]
+        if dr >= 0:
+            slines.append(f"  I/O   read: {fmt_rate(dr)}    write: {fmt_rate(dw)}")
+        self.lbl_storage.config(text="\n".join(slines) if slines else "  (no storage info)")
+
+        # Network per-iface + Tailscale (right)
+        nlines = []
+        for iface, (s, r) in e["net"].items():
+            rs, rr = e["net_rates"].get(iface, (-1.0, -1.0))
+            rate_part = f"  ↑ {fmt_rate(rs)}  ↓ {fmt_rate(rr)}" if rs >= 0 else ""
+            nlines.append(
+                f"  {iface:<14} sent: {s/1024**2:8.1f} MiB    "
+                f"recv: {r/1024**2:8.1f} MiB{rate_part}"
+            )
+        if e["ts_ip"]:
+            nlines.append(f"  Tailscale : {e['ts_ip']}")
+        self.lbl_network.config(text="\n".join(nlines) if nlines else "  (no net info)")
+
+        # Top processes
+        p = e["procs"]
+        if p["by_cpu"] or p["by_ram"]:
+            cpu_block = ["  By CPU:"] + [
+                f"    {pp['name']:<24} pid={pp['pid']:<7} {pp['cpu']:5.1f}%"
+                for pp in p["by_cpu"]
+            ]
+            ram_block = ["  By RAM:"] + [
+                f"    {pp['name']:<24} pid={pp['pid']:<7} {pp['ram']:5.1f}%"
+                for pp in p["by_ram"]
+            ]
+            self.lbl_top_procs.config(text="\n".join(cpu_block + [""] + ram_block))
+        else:
+            self.lbl_top_procs.config(text="  (process info unavailable — install psutil)")
+
+        # Docker
+        d = e["docker"]
+        if d["lines"]:
+            header = (f"  Running: {d['running']}    Stopped: {d['stopped']}    "
+                      f"Unhealthy: {d['unhealthy']}\n")
+            body = "\n".join(
+                f"    {'⚠ ' if u else '  '}{n:<24} [{state:<8}]  {st[:50]}"
+                for n, state, st, u in d["lines"][:12]
+            )
+            self.lbl_docker.config(text=header + body)
+        else:
+            self.lbl_docker.config(text="  (docker not available on this host)")
 
     # ── Sites tab ─────────────────────────────────────────────────────────────
 
@@ -689,7 +1219,8 @@ class HanryxMonitor(tk.Tk):
         self.lbl_time.config(
             text=datetime.datetime.now().strftime("  %A %d %b %Y  %H:%M:%S")
         )
-        threading.Thread(target=self._bg_refresh, daemon=True).start()
+        threading.Thread(target=self._bg_refresh,        daemon=True).start()
+        threading.Thread(target=self._bg_refresh_extras, daemon=True).start()
         self.after(REFRESH_MS, self._refresh)
 
     def _bg_refresh(self):
