@@ -443,21 +443,37 @@ def disk_io_total():
 
 
 def top_processes(n=5):
-    """Top N by CPU and by RAM. Caller must warm up cpu_percent first."""
+    """Top N by CPU and by RAM.
+
+    Uses warmup-then-sample so CPU% reflects the last ~0.5 s, not the
+    cumulative-since-process-start value. Without this, the first call
+    (and all subsequent first-time-seen processes) would report 0 % CPU.
+    """
     out = {"by_cpu": [], "by_ram": []}
     if not HAS_PSUTIL:
         return out
-    procs = []
+    proc_objs = []
     try:
-        for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+        # Pass 1 — gather Process objects and prime per-process baseline
+        for p in psutil.process_iter(["pid"]):
             try:
-                info = p.info
-                procs.append({
-                    "pid":  info.get("pid", 0),
-                    "name": (info.get("name") or "?")[:24],
-                    "cpu":  info.get("cpu_percent") or 0.0,
-                    "ram":  info.get("memory_percent") or 0.0,
-                })
+                p.cpu_percent(None)   # establish baseline; first call returns 0
+                proc_objs.append(p)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
+                continue
+        time.sleep(0.5)
+        # Pass 2 — measure CPU% delta against baseline + collect names/RAM
+        procs = []
+        for p in proc_objs:
+            try:
+                cpu  = p.cpu_percent(None)
+                name = (p.name() or "?")[:24]
+                ram  = p.memory_percent()
+                procs.append({"pid": p.pid, "name": name, "cpu": cpu, "ram": ram})
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
             except Exception:
                 continue
         out["by_cpu"] = sorted(procs, key=lambda x: x["cpu"], reverse=True)[:n]
@@ -553,11 +569,13 @@ class HanryxMonitor(tk.Tk):
         self._last_disk_io_ts  = 0.0
         self._last_net_io      = {}
         self._last_net_io_ts   = 0.0
-        # Re-entry guard: skip a poll tick if the previous _bg_refresh_extras
+        # Re-entry lock: skip a poll tick if the previous _bg_refresh_extras
         # is still running (vcgencmd + docker shell-outs can occasionally
         # exceed REFRESH_MS, which would otherwise cause overlapping threads
-        # to clobber the shared rate-delta state).
-        self._extras_busy      = False
+        # to clobber the shared rate-delta state). A real Lock with
+        # non-blocking acquire is used (a plain bool check-then-set is not
+        # atomic across CPython threads even with the GIL).
+        self._extras_lock      = threading.Lock()
 
         self._build_ui()
         self._refresh()
@@ -742,7 +760,68 @@ class HanryxMonitor(tk.Tk):
     # ── System tab ────────────────────────────────────────────────────────────
 
     def _build_system(self):
-        p = self.tab_system
+        outer = self.tab_system
+
+        # System tab content can exceed 1080p when running --kiosk on a
+        # third monitor (9 stacked sections). Wrap in a scrollable canvas
+        # so the lower sections (DOCKER, SERVER/DATABASE) stay reachable.
+        sys_canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, borderwidth=0)
+        sys_vsb    = ttk.Scrollbar(outer, orient="vertical",
+                                   command=sys_canvas.yview)
+        sys_canvas.configure(yscrollcommand=sys_vsb.set)
+        sys_vsb.pack(side="right", fill="y")
+        sys_canvas.pack(side="left", fill="both", expand=True)
+
+        p = tk.Frame(sys_canvas, bg=BG)
+        p_window = sys_canvas.create_window((0, 0), window=p, anchor="nw")
+
+        # Update scrollregion when inner content size changes
+        p.bind("<Configure>",
+               lambda _e: sys_canvas.configure(scrollregion=sys_canvas.bbox("all")))
+        # Make inner frame width track canvas width (so columns expand)
+        sys_canvas.bind("<Configure>",
+                        lambda e: sys_canvas.itemconfigure(p_window, width=e.width))
+
+        # Mousewheel: bind directly on the canvas, the inner frame, and
+        # (later) every descendant. We avoid bind_all / <Enter>/<Leave>
+        # because Tk fires <Leave> on a parent when the pointer transitions
+        # into a child widget (NotifyInferior), which would intermittently
+        # unbind the wheel handler mid-hover. Widget-scoped binding is also
+        # safer because it can't accidentally remove other global bindings.
+        def _wheel(direction):
+            sys_canvas.yview_scroll(int(direction), "units")
+        def _on_wheel_xy(e):
+            _wheel(-e.delta / 120)
+        def _on_wheel_up(_e):
+            _wheel(-1)
+        def _on_wheel_dn(_e):
+            _wheel(1)
+
+        def _bind_wheel_to_tree(widget):
+            widget.bind("<MouseWheel>", _on_wheel_xy, add="+")
+            widget.bind("<Button-4>",   _on_wheel_up, add="+")
+            widget.bind("<Button-5>",   _on_wheel_dn, add="+")
+            for child in widget.winfo_children():
+                _bind_wheel_to_tree(child)
+        # Bind on the canvas now (it has no children of its own to recurse).
+        # `p` and all its descendants get bound at the very end of
+        # _build_system via self._sys_wheel_binder(p) — see end of method.
+        _bind_wheel_to_tree(sys_canvas)
+        self._sys_wheel_binder = _bind_wheel_to_tree   # exposed for re-use
+
+        # Keyboard fallback (works in kiosk without mouse — useful when the
+        # third monitor is far from the operator). Scoped to "System tab is
+        # currently visible" via winfo_ismapped() so PageUp/PageDown on
+        # other tabs don't silently scroll the hidden canvas.
+        def _key_scroll(direction):
+            try:
+                if sys_canvas.winfo_ismapped():
+                    sys_canvas.yview_scroll(int(direction), "units")
+            except tk.TclError:
+                pass
+        self.bind("<Prior>", lambda _e: _key_scroll(-5))
+        self.bind("<Next>",  lambda _e: _key_scroll( 5))
+
         for i in range(4):
             p.columnconfigure(i, weight=1)
 
@@ -859,10 +938,28 @@ class HanryxMonitor(tk.Tk):
                      font=("Helvetica", 10, "italic"), fg=GREY, bg=BG
                      ).grid(row=9, column=0, columnspan=4, padx=14, pady=4, sticky="w")
 
+        # Now that every section / KPI card / mini-card / label is realized,
+        # walk the whole inner tree and bind the wheel handlers on every
+        # descendant. (The earlier _bind_wheel_to_tree(p) call only attached
+        # to `p` itself because no children existed yet.) This guarantees
+        # mousewheel works no matter which child widget the cursor is over.
+        self._sys_wheel_binder(p)
+
     # ── Extended diagnostics polling (runs in background thread) ─────────────
 
     def _bg_refresh_extras(self):
         """Collect extended Pi/system diagnostics and post update to UI thread."""
+        # Re-entry lock: if the previous extras run is still in flight, skip
+        # this tick. Non-blocking acquire is the correct primitive — a bool
+        # check-then-set is NOT atomic across CPython threads.
+        if not self._extras_lock.acquire(blocking=False):
+            return
+        try:
+            self._do_bg_refresh_extras()
+        finally:
+            self._extras_lock.release()
+
+    def _do_bg_refresh_extras(self):
         # Stagger slightly so we don't fight _bg_refresh's cpu_percent call
         time.sleep(0.4)
         now = time.time()
