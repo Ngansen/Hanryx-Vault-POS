@@ -1,0 +1,95 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Fri May  1 00:48:23 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec pos python3 build_cards_master.py --help 2>&1 | head -60
+time="2026-05-01T01:16:56Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+usage: build_cards_master.py [-h]
+
+build_cards_master.py — Unified consolidator (U9) Builds the `cards_master`
+table by joining every Layer-1 source table with the Layer-2 reference tables,
+applying the priority rules from `unified/priority.py` to pick the best value
+for each field. Strategy ======== We treat TCGdex's `src_tcgdex_multi` as the
+SPINE: every row there becomes one cards_master row keyed by (set_id,
+card_number, 'STD'). For each spine row we pull enrichment from every other
+source by trying multiple match keys in priority order: 1. exact match on
+(set_id, card_number) 2. exact match on TCGdex global id (e.g. 'sv8-025') 3.
+trimmed/normalised card_number match within set 4. (no fuzzy name match — too
+risky for a POS) Cards present in source tables but NOT covered by TCGdex are
+added as orphan rows under a synthetic set_id derived from the source's
+set_name (or '_orphan' if no set_name). This means the consolidator NEVER
+drops a card on the floor — every source row appears in cards_master at least
+once. Idempotency: the consolidator uses BEGIN + DELETE FROM cards_master +
+bulk INSERT inside one transaction, so readers either see the old fully-
+populated table or the new fully-populated table. Each cards_master row
+carries `source_refs` JSONB recording which source contributed each field.
+This is critical for debugging ("why does this Korean card have an English
+name from the wrong set?") and for the /admin/db-coverage endpoint to compute
+per-source contribution stats.
+
+options:
+  -h, --help  show this help message and exit
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec pos python3 build_cards_master.py 2>&1 | tail -30
+time="2026-05-01T01:18:42Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+2026-05-01 01:18:42,809 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-01 01:18:42,809 INFO build_cards_master: [consolidator] reading source tables…
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] tcgdex: 33888 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] tcg_api: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] kr_official: 14898 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] jp_pokell: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] chs_official: 558 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] pocket_off: 3041 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] pocket_lt: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] eng_xlsx: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] jp_xlsx: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] jp_pcc: 0 rows
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] jp_cards_json: 0 keys, set_alias_map: 0 codes, canon_map: 0 codes
+2026-05-01 01:18:44,958 INFO build_cards_master: [consolidator] eng_ex: 0, jp_ex: 0, ref_dex: 0, ref_promo: 0, promo_classes: 0 codes
+2026-05-01 01:18:45,080 INFO build_cards_master: [consolidator] spine has 48733 canonical (set_id, card_number) keys (collapsed from 52385 source rows; 3652 duplicates merged)
+{
+  "total": 48733,
+  "rows_written": 48733,
+  "with_en": 24529,
+  "with_kr": 18997,
+  "with_jp": 7844,
+  "with_chs": 1486,
+  "with_codes": 0,
+  "with_promo": 0
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo systemctl status ssh
+● ssh.service - OpenBSD Secure Shell server
+     Loaded: loaded (/usr/lib/systemd/system/ssh.>
+     Active: active (running) since Thu 2026-04-3>
+ Invocation: 75f547d553844f0e9a45bf13591d4a0c
+       Docs: man:sshd(8)
+             man:sshd_config(5)
+    Process: 1275 ExecStartPre=/usr/sbin/sshd -t >
+   Main PID: 1297 (sshd)
+      Tasks: 1 (limit: 9575)
+        CPU: 1.035s
+     CGroup: /system.slice/ssh.service
+             └─1297 "sshd: /usr/sbin/sshd -D [lis>
+
+Apr 30 22:58:06 hanryxvault sshd-session[1156274]>
+Apr 30 22:58:06 hanryxvault sshd-session[1156274]>
+Apr 30 22:58:41 hanryxvault sshd-session[1157277]>
+Apr 30 22:58:41 hanryxvault sshd-session[1157277]>
+May 01 00:33:45 hanryxvault sshd-session[1247888]>
+May 01 00:33:45 hanryxvault sshd-session[1247888]>
+May 01 00:48:23 hanryxvault sshd-session[1261978]>
+May 01 00:48:23 hanryxvault sshd-session[1261978]>
+May 01 01:16:51 hanryxvault sshd-session[1289511]>
+May 01 01:16:51 hanryxvault sshd-session[1289511]>
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec db psql -U vaultpos -d vaultpos -c "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE jsonb_array_length(image_url_alt) > 0) AS with_url_alt, COUNT(*) FILTER (WHERE jsonb_array_length(image_url_alt) > 0 AND image_url_alt @> '[{\"local\": \"\"}]'::jsonb) AS missing_local FROM cards_master;"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. total | has_cc | has_cn | has_both | cc_starts_letter 
+-------+--------+--------+----------+------------------
+ 16527 |    960 |  16527 |      960 |              960
+(1 row)
+
+(END)
