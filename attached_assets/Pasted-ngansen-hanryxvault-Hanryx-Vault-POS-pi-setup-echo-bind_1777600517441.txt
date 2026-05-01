@@ -1,0 +1,27 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ echo "=== bind-mount contents ==="
+ls -la /mnt/cards/pos-data/ 2>&1 | head -20
+echo "=== /data inside container ==="
+cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec pos sh -c 'ls -la /data/ 2>&1 | head -20'
+echo "=== any python3 sync_card_mirror process inside container ==="
+cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec pos sh -c 'for pid in /proc/[0-9]*; do if grep -aq sync_card_mirror "$pid/cmdline" 2>/dev/null; then echo "PID $(basename $pid): $(tr "\0" " " < $pid/cmdline)"; fi; done; echo "(scan complete)"'
+=== bind-mount contents ===
+ls: cannot access '/mnt/cards/pos-data/': No such file or directory
+=== /data inside container ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+total 24
+drwxr-xr-x 2 hanryx hanryx 4096 May  1 01:47 .
+drwxr-xr-x 1 root   root   4096 May  1 01:36 ..
+-rw-r--r-- 1 hanryx hanryx  505 Apr 18 21:22 kiosk_settings.json
+-rw-r--r-- 1 hanryx hanryx  173 Apr 19 01:25 satellite_heartbeat.json
+-rw-r--r-- 1 hanryx hanryx 1152 May  1 01:10 sync_mirror_phaseA.log
+-rw-r--r-- 1 root   root    555 May  1 01:54 sync_mirror_phaseC.log
+=== any python3 sync_card_mirror process inside container ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+PID 336: sh -c python3 -m scripts.sync_card_mirror --phase C >> /data/sync_mirror_phaseC.log 2>&1 
+PID 342: python3 -m scripts.sync_card_mirror --phase C 
+PID 571: sh -c for pid in /proc/[0-9]*; do if grep -aq sync_card_mirror "$pid/cmdline" 2>/dev/null; then echo "PID $(basename $pid): $(tr "" " " < $pid/cmdline)"; fi; done; echo "(scan complete)" 
+(scan complete)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec -d pos bash -c 'cd /app && nohup python3 -u -m scripts.sync_card_mirror --phase C > /data/sync_mirror_phaseC.log 2>&1 &' && sleep 2 && ls -la /mnt/cards/pos-data/sync_mirror_phaseC.log
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ls: cannot access '/mnt/cards/pos-data/sync_mirror_phaseC.log': No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup
