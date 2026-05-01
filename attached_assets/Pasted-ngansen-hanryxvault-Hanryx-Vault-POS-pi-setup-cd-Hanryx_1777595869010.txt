@@ -1,0 +1,19 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup && python3 -m unittest discover scripts/tests -p "test_*.py" 2>&1 | grep -E '^(ERROR|FAIL|Ran |FAILED|----|====)' | tail -50
+FAIL: APT_SNAPSHOT_DATE verification failed. The Pi's Debian-based images pin apt to snapshot.debian.org at this date — a missing or unreachable snapshot will break every `docker compose build` of pos / recognizer / storefront on the Pi. Pick a different date (see `pi-setup/docs/REPRODUCIBILITY.md` §2 for the bump procedure) or, if this is a transient mirror outage you've confirmed by hand, re-run with --skip-on-network-error.
+FAIL: APT_SNAPSHOT_DATE verification failed. The Pi's Debian-based images pin apt to snapshot.debian.org at this date — a missing or unreachable snapshot will break every `docker compose build` of pos / recognizer / storefront on the Pi. Pick a different date (see `pi-setup/docs/REPRODUCIBILITY.md` §2 for the bump procedure) or, if this is a transient mirror outage you've confirmed by hand, re-run with --skip-on-network-error.
+FAIL: APT_SNAPSHOT_DATE verification failed. The Pi's Debian-based images pin apt to snapshot.debian.org at this date — a missing or unreachable snapshot will break every `docker compose build` of pos / recognizer / storefront on the Pi. Pick a different date (see `pi-setup/docs/REPRODUCIBILITY.md` §2 for the bump procedure) or, if this is a transient mirror outage you've confirmed by hand, re-run with --skip-on-network-error.
+FAIL: APT_SNAPSHOT_DATE verification failed. The Pi's Debian-based images pin apt to snapshot.debian.org at this date — a missing or unreachable snapshot will break every `docker compose build` of pos / recognizer / storefront on the Pi. Pick a different date (see `pi-setup/docs/REPRODUCIBILITY.md` §2 for the bump procedure) or, if this is a transient mirror outage you've confirmed by hand, re-run with --skip-on-network-error.
+======================================================================
+ERROR: test_aspect_preserved_then_center_cropped (test_clip_embedder.PreprocessTest.test_aspect_preserved_then_center_cropped)
+----------------------------------------------------------------------
+======================================================================
+ERROR: test_output_shape_and_dtype (test_clip_embedder.PreprocessTest.test_output_shape_and_dtype)
+----------------------------------------------------------------------
+======================================================================
+ERROR: test_solid_grey_normalises_to_expected_per_channel_value (test_clip_embedder.PreprocessTest.test_solid_grey_normalises_to_expected_per_channel_value)
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+Ran 958 tests in 1.570s
+FAILED (errors=3)
+FAIL (network error: Name or service not known)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
