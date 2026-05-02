@@ -1,0 +1,28 @@
+# Grafana auto-provisioned dashboard provider.
+# Tells Grafana to load any *.json dashboard files dropped into
+# /etc/grafana/provisioning/dashboards/ at startup.
+#
+# To add a dashboard:
+#   1. Find a JSON dashboard you like (e.g. grafana.com/dashboards/1860)
+#   2. Drop it into pi-setup/monitoring/grafana-provisioning/dashboards/
+#   3. docker compose restart grafana
+#
+# This stack ships with no pre-baked dashboards; the README walks the
+# operator through importing dashboard #1860 (Node Exporter Full)
+# from the Grafana UI on first login. That dashboard is ~600 KB of
+# JSON and pinning it in the repo would tie us to a specific version
+# that may be stale within months.
+
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

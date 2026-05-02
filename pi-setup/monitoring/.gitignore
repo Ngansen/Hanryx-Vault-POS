@@ -1,0 +1,6 @@
+# Persistent volumes for Prometheus TSDB and Grafana SQLite + uploads.
+# These dirs are owned by their respective in-container UIDs (65534
+# for prometheus, 472 for grafana) and contain the live metric history
+# and any dashboards/users created via the UI.
+prometheus-data/
+grafana-data/

@@ -1,0 +1,15 @@
+# Grafana auto-provisioned data source.
+# Loaded on Grafana startup from /etc/grafana/provisioning/datasources/
+# so the operator never has to click through "Add data source" in the UI.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy           # Grafana proxies queries (vs the browser hitting Prom directly)
+    url: http://prometheus:9090   # service name on hanryx_net docker network
+    isDefault: true
+    editable: false         # Prevents accidental UI edits — change this YAML instead
+    jsonData:
+      timeInterval: 15s     # matches prometheus.yml scrape_interval
