@@ -1013,8 +1013,11 @@ class HanryxMonitor(tk.Tk):
             g.columnconfigure(i, weight=1)
         self.gauge_cpu  = RingGauge(g, size=130, label="CPU",
                                     unit="%", fg=GREEN, bg=RACK_BLADE)
+        # CPU TEMP gauge displayed in °F (max scale 185 °F ≈ 85 °C, the
+        # Pi 5 thermal-throttle ceiling). Internal threshold logic stays
+        # in Celsius — only the readout is converted in _update_ui.
         self.gauge_temp = RingGauge(g, size=130, label="CPU TEMP",
-                                    unit="°C", max_val=85,
+                                    unit="°F", max_val=185,
                                     fg=ORANGE, bg=RACK_BLADE)
         self.gauge_ram  = RingGauge(g, size=130, label="RAM",
                                     unit="%", fg=BLUE, bg=RACK_BLADE)
@@ -1238,7 +1241,7 @@ class HanryxMonitor(tk.Tk):
         if vo:
             parts.append(f"  VCORE    : {vo.get('core', '?')} V")
             parts.append(f"  VSDRAM_C : {vo.get('sdram_c', '?')} V")
-        parts.append(f"  PMIC TEMP: {pmic:.1f} °C"
+        parts.append(f"  PMIC TEMP: {pmic * 9 / 5 + 32:.1f} °F"
                      if pmic is not None else "  PMIC TEMP: —")
         parts.append(f"  THROTTLE : {th['status']}")
         # Memory secondary stats (cached/buffers/swap) — keep them on this
@@ -1712,8 +1715,10 @@ class HanryxMonitor(tk.Tk):
         self.spk_cpu.add_sample(cpu)
 
         if temp is not None:
+            # Color thresholds stay in °C (sensor's native unit); the
+            # gauge value is converted to °F for display.
             temp_col = RED if temp > 75 else (ORANGE if temp > 65 else GREEN)
-            self.gauge_temp.set_value(temp, color=temp_col)
+            self.gauge_temp.set_value(temp * 9 / 5 + 32, color=temp_col)
         else:
             self.gauge_temp.set_value(0, color=GREY)
 
