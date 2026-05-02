@@ -207,19 +207,28 @@ def sys_ram():
     return 0, 0, 0.0
 
 
-def sys_disk():
-    """Returns (used_str, total_str, pct_float)."""
+def sys_disk(path="/mnt/cards"):
+    """Returns (used_str, total_str, pct_float) for `path`.
+
+    Defaults to the external UGreen dock at /mnt/cards (the working
+    storage for the cards library). The Pi 5's own SD card / root
+    partition is intentionally NOT surfaced on the Diagnostics tab —
+    we only care about the external array's headroom.
+    """
     if HAS_PSUTIL:
-        d = psutil.disk_usage("/")
-        return (
-            f"{d.used / 1024**3:.1f}G",
-            f"{d.total / 1024**3:.1f}G",
-            d.percent,
-        )
+        try:
+            d = psutil.disk_usage(path)
+            return (
+                f"{d.used / 1024**3:.1f}G",
+                f"{d.total / 1024**3:.1f}G",
+                d.percent,
+            )
+        except Exception:
+            pass
     if IS_LINUX:
         try:
             out = subprocess.check_output(
-                "df -h / | tail -1", shell=True,
+                f"df -h {path} | tail -1", shell=True,
                 stderr=subprocess.DEVNULL, timeout=3
             ).decode().split()
             return out[2], out[1], float(out[4].rstrip("%"))
@@ -258,7 +267,11 @@ def run_shell(cmd):
 
 # ── Extended Pi / system diagnostics (best-effort, all degrade gracefully) ───
 
-MOUNTS_TO_WATCH = ["/", "/mnt/cards", "/boot/firmware"]
+#  Only the external UGreen dock is surfaced on the Diagnostics tab —
+#  the SD card root (/) and /boot/firmware are intentionally hidden
+#  because the operator only cares about the cards-library array's
+#  headroom, not the OS partition.
+MOUNTS_TO_WATCH = ["/mnt/cards"]
 NET_IFACES_SKIP = {"lo"}
 
 
@@ -1021,7 +1034,9 @@ class HanryxMonitor(tk.Tk):
                                     fg=ORANGE, bg=RACK_BLADE)
         self.gauge_ram  = RingGauge(g, size=130, label="RAM",
                                     unit="%", fg=BLUE, bg=RACK_BLADE)
-        self.gauge_disk = RingGauge(g, size=130, label="ROOT DISK",
+        # External-dock usage (UGreen at /mnt/cards). Root partition is
+        # not displayed — see sys_disk() / MOUNTS_TO_WATCH for rationale.
+        self.gauge_disk = RingGauge(g, size=130, label="CARDS DISK",
                                     unit="%", fg=WHITE, bg=RACK_BLADE)
         self.gauge_cpu .grid(row=0, column=0, pady=2)
         self.gauge_temp.grid(row=0, column=1, pady=2)
