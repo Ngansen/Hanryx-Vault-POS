@@ -116,7 +116,18 @@ declare -A REC_URLS=(
     ["korean"]="${PADDLE_BASE}/multilingual/korean_PP-OCRv4_rec_infer.tar"
     ["japan"]="${PADDLE_BASE}/multilingual/japan_PP-OCRv4_rec_infer.tar"
     ["ch"]="${PADDLE_BASE}/chinese/ch_PP-OCRv4_rec_infer.tar"
-    ["chinese_cht"]="${PADDLE_BASE}/multilingual/chinese_cht_PP-OCRv4_rec_infer.tar"
+    # Traditional-Chinese rec is pinned to PP-OCRv3 because Paddle
+    # never published a v4 chinese_cht rec model — the v4 URL under
+    # ${PADDLE_BASE}/multilingual/ returns hard 404, confirmed by
+    # HEAD probe 2026-05. The v3 model is the latest available
+    # upstream artefact for Traditional Chinese, lives at the
+    # PP-OCRv3 base path, and is fully compatible with PaddleOCR's
+    # current runtime (the worker reads rec_model_dir from the
+    # filesystem; the inference protocol is stable across v3↔v4).
+    # If/when Paddle ships v4 chinese_cht, swap this back to
+    # ${PADDLE_BASE}/multilingual/chinese_cht_PP-OCRv4_rec_infer.tar
+    # and bump the existing dir aside so it gets re-extracted.
+    ["chinese_cht"]="https://paddleocr.bj.bcebos.com/PP-OCRv3/multilingual/chinese_cht_PP-OCRv3_rec_infer.tar"
     ["en"]="${PADDLE_BASE}/english/en_PP-OCRv4_rec_infer.tar"
 )
 
