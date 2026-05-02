@@ -1,0 +1,89 @@
+# pi-setup/monitoring/docker-compose.yml
+#
+# Prometheus + Grafana + node_exporter for the main Pi.
+# Scrapes both Pis (main + kiosk at 192.168.86.22) every 15 s and
+# renders dashboards in Grafana. Grafana is exposed via NPM at
+# https://hanryxvault.tailcfc0a3.ts.net/grafana/, Prometheus has its
+# own direct port for ad-hoc PromQL queries (admin tool, not user-facing).
+#
+# Bring up (after the proxy stack is up and the network exists):
+#   cd ~/Hanryx-Vault-POS/pi-setup/monitoring
+#   sudo chown -R 65534:65534 prometheus-data       # nobody:nobody — prometheus
+#   sudo chown -R 472:472     grafana-data          # grafana:grafana
+#   docker compose up -d
+#
+# See pi-setup/REMOTE_ACCESS.md for the full walkthrough including
+# node_exporter install on the kiosk Pi and Grafana dashboard import.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      # Direct on tailnet IP for ad-hoc queries.
+      # URL: http://100.125.5.34:9090/
+      # No cert (admin tool); access already gated by tailnet membership.
+      - "100.125.5.34:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-data:/prometheus
+    extra_hosts:
+      # So the in-container Prometheus can scrape the host's
+      # node_exporter at host.docker.internal:9100
+      - "host.docker.internal:host-gateway"
+    networks: [hanryx_net]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    # No published ports — only NPM reaches it on the docker network
+    # at http://grafana:3000. Grafana then serves at the /grafana/
+    # subpath because of GF_SERVER_SERVE_FROM_SUB_PATH=true.
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+      # Auto-provisioning: data sources and dashboard providers are
+      # baked in from version-controlled YAML files. No clicking
+      # through the UI to add Prometheus as a data source.
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    environment:
+      # The ROOT_URL + SERVE_FROM_SUB_PATH pair is what makes Grafana
+      # generate correct asset URLs and redirects when sitting behind
+      # NPM at the /grafana/ subpath. Without these, login redirects
+      # bounce to the wrong URL and JS/CSS assets 404.
+      GF_SERVER_ROOT_URL: "https://hanryxvault.tailcfc0a3.ts.net/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Default admin password stays at 'admin' on first login (operator
+      # changes it interactively, per Q3 of the install conversation).
+    networks: [hanryx_net]
+    depends_on: [prometheus]
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    # Host networking so node_exporter sees the real /proc and /sys
+    # of the Pi (not the container's view). Listens on host:9100.
+    # The host's firewall (or lack of it) plus tailnet membership
+    # is what gates external access.
+    pid: host
+    network_mode: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      # Excludes pseudo-filesystems from the disk metrics so the
+      # "Disk usage" panels don't show a misleading 100 entries
+      # for things like /sys, /proc, container overlays, /mnt/host etc.
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+
+networks:
+  hanryx_net:
+    external: true
+    # Same shared network as ../proxy/docker-compose.yml
+    # Created once with: docker network create hanryx_net

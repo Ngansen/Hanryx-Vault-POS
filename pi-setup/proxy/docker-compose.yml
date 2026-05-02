@@ -1,0 +1,91 @@
+# pi-setup/proxy/docker-compose.yml
+#
+# Reverse-proxy + admin-tool stack for the main Pi (hanryxvault).
+# Bound to the Tailscale interface only (100.125.5.34) — never reachable
+# from the open internet. See pi-setup/REMOTE_ACCESS.md for the full
+# walkthrough including Tailscale cert install and NPM first-login.
+#
+# Bring up:
+#   docker network create hanryx_net          # one time
+#   cd ~/Hanryx-Vault-POS/pi-setup/proxy
+#   docker compose up -d
+#
+# Three services:
+#   npm       Nginx Proxy Manager — admin GUI on :81, public proxy on :80/:443
+#   frontail  Live tail of /mnt/cards/zhsync.log, served behind NPM at /logs/
+#   adminer   Generic Postgres web UI, direct on :8081 (no NPM, no cert)
+#
+# Why frontail goes through NPM but Adminer doesn't:
+#   frontail handles being mounted at a subpath natively (--url-path /logs).
+#   Adminer needs URL rewriting to work at a subpath, which is fragile.
+#   So Adminer just gets its own port on the tailnet IP — same security
+#   posture (only tailnet devices can reach it) without the rewrite headache.
+
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: npm
+    restart: unless-stopped
+    # Bind to the Tailscale IP only — never 0.0.0.0.
+    # If the Pi's tailnet IP ever changes (rare; happens on tailnet reset),
+    # update these three lines AND the matching ones in
+    # ../monitoring/docker-compose.yml.
+    ports:
+      - "100.125.5.34:80:80"     # public HTTP (auto-redirects to 443 once cert is set)
+      - "100.125.5.34:443:443"   # public HTTPS — the friendly URL
+      - "100.125.5.34:81:81"     # NPM admin GUI (plain HTTP, tailnet-only)
+    volumes:
+      - ./data:/data                       # NPM config DB, proxy host definitions
+      - ./letsencrypt:/etc/letsencrypt     # LE certs (unused on tailnet-only setup; harmless to keep)
+    networks: [hanryx_net]
+    # Lets NPM reach services that run on the Pi host (not in Docker),
+    # like the POS UI on localhost:8080. Without this, NPM upstreams of
+    # type "host.docker.internal" silently 502.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontail:
+    image: mthenw/frontail:latest
+    container_name: frontail
+    restart: unless-stopped
+    # --url-path /logs    makes frontail's static assets + websocket use
+    #                     the /logs prefix, so it works behind NPM's
+    #                     "Custom Location: /logs" without rewriting
+    # --lines 5000        keep the last 5000 lines in the in-memory ring
+    #                     (the file is huge; loading the whole thing on
+    #                      every browser refresh would lock up the page)
+    command: ["--url-path", "/logs", "--lines", "5000", "/var/log/zhsync.log"]
+    volumes:
+      # Read-only mount of the live sync log. The file is appended to by
+      # `tee -a /mnt/cards/zhsync.log` in zh_full_sync.sh; frontail
+      # tails it via inotify and pushes new lines to connected browsers
+      # over a websocket.
+      - /mnt/cards/zhsync.log:/var/log/zhsync.log:ro
+    networks: [hanryx_net]
+    # No published ports — only NPM (on the same docker network) reaches it.
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      # Direct on tailnet IP. URL: http://100.125.5.34:8081/
+      - "100.125.5.34:8081:8080"
+    environment:
+      # Pre-fills the "Server" field on the Adminer login screen with
+      # the Pi host (where Postgres is running, since `docker ps` shows
+      # no postgres container — Postgres is installed directly on the
+      # Pi via apt). Operator only needs to type DB name + user + pass.
+      ADMINER_DEFAULT_SERVER: host.docker.internal
+      # Pretty theme (default Adminer is functional but ugly)
+      ADMINER_DESIGN: pepa-linha
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [hanryx_net]
+
+networks:
+  hanryx_net:
+    external: true
+    # Created once with: docker network create hanryx_net
+    # Shared with ../monitoring/docker-compose.yml so NPM can reach
+    # Grafana by service name (http://grafana:3000).

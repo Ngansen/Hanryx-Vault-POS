@@ -1,0 +1,5 @@
+# NPM persistent data — created at runtime, contains the proxy host
+# definitions, the SSL certificate uploads, and the sqlite admin user
+# DB. Never commit (would leak admin credentials hash).
+data/
+letsencrypt/

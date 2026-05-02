@@ -1,0 +1,49 @@
+# pi-setup/monitoring/prometheus.yml
+#
+# Two scrape targets: this Pi and the kiosk Pi.
+#
+# Both Pis run prometheus-node-exporter on port 9100. The main Pi runs
+# the exporter via Docker with host networking; the kiosk Pi runs it
+# via apt-installed systemd unit. See pi-setup/REMOTE_ACCESS.md for
+# the install steps.
+#
+# After editing this file, reload Prometheus without restarting the
+# container by sending SIGHUP:
+#     docker kill -s HUP prometheus
+# (or just `docker compose restart prometheus` from this dir)
+
+global:
+  scrape_interval:     15s   # how often to pull metrics
+  evaluation_interval: 15s   # how often to evaluate alert rules (none yet)
+
+scrape_configs:
+
+  # Self-monitoring — Prometheus scraping its own /metrics endpoint
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          host: 'hanryxvault'
+          role: 'prometheus'
+
+  # Main Pi node_exporter (this same machine).
+  # host.docker.internal resolves to the Pi's docker bridge gateway,
+  # which can reach the host's :9100 where node_exporter listens.
+  - job_name: 'node-main'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+        labels:
+          host: 'hanryxvault'
+          role: 'main-pi'
+
+  # Kiosk Pi node_exporter — LAN IP because it's also reliably the
+  # tailnet IP for the same machine via Tailscale's MagicDNS.
+  # If you want to switch this to the kiosk's tailnet IP for extra
+  # resilience against LAN renumbering, replace 192.168.86.22 with
+  # whatever `tailscale status` shows for the kiosk Pi.
+  - job_name: 'node-kiosk'
+    static_configs:
+      - targets: ['192.168.86.22:9100']
+        labels:
+          host: 'kiosk'
+          role: 'kiosk-pi'
