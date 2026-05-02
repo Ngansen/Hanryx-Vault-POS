@@ -1,0 +1,59 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS/pi-setup && docker compose exec pos python3 build_cards_master.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+2026-05-02 03:28:37,551 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-02 03:28:37,551 INFO build_cards_master: [consolidator] reading source tables…
+2026-05-02 03:28:39,732 INFO build_cards_master: [consolidator] tcgdex: 33888 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] tcg_api: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] kr_official: 14898 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] jp_pokell: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] chs_official: 558 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] pocket_off: 3041 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] pocket_lt: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] eng_xlsx: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] jp_xlsx: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] jp_pcc: 0 rows
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] jp_cards_json: 0 keys, set_alias_map: 0 codes, canon_map: 0 codes
+2026-05-02 03:28:39,733 INFO build_cards_master: [consolidator] eng_ex: 0, jp_ex: 0, ref_dex: 0, ref_promo: 0, promo_classes: 0 codes
+2026-05-02 03:28:39,844 INFO build_cards_master: [consolidator] spine has 48733 canonical (set_id, card_number) keys (collapsed from 52385 source rows; 3652 duplicates merged)
+{
+  "total": 48733,
+  "rows_written": 48733,
+  "with_en": 24529,
+  "with_kr": 18997,
+  "with_jp": 7844,
+  "with_chs": 1486,
+  "with_codes": 0,
+  "with_promo": 0
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ pkill -f desktop_monitor.py
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo systemctl restart hanryxvault-monitor   # or whatever the unit name is
+Failed to restart hanryxvault-monitor.service: Unit hanryxvault-monitor.service not found.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # 1. Is it running right now? What started it?
+ps -ef | grep -i desktop_monitor | grep -v grep
+
+# 2. Check user-level systemd (in case it's there instead of system-wide)
+systemctl --user list-units --type=service | grep -i monitor
+
+# 3. Check XDG autostart entries (LXDE/Pi desktop standard)
+ls -la ~/.config/autostart/ 2>/dev/null
+ls -la /etc/xdg/autostart/ 2>/dev/null | grep -i monitor
+
+# 4. Check LXDE autostart (the Pi's default desktop)
+cat ~/.config/lxsession/LXDE-pi/autostart 2>/dev/null
+cat /etc/xdg/lxsession/LXDE-pi/autostart 2>/dev/nugrep -i monitor /etc/rc.local 2>/dev/nullitor
+  gvfs-afc-volume-monitor.service     loaded active running Virtual filesystem service - Apple File Conduit monitor
+  gvfs-goa-volume-monitor.service     loaded active running Virtual filesystem service - GNOME Online Accounts monitor
+  gvfs-gphoto2-volume-monitor.service loaded active running Virtual filesystem service - digital camera monitor
+  gvfs-mtp-volume-monitor.service     loaded active running Virtual filesystem service - Media Transfer Protocol monitor
+  gvfs-udisks2-volume-monitor.service loaded active running Virtual filesystem service - disk device monitor
+total 12
+drwxr-xr-x  2 ngansen ngansen 4096 Apr 15 00:14 .
+drwx------ 15 ngansen ngansen 4096 Apr 15 03:17 ..
+-rw-r--r--  1 ngansen ngansen  381 Apr 15 00:14 hanryx-kiosk.desktop
+@lxpanel --profile LXDE-pi
+@pcmanfm --desktop --profile LXDE-pi
+@xset s off
+@xset -dpms
+@xset s noblank
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
