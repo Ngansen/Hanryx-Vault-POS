@@ -72,7 +72,10 @@ PADDLE_LANG_MAP: dict[str, str] = {
     "jp":     "japan",
     "chs":    "ch",            # legacy alias; auto-picked from name_chs
     "zh-sim": "ch",             # explicit Simplified, same model as chs
-    "zh-cht": "chinese_cht",    # Traditional — separate PP-OCRv4 pack
+    "zh-cht": "chinese_cht",    # Traditional — separate Paddle pack
+                                #   (rec model is PP-OCRv3, not v4 —
+                                #   Paddle never shipped v4 for chinese_cht;
+                                #   see scripts/setup-ocr-models.sh comment)
     "en":     "en",
 }
 

@@ -1,0 +1,31 @@
+ngansen@hanryxvault:~ $ echo "=== which step failed? ===" ; grep -nE '^\[oecho "=== which step failed? ===" ; grep -nE '^\[ocr-models\]|FATAL|ERROR|HTTP request|ERROR 4|ERROR 5|unable to|Connection' /mnt/cards/zhsync.log | tail -30 ; echo "" ; \aloneecho "=== retry the OCR model preflight standalone ===" ; \nryx-Vault-POS/pi-setup/scripts/setup-ocrbash ~/Hanryx-Vault-POS/pi-setup/scripts/setup-ocr-models.sh zh-cht zh-sim && \sync image (still neeecho "" && echo "=== rebuild sync image (still needed for zh_set_audit) ===" && \&& docker compose bcd ~/Hanryx-Vault-POS/pi-setup && docker compose build sync && docker compose up -d sync && sleep 3 && \ "=== relaunch full sync in tmux ===" && \
+echo "=== relaunch full sync in tmux ===" && \
+tmux kill-session -t zhsync 2>/dev/null ; \x-Vaulttmux new-session -d -s zhsync 'bash ~/Hanryx-Vault-POS/pi-setup/scripts/zh_full_sync.sh 2>&1 | tee -a /mnt/cards/zhsync.log' && \elaunched — tail withecho "tmux session 'zhsync' relaunched — tail with: tail -f /mnt/cards/zhsync.log"
+=== which step failed? ===
+9:FATAL: scripts/workers/zh_sources packages not importable inside sync container.
+21:[ocr-models] target dir:     /mnt/cards/models/paddleocr
+22:[ocr-models] CLI lang_hints: zh-cht zh-sim
+23:[ocr-models] paddle dirs:    chinese_cht ch
+25:[ocr-models] === chinese_cht ===
+127:    FATAL: download failed: https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/chinese_cht_PP-OCRv4_rec_infer.tar
+129:[ocr-models] === ch ===
+450:[ocr-models] FAIL — last error code: 2
+451:FATAL: setup-ocr-models.sh failed — OCR steps would produce only NO_LIB rows.
+
+=== retry the OCR model preflight standalone ===
+[ocr-models] target dir:     /mnt/cards/models/paddleocr
+[ocr-models] CLI lang_hints: zh-cht zh-sim
+[ocr-models] paddle dirs:    chinese_cht ch
+
+[ocr-models] === chinese_cht ===
+    [skip] /mnt/cards/models/paddleocr/chinese_cht/det already has inference.pdmodel
+    [get]  https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/chinese_cht_PP-OCRv4_rec_infer.tar
+    FATAL: download failed: https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/chinese_cht_PP-OCRv4_rec_infer.tar
+
+[ocr-models] === ch ===
+    [skip] /mnt/cards/models/paddleocr/ch/det already has inference.pdmodel
+    [skip] /mnt/cards/models/paddleocr/ch/rec already has inference.pdmodel
+
+[ocr-models] FAIL — last error code: 2
+tmux session 'zhsync' relaunched — tail with: tail -f /mnt/cards/zhsync.log
+ngansen@hanryxvault:~ $
