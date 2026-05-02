@@ -37,6 +37,8 @@ import urllib.error
 import time
 import platform
 import webbrowser
+import math
+from collections import deque
 
 # ── Try psutil (cross-platform system stats) ──────────────────────────────────
 try:
@@ -534,6 +536,172 @@ def fmt_rate(bytes_per_sec):
     return f"{bytes_per_sec:6.0f}  B/s"
 
 
+# ── Diagnostics widgets (ring gauges / sparklines / LED dots) ────────────────
+#
+# All built on plain tkinter Canvas — no matplotlib / PIL dependency, so the
+# kiosk can run with just `pip install psutil` like before.
+
+# Enterprise-rack aesthetic
+RACK_RAIL_OK   = "#22c55e"
+RACK_RAIL_WARN = "#f59e0b"
+RACK_RAIL_ERR  = "#ef4444"
+RACK_BLADE     = "#141414"
+RACK_BLADE_HDR = "#1c1c1c"
+RACK_BORDER    = "#2a2a2a"
+RING_TRACK     = "#262626"   # background ring track
+
+
+class RingGauge(tk.Canvas):
+    """Circular ring/donut gauge with a centered numeric readout.
+
+    The arc sweeps clockwise from 12 o'clock proportional to value/max_val.
+    Use .set_value(v, color=…) on every refresh; redraw is cheap (<1 ms).
+    """
+
+    def __init__(self, parent, size=130, label="", unit="%",
+                 max_val=100, fg=GREEN, bg=BG3, **kw):
+        super().__init__(parent, width=size, height=size,
+                         bg=bg, highlightthickness=0, borderwidth=0, **kw)
+        self.size     = size
+        self.label    = label
+        self.unit     = unit
+        self.max_val  = float(max_val)
+        self.fg       = fg
+        self.bg_color = bg
+        self._value   = 0.0
+        self._draw()
+
+    def set_value(self, value, color=None, label_override=None):
+        try:
+            self._value = float(value)
+        except (TypeError, ValueError):
+            self._value = 0.0
+        if color is not None:
+            self.fg = color
+        if label_override is not None:
+            self.label = label_override
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        s     = self.size
+        pad   = 10
+        thick = 11
+
+        # Outer track ring
+        self.create_arc(pad, pad, s - pad, s - pad,
+                        start=0, extent=359.999,
+                        outline=RING_TRACK, width=thick, style="arc")
+
+        # Active arc — clockwise from 12 o'clock (start=90, negative extent)
+        if self.max_val > 0:
+            frac = max(0.0, min(1.0, self._value / self.max_val))
+            ext  = -frac * 359.999
+            if abs(ext) > 0.5:
+                self.create_arc(pad, pad, s - pad, s - pad,
+                                start=90, extent=ext,
+                                outline=self.fg, width=thick, style="arc")
+
+        # Center number + unit
+        if self.max_val == 100:
+            num_txt = f"{self._value:.0f}"
+        else:
+            num_txt = f"{self._value:.1f}"
+        self.create_text(s / 2, s / 2 - 6, text=num_txt,
+                         font=("Helvetica", 22, "bold"), fill=self.fg)
+        self.create_text(s / 2, s / 2 + 16, text=self.unit,
+                         font=("Helvetica", 10), fill=GREY)
+
+        # Bottom caption
+        self.create_text(s / 2, s - 8, text=self.label.upper(),
+                         font=("Helvetica", 9, "bold"), fill=GREY)
+
+
+class Sparkline(tk.Canvas):
+    """Mini rolling time-series line graph.
+
+    Keeps the most recent `max_samples` numeric samples and re-draws on every
+    add_sample() call. Auto-scales to the max value seen in the current window
+    (with 10 % headroom). Newest sample is always at the right edge.
+    """
+
+    def __init__(self, parent, width=260, height=66, label="",
+                 max_samples=60, fg=BLUE, fill_color=None,
+                 unit="", bg=BG3, **kw):
+        super().__init__(parent, width=width, height=height,
+                         bg=bg, highlightthickness=0, borderwidth=0, **kw)
+        self.w           = width
+        self.h           = height
+        self.label       = label
+        self.max_samples = max_samples
+        self.fg          = fg
+        self.fill_color  = fill_color
+        self.unit        = unit
+        self._samples    = deque(maxlen=max_samples)
+        self._draw()
+
+    def add_sample(self, val):
+        try:
+            self._samples.append(float(val))
+        except (TypeError, ValueError):
+            return
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        # Top label + current/max readouts
+        cur = self._samples[-1] if self._samples else 0.0
+        mx  = max(self._samples) if self._samples else 0.0
+        self.create_text(8, 11, text=self.label.upper(),
+                         font=("Courier", 9, "bold"),
+                         fill=GREY, anchor="w")
+        self.create_text(self.w - 8, 11,
+                         text=f"{cur:.1f}{self.unit}",
+                         font=("Courier", 10, "bold"),
+                         fill=self.fg, anchor="e")
+        self.create_text(self.w - 8, 24,
+                         text=f"max {mx:.1f}",
+                         font=("Courier", 8),
+                         fill=GREY, anchor="e")
+
+        # Plot region
+        if len(self._samples) < 2:
+            return
+        top  = 28
+        bot  = self.h - 4
+        plot = bot - top
+        scale_max = max(max(self._samples), 1.0) * 1.1
+        n    = len(self._samples)
+        step = (self.w - 16) / max(1, self.max_samples - 1)
+
+        coords = []
+        for i, v in enumerate(self._samples):
+            x = 8 + (self.max_samples - n + i) * step
+            y = bot - (v / scale_max) * plot
+            coords.extend([x, y])
+
+        if self.fill_color:
+            poly = list(coords) + [coords[-2], bot, coords[0], bot]
+            self.create_polygon(poly, fill=self.fill_color, outline="")
+
+        self.create_line(coords, fill=self.fg, width=1.5, smooth=False)
+
+
+def make_led(parent, color=GREEN, size=10, bg=BG3):
+    """Filled-circle status LED. Returned canvas has .set_color(c)."""
+    pad = 2
+    c = tk.Canvas(parent, width=size + pad * 2, height=size + pad * 2,
+                  bg=bg, highlightthickness=0, borderwidth=0)
+    oval = c.create_oval(pad, pad, size + pad, size + pad,
+                         fill=color, outline="")
+
+    def set_color(col):
+        c.itemconfigure(oval, fill=col)
+
+    c.set_color = set_color
+    return c
+
+
 # ── Main application ──────────────────────────────────────────────────────────
 
 class HanryxMonitor(tk.Tk):
@@ -621,7 +789,7 @@ class HanryxMonitor(tk.Tk):
 
         nb.add(self.tab_dash,     text="  Dashboard  ")
         nb.add(self.tab_business, text="  Business   ")
-        nb.add(self.tab_system,   text="  System     ")
+        nb.add(self.tab_system,   text="  Diagnostics ")
         nb.add(self.tab_sites,    text="  Sites      ")
         nb.add(self.tab_logs,     text="  Logs       ")
         nb.add(self.tab_settings, text="  Settings   ")
@@ -757,193 +925,178 @@ class HanryxMonitor(tk.Tk):
         qbtn("🏧 End of Day",        "/admin/eod")
         qbtn("📥 Import / Export",   "/admin/csv")
 
-    # ── System tab ────────────────────────────────────────────────────────────
+    # ── Diagnostics tab — enterprise rack layout ─────────────────────────────
+    #
+    # Pi-only system telemetry on a single non-scrolling page. Layout is a
+    # vertical stack of "rack-unit" blades (U1–U5), each with a colored LED
+    # status rail on the left edge:
+    #
+    #   ┌─ HEADER strip (host, status LED, uptime, load) ─────────────────┐
+    #   │ U1  CORE METRICS         (4 ring gauges)                        │
+    #   │ U2  TIME SERIES          (4 sparklines: CPU/RAM/NET/DISK I/O)   │
+    #   │ U3  PER-CORE  /  POWER & THERMAL                                │
+    #   │ U4  STORAGE ARRAY  /  NETWORK                                   │
+    #   │ U5  CONTAINERS  /  TOP PROCESSES                                │
+    #   └────────────────────────────────────────────────────────────────────┘
+
+    def _blade(self, parent, slot, title):
+        """One rack-unit blade. Returns (content_frame, led_rail)."""
+        outer = tk.Frame(parent, bg=BG)
+        outer.pack(fill="x", padx=10, pady=2)
+
+        rail = tk.Frame(outer, bg=RACK_RAIL_OK, width=4)
+        rail.pack(side="left", fill="y")
+
+        body = tk.Frame(outer, bg=RACK_BLADE,
+                        highlightbackground=RACK_BORDER,
+                        highlightthickness=1)
+        body.pack(side="left", fill="both", expand=True)
+
+        hdr = tk.Frame(body, bg=RACK_BLADE_HDR)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=slot, font=("Courier", 10, "bold"),
+                 fg=GOLD, bg=RACK_BLADE_HDR, padx=10, pady=3
+                 ).pack(side="left")
+        tk.Label(hdr, text=title, font=("Courier", 10, "bold"),
+                 fg=WHITE, bg=RACK_BLADE_HDR, padx=4, pady=3
+                 ).pack(side="left")
+
+        content = tk.Frame(body, bg=RACK_BLADE, padx=10, pady=8)
+        content.pack(fill="both", expand=True)
+        return content, rail
 
     def _build_system(self):
-        outer = self.tab_system
+        p = self.tab_system
 
-        # System tab content can exceed 1080p when running --kiosk on a
-        # third monitor (9 stacked sections). Wrap in a scrollable canvas
-        # so the lower sections (DOCKER, SERVER/DATABASE) stay reachable.
-        sys_canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, borderwidth=0)
-        sys_vsb    = ttk.Scrollbar(outer, orient="vertical",
-                                   command=sys_canvas.yview)
-        sys_canvas.configure(yscrollcommand=sys_vsb.set)
-        sys_vsb.pack(side="right", fill="y")
-        sys_canvas.pack(side="left", fill="both", expand=True)
+        # Rolling sample buffers fed every 4 s by the refresh threads.
+        # 60 samples × 4 s/sample = 4 minutes of recent history per graph.
+        self._hist_cpu = deque(maxlen=60)
+        self._hist_ram = deque(maxlen=60)
+        self._hist_net = deque(maxlen=60)
+        self._hist_dio = deque(maxlen=60)
 
-        p = tk.Frame(sys_canvas, bg=BG)
-        p_window = sys_canvas.create_window((0, 0), window=p, anchor="nw")
+        # ttk style for the slim per-core / per-disk progress bars
+        st = ttk.Style(self)
+        st.configure("Diag.Horizontal.TProgressbar",
+                     background=GREEN, troughcolor=RING_TRACK,
+                     bordercolor=BG3, lightcolor=GREEN, darkcolor=GREEN,
+                     thickness=10)
 
-        # Update scrollregion when inner content size changes
-        p.bind("<Configure>",
-               lambda _e: sys_canvas.configure(scrollregion=sys_canvas.bbox("all")))
-        # Make inner frame width track canvas width (so columns expand)
-        sys_canvas.bind("<Configure>",
-                        lambda e: sys_canvas.itemconfigure(p_window, width=e.width))
+        # ── Header status strip ────────────────────────────────────────────
+        top = tk.Frame(p, bg=RACK_BLADE_HDR, padx=12, pady=6,
+                       highlightbackground=RACK_BORDER, highlightthickness=1)
+        top.pack(fill="x", padx=10, pady=(8, 4))
+        tk.Label(top, text="◾ HANRYXVAULT", font=("Courier", 12, "bold"),
+                 fg=GOLD, bg=RACK_BLADE_HDR).pack(side="left")
+        tk.Label(top, text="POS  ·  PI DIAGNOSTICS",
+                 font=("Courier", 11),
+                 fg=GREY, bg=RACK_BLADE_HDR, padx=10).pack(side="left")
 
-        # Mousewheel: bind directly on the canvas, the inner frame, and
-        # (later) every descendant. We avoid bind_all / <Enter>/<Leave>
-        # because Tk fires <Leave> on a parent when the pointer transitions
-        # into a child widget (NotifyInferior), which would intermittently
-        # unbind the wheel handler mid-hover. Widget-scoped binding is also
-        # safer because it can't accidentally remove other global bindings.
-        def _wheel(direction):
-            sys_canvas.yview_scroll(int(direction), "units")
-        def _on_wheel_xy(e):
-            _wheel(-e.delta / 120)
-        def _on_wheel_up(_e):
-            _wheel(-1)
-        def _on_wheel_dn(_e):
-            _wheel(1)
+        self.lbl_diag_status = tk.Label(top, text="● SYSTEM OK",
+                                        font=("Courier", 11, "bold"),
+                                        fg=GREEN, bg=RACK_BLADE_HDR)
+        self.lbl_diag_status.pack(side="right", padx=8)
+        self.lbl_diag_uptime = tk.Label(top, text="UPTIME —",
+                                        font=("Courier", 10),
+                                        fg=WHITE, bg=RACK_BLADE_HDR, padx=12)
+        self.lbl_diag_uptime.pack(side="right")
+        self.lbl_diag_load = tk.Label(top, text="LOAD —",
+                                      font=("Courier", 10),
+                                      fg=WHITE, bg=RACK_BLADE_HDR, padx=12)
+        self.lbl_diag_load.pack(side="right")
 
-        def _bind_wheel_to_tree(widget):
-            widget.bind("<MouseWheel>", _on_wheel_xy, add="+")
-            widget.bind("<Button-4>",   _on_wheel_up, add="+")
-            widget.bind("<Button-5>",   _on_wheel_dn, add="+")
-            for child in widget.winfo_children():
-                _bind_wheel_to_tree(child)
-        # Bind on the canvas now (it has no children of its own to recurse).
-        # `p` and all its descendants get bound at the very end of
-        # _build_system via self._sys_wheel_binder(p) — see end of method.
-        _bind_wheel_to_tree(sys_canvas)
-        self._sys_wheel_binder = _bind_wheel_to_tree   # exposed for re-use
-
-        # Keyboard fallback (works in kiosk without mouse — useful when the
-        # third monitor is far from the operator). Scoped to "System tab is
-        # currently visible" via winfo_ismapped() so PageUp/PageDown on
-        # other tabs don't silently scroll the hidden canvas.
-        def _key_scroll(direction):
-            try:
-                if sys_canvas.winfo_ismapped():
-                    sys_canvas.yview_scroll(int(direction), "units")
-            except tk.TclError:
-                pass
-        self.bind("<Prior>", lambda _e: _key_scroll(-5))
-        self.bind("<Next>",  lambda _e: _key_scroll( 5))
-
+        # ── U1 — CORE METRICS (4 ring gauges) ──────────────────────────────
+        c1, _ = self._blade(p, "U1", "CORE METRICS")
+        g = tk.Frame(c1, bg=RACK_BLADE)
+        g.pack(fill="x")
         for i in range(4):
-            p.columnconfigure(i, weight=1)
+            g.columnconfigure(i, weight=1)
+        self.gauge_cpu  = RingGauge(g, size=130, label="CPU",
+                                    unit="%", fg=GREEN, bg=RACK_BLADE)
+        self.gauge_temp = RingGauge(g, size=130, label="CPU TEMP",
+                                    unit="°C", max_val=85,
+                                    fg=ORANGE, bg=RACK_BLADE)
+        self.gauge_ram  = RingGauge(g, size=130, label="RAM",
+                                    unit="%", fg=BLUE, bg=RACK_BLADE)
+        self.gauge_disk = RingGauge(g, size=130, label="ROOT DISK",
+                                    unit="%", fg=WHITE, bg=RACK_BLADE)
+        self.gauge_cpu .grid(row=0, column=0, pady=2)
+        self.gauge_temp.grid(row=0, column=1, pady=2)
+        self.gauge_ram .grid(row=0, column=2, pady=2)
+        self.gauge_disk.grid(row=0, column=3, pady=2)
 
-        # ── Row 0: existing 4 KPI cards ──────────────────────────────────────
-        self.c_cpu   = self._card(p, 0, 0, "CPU Usage", "—",   GREEN)
-        self.c_temp  = self._card(p, 0, 1, "CPU Temp",  "N/A", ORANGE)
-        self.c_ram   = self._card(p, 0, 2, "RAM Used",  "—",   WHITE)
-        self.c_disk  = self._card(p, 0, 3, "Disk Used", "—",   WHITE)
+        # ── U2 — TIME SERIES (4 sparklines) ───────────────────────────────
+        c2, _ = self._blade(p, "U2", "TIME SERIES  (60 samples · ~4 min)")
+        s = tk.Frame(c2, bg=RACK_BLADE)
+        s.pack(fill="x")
+        for i in range(4):
+            s.columnconfigure(i, weight=1)
+        self.spk_cpu  = Sparkline(s, width=260, height=66, label="CPU",
+                                  fg=GREEN, fill_color="#0c2010",
+                                  unit="%", bg=RACK_BLADE)
+        self.spk_ram  = Sparkline(s, width=260, height=66, label="RAM",
+                                  fg=BLUE,  fill_color="#0c1828",
+                                  unit="%", bg=RACK_BLADE)
+        self.spk_net  = Sparkline(s, width=260, height=66, label="NET ↓",
+                                  fg=GOLD,  fill_color="#1d1505",
+                                  unit="K", bg=RACK_BLADE)
+        self.spk_dio  = Sparkline(s, width=260, height=66, label="DISK I/O",
+                                  fg=ORANGE, fill_color="#1f1206",
+                                  unit="K", bg=RACK_BLADE)
+        self.spk_cpu.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
+        self.spk_ram.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
+        self.spk_net.grid(row=0, column=2, padx=4, pady=4, sticky="ew")
+        self.spk_dio.grid(row=0, column=3, padx=4, pady=4, sticky="ew")
 
-        # ── Row 1: existing progress bars ────────────────────────────────────
-        bars = tk.Frame(p, bg=BG)
-        bars.grid(row=1, column=0, columnspan=4, sticky="ew", padx=8, pady=4)
-        bars.columnconfigure(1, weight=1)
+        # ── U3 — PER-CORE  /  POWER & THERMAL ─────────────────────────────
+        c3, self.rail_thermal = self._blade(
+            p, "U3", "PER-CORE CPU  /  POWER & THERMAL")
+        pt = tk.Frame(c3, bg=RACK_BLADE)
+        pt.pack(fill="x")
+        pt.columnconfigure(0, weight=1)
+        pt.columnconfigure(1, weight=1)
+        self.f_cores = tk.Frame(pt, bg=RACK_BLADE)
+        self.f_cores.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        self._core_widgets = []
+        self.lbl_thermal = tk.Label(pt, text="Loading…",
+                                    font=("Courier", 10),
+                                    fg=WHITE, bg=RACK_BLADE,
+                                    justify="left", anchor="nw")
+        self.lbl_thermal.grid(row=0, column=1, sticky="nw")
 
-        def bar_row(label, row):
-            tk.Label(bars, text=label, font=("Helvetica", 10),
-                     fg=GREY, bg=BG, width=8, anchor="e").grid(
-                row=row, column=0, padx=(0, 8), pady=4)
-            pb = ttk.Progressbar(bars, length=400, maximum=100)
-            pb.grid(row=row, column=1, sticky="ew", pady=4)
-            lbl = tk.Label(bars, text="", font=("Helvetica", 10),
-                           fg=WHITE, bg=BG, width=14, anchor="w")
-            lbl.grid(row=row, column=2, padx=8, pady=4)
-            return pb, lbl
+        # ── U4 — STORAGE  /  NETWORK ──────────────────────────────────────
+        c4, _ = self._blade(p, "U4", "STORAGE ARRAY  /  NETWORK")
+        sn = tk.Frame(c4, bg=RACK_BLADE)
+        sn.pack(fill="x")
+        sn.columnconfigure(0, weight=1)
+        sn.columnconfigure(1, weight=1)
+        self.f_storage = tk.Frame(sn, bg=RACK_BLADE)
+        self.f_storage.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        self._storage_widgets = []
+        self.f_network = tk.Frame(sn, bg=RACK_BLADE)
+        self.f_network.grid(row=0, column=1, sticky="nsew")
+        self._network_widgets = []
 
-        self.pb_cpu,  self.pb_cpu_lbl  = bar_row("CPU",  0)
-        self.pb_ram,  self.pb_ram_lbl  = bar_row("RAM",  1)
-        self.pb_disk, self.pb_disk_lbl = bar_row("Disk", 2)
-
-        # ── Row 2: NEW — 4 Pi/system mini-cards ─────────────────────────────
-        self.c_pmic     = self._card(p, 2, 0, "PMIC Temp",   "—",  ORANGE)
-        self.c_throttle = self._card(p, 2, 1, "Throttle",    "—",  GREEN)
-        self.c_load     = self._card(p, 2, 2, "Load Avg",    "—",  WHITE)
-        self.c_uptime   = self._card(p, 2, 3, "Uptime",      "—",  WHITE)
-
-        # Helper to build a titled section frame consistent with srv_f below
-        def section(row, title, height_pad=10):
-            f = tk.Frame(p, bg=BG3, padx=14, pady=height_pad,
-                         highlightbackground=BORDER, highlightthickness=1)
-            f.grid(row=row, column=0, columnspan=4, sticky="ew",
-                   padx=14, pady=4)
-            tk.Label(f, text=title, font=("Helvetica", 9),
-                     fg=GREY, bg=BG3).pack(anchor="w")
-            return f
-
-        MONO = ("Courier", 10)
-
-        # ── Row 3: PI HARDWARE (left half) + CLOCKS / VOLTAGES (right half) ─
-        hw_outer = section(3, "PI HARDWARE  /  CLOCKS  /  VOLTAGES")
-        hw_two = tk.Frame(hw_outer, bg=BG3)
-        hw_two.pack(fill="x", pady=(4, 0))
-        hw_two.columnconfigure(0, weight=1)
-        hw_two.columnconfigure(1, weight=1)
-        self.lbl_hw = tk.Label(hw_two, text="Loading…", font=MONO,
-                               fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_hw.grid(row=0, column=0, sticky="nw", padx=(0, 8))
-        self.lbl_clocks = tk.Label(hw_two, text="", font=MONO,
-                                   fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_clocks.grid(row=0, column=1, sticky="nw", padx=(8, 0))
-
-        # ── Row 4: PER-CORE CPU (left) + MEMORY DETAIL (right) ─────────────
-        cm_outer = section(4, "PER-CORE CPU  /  MEMORY DETAIL")
-        cm_two = tk.Frame(cm_outer, bg=BG3)
-        cm_two.pack(fill="x", pady=(4, 0))
-        cm_two.columnconfigure(0, weight=1)
-        cm_two.columnconfigure(1, weight=1)
-        self.lbl_per_core = tk.Label(cm_two, text="Loading…", font=MONO,
-                                     fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_per_core.grid(row=0, column=0, sticky="nw", padx=(0, 8))
-        self.lbl_mem_detail = tk.Label(cm_two, text="", font=MONO,
-                                       fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_mem_detail.grid(row=0, column=1, sticky="nw", padx=(8, 0))
-
-        # ── Row 5: STORAGE per-mount (left) + NETWORK per-iface (right) ────
-        sn_outer = section(5, "STORAGE  /  NETWORK")
-        sn_two = tk.Frame(sn_outer, bg=BG3)
-        sn_two.pack(fill="x", pady=(4, 0))
-        sn_two.columnconfigure(0, weight=1)
-        sn_two.columnconfigure(1, weight=1)
-        self.lbl_storage = tk.Label(sn_two, text="Loading…", font=MONO,
-                                    fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_storage.grid(row=0, column=0, sticky="nw", padx=(0, 8))
-        self.lbl_network = tk.Label(sn_two, text="", font=MONO,
-                                    fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_network.grid(row=0, column=1, sticky="nw", padx=(8, 0))
-
-        # ── Row 6: TOP PROCESSES ────────────────────────────────────────────
-        tp_outer = section(6, "TOP PROCESSES (by CPU then RAM)")
-        self.lbl_top_procs = tk.Label(tp_outer, text="Loading…", font=MONO,
-                                      fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_top_procs.pack(anchor="w", pady=(4, 0))
-
-        # ── Row 7: DOCKER CONTAINERS ────────────────────────────────────────
-        dk_outer = section(7, "DOCKER CONTAINERS")
-        self.lbl_docker = tk.Label(dk_outer, text="Loading…", font=MONO,
-                                   fg=WHITE, bg=BG3, justify="left", anchor="nw")
-        self.lbl_docker.pack(anchor="w", pady=(4, 0))
-
-        # ── Row 8: existing SERVER / DATABASE info ─────────────────────────
-        srv_f = tk.Frame(p, bg=BG3, padx=14, pady=10,
-                         highlightbackground=BORDER, highlightthickness=1)
-        srv_f.grid(row=8, column=0, columnspan=4, sticky="ew", padx=14, pady=8)
-        tk.Label(srv_f, text="SERVER / DATABASE", font=("Helvetica", 9),
-                 fg=GREY, bg=BG3).pack(anchor="w")
-        self.lbl_db_info = tk.Label(srv_f, text="Loading…",
-                                     font=("Helvetica", 12), fg=WHITE, bg=BG3)
-        self.lbl_db_info.pack(anchor="w", pady=(4, 0))
-        self.lbl_uptime = tk.Label(srv_f, text="",
-                                    font=("Helvetica", 12), fg=GREY, bg=BG3)
-        self.lbl_uptime.pack(anchor="w")
+        # ── U5 — CONTAINERS  /  TOP PROCESSES ─────────────────────────────
+        c5, _ = self._blade(p, "U5", "CONTAINERS  /  TOP PROCESSES")
+        cp = tk.Frame(c5, bg=RACK_BLADE)
+        cp.pack(fill="x")
+        cp.columnconfigure(0, weight=1)
+        cp.columnconfigure(1, weight=1)
+        self.f_docker = tk.Frame(cp, bg=RACK_BLADE)
+        self.f_docker.grid(row=0, column=0, sticky="nw", padx=(0, 14))
+        self._docker_widgets = []
+        self.lbl_procs = tk.Label(cp, text="Loading…",
+                                  font=("Courier", 10),
+                                  fg=WHITE, bg=RACK_BLADE,
+                                  justify="left", anchor="nw")
+        self.lbl_procs.grid(row=0, column=1, sticky="nw")
 
         if IS_WINDOWS:
-            tk.Label(p, text="★  Local system stats shown above reflect this Windows machine.",
-                     font=("Helvetica", 10, "italic"), fg=GREY, bg=BG
-                     ).grid(row=9, column=0, columnspan=4, padx=14, pady=4, sticky="w")
-
-        # Now that every section / KPI card / mini-card / label is realized,
-        # walk the whole inner tree and bind the wheel handlers on every
-        # descendant. (The earlier _bind_wheel_to_tree(p) call only attached
-        # to `p` itself because no children existed yet.) This guarantees
-        # mousewheel works no matter which child widget the cursor is over.
-        self._sys_wheel_binder(p)
+            tk.Label(p, text="★  Local stats reflect this Windows machine "
+                            "— full Pi-only telemetry appears when running on the Pi.",
+                     font=("Helvetica", 9, "italic"),
+                     fg=GREY, bg=BG).pack(anchor="w", padx=14, pady=(4, 0))
 
     # ── Extended diagnostics polling (runs in background thread) ─────────────
 
@@ -1020,126 +1173,251 @@ class HanryxMonitor(tk.Tk):
             pass
 
     def _update_extras(self, e):
-        """Apply extended diagnostics dict `e` to the System-tab widgets."""
-        # 4 mini-cards
-        pmic = e["pmic"]
-        self.c_pmic.config(text=f"{pmic:.1f} °C" if pmic is not None else "N/A")
+        """Apply extended diagnostics dict `e` to the Diagnostics-tab widgets."""
 
+        # ── Header status strip ────────────────────────────────────────────
         th = e["throttle"]
         if not th["ok"]:
-            tcol = RED
+            self.lbl_diag_status.config(text=f"⚠ {th['status']}", fg=RED)
+            self.rail_thermal.config(bg=RACK_RAIL_ERR)
         elif th["past"]:
-            tcol = ORANGE
+            self.lbl_diag_status.config(text=f"◐ {th['status']}", fg=ORANGE)
+            self.rail_thermal.config(bg=RACK_RAIL_WARN)
         else:
-            tcol = GREEN
-        short = th["status"]
-        if len(short) > 22:
-            short = short[:22] + "…"
-        self.c_throttle.config(text=short, fg=tcol)
+            self.lbl_diag_status.config(text="● SYSTEM OK", fg=GREEN)
+            self.rail_thermal.config(bg=RACK_RAIL_OK)
+        self.lbl_diag_load.config(text=f"LOAD {e['load']}")
+        self.lbl_diag_uptime.config(text=f"UPTIME {e['uptime']}")
 
-        self.c_load.config(text=e["load"])
-        self.c_uptime.config(text=e["uptime"])
+        # ── Per-core mini-bars ─────────────────────────────────────────────
+        cores = e["cores"] or []
+        if len(self._core_widgets) != len(cores):
+            for w in self._core_widgets:
+                w["frame"].destroy()
+            self._core_widgets = []
+            for i in range(len(cores)):
+                f = tk.Frame(self.f_cores, bg=RACK_BLADE)
+                f.pack(fill="x", pady=2)
+                tk.Label(f, text=f"C{i}", font=("Courier", 10, "bold"),
+                         fg=GOLD, bg=RACK_BLADE, width=4, anchor="w"
+                         ).pack(side="left")
+                led = make_led(f, GREEN, size=8, bg=RACK_BLADE)
+                led.pack(side="left", padx=(0, 6))
+                pb = ttk.Progressbar(f, length=180, maximum=100,
+                                     style="Diag.Horizontal.TProgressbar")
+                pb.pack(side="left", fill="x", expand=True)
+                lbl = tk.Label(f, text="—", font=("Courier", 10),
+                               fg=WHITE, bg=RACK_BLADE, width=8, anchor="e")
+                lbl.pack(side="left", padx=(8, 0))
+                self._core_widgets.append({"frame": f, "led": led,
+                                           "pb": pb, "lbl": lbl})
+        for i, pct in enumerate(cores):
+            cw = self._core_widgets[i]
+            col = RED if pct > 85 else (ORANGE if pct > 60 else GREEN)
+            cw["led"].set_color(col)
+            cw["pb"]["value"] = pct
+            cw["lbl"].config(text=f"{pct:5.1f}%", fg=col)
 
-        # Pi hardware (left)
-        hw = e["hw"]
-        self.lbl_hw.config(text=(
-            f"  Model    : {hw.get('model', '?') or '(non-Pi host)'}\n"
-            f"  Revision : {hw.get('revision', '?')}\n"
-            f"  Serial   : {hw.get('serial', '?')}\n"
-            f"  Kernel   : {hw.get('kernel', '?')}"
-        ))
-
-        # Clocks / voltages (right)
-        fr = e["freq"]; cl = e["clocks"]; vo = e["voltages"]
-        clock_lines = [
-            f"  Governor : {fr.get('governor', '?')}",
-            f"  CPU Freq : {fr.get('cur', 0)} / {fr.get('max', 0)} MHz",
-        ]
+        # ── Power / thermal panel (right column of U3) ─────────────────────
+        fr   = e["freq"]
+        cl   = e["clocks"]
+        vo   = e["voltages"]
+        pmic = e["pmic"]
+        hw   = e["hw"]
+        parts = []
+        model = (hw.get("model", "") or "Unknown")[:34]
+        parts.append(f"  MODEL    : {model}")
+        parts.append(f"  KERNEL   : {hw.get('kernel', '?')[:34]}")
+        parts.append(f"  GOVERNOR : {fr.get('governor', '?')}")
+        parts.append(f"  CPU FREQ : {fr.get('cur', 0):>4} / "
+                     f"{fr.get('max', 0):>4} MHz")
         if cl:
-            clock_lines.append(
-                f"  Clocks   : arm={cl.get('arm', '?')}MHz  "
-                f"core={cl.get('core', '?')}MHz  v3d={cl.get('v3d', '?')}MHz"
-            )
+            parts.append(f"  CLOCKS   : arm={cl.get('arm', '?')} "
+                         f" core={cl.get('core', '?')} "
+                         f" v3d={cl.get('v3d', '?')} MHz")
         if vo:
-            v_core = vo.get("core", "?")
-            v_sd   = vo.get("sdram_c", "?")
-            clock_lines.append(f"  Voltages : core={v_core}V  sdram_c={v_sd}V")
-        self.lbl_clocks.config(text="\n".join(clock_lines))
-
-        # Per-core CPU (left)
-        cores = e["cores"]
-        if cores:
-            lines = []
-            for i, pct in enumerate(cores):
-                bar_len = max(0, min(20, int(pct / 5)))
-                lines.append(f"  Core {i}: {pct:5.1f}%  " + "█" * bar_len)
-            self.lbl_per_core.config(text="\n".join(lines))
-        else:
-            self.lbl_per_core.config(text="  (per-core data unavailable)")
-
-        # Memory detail (right)
+            parts.append(f"  VCORE    : {vo.get('core', '?')} V")
+            parts.append(f"  VSDRAM_C : {vo.get('sdram_c', '?')} V")
+        parts.append(f"  PMIC TEMP: {pmic:.1f} °C"
+                     if pmic is not None else "  PMIC TEMP: —")
+        parts.append(f"  THROTTLE : {th['status']}")
+        # Memory secondary stats (cached/buffers/swap) — keep them on this
+        # panel so U2's RAM gauge stays uncluttered
         m = e["mem"]
-        self.lbl_mem_detail.config(text=(
-            f"  Used    : {m['used_mb']:>6} MB / {m['total_mb']:>6} MB ({m['pct']:.1f}%)\n"
-            f"  Avail   : {m['avail_mb']:>6} MB\n"
-            f"  Cached  : {m['cached_mb']:>6} MB    Buffers: {m['buffers_mb']:>5} MB\n"
-            f"  Swap    : {m['swap_used_mb']:>6} MB / {m['swap_total_mb']:>6} MB ({m['swap_pct']:.1f}%)"
-        ))
+        parts.append("")
+        parts.append(f"  CACHED   : {m['cached_mb']:>5} MB    "
+                     f"BUFFERS: {m['buffers_mb']:>5} MB")
+        parts.append(f"  SWAP     : {m['swap_used_mb']:>5} / "
+                     f"{m['swap_total_mb']:>5} MB ({m['swap_pct']:.1f}%)")
+        self.lbl_thermal.config(text="\n".join(parts))
 
-        # Storage per-mount + I/O rates (left)
-        slines = []
-        for d in e["disks"]:
-            bar_len = max(0, min(20, int(d["pct"] / 5)))
-            slines.append(
-                f"  {d['mount']:<18} {d['used_gb']:>6.1f}G / "
-                f"{d['total_gb']:>6.1f}G ({d['pct']:5.1f}%)  "
-                + "█" * bar_len
-            )
+        # ── Storage rows ───────────────────────────────────────────────────
+        disks = e["disks"]
+        if len(self._storage_widgets) != len(disks):
+            for w in self._storage_widgets:
+                w["frame"].destroy()
+            self._storage_widgets = []
+            for d in disks:
+                f = tk.Frame(self.f_storage, bg=RACK_BLADE)
+                f.pack(fill="x", pady=2)
+                led = make_led(f, GREEN, size=8, bg=RACK_BLADE)
+                led.pack(side="left", padx=(0, 6))
+                tk.Label(f, text=d["mount"], font=("Courier", 10, "bold"),
+                         fg=WHITE, bg=RACK_BLADE, width=14, anchor="w"
+                         ).pack(side="left")
+                pb = ttk.Progressbar(f, length=140, maximum=100,
+                                     style="Diag.Horizontal.TProgressbar")
+                pb.pack(side="left", fill="x", expand=True)
+                lbl = tk.Label(f, text="—", font=("Courier", 9),
+                               fg=GREY, bg=RACK_BLADE, width=22, anchor="e")
+                lbl.pack(side="left", padx=(6, 0))
+                self._storage_widgets.append({"frame": f, "led": led,
+                                              "pb": pb, "lbl": lbl})
+        for i, d in enumerate(disks):
+            sw = self._storage_widgets[i]
+            col = RED if d["pct"] > 90 else (ORANGE if d["pct"] > 75 else GREEN)
+            sw["led"].set_color(col)
+            sw["pb"]["value"] = d["pct"]
+            sw["lbl"].config(
+                text=f"{d['used_gb']:.1f} / {d['total_gb']:.1f} GB ({d['pct']:.0f}%)",
+                fg=col)
+
+        # I/O rate row (rebuilt at the bottom of f_storage if missing)
+        if not hasattr(self, "lbl_disk_io"):
+            self.lbl_disk_io = tk.Label(self.f_storage, text="",
+                                        font=("Courier", 9),
+                                        fg=GREY, bg=RACK_BLADE,
+                                        anchor="w")
+            self.lbl_disk_io.pack(fill="x", pady=(4, 0))
         dr, dw = e["disk_io_rate"]
         if dr >= 0:
-            slines.append(f"  I/O   read: {fmt_rate(dr)}    write: {fmt_rate(dw)}")
-        self.lbl_storage.config(text="\n".join(slines) if slines else "  (no storage info)")
-
-        # Network per-iface + Tailscale (right)
-        nlines = []
-        for iface, (s, r) in e["net"].items():
-            rs, rr = e["net_rates"].get(iface, (-1.0, -1.0))
-            rate_part = f"  ↑ {fmt_rate(rs)}  ↓ {fmt_rate(rr)}" if rs >= 0 else ""
-            nlines.append(
-                f"  {iface:<14} sent: {s/1024**2:8.1f} MiB    "
-                f"recv: {r/1024**2:8.1f} MiB{rate_part}"
-            )
-        if e["ts_ip"]:
-            nlines.append(f"  Tailscale : {e['ts_ip']}")
-        self.lbl_network.config(text="\n".join(nlines) if nlines else "  (no net info)")
-
-        # Top processes
-        p = e["procs"]
-        if p["by_cpu"] or p["by_ram"]:
-            cpu_block = ["  By CPU:"] + [
-                f"    {pp['name']:<24} pid={pp['pid']:<7} {pp['cpu']:5.1f}%"
-                for pp in p["by_cpu"]
-            ]
-            ram_block = ["  By RAM:"] + [
-                f"    {pp['name']:<24} pid={pp['pid']:<7} {pp['ram']:5.1f}%"
-                for pp in p["by_ram"]
-            ]
-            self.lbl_top_procs.config(text="\n".join(cpu_block + [""] + ram_block))
+            self.lbl_disk_io.config(
+                text=f"  I/O   read {fmt_rate(dr)}    write {fmt_rate(dw)}")
+            self._hist_dio.append((dr + dw) / 1024)
+            self.spk_dio.add_sample((dr + dw) / 1024)
         else:
-            self.lbl_top_procs.config(text="  (process info unavailable — install psutil)")
+            self.lbl_disk_io.config(text="")
 
-        # Docker
-        d = e["docker"]
-        if d["lines"]:
-            header = (f"  Running: {d['running']}    Stopped: {d['stopped']}    "
-                      f"Unhealthy: {d['unhealthy']}\n")
-            body = "\n".join(
-                f"    {'⚠ ' if u else '  '}{n:<24} [{state:<8}]  {st[:50]}"
-                for n, state, st, u in d["lines"][:12]
-            )
-            self.lbl_docker.config(text=header + body)
+        # ── Network rows ───────────────────────────────────────────────────
+        nets   = list(e["net"].items())
+        nrates = e["net_rates"]
+        wanted = len(nets) + (1 if e["ts_ip"] else 0)
+        if len(self._network_widgets) != wanted:
+            for w in self._network_widgets:
+                w["frame"].destroy()
+            self._network_widgets = []
+            for iface, _ in nets:
+                f = tk.Frame(self.f_network, bg=RACK_BLADE)
+                f.pack(fill="x", pady=2)
+                led = make_led(f, GREEN, size=8, bg=RACK_BLADE)
+                led.pack(side="left", padx=(0, 6))
+                tk.Label(f, text=iface, font=("Courier", 10, "bold"),
+                         fg=WHITE, bg=RACK_BLADE, width=12, anchor="w"
+                         ).pack(side="left")
+                lbl = tk.Label(f, text="—", font=("Courier", 9),
+                               fg=GREY, bg=RACK_BLADE, anchor="w")
+                lbl.pack(side="left", padx=(6, 0), fill="x", expand=True)
+                self._network_widgets.append({"frame": f, "led": led,
+                                              "lbl": lbl, "iface": iface})
+            if e["ts_ip"]:
+                f = tk.Frame(self.f_network, bg=RACK_BLADE)
+                f.pack(fill="x", pady=2)
+                led = make_led(f, BLUE, size=8, bg=RACK_BLADE)
+                led.pack(side="left", padx=(0, 6))
+                tk.Label(f, text="tailscale", font=("Courier", 10, "bold"),
+                         fg=GOLD, bg=RACK_BLADE, width=12, anchor="w"
+                         ).pack(side="left")
+                lbl = tk.Label(f, text=e["ts_ip"], font=("Courier", 10),
+                               fg=GOLD, bg=RACK_BLADE, anchor="w")
+                lbl.pack(side="left", padx=(6, 0), fill="x", expand=True)
+                self._network_widgets.append({"frame": f, "led": led,
+                                              "lbl": lbl, "iface": "_ts"})
+        # Update existing rows + accumulate downstream rate for the sparkline
+        total_dn = 0.0
+        for w in self._network_widgets:
+            if w["iface"] == "_ts":
+                w["lbl"].config(text=e["ts_ip"])
+                continue
+            s, r   = e["net"].get(w["iface"], (0, 0))
+            rs, rr = nrates.get(w["iface"], (-1.0, -1.0))
+            if rs >= 0:
+                total_dn += rr
+                w["lbl"].config(
+                    text=f"↑ {fmt_rate(rs)}  ↓ {fmt_rate(rr)}    "
+                         f"tot {r/1024**2:6.1f} MiB")
+            else:
+                w["lbl"].config(
+                    text=f"  tot ↑{s/1024**2:6.1f}  ↓{r/1024**2:6.1f} MiB")
+        if total_dn > 0 or self._hist_net:
+            self._hist_net.append(total_dn / 1024)
+            self.spk_net.add_sample(total_dn / 1024)
+
+        # ── Containers ─────────────────────────────────────────────────────
+        dk    = e["docker"]
+        lines = dk.get("lines", []) or []
+        # Header line above the rows (rebuild lazily)
+        if not hasattr(self, "lbl_docker_hdr"):
+            self.lbl_docker_hdr = tk.Label(
+                self.f_docker, text="—",
+                font=("Courier", 9, "bold"),
+                fg=GREY, bg=RACK_BLADE, anchor="w")
+            self.lbl_docker_hdr.pack(fill="x", pady=(0, 4))
+        if lines:
+            self.lbl_docker_hdr.config(
+                text=f"  RUNNING {dk['running']}   "
+                     f"STOPPED {dk['stopped']}   "
+                     f"UNHEALTHY {dk['unhealthy']}",
+                fg=ORANGE if dk["unhealthy"] else GREY)
         else:
-            self.lbl_docker.config(text="  (docker not available on this host)")
+            self.lbl_docker_hdr.config(text="  (docker not available)")
+
+        shown = lines[:8]
+        if len(self._docker_widgets) != len(shown):
+            for w in self._docker_widgets:
+                w["frame"].destroy()
+            self._docker_widgets = []
+            for _ in shown:
+                f = tk.Frame(self.f_docker, bg=RACK_BLADE)
+                f.pack(fill="x", pady=1)
+                led = make_led(f, GREEN, size=8, bg=RACK_BLADE)
+                led.pack(side="left", padx=(0, 6))
+                name_lbl = tk.Label(f, text="", font=("Courier", 10, "bold"),
+                                    fg=WHITE, bg=RACK_BLADE,
+                                    width=18, anchor="w")
+                name_lbl.pack(side="left")
+                stat_lbl = tk.Label(f, text="", font=("Courier", 9),
+                                    fg=GREY, bg=RACK_BLADE, anchor="w")
+                stat_lbl.pack(side="left", padx=(4, 0), fill="x", expand=True)
+                self._docker_widgets.append({"frame": f, "led": led,
+                                             "name": name_lbl,
+                                             "stat": stat_lbl})
+        for i, (n, state, st, unhealthy) in enumerate(shown):
+            if unhealthy:
+                col = ORANGE
+            elif state == "running":
+                col = GREEN
+            else:
+                col = RED
+            dwid = self._docker_widgets[i]
+            dwid["led"].set_color(col)
+            dwid["name"].config(text=n[:18], fg=col)
+            dwid["stat"].config(text=st[:42])
+
+        # ── Top processes (compact 2-column table) ─────────────────────────
+        proc = e["procs"]
+        if proc["by_cpu"] or proc["by_ram"]:
+            rows = [f"  {'-- BY CPU --':<26}    {'-- BY RAM --':<26}"]
+            for i in range(5):
+                cp = proc["by_cpu"][i] if i < len(proc["by_cpu"]) else None
+                rp = proc["by_ram"][i] if i < len(proc["by_ram"]) else None
+                cl_t = (f"  {cp['name'][:16]:<16} {cp['cpu']:5.1f}%"
+                        if cp else " " * 26)
+                rl_t = (f"  {rp['name'][:16]:<16} {rp['ram']:5.1f}%"
+                        if rp else "")
+                rows.append(f"{cl_t:<30}    {rl_t}")
+            self.lbl_procs.config(text="\n".join(rows))
+        else:
+            self.lbl_procs.config(text="  (process info unavailable — install psutil)")
 
     # ── Sites tab ─────────────────────────────────────────────────────────────
 
@@ -1427,36 +1705,29 @@ class HanryxMonitor(tk.Tk):
         else:
             self.c_eod.config(text="—", fg=GREY)
 
-        # ── System ────────────────────────────────────────────────────────────
+        # ── Diagnostics tab — feed ring gauges + sparklines ───────────────────
         cpu_col = RED if cpu > 80 else (ORANGE if cpu > 60 else GREEN)
-        self.c_cpu.config(text=f"{cpu:.1f}%", fg=cpu_col)
+        self.gauge_cpu.set_value(cpu, color=cpu_col)
+        self._hist_cpu.append(cpu)
+        self.spk_cpu.add_sample(cpu)
 
         if temp is not None:
             temp_col = RED if temp > 75 else (ORANGE if temp > 65 else GREEN)
-            self.c_temp.config(text=f"{temp:.1f}°C", fg=temp_col)
+            self.gauge_temp.set_value(temp, color=temp_col)
         else:
-            self.c_temp.config(text="N/A", fg=GREY)
+            self.gauge_temp.set_value(0, color=GREY)
 
-        self.c_ram.config(
-            text=f"{ram_pct:.0f}%", fg=RED if ram_pct > 85 else WHITE)
-        self.c_disk.config(text=f"{disk_u}/{disk_t}")
+        ram_col = RED if ram_pct > 85 else (ORANGE if ram_pct > 70 else BLUE)
+        self.gauge_ram.set_value(ram_pct, color=ram_col)
+        self._hist_ram.append(ram_pct)
+        self.spk_ram.add_sample(ram_pct)
 
-        self.pb_cpu["value"]  = cpu
-        self.pb_cpu_lbl.config(text=f"{cpu:.1f}%")
-        self.pb_ram["value"]  = ram_pct
-        self.pb_ram_lbl.config(text=f"{ram_u}/{ram_t} MB")
         disk_pct_n = disk_pct if isinstance(disk_pct, (int, float)) else 0
-        self.pb_disk["value"] = disk_pct_n
-        self.pb_disk_lbl.config(text=f"{disk_u}/{disk_t}")
+        disk_col = RED if disk_pct_n > 90 else (ORANGE if disk_pct_n > 75 else WHITE)
+        self.gauge_disk.set_value(disk_pct_n, color=disk_col)
 
-        db_mb  = d.get("db_size_mb", None)
-        uptime = d.get("uptime_s", None)
-        db_txt = f"DB size: {db_mb:.2f} MB" if db_mb is not None else "DB: N/A"
-        self.lbl_db_info.config(text=db_txt)
-        if uptime is not None:
-            h, rem = divmod(uptime, 3600)
-            m, s   = divmod(rem, 60)
-            self.lbl_uptime.config(text=f"Server uptime: {h}h {m}m {s}s")
+        # Server-side stats (DB size, server uptime) intentionally NOT shown
+        # on the Diagnostics tab — that page is strictly Pi telemetry.
 
         # ── Sites ─────────────────────────────────────────────────────────────
         for name, _ in WEBSITES:
