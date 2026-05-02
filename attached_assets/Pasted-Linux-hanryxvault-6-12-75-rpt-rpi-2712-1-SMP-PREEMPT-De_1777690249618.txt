@@ -1,0 +1,56 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Fri May  1 11:34:09 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose ps
+docker compose exec pos test -f /data/sync_mirror_phaseC.log && docker compose exec pos tail -30 /data/sync_mirror_phaseC.log || echo "log gone"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED             STATUS                         PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7        "/bin/ollama serve"      assistant    4 days ago          Up About an hour (unhealthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           About an hour ago   Up About an hour (healthy)     5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    About an hour ago   Up About an hour (healthy)     5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      About an hour ago   Up About an hour (healthy)     80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          About an hour ago   Up About an hour (healthy)     0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   About an hour ago   Up About an hour (healthy)     8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        About an hour ago   Up About an hour (healthy)     6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   About an hour ago   Up About an hour (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync              "/entrypoint.sh pyth…"   sync         47 hours ago        Up About an hour               8080/tcp
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+18:01:37 INFO [C] 34800 new, 0 skipped, 2727 failed (58451.0s)
+18:07:43 INFO [C] 34900 new, 0 skipped, 2727 failed (58816.9s)
+18:14:22 INFO [C] 35000 new, 0 skipped, 2727 failed (59216.8s)
+18:19:40 INFO [C] 35100 new, 0 skipped, 2729 failed (59534.1s)
+18:25:52 INFO [C] 35200 new, 0 skipped, 2729 failed (59906.1s)
+18:31:58 INFO [C] 35300 new, 0 skipped, 2731 failed (60272.0s)
+18:37:18 INFO [C] 35400 new, 0 skipped, 2733 failed (60592.3s)
+18:42:40 INFO [C] 35500 new, 0 skipped, 2733 failed (60914.6s)
+18:48:37 INFO [C] 35600 new, 0 skipped, 2733 failed (61270.9s)
+18:54:24 INFO [C] 35700 new, 0 skipped, 2734 failed (61618.3s)
+19:00:42 INFO [C] 35800 new, 0 skipped, 2734 failed (61996.2s)
+19:06:16 INFO [C] 35900 new, 0 skipped, 2734 failed (62330.0s)
+19:12:49 INFO [C] 36000 new, 0 skipped, 2737 failed (62723.0s)
+19:18:14 INFO [C] 36100 new, 0 skipped, 2738 failed (63048.7s)
+19:24:20 INFO [C] 36200 new, 0 skipped, 2738 failed (63414.1s)
+19:30:33 INFO [C] 36300 new, 0 skipped, 2738 failed (63787.0s)
+19:37:00 INFO [C] 36400 new, 0 skipped, 2739 failed (64174.1s)
+19:42:33 INFO [C] 36500 new, 0 skipped, 2741 failed (64507.6s)
+19:49:16 INFO [C] 36600 new, 0 skipped, 2742 failed (64909.9s)
+19:55:44 INFO [C] 36700 new, 0 skipped, 2742 failed (65298.0s)
+20:02:46 INFO [C] 36800 new, 0 skipped, 2743 failed (65720.1s)
+20:09:42 INFO [C] 36900 new, 0 skipped, 2744 failed (66136.5s)
+20:15:55 INFO [C] 37000 new, 0 skipped, 2745 failed (66509.5s)
+20:22:20 INFO [C] 37100 new, 0 skipped, 2748 failed (66894.3s)
+20:28:23 INFO [C] 37200 new, 0 skipped, 2753 failed (67257.4s)
+20:34:40 INFO [C] 37300 new, 0 skipped, 2756 failed (67634.0s)
+20:40:25 INFO [C] 37400 new, 0 skipped, 2758 failed (67979.1s)
+20:46:33 INFO [C] 37500 new, 0 skipped, 2760 failed (68347.2s)
+20:52:12 INFO [C] 37600 new, 0 skipped, 2765 failed (68686.3s)
+20:58:28 INFO [C] 37700 new, 0 skipped, 2769 failed (69062.2s)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
