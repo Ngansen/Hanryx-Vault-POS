@@ -1,0 +1,33 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS && git pull
+cd pi-setup/monitoring && docker compose restart grafana
+docker compose logs --tail=30 grafana | grep -iE "provision|dashboard|error"
+remote: Enumerating objects: 16, done.
+remote: Counting objects: 100% (16/16), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 9 (delta 4), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (9/9), 2.56 KiB | 655.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   b11e776..075a11f  main       -> origin/main
+Updating b11e776..075a11f
+Fast-forward
+ .../hanryx-pi-ops.json           | 210 +++++++++
+ .../datasources/prometheus.yml   |   1 +
+ 2 files changed, 211 insertions(+)
+ create mode 100644 pi-setup/monitoring/grafana-provisioning/dashboards/hanryx-pi-ops.json
+[+] restart 0/1
+ ⠼ Container grafana Restarting               0.4s
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:16:23.014053766Z level=info msg="module stopped" module=*service.DashboardServiceImpl
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:16:23.014529357Z level=info msg="module stopped" module=provisioning
+grafana  | t=2026-05-03T17:16:23.015223392Z level=error caller=logger.go:234 time=2026-05-03T17:16:23.015214373Z msg="job cleanup controller failed" error="context canceled"
+grafana  | t=2026-05-03T17:16:23.015338928Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.01532828Z msg="App runner exited without error" app=playlist
+grafana  | t=2026-05-03T17:16:23.015448409Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015436058Z msg="Shutting down workers, draining queue" logger=provisioning-connection-controller
+grafana  | t=2026-05-03T17:16:23.015475909Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015464354Z msg="App runner exited without error" app=advisor
+grafana  | t=2026-05-03T17:16:23.015481835Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015469965Z msg="Shutting down workers, draining queue" logger=provisioning-repository-controller
+grafana  | t=2026-05-03T17:16:23.015411206Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015393706Z msg="App runner exited without error" app=plugins
+grafana  | t=2026-05-03T17:16:23.01553902Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015533946Z msg="Queue drained successfully" logger=provisioning-connection-controller
+grafana  | t=2026-05-03T17:16:23.01555202Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.01554715Z msg="Shutting down ConnectionController" logger=provisioning-connection-controller
+grafana  | t=2026-05-03T17:16:23.01556939Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015564502Z msg="Queue drained successfully" logger=provisioning-repository-controller
+grafana  | t=2026-05-03T17:16:23.015579316Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015574853Z msg="Shutting down RepositoryController" logger=provisioning-repository-controller
+grafana  | t=2026-05-03T17:16:23.015586372Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015486557Z msg="App runner exited without error" app=alerting
+grafana  | t=2026-05-03T17:16:23.015613057Z level=info caller=logger.go:214 time=2026-05-03T17:16:23.015603631Z msg="App runner exited without error" app=example
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
