@@ -4,6 +4,14 @@
 
 apiVersion: 1
 
+# Delete any pre-existing "Prometheus" datasource on startup, then recreate
+# with the stable uid below. Needed because earlier versions of this file
+# provisioned the datasource without a uid; Grafana stored it with an
+# auto-generated uid and refuses to "update" it to a new uid in place.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
     uid: prometheus         # Stable UID so provisioned dashboards can reference it
