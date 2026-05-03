@@ -1,0 +1,75 @@
+ngansen@hanryxvault:~ $ # 1. Stop Docker entirely (graceful). This will flush whatever can still flush.
+sudo systemctl stop docker docker.socket containerd
+
+# 2. Confirm Docker is fully down (no zombie processes)
+sudo systemctl is-active docker docker.socket containerd
+ps aux | grep -E 'docker|containerd' | grep -v grep || echo "all clear"
+
+# 3. Force-detach the ghost mount (lazy, because IO is broken on the dead device)
+sudo umount -l /mnt/cards
+mount | grep cards || echo "ghost gone"
+
+# 4. Mount the REAL dock (it's now sdb1, UUID 381e# 6. Make Docker REFUSE to startctically OK, but v
+inactive
+inactive
+inactive
+all clear
+ghost gone
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdb1       1.8T   22G  1.8T   2% /mnt/cards
+cards-database
+cdn
+docker
+faiss
+git
+jp_pcc
+jp_pokell
+krsync.log
+krsync.logm
+lost+found
+ls: cannot open directory '/mnt/cards/docker': Permission denied
+fstab already has cards entry, edit manually
+TARGET     SOURCE    FSTYPE OPTIONS
+/mnt/cards /dev/sdb1 ext4   rw,relatime
+ngansen@hanryxvault:~ $ # A. See what's currently in fstab for /mnt/cards (probably the old sda1-based line)
+grep -n cards /etc/fstab
+
+# B. Replace any existing cards line with the UUID-based one (idempotent)
+sudo sed -i.bak '/\/mnt\/cards/d' /etc/fstab
+echo "UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail,x-systemd.device-timeout=10  0  2" | sudo tee -a /etc/fstab 
+grep cards /etc/fstab    # should show ONLY the new UUID line
+
+# C. Validate fstab syntax (mount -a is a no-op since /mnt/cards is already mounted, but it parses fstab)
+sudo systemctl daemon-reload
+t'do docker info 2>/dev/null | grep -i 'docker roo
+4:UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail  0  2
+UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail,x-systemd.device-timeout=10  0  2
+UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail,x-systemd.device-timeout=10  0  2
+TARGET     SOURCE    FSTYPE OPTIONS
+/mnt/cards /dev/sdb1 ext4   rw,relatime
+pi-setup-redis-1        Up About a minute (healthy)
+pi-setup-db-1   Up About a minute (healthy)
+grafana Up About a minute
+prometheus      Up About a minute
+node-exporter   Up About a minute
+npm     Up About a minute
+adminer Up About a minute
+pi-setup-sync-1 Up About a minute
+pi-setup-assistant-1    Up About a minute (health: starting)
+ Docker Root Dir: /mnt/cards/docker
+ngansen@hanryxvault:~ $ docker ps --format '{{.Names}}\t{{.Status}}' | sort
+ls /etc/systemd/system/docker.service.d/
+curl -sI http://localhost:8080 | head -3
+sudo docker exec pi-setup-db-1 psql -U postgres -tAc "SELECT 'db ok';" 2>&1 | tail -3
+adminer Up 3 minutes
+grafana Up 3 minutes
+node-exporter   Up 3 minutes
+npm     Up 3 minutes
+pi-setup-assistant-1    Up 3 minutes (unhealthy)
+pi-setup-db-1   Up 3 minutes (healthy)
+pi-setup-redis-1        Up 3 minutes (healthy)
+pi-setup-sync-1 Up 3 minutes
+prometheus      Up 3 minutes
+wait-for-cards.conf
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  role "postgres" does not exist
+ngansen@hanryxvault:~
