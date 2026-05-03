@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Diagnostics (Grafana)
+Comment=Fullscreen Grafana dashboard kiosk for the 7" diagnostics screen
+Exec=/bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
+Terminal=false
