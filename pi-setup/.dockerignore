@@ -10,6 +10,12 @@ __pycache__/
 nginx/
 systemd/
 satellite/
+# Runtime data dirs created by sibling stacks (monitoring/proxy) — owned by
+# the container user (root for grafana, npm), so an unprivileged docker
+# build context walk fails with "permission denied" on grafana-data/csv,
+# letsencrypt/, etc. None of this belongs in any service image anyway.
+monitoring/
+proxy/
 # scripts/ — DO NOT exclude. The directory contains both host-only shell
 # helpers (add-vpn-client.sh, setup-bluetooth-printer.sh, etc.) AND
 # container-runnable Python modules (scripts/sync_card_mirror.py and
