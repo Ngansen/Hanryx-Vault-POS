@@ -72,7 +72,12 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /:/rootfs:ro
+      # rslave propagates host mount events (e.g. UGreen dock at /mnt/cards
+      # mounted after this container started) into the container's rootfs
+      # view so node_exporter can report node_filesystem_* for them.
+      # Without this, /mnt/cards shows "No data" in Grafana even when the
+      # host clearly has the dock mounted.
+      - /:/rootfs:ro,rslave
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
