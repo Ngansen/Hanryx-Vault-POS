@@ -1,0 +1,96 @@
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ docker compose exec npm sh -c 'ls -la /data/custom_ssl/npm-1/'
+total 16
+drwxr-xr-x 2 root root 4096 May  3 14:36 .
+drwxr-xr-x 3 root root 4096 May  3 14:36 ..
+-rw-r--r-- 1 root root 2892 May  3 14:36 fullchain.pem
+-rw-r--r-- 1 root root  227 May  3 14:36 privkey.pem
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS/pi-setup/proxy && \
+docker compose exec npm sh -c 'ls -la /data/nginx/proxy_host/ && echo "---" && cat /data/nginx/proxy_host/*.conf 2>/dev/null | head -80'
+total 8
+drwxr-xr-x 2 root root 4096 May  3 14:52 .
+drwxr-xr-x 9 root root 4096 May  2 15:48 ..
+---
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS/pi-setup/proxy && \
+docker compose exec npm sh -c 'ls -la /data/nginx/proxy_host/ && echo "---" && cat /data/nginx/proxy_host/*.conf 2>/dev/null | head -80'
+total 8
+drwxr-xr-x 2 root root 4096 May  3 15:02 .
+drwxr-xr-x 9 root root 4096 May  2 15:48 ..
+---
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ docker compose logs --tail 50 npm
+npm  | ❯ IPv6 ...
+npm  | Enabling IPV6 in hosts in: /etc/nginx/conf.d
+npm  | - /etc/nginx/conf.d/default.conf
+npm  | - /etc/nginx/conf.d/include/assets.conf
+npm  | - /etc/nginx/conf.d/include/ssl-cache.conf
+npm  | - /etc/nginx/conf.d/include/log-proxy.conf
+npm  | - /etc/nginx/conf.d/include/proxy.conf
+npm  | - /etc/nginx/conf.d/include/log-stream.conf
+npm  | - /etc/nginx/conf.d/include/letsencrypt-acme-challenge.conf
+npm  | - /etc/nginx/conf.d/include/ssl-cache-stream.conf
+npm  | - /etc/nginx/conf.d/include/ip_ranges.conf
+npm  | - /etc/nginx/conf.d/include/force-ssl.conf
+npm  | - /etc/nginx/conf.d/include/block-exploits.conf
+npm  | - /etc/nginx/conf.d/include/ssl-ciphers.conf
+npm  | - /etc/nginx/conf.d/include/resolvers.conf
+npm  | - /etc/nginx/conf.d/production.conf
+npm  | Enabling IPV6 in hosts in: /data/nginx
+npm  | ❯ Docker secrets ...
+npm  | 
+npm  | -------------------------------------
+npm  |  _   _ ____  __  __
+npm  | | \ | |  _ \|  \/  |
+npm  | |  \| | |_) | |\/| |
+npm  | | |\  |  __/| |  | |
+npm  | |_| \_|_|   |_|  |_|
+npm  | -------------------------------------
+npm  | User:  npm PUID:0 ID:0 GROUP:0
+npm  | Group: npm PGID:0 ID:0
+npm  | -------------------------------------
+npm  | 
+npm  | ❯ Starting nginx ...
+npm  | ❯ Starting backend ...
+npm  | [5/3/2026] [2:52:13 PM] [Global   ] › ℹ  info      Using Sqlite: /data/database.sqlite
+npm  | [5/3/2026] [2:52:13 PM] [Migrate  ] › ℹ  info      Current database version: none
+npm  | [5/3/2026] [2:52:14 PM] [Setup    ] › ℹ  info      Logrotate Timer initialized
+npm  | [5/3/2026] [2:52:14 PM] [Setup    ] › ℹ  info      Logrotate completed.
+npm  | [5/3/2026] [2:52:14 PM] [Global   ] › ℹ  info      IP Ranges fetch is enabled
+npm  | [5/3/2026] [2:52:14 PM] [IP Ranges] › ℹ  info      Fetching IP Ranges from online services...
+npm  | [5/3/2026] [2:52:14 PM] [IP Ranges] › ℹ  info      Fetching https://ip-ranges.amazonaws.com/ip-ranges.json
+npm  | [5/3/2026] [2:52:19 PM] [IP Ranges] › ℹ  info      Fetching https://www.cloudflare.com/ips-v4
+npm  | [5/3/2026] [2:52:19 PM] [IP Ranges] › ℹ  info      Fetching https://www.cloudflare.com/ips-v6
+npm  | [5/3/2026] [2:52:20 PM] [SSL      ] › ℹ  info      Let's Encrypt Renewal Timer initialized
+npm  | [5/3/2026] [2:52:20 PM] [SSL      ] › ℹ  info      Renewing SSL certs expiring within 30 days ...
+npm  | [5/3/2026] [2:52:20 PM] [IP Ranges] › ℹ  info      IP Ranges Renewal Timer initialized
+npm  | [5/3/2026] [2:52:20 PM] [SSL      ] › ℹ  info      Completed SSL cert renew process
+npm  | [5/3/2026] [2:52:20 PM] [Global   ] › ℹ  info      Backend PID 171 listening on port 3000 ...
+npm  | [5/3/2026] [2:52:26 PM] [Nginx    ] › ℹ  info      Reloading Nginx
+npm  | [5/3/2026] [2:57:32 PM] [Remote Version] › ℹ  info      Fetching https://api.github.com/repos/NginxProxyManager/nginx-proxy-manager/releases/latest
+npm  | [5/3/2026] [2:57:34 PM] [Nginx    ] › ℹ  info      Reloading Nginx
+npm  | [5/3/2026] [3:02:25 PM] [Nginx    ] › ℹ  info      Reloading Nginx
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS/pi-setup/proxy && \
+docker compose exec npm sh -c '
+echo "=== proxy_host/ contents NOW ===" ;
+ls -la /data/nginx/proxy_host/ ;
+echo "" ;
+echo "=== ANY .conf files anywhere under /data/nginx ===" ;
+find /data/nginx -name "*.conf" 2>/dev/null ;
+echo "" ;
+echo "=== DB rows for proxy_host (the source of truth) ===" ;
+sqlite3 /data/database.sqlite "SELECT id, domain_names, forward_host, forward_port, certificate_id, ssl_forced, enabled, is_deleted, modified_on FROM proxy_host;" 2>&1 ;
+echo "" ;
+echo "=== DB rows for certificate ===" ;
+sqlite3 /data/database.sqlite "SELECT id, nice_nam', provider, is_deleted FROM certificate;" 2>&1
+=== proxy_host/ contents NOW ===
+total 8
+drwxr-xr-x 2 root root 4096 May  3 15:02 .
+drwxr-xr-x 9 root root 4096 May  2 15:48 ..
+
+=== ANY .conf files anywhere under /data/nginx ===
+
+=== DB rows for proxy_host (the source of truth) ===
+sh: 9: sqlite3: not found
+
+=== DB rows for certificate ===
+sh: 12: sqlite3: not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ 
