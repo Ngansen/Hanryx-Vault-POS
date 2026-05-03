@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS/pi-setup/proxy && \
+docker compose exec npm sh -c 'ls -la /data/nginx/proxy_host/ && echo "---" && cat /data/nginx/proxy_host/*.conf 2>/dev/null | head -80'
+total 12
+drwxr-xr-x 2 root root 4096 May  3 16:18 .
+drwxr-xr-x 9 root root 4096 May  2 15:48 ..
+-rw-r--r-- 1 root root 2456 May  3 16:18 2.conf
+---
+# ------------------------------------------------------------
+# hanryxvault.tailcfc0a3.ts.net
+# ------------------------------------------------------------
+
+
+
+map $scheme $hsts_header {
+    https   "max-age=63072000; preload";
+}
+
+server {
+  set $forward_scheme http;
+  set $server         "host.docker.internal";
+  set $port           8080;
+
+  listen 80;
+listen [::]:80;
+
+listen 443 ssl;
+listen [::]:443 ssl;
+
+
+  server_name hanryxvault.tailcfc0a3.ts.net;
+
+  http2 on;
+
+
+  # Custom SSL
+  ssl_certificate /data/custom_ssl/npm-1/fullchain.pem;
+  ssl_certificate_key /data/custom_ssl/npm-1/privkey.pem;
+
+
+
+
+
+
+  # Block Exploits
+  include conf.d/include/block-exploits.conf;
+
+
+
+  # HSTS (ngx_http_headers_module is required) (63072000 seconds = 2 years)
+  add_header Strict-Transport-Security $hsts_header always;
+
+
+
+
+
+    # Force SSL
+    
+    set $trust_forwarded_proto "F";
+    
+    include conf.d/include/force-ssl.conf;
+
+
+
+
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $http_connection;
+proxy_http_version 1.1;
+
+
+  access_log /data/logs/proxy-host-2_access.log proxy;
+  error_log /data/logs/proxy-host-2_error.log warn;
+
+
+
+  location /grafana {
+    proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_set_header Host $host;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Scheme $scheme;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-For    $remote_addr;
+    proxy_set_header X-Real-IP          $remote_addr;
+
+    proxy_pass       http://grafana:3000;
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ 
