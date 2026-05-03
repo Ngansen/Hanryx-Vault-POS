@@ -1,0 +1,51 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ # 1. What's on the dock NOW (the new view of /mnt/cards)
+ls -la /mnt/cards
+du -sh /mnt/cards/* 2>/dev/null
+df -h /mnt/cards /
+
+# 2. Confirm node-exporter sees the dock for the dashboard
+curl -s http://localhost:9100/metrics | grep 'node_filesystem_size_bytes.*mountpoint="/mnt/cards"'
+total 100
+drwxrwxr-x 18 ngansen ngansen  4096 May  3 17:31 .
+drwxr-xr-x  4 root    root     4096 Apr 26 19:42 ..
+drwxr-xr-x 10 root    root     4096 Apr 30 04:18 cards-database
+drwxr-xr-x  6 ngansen ngansen  4096 May  1 11:10 cdn
+drwxr-xr-x  2 ngansen ngansen  4096 Apr 30 02:55 faiss
+drwxr-xr-x  2 ngansen ngansen  4096 Apr 30 02:55 git
+drwxr-xr-x  2 ngansen ngansen  4096 Apr 30 02:55 jp_pcc
+drwxr-xr-x  2 ngansen ngansen  4096 Apr 30 02:55 jp_pokell
+-rw-rw-r--  1 ngansen ngansen  9079 Apr 30 04:32 krsync.log
+-rw-rw-r--  1 ngansen ngansen   625 Apr 30 03:52 krsync.logm
+drwx------  2 ngansen ngansen 16384 Apr 30 02:53 lost+found
+drwxr-xr-x  4 root    root     4096 Apr 30 04:18 pokemon-card-jp-database
+drwxr-xr-x  7 root    root     4096 Apr 30 04:20 pokemon-tcg-pocket-cards
+drwxr-xr-x  6 root    root     4096 Apr 30 04:18 pokemon-tcg-pocket-database
+drwxr-xr-x  9 root    root     4096 Apr 30 04:18 pokemon-tcg-tracker
+drwxr-xr-x  2 ngansen ngansen  4096 Apr 30 02:55 postgres
+drwxr-xr-x  4 root    root     4096 Apr 30 04:31 PTCG-CHS-Datasets
+drwxr-xr-x  9 root    root     4096 Apr 30 04:18 ptcg-kr-db
+drwxr-xr-x  4 ngansen ngansen  4096 Apr 30 02:55 thumbs
+drwxr-xr-x  2 root    root     4096 May  3 17:31 zhsync.log
+191M    /mnt/cards/cards-database
+5.9G    /mnt/cards/cdn
+4.0K    /mnt/cards/faiss
+4.0K    /mnt/cards/git
+4.0K    /mnt/cards/jp_pcc
+4.0K    /mnt/cards/jp_pokell
+12K     /mnt/cards/krsync.log
+4.0K    /mnt/cards/krsync.logm
+16K     /mnt/cards/lost+found
+3.6M    /mnt/cards/pokemon-card-jp-database
+1.9G    /mnt/cards/pokemon-tcg-pocket-cards
+9.9M    /mnt/cards/pokemon-tcg-pocket-database
+2.3M    /mnt/cards/pokemon-tcg-tracker
+4.0K    /mnt/cards/postgres
+8.3G    /mnt/cards/PTCG-CHS-Datasets
+117M    /mnt/cards/ptcg-kr-db
+12K     /mnt/cards/thumbs
+4.0K    /mnt/cards/zhsync.log
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1       1.8T   17G  1.8T   1% /mnt/cards
+/dev/mmcblk0p2   58G   43G   14G  76% /
+node_filesystem_size_bytes{device="/dev/sda1",device_error="",fstype="ext4",mountpoint="/mnt/cards"} 1.967845998592e+12
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
