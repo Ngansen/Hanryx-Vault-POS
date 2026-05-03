@@ -1,0 +1,73 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ echo "=== hanryx_net gateway ===" ; \
+GW=$(docker network inspect hanryx_net --format '{{(index .IPAM.Config 0).Gateway}}') ; echo "$GW" ; \
+echo "" ; \
+echo "=== curl from hanryx_net via host.docker.internal:8080 ===" ; \
+docker run --rm --network hanryx_net --add-host host.docker.internal:host-gateway curlimages/curl:latest \
+  curl -sv --max-time 5 http://host.docker.internal:8080/ 2>&1 | tail -15 ; \
+echo "" ; \
+echo "=== curl from hanryx_net via gateway IP:8080 ===" ; \
+docker run --rm --network hanryx_net curlimages/curl:latest \
+  curl -sv --max-time 5 http://$GW:8080/ 2>&1 | tahead -30ables -L FORWARD -n --line-numbers 2>&1 | 
+=== hanryx_net gateway ===
+172.19.0.1
+
+=== curl from hanryx_net via host.docker.internal:8080 ===
+< Content-Type: text/html; charset=utf-8
+< Content-Length: 322
+< Access-Control-Allow-Origin: *
+< Access-Control-Allow-Headers: Content-Type, Authorization
+< Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+< X-Request-ID: 7a1e4bc883b9
+< X-Content-Type-Options: nosniff
+< X-Frame-Options: SAMEORIGIN
+< Referrer-Policy: strict-origin-when-cross-origin
+< Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;
+< Vary: Accept-Encoding, Cookie
+< 
+{ [322 bytes data]
+* Connection #0 to host host.docker.internal:8080 left intact
+<html><body style="background:#0d0d0d;color:#e0e0e0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column"><h1 style="color:#f59e0b;font-size:48px">404</h1><p>Page not found</p><a href="/admin" style="color:#f59e0b;margin-top:16px">Back to Admin</a></body></html>
+=== curl from hanryx_net via gateway IP:8080 ===
+< Content-Type: text/html; charset=utf-8
+< Content-Length: 322
+< Access-Control-Allow-Origin: *
+< Access-Control-Allow-Headers: Content-Type, Authorization
+< Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+< X-Request-ID: 2ff20cc34bd9
+< X-Content-Type-Options: nosniff
+< X-Frame-Options: SAMEORIGIN
+< Referrer-Policy: strict-origin-when-cross-origin
+< Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;
+< Vary: Accept-Encoding, Cookie
+< 
+{ [322 bytes data]
+* Connection #0 to host 172.19.0.1:8080 left intact
+<html><body style="background:#0d0d0d;color:#e0e0e0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column"><h1 style="color:#f59e0b;font-size:48px">404</h1><p>Page not found</p><a href="/admin" style="color:#f59e0b;margin-top:16px">Back to Admin</a></body></html>
+=== NPM /etc/hosts ===
+127.0.0.1       localhost
+::1     localhost ip6-localhost ip6-loopback
+fe00::  ip6-localnet
+ff00::  ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+172.17.0.1      host.docker.internal
+172.19.0.4      cdc822d54108
+
+=== NPM proxy-host error log (shows the 502 reason) ===
+2026/05/03 16:20:01 [error] 309#309: *123 host.docker.internal could not be resolved (3: Host not found), client: 172.19.0.1, server: hanryxvault.tailcfc0a3.ts.net, request: "GET / HTTP/2.0", host: "hanryxvault.tailcfc0a3.ts.net"
+2026/05/03 16:20:01 [error] 309#309: *123 host.docker.internal could not be resolved (3: Host not found), client: 172.19.0.1, server: hanryxvault.tailcfc0a3.ts.net, request: "GET /favicon.ico HTTP/2.0", host: "hanryxvault.tailcfc0a3.ts.net", referrer: "https://hanryxvault.tailcfc0a3.ts.net/"
+
+=== iptables FORWARD chain (docker→host routing) ===
+Chain FORWARD (policy DROP)
+num  target     prot opt source               destination         
+1    DOCKER-USER  all  --  0.0.0.0/0            0.0.0.0/0           
+2    ts-forward  all  --  0.0.0.0/0            0.0.0.0/0           
+3    DOCKER-FORWARD  all  --  0.0.0.0/0            0.0.0.0/0           
+4    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            state RELATED,ESTABLISHED
+5    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0           
+6    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0           
+7    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            state RELATED,ESTABLISHED
+8    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0           
+9    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0           
+10   ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0           
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $
