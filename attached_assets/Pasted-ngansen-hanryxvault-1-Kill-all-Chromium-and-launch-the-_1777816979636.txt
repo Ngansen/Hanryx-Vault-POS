@@ -1,0 +1,89 @@
+ngansen@hanryxvault:~ $ # 1) Kill all Chromium and launch the Diagnostics rack via the helper
+pkill -f 'chromium|chrome' 2>/dev/null ; sleep 2 ; \
+bash ~/Hanryx-Vault-POS/pi-setup/reload_monitor.sh ; \
+echo "" ; \
+\
+# 2) Find every place that could be auto-launching chromium
+echo "=== process tree of PID 845 (the rogue chromium launcher) ===" ; \
+ps -o pid,ppid,user,cmd 845 2>/dev/null ; \
+ps -o pid,ppid,user,cmd $(ps -o ppid= 845 2>/dev/null) 2>/dev/null ; \
+echo "" ; \
+echo "=== home-dir autostart ===" ; \
+ls -la ~/.config/autostart/ 2>/dev/null ; \
+echo "" ; \
+p -v '^$' || echo "  (no rc.local or empty)" | gre
+
+[reload_monitor] pulling latest from origin/main…
+Already up to date.
+[reload_monitor] stopping existing processes: 1335
+[reload_monitor] launching: DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority
+                 python3 /home/ngansen/Hanryx-Vault-POS/pi-setup/desktop_monitor.py --kiosk  →  /tmp/monitor.log
+[reload_monitor] OK — new pid 6835 is alive
+                 tail log with: tail -f /tmp/monitor.log
+
+=== process tree of PID 845 (the rogue chromium launcher) ===
+    PID    PPID USER     CMD
+    PID    PPID USER     CMD
+   5975    5974 ngansen  -bash
+   6835       1 ngansen  python3 /home/ngansen/Han
+   6905    5975 ngansen  ps -o pid,ppid,user,cmd
+
+=== home-dir autostart ===
+total 16
+drwxr-xr-x  2 ngansen ngansen 4096 May  3 13:58 .
+drwx------ 15 ngansen ngansen 4096 Apr 15 03:17 ..
+-rw-r--r--  1 ngansen ngansen  381 Apr 15 00:14 hanryx-kiosk.desktop.disabled
+-rw-rw-r--  1 ngansen ngansen  285 May  3 13:58 hanryx-monitor.desktop
+
+=== system-wide autostart (XDG) ===
+  (none matching)
+
+=== LXDE/labwc/wayfire autostarts ===
+--- /home/ngansen/.config/lxsession/LXDE-pi/autostart ---
+@lxpanel --profile LXDE-pi
+@pcmanfm --desktop --profile LXDE-pi
+@xset s off
+@xset -dpms
+@xset s noblank
+
+
+=== systemd user services that might launch chromium ===
+UNIT FILE                                    STATE   PRESET
+rpi-connect-signin.path                      enabled enabled
+fbd-alert-slider.service                     enabled enabled
+filter-chain.service                         enabled enabled
+gcr-ssh-agent.service                        enabled enabled
+gnome-keyring-daemon.service                 enabled enabled
+mpris-proxy.service                          enabled enabled
+pipewire-pulse.service                       enabled enabled
+pipewire.service                             enabled enabled
+rpi-connect-wayvnc.service                   enabled enabled
+rpi-connect.service                          enabled enabled
+wireplumber.service                          enabled enabled
+xdg-desktop-portal-rewrite-launchers.service enabled enabled
+dirmngr.socket                               enabled enabled
+gcr-ssh-agent.socket                         enabled enabled
+gnome-keyring-daemon.socket                  enabled enabled
+gpg-agent-browser.socket                     enabled enabled
+gpg-agent-extra.socket                       enabled enabled
+gpg-agent-ssh.socket                         enabled enabled
+gpg-agent.socket                             enabled enabled
+
+=== systemd system services ===
+hanryx-docker.service              enabled enabled
+hanryx-nat.service                 enabled enabled
+hanryx-pos.service                 enabled enabled
+hanryx-docker-heal.timer           enabled enabled
+hanryxvault-backup.timer           enabled enabled
+hanryxvault-kiosk-videos.timer     enabled enabled
+hanryxvault-tcg-refresh.timer      enabled enabled
+
+=== crontabs ===
+@reboot sleep 30 && export DISPLAY=:0 && chromium --noerrdialogs --disable-infobars --kiosk --no-first-run http://localhost:8080/admin
+  (no root crontab match) 
+  (no /etc/cron.* match)
+
+=== check rc.local (legacy autostart) ===
+  (no rc.local or empty)
+ngansen@hanryxvault:~ $ 
+ngansen@hanryxvault:~ $ 
