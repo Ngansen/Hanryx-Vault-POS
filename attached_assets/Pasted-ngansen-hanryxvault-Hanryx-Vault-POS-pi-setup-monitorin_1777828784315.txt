@@ -1,0 +1,66 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ cd ~/Hanryx-Vault-POS/pi-setup/monitoring
+docker compose ps grafana
+docker compose logs --tail=120 grafana 2>&1 | tail -60
+NAME      IMAGE                    COMMAND     SERVICE   CREATED        STATUS                          PORTS
+grafana   grafana/grafana:latest   "/run.sh"   grafana   25 hours ago   Restarting (1) 11 seconds ago   
+grafana  | logger=storage.unified.migrations t=2026-05-03T17:18:32.261250775Z level=info msg="Resolved storage mode from migration log" resource=folders.folder.grafana.app mode=unified
+grafana  | logger=live.push_http t=2026-05-03T17:18:32.265756833Z level=info msg="Live Push Gateway initialization"
+grafana  | logger=ngalert.notifier t=2026-05-03T17:18:32.267257827Z level=info component=alertmanager orgID=1 msg="template definitions loaded" mimir=0 grafana=0 total=0 maxTemplateOutput=10485760
+grafana  | logger=ngalert.notifier component=alertmanager orgID=1 t=2026-05-03T17:18:32.269023561Z level=info msg="Applying new configuration to Alertmanager" configHash="{16778549912962373901 16454292769479786371 11334157631281353376 13684829433332818750 9889444224312429563 10278876130067529486 13274274624283075277 5144611013662998819}"
+grafana  | logger=ngalert.notifier t=2026-05-03T17:18:32.269048561Z level=info component=alertmanager orgID=1 msg="template definitions loaded" mimir=0 grafana=0 total=0 maxTemplateOutput=10485760
+grafana  | logger=ngalert.writer t=2026-05-03T17:18:32.285241132Z level=info msg="Setting up remote write using data sources" timeout=30s default_datasource_uid=
+grafana  | logger=ngalert t=2026-05-03T17:18:32.285302002Z level=info msg="Using protobuf-based alert instance store"
+grafana  | logger=ngalert.state.manager.persist t=2026-05-03T17:18:32.285317113Z level=info msg="Using sync rule state persister (compressed)"
+grafana  | logger=query_data t=2026-05-03T17:18:32.286334646Z level=info msg="Query Service initialization"
+grafana  | logger=annotation.app t=2026-05-03T17:18:32.322272571Z level=info msg="Starting annotation cleanup loop" interval=24h0m0s retention=2160h0m0s
+grafana  | logger=infra.usagestats.collector t=2026-05-03T17:18:32.324369619Z level=info msg="registering usage stat providers" usageStatsProvidersLen=2
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:18:32.399168679Z level=info msg=starting module=tracing
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:18:32.399296549Z level=info msg=starting module=grafana-apiserver
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.152552744Z level=info msg="Adding GroupVersion dashboard.grafana.app v2 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.15304052Z level=info msg="Adding GroupVersion dashboard.grafana.app v2beta1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.154474959Z level=info msg="Adding GroupVersion dashboard.grafana.app v2alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.156331193Z level=info msg="Adding GroupVersion dashboard.grafana.app v0alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.157457337Z level=info msg="Adding GroupVersion dashboard.grafana.app v1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.158739295Z level=info msg="Adding GroupVersion dashboard.grafana.app v1beta1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.161312027Z level=info msg="Adding GroupVersion collections.grafana.app v1alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.168176372Z level=info msg="Adding GroupVersion provisioning.grafana.app v0alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.171016214Z level=info msg="Adding GroupVersion provisioning.grafana.app v1beta1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.171457564Z level=info msg="Adding GroupVersion features.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.171605341Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.171594823Z msg="Zanzana is not enabled; skipping folder propagation hooks"
+grafana  | t=2026-05-03T17:18:33.171659711Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.171653822Z msg="Zanzana is not enabled; skipping folder propagation hooks"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.172780096Z level=info msg="Adding GroupVersion folder.grafana.app v1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.173423797Z level=info msg="Adding GroupVersion folder.grafana.app v1beta1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.174279868Z level=info msg="Adding GroupVersion userstorage.grafana.app v0alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.174938977Z level=info msg="Adding GroupVersion preferences.grafana.app v1alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.176017825Z level=info msg="Adding GroupVersion playlist.grafana.app v1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.176751952Z level=info msg="Adding GroupVersion playlist.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.17683984Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.176827692Z msg="Installed APIs for app" app=playlist
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.178479723Z level=info msg="Adding GroupVersion plugins.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.178567612Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.178557427Z msg="Installed APIs for app" app=plugins
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.179862978Z level=info msg="Adding GroupVersion example.grafana.app v1alpha1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.180503031Z level=info msg="Adding GroupVersion example.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.180635549Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.180625364Z msg="Installed APIs for app" app=example
+grafana  | t=2026-05-03T17:18:33.180773808Z level=warn caller=logger.go:224 time=2026-05-03T17:18:33.180766104Z msg="skipped registering status sub-resource that does not support dual writing" resource=recordingrules.rules.alerting.grafana.app version=v0alpha1 storagePath=recordingrules/status
+grafana  | t=2026-05-03T17:18:33.180798548Z level=warn caller=logger.go:224 time=2026-05-03T17:18:33.180793826Z msg="skipped registering status sub-resource that does not support dual writing" resource=alertrules.rules.alerting.grafana.app version=v0alpha1 storagePath=alertrules/status
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.182288376Z level=info msg="Adding GroupVersion rules.alerting.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.18236845Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.182359172Z msg="Installed APIs for app" app=alerting
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.185164884Z level=info msg="Adding GroupVersion notifications.alerting.grafana.app v1beta1 to ResourceManager"
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.18679173Z level=info msg="Adding GroupVersion notifications.alerting.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.186976007Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.186963581Z msg="Installed APIs for app" app=alerting-notifications
+grafana  | logger=grafana-apiserver t=2026-05-03T17:18:33.188639001Z level=info msg="Adding GroupVersion advisor.grafana.app v0alpha1 to ResourceManager"
+grafana  | t=2026-05-03T17:18:33.188767667Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.188756538Z msg="Installed APIs for app" app=advisor
+grafana  | t=2026-05-03T17:18:33.931072865Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.931055217Z msg="App initialized" app=advisor
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:18:33.931393346Z level=info msg=starting module=plugins.store
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:18:33.931527734Z level=info msg=starting module=plugin.backgroundinstaller
+grafana  | logger=plugin.backgroundinstaller t=2026-05-03T17:18:33.931571827Z level=info msg="Plugins installed" plugins=[]
+grafana  | logger=plugin.backgroundinstaller t=2026-05-03T17:18:33.931622326Z level=info msg="Installing plugins" plugins="[{ID:grafana-lokiexplore-app Version: URL:} {ID:grafana-pyroscope-app Version: URL:} {ID:grafana-exploretraces-app Version: URL:} {ID:grafana-metricsdrilldown-app Version: URL:} {ID:elasticsearch Version: URL:}]"
+grafana  | t=2026-05-03T17:18:33.932353213Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.932337527Z msg="App initialized" app=example
+grafana  | logger=backgroundsvcs.managerAdapter t=2026-05-03T17:18:33.932511675Z level=info msg=starting module=provisioning
+grafana  | t=2026-05-03T17:18:33.93295034Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.932936433Z msg="App initialized" app=plugins
+grafana  | t=2026-05-03T17:18:33.933023618Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.933015358Z msg="App initialized" app=alerting
+grafana  | t=2026-05-03T17:18:33.933113932Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.933106432Z msg="App initialized" app=alerting-notifications
+grafana  | t=2026-05-03T17:18:33.933163802Z level=info caller=logger.go:214 time=2026-05-03T17:18:33.933157228Z msg="App initialized" app=playlist
+grafana  | logger=provisioning t=2026-05-03T17:18:33.934477612Z level=error msg="Failed to provision data sources" error="Datasource provisioning error: data source not found"
+grafana  | logger=provisioning t=2026-05-03T17:18:33.93455863Z level=error msg="Failed to provision data sources" error="Datasource provisioning error: data source not found"
+grafana  | Error: ✗ invalid service state: Failed, expected: Terminated, failure: invalid service state: Failed, expected: Running, failure: not healthy, 0 terminated, 1 failed: [starting module provisioning: invalid service state: Failed, expected: Running, failure: Datasource provisioning error: data source not found]
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
