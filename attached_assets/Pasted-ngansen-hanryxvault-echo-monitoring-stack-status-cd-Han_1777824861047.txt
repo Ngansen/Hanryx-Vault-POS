@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~ $ echo "=== monitoring stack status ===" ;
+cd ~/Hanryx-Vault-POS/pi-setup/monitoring 2>/dev/null && docker compose ps 2>&1 || echo "  monitoring dir not found" ;
+echo "" ;
+echo "=== docker networks ===" ;
+docker network ls ;
+echo "" ;
+echo "=== containers on hanryx_net (NPM must share this with frontail+grafana) ===" ;
+docker network inspect hanryx_net --format '{{range .Containers}}{{.Name}} {{end}}' 2>&1 ;
+echo "" ;
+echo "=== nginx -t inside NPM (the actual validator) ===" ;
+cd ~/Hanryx-Vault-POS/pi-setup/proxy && docker compose exec npm nginx -t 2>&1 ;
+echo "" ;
+echo "=== can NPM resolve frontail and grafana by .internal' 2>&1s grafana; getent hosts host.docker
+=== monitoring stack status ===
+NAME            IMAGE                       COMMAND                  SERVICE         CREATED        STATUS       PORTS
+grafana         grafana/grafana:latest      "/run.sh"                grafana         24 hours ago   Up 2 hours   3000/tcp
+node-exporter   prom/node-exporter:latest   "/bin/node_exporter …"   node-exporter   24 hours ago   Up 2 hours   
+prometheus      prom/prometheus:latest      "/bin/prometheus --c…"   prometheus      24 hours ago   Up 2 hours   100.125.5.34:9090->9090/tcp
+
+=== docker networks ===
+NETWORK ID     NAME               DRIVER    SCOPE
+e334374835b1   bridge             bridge    local
+f9f15dbeb778   hanryx_net         bridge    local
+2a6fe19fb999   host               host      local
+35269a474b70   none               null      local
+5332d57b369e   pi-setup_default   bridge    local
+
+=== containers on hanryx_net (NPM must share this with frontail+grafana) ===
+prometheus npm grafana adminer 
+
+=== nginx -t inside NPM (the actual validator) ===
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+=== can NPM resolve frontail and grafana by hostname? ===
+172.19.0.3      grafana
+172.17.0.1      host.docker.internal
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $
