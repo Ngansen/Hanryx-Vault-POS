@@ -1,0 +1,49 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ df -h /
+du -sh /mnt/cards /mnt/cards/* 2>/dev/null
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   43G   14G  76% /
+17G     /mnt/cards
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ lsblk
+dmesg | tail -30
+sudo mount -a
+mountpoint /mnt/cards
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+loop0         7:0    0    2G  0 loop 
+sda           8:0    0  1.8T  0 disk 
+└─sda1        8:1    0  1.8T  0 part /mnt/cards
+mmcblk0     179:0    0 59.5G  0 disk 
+├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
+└─mmcblk0p2 179:2    0   59G  0 part /
+zram0       254:0    0    2G  0 disk [SWAP]
+[12153.009240] usb 3-1.4: new high-speed USB device number 5 using xhci-hcd
+[12153.113582] usb 3-1.4: New USB device found, idVendor=0bda, idProduct=9210, bcdDevice=f0.01
+[12153.113590] usb 3-1.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[12153.113593] usb 3-1.4: Product: Ugreen Storage Device
+[12153.113595] usb 3-1.4: Manufacturer: Ugreen
+[12153.113597] usb 3-1.4: SerialNumber: 013117100578
+[12153.145416] usb-storage 3-1.4:1.0: USB Mass Storage device detected
+[12153.145665] scsi host0: usb-storage 3-1.4:1.0
+[12154.025241] usb 3-1.3.2: new high-speed USB device number 6 using xhci-hcd
+[12154.144144] usb 3-1.3.2: New USB device found, idVendor=0bda, idProduct=8153, bcdDevice=31.fd
+[12154.144154] usb 3-1.3.2: New USB device strings: Mfr=1, Product=2, SerialNumber=7
+[12154.144158] usb 3-1.3.2: Product: USB 10/100/1000 LAN
+[12154.144161] usb 3-1.3.2: Manufacturer: Realtek
+[12154.144164] usb 3-1.3.2: SerialNumber: DF136C1FF774BC32
+[12154.194476] usbcore: registered new device driver r8152-cfgselector
+[12154.369671] r8152-cfgselector 3-1.3.2: reset high-speed USB device number 6 using xhci-hcd
+[12154.594407] scsi 0:0:0:0: Direct-Access     WD_BLACK  SN770 2TB       1.00 PQ: 0 ANSI: 6
+[12154.597108] sd 0:0:0:0: [sda] 3907029168 512-byte logical blocks: (2.00 TB/1.82 TiB)
+[12154.597849] sd 0:0:0:0: [sda] Write Protect is off
+[12154.597854] sd 0:0:0:0: [sda] Mode Sense: 37 00 00 08
+[12154.598390] sd 0:0:0:0: [sda] Write cache: disabled, read cache: enabled, doesn't support DPO or FUA
+[12154.603283] sd 0:0:0:0: Attached scsi generic sg0 type 0
+[12154.621795]  sda: sda1
+[12154.621968] sd 0:0:0:0: [sda] Attached SCSI disk
+[12154.665301] r8152 3-1.3.2:1.0 eth1: v1.12.13
+[12154.666963] usbcore: registered new interface driver r8152
+[12154.674202] usbcore: registered new interface driver cdc_ether
+[12154.676755] usbcore: registered new interface driver r8153_ecm
+[12166.166376] EXT4-fs (sda1): recovery complete
+[12166.166635] EXT4-fs (sda1): mounted filesystem 381e39df-5f24-44ad-a925-38d5b60e4256 r/w with ordered data mode. Quota mode: none.
+/mnt/cards is a mountpoint
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
