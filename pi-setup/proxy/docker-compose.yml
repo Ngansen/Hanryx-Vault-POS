@@ -12,14 +12,19 @@
 #
 # Three services:
 #   npm       Nginx Proxy Manager — admin GUI on :81, public proxy on :80/:443
-#   frontail  Live tail of /mnt/cards/zhsync.log, served behind NPM at /logs/
 #   adminer   Generic Postgres web UI, direct on :8081 (no NPM, no cert)
 #
-# Why frontail goes through NPM but Adminer doesn't:
-#   frontail handles being mounted at a subpath natively (--url-path /logs).
-#   Adminer needs URL rewriting to work at a subpath, which is fragile.
-#   So Adminer just gets its own port on the tailnet IP — same security
-#   posture (only tailnet devices can reach it) without the rewrite headache.
+# DISABLED: frontail (mthenw/frontail) — amd64-only, crashes on Pi 5 (ARM64)
+# with `exec format error`. See commented-out service block below. For now,
+# tail the sync log via SSH:
+#     ssh ngansen@100.125.5.34 'tail -f /mnt/cards/zhsync.log'
+# Future replacement options (all ARM64-friendly):
+#   - gotty wrapping `tail -f` (web TTY, simple)
+#   - a tiny custom Node image running the `frontail` npm package directly
+#     (the npm package itself is platform-agnostic; only the prebuilt
+#      Docker image is amd64-only)
+#   - logdy (modern, has prebuilt arm64 images)
+# Whichever we pick, restore the `/logs` Custom Location in NPM after.
 
 services:
   npm:
@@ -44,25 +49,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  frontail:
-    image: mthenw/frontail:latest
-    container_name: frontail
-    restart: unless-stopped
-    # --url-path /logs    makes frontail's static assets + websocket use
-    #                     the /logs prefix, so it works behind NPM's
-    #                     "Custom Location: /logs" without rewriting
-    # --lines 5000        keep the last 5000 lines in the in-memory ring
-    #                     (the file is huge; loading the whole thing on
-    #                      every browser refresh would lock up the page)
-    command: ["--url-path", "/logs", "--lines", "5000", "/var/log/zhsync.log"]
-    volumes:
-      # Read-only mount of the live sync log. The file is appended to by
-      # `tee -a /mnt/cards/zhsync.log` in zh_full_sync.sh; frontail
-      # tails it via inotify and pushes new lines to connected browsers
-      # over a websocket.
-      - /mnt/cards/zhsync.log:/var/log/zhsync.log:ro
-    networks: [hanryx_net]
-    # No published ports — only NPM (on the same docker network) reaches it.
+  # DISABLED — see header comment for ARM64 replacement options.
+  # frontail:
+  #   image: mthenw/frontail:latest
+  #   container_name: frontail
+  #   restart: unless-stopped
+  #   command: ["--url-path", "/logs", "--lines", "5000", "/var/log/zhsync.log"]
+  #   volumes:
+  #     - /mnt/cards/zhsync.log:/var/log/zhsync.log:ro
+  #   networks: [hanryx_net]
 
   adminer:
     image: adminer:latest

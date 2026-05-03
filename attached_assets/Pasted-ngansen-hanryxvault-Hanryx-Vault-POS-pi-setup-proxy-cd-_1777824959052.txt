@@ -1,0 +1,54 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $ cd ~/Hanryx-Vault-POS/pi-setup/proxy && \
+echo "=== proxy stack containers ===" ; \
+docker compose ps ; \
+echo "" ; \
+echo "=== frontail logs (last 40 lines) ===" ; \
+docker compose logs --tail 40 frontail 2>&1
+=== proxy stack containers ===
+NAME       IMAGE                             COMMAND                  SERVICE    CREATED        STATUS                           PORTS
+adminer    adminer:latest                    "entrypoint.sh docke…"   adminer    24 hours ago   Up 2 hours                       100.125.5.34:8081->8080/tcp
+frontail   mthenw/frontail:latest            "/frontail/docker-en…"   frontail   24 hours ago   Restarting (255) 6 seconds ago   
+npm        jc21/nginx-proxy-manager:latest   "/init"                  npm        24 hours ago   Up About an hour                 100.125.5.34:80-81->80-81/tcp, 100.125.5.34:443->443/tcp
+
+=== frontail logs (last 40 lines) ===
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+frontail  | exec /frontail/docker-entrypoint.sh: exec format error
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/proxy $
