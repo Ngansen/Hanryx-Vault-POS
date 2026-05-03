@@ -1,0 +1,39 @@
+ngansen@hanryxvault:~ $ echo "=== what's running on the display ===" ; \
+pgrep -af 'chromium|chrome|desktop_monitor\.py' || echo "  (nothing matching)" ; \
+echo "" ; \
+echo "=== autostart entries ===" ; \
+ls -la ~/.config/autostart/ 2>/dev/null ; \
+echo "" ; \
+echo "=== contents of any .desktop autostart files ===" ; \
+for f in ~/.config/autostart/*.desktop; do echo "--- $f ---" ; cat "$f" ; done 2>/dev/null
+=== what's running on the display ===
+845 /bin/sh -c sleep 30 && export DISPLAY=:0 && chromium --noerrdialogs --disable-infobars --kiosk --no-first-run http://localhost:8080/admin
+4188 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --enable-remote-extensions --load-extension= --use-angle=gles http://localhost:8080/admin --noerrdialogs --disable-infobars --kiosk --no-first-run
+4485 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+4491 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=4 --shared-client-connection
+4493 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable
+4494 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable
+4529 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable
+4664 /usr/lib/chromium/chromium --type=gpu-process --enable-gpu-rasterization --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,15189890983941040600,11698979458805309929,262144 --field-trial-handle=3,i,16420214413228953731,15272876387814660294,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,14700046533563022503,17395096558784292293,4 --trace-process-track-uuid=3190708988185955192
+4670 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5901723990860295507,5184428598869933100,524288 --field-trial-handle=3,i,16420214413228953731,15272876387814660294,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,14700046533563022503,17395096558784292293,4 --trace-process-track-uuid=3190708989122997041
+4689 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,15722616338203465380,5037876062024596908,524288 --field-trial-handle=3,i,16420214413228953731,15272876387814660294,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,14700046533563022503,17395096558784292293,4 --trace-process-track-uuid=3190708990060038890
+5081 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable --js-flags=--no-decommit-pooled-pages --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=9 --time-ticks-at-unix-epoch=-1777815562913550 --launch-time-ticks=63057609 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16482397088817537651,476765004939636895,2097152 --field-trial-handle=3,i,16420214413228953731,15272876387814660294,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,14700046533563022503,17395096558784292293,4 --trace-process-track-uuid=3190708994745248135
+6043 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --change-stack-guard-on-fork=enable --js-flags=--no-decommit-pooled-pages --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=10 --time-ticks-at-unix-epoch=-1777815562913550 --launch-time-ticks=99563202 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,8956986814889302461,5784150873189553558,2097152 --field-trial-handle=3,i,16420214413228953731,15272876387814660294,262144 --variations-seed-version --pseudonymization-salt-handle=7,i,14700046533563022503,17395096558784292293,4 --trace-process-track-uuid=3190708995682289984
+
+=== autostart entries ===
+total 12
+drwxr-xr-x  2 ngansen ngansen 4096 Apr 15 00:14 .
+drwx------ 15 ngansen ngansen 4096 Apr 15 03:17 ..
+-rw-r--r--  1 ngansen ngansen  381 Apr 15 00:14 hanryx-kiosk.desktop
+
+=== contents of any .desktop autostart files ===
+--- /home/ngansen/.config/autostart/hanryx-kiosk.desktop ---
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Kiosk
+Comment=Customer-facing POS display
+Exec=/bin/bash -c 'sleep 8 && DISPLAY=:0 chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-translate --check-for-update-interval=31536000 http://localhost/kiosk'
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+ngansen@hanryxvault:~ $
