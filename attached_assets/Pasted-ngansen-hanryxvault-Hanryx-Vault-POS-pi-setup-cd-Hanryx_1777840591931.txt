@@ -1,0 +1,55 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Tear down the stack (keep volumes — that's where data lives)
+docker compose down --remove-orphans --timeout 5
+
+# 2. Force-remove ANY container whose name mentions pi-setup, including the weird
+#    fa5fd80a952b_pi-setup-recognizer-1 backup name compose created
+docker ps -a --format '{{.Names}}' | grep 'pi-setup' | xargs -r docker rm -f
+docker ps -a --format '{{.Names}}' | grep 'pi-setup' || echo "all pi-setup containers gone"
+
+# 3. Verify volumes are intact (the actual data)
+docker volume ls | grep pi-setup
+
+# 4. Bring it back fresh — --force-recreate ensurecurl -sI http://localhost:8080 | head -3s}}' | sor
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] down 13/13
+ ✔ Container f7e93e636ea4             Removed 0.0s
+ ✔ Container pi-setup-sync-1          Removed 0.2s
+ ✔ Container pi-setup-assistant-1     Removed 0.3s
+ ✔ Container b20adab7c951             Removed 0.0s
+ ✔ Container f7e93e636ea4_pi-setup... Removed 0.1s
+ ✔ Container 5cabd86d2c31             Removed 0.0s
+ ✔ Container b20adab7c951_pi-setup... Removed 0.2s
+ ✔ Container fa5fd80a952b_pi-setup... Removed 5.3s
+ ✔ Container a6213f5dee6c             Removed 0.0s
+ ✔ Container a6213f5dee6c_pi-setup... Removed 0.2s
+ ✔ Container pi-setup-db-1            Removed 0.3s
+ ✔ Container pi-setup-redis-1         Removed 0.4s
+ ✔ Network pi-setup_default           Removed 0.2s
+all pi-setup containers gone
+local     pi-setup_card-images
+local     pi-setup_ollama-data
+local     pi-setup_pgdata
+local     pi-setup_pokeapi-data
+local     pi-setup_pos-data
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] up 3/7
+ ✔ Network... Created                         0.0s
+[+] up 3/7... Created                         5.3s
+ ✔ Network... Created                         0.0s
+[+] up 11/15. Created                         5.3s
+ ✔ Network... Created                         0.0s
+ ✔ Contain... Created                         5.3s
+ ✔ Contain... Created                         5.5s ✘ Contain... Error response from daemon: No such container: 5cabd86d2c31a95b1445135a77e07b57777c0877234a74f19b87227758794af4 5.5sup is not mounted. L ✔ Contain... Created                         5.5s
+ ✔ Contain... Created                         5.5s
+ ! recognizer Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+ ! assistant  Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+ ! db         Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+ ⠋ Contain... Recreate                        0.0s
+ ⠋ Contain... Recreate                        0.0s
+ ! redis      Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+ ⠋ Contain... Creating                        0.0s
+ ⠋ Contain... Recreate                        0.0s
+ ! pokeapi    Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+Error response from daemon: No such container: 5cabd86d2c31a95b1445135a77e07b57777c0877234a74f19b87227758794af4
