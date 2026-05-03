@@ -1,0 +1,111 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # 1. Show what's still hanging around (full state) 
+docker ps -a
+docker network ls | grep pi-setup
+cd ~/Hanryx-Vault-POS/pi-setup && docker compose ps -a
+
+# 2. Hard restart the daemon — forces it to reload all state from disk
+sudo systemctl restart docker
+sleep 10
+
+# 3. Confirm the phantom is gone after reload
+docker ps -a --format '{{.Names}}\t{{.Status}}'
+docker inspect 5cabd86d2c31 2>&1 | head -3   # should say "No such object"
+
+# 4. Try compose up one more time
+curl -sI http://localhost:8080 | head -3s}}' | sor
+CONTAINER ID   IMAGE                             COMMAND                  CREATED              STATUS                        PORTS                                                      NAMES
+a532b0bb80f1   pi-setup-storefront               "docker-entrypoint.sh"   About a minute ago   Created                                                                                  b20adab7c951_pi-setup-storefront-1
+9c59e156637c   edoburu/pgbouncer:1.21.0-p2       "/entrypoint.sh /usr…"   About a minute ago   Created                                                                                  a6213f5dee6c_pi-setup-pgbouncer-1
+8066d325628b   pi-setup-pokeapi                  "/docker-entrypoint.…"   About a minute ago   Created                                                                                  5cabd86d2c31_pi-setup-pokeapi-1
+42613973efd1   redis:7.4.1-alpine                "docker-entrypoint.s…"   About a minute ago   Created                                                                                  pi-setup-redis-1
+ed6c33895476   pgvector/pgvector:0.7.4-pg16      "docker-entrypoint.s…"   About a minute ago   Created                                                                                  pi-setup-db-1
+aa42e40ba983   ollama/ollama:0.4.7               "/bin/ollama serve"      About a minute ago   Created                                                                                  pi-setup-assistant-1
+501cb4b742a4   pi-setup-recognizer               "python -u server.py"    About a minute ago   Created                                                                                  pi-setup-recognizer-1
+f7e93e636ea4   pi-setup-pos                      "/entrypoint.sh"         3 hours ago          Exited (255) 14 minutes ago                                                              
+b20adab7c951   pi-setup-storefront               "docker-entrypoint.sh"   3 hours ago          Exited (255) 14 minutes ago                                                              
+a6213f5dee6c   edoburu/pgbouncer:latest          "/entrypoint.sh /usr…"   3 hours ago          Exited (255) 14 minutes ago                                                              
+5cabd86d2c31   pi-setup-pokeapi                  "/docker-entrypoint.…"   3 hours ago          Exited (255) 14 minutes ago                                                              
+3cc7d462bbad   grafana/grafana:latest            "/run.sh"                3 hours ago          Up 4 minutes                  3000/tcp                                                   grafana
+17b04eb522ad   prom/prometheus:latest            "/bin/prometheus --c…"   3 hours ago          Up 4 minutes                  100.125.5.34:9090->9090/tcp                                prometheus
+6c1e1b7c6ab3   prom/node-exporter:latest         "/bin/node_exporter …"   3 hours ago          Up 4 minutes                                                                             node-exporter
+df65adaa0828   jc21/nginx-proxy-manager:latest   "/init"                  3 hours ago          Up 4 minutes                  100.125.5.34:80-81->80-81/tcp, 100.125.5.34:443->443/tcp   npm
+326d3bf91f1a   adminer:latest                    "entrypoint.sh docke…"   3 hours ago          Up 4 minutes                  100.125.5.34:8081->8080/tcp                                adminer
+fd6e629c5ddf   pi-setup_default   bridge    local
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+Error response from daemon: No such container: f7e93e636ea40e97348e005eca531e18dc7da57c163d63786aa580ac5380c076
+^C
+b20adab7c951_pi-setup-storefront-1      Created
+a6213f5dee6c_pi-setup-pgbouncer-1       Created
+5cabd86d2c31_pi-setup-pokeapi-1 Created
+pi-setup-redis-1        Created
+pi-setup-db-1   Created
+pi-setup-assistant-1    Created
+pi-setup-recognizer-1   Created
+        Exited (255) 14 minutes ago
+        Exited (255) 14 minutes ago
+        Exited (255) 14 minutes ago
+        Exited (255) 14 minutes ago
+grafana Up 1 second
+prometheus      Up 1 second
+node-exporter   Up 1 second
+npm     Up 1 second
+adminer Up 1 second
+[]
+error: no such object: 5cabd86d2c31
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+
+[+] up 5/6
+ ✔ Contain... Removed                         0.1s
+[+] up 7/7... Removed                         0.0s
+ ✔ Contain... Removed                         0.1s
+ ✔ Contain... Removed                         0.0s
+ ✘ Contain... Error response from daemon: No such container: f7e93e636ea40e97348e005eca531e18dc7da57c163d63786aa580ac5380c076 0.4sup is not mounted. L ✔ Contain... Created                         0.4s
+ ✔ Contain... Removed                         0.0s
+ ! sync       Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+ ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+Error response from daemon: No such container: f7e93e636ea40e97348e005eca531e18dc7da57c163d63786aa580ac5380c076
+
+^C
+adminer Up 6 seconds
+grafana Up 6 seconds
+node-exporter   Up 6 seconds
+npm     Up 6 seconds
+prometheus      Up 6 seconds
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # NUCLEAR — only if the daemon restart above didn't clear the phantoms
+sudo systemctl stop docker docker.socket containerd
+sudo rm -rf /mnt/cards/docker/containers/*
+sudo rm -rf /mnt/cards/docker/containerd/io.containerd.metadata.v1.bolt/meta.db
+sudo systemctl start docker
+sleep 10
+docker ps -a   # should be completely empty
+cd ~/Hanryx-Vault-POS/pi-setup && docker compose up -d
+CONTAINER ID   IMAGE                             COMMAND                  CREATED              STATUS                        PORTS                                                      NAMES
+9a4461ac56bc   pi-setup-pos                      "/entrypoint.sh"         33 seconds ago       Created                                                                                  f7e93e636ea4_pi-setup-pos-1
+21147fa16489   pi-setup-sync                     "/entrypoint.sh pyth…"   33 seconds ago       Created                                                                                  pi-setup-sync-1
+a532b0bb80f1   pi-setup-storefront               "docker-entrypoint.sh"   About a minute ago   Created                                                                                  b20adab7c951_pi-setup-storefront-1
+9c59e156637c   edoburu/pgbouncer:1.21.0-p2       "/entrypoint.sh /usr…"   About a minute ago   Created                                                                                  a6213f5dee6c_pi-setup-pgbouncer-1
+42613973efd1   redis:7.4.1-alpine                "docker-entrypoint.s…"   About a minute ago   Created                                                                                  pi-setup-redis-1
+ed6c33895476   pgvector/pgvector:0.7.4-pg16      "docker-entrypoint.s…"   About a minute ago   Created                                                                                  pi-setup-db-1
+aa42e40ba983   ollama/ollama:0.4.7               "/bin/ollama serve"      About a minute ago   Created                                                                                  pi-setup-assistant-1
+501cb4b742a4   pi-setup-recognizer               "python -u server.py"    About a minute ago   Created                                                                                  pi-setup-recognizer-1
+f7e93e636ea4   pi-setup-pos                      "/entrypoint.sh"         3 hours ago          Exited (255) 14 minutes ago                                                              
+b20adab7c951   pi-setup-storefront               "docker-entrypoint.sh"   3 hours ago          Exited (255) 14 minutes ago                                                              
+a6213f5dee6c   edoburu/pgbouncer:latest          "/entrypoint.sh /usr…"   3 hours ago          Exited (255) 14 minutes ago                                                              
+5cabd86d2c31   pi-setup-pokeapi                  "/docker-entrypoint.…"   3 hours ago          Exited (255) 14 minutes ago                                                              
+3cc7d462bbad   grafana/grafana:latest            "/run.sh"                3 hours ago          Up 10 seconds                 3000/tcp                                                   grafana
+17b04eb522ad   prom/prometheus:latest            "/bin/prometheus --c…"   3 hours ago          Up 10 seconds                 100.125.5.34:9090->9090/tcp                                prometheus
+6c1e1b7c6ab3   prom/node-exporter:latest         "/bin/node_exporter …"   3 hours ago          Up 10 seconds                                                                            node-exporter
+df65adaa0828   jc21/nginx-proxy-manager:latest   "/init"                  3 hours ago          Up 10 seconds                 100.125.5.34:80-81->80-81/tcp, 100.125.5.34:443->443/tcp   npm
+326d3bf91f1a   adminer:latest                    "entrypoint.sh docke…"   3 hours ago          Up 10 seconds                 100.125.5.34:8081->8080/tcp                                adminer
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] up 7/8
+ ✔ Container a6213f5dee6c          Removed    0.0s
+ ✔ Container b20adab7c951          Removed    0.0s
+ ✔ Container f7e93e636ea4          Removed    0.0s
+ ✔ Container pi-setup-redis-1      Started    0.4s
+ ✔ Container pi-setup-recognizer-1 Started    0.4s
+ ✔ Container pi-setup-db-1         Started    0.3s
+ ⠼ Container 5cabd86d2c31          Starting   0.4s
+ ✔ Container pi-setup-assistant-1  Started    0.4s
+Error response from daemon: No such container: 5cabd86d2c31a95b1445135a77e07b57777c0877234a74f19b87227758794af4
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
