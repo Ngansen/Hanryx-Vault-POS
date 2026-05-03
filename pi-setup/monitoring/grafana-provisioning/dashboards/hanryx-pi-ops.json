@@ -77,14 +77,15 @@
       "type": "stat",
       "gridPos": { "h": 8, "w": 4, "x": 10, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "avg(node_hwmon_temp_celsius)", "refId": "A" }],
+      "targets": [{ "expr": "(avg(node_hwmon_temp_celsius) * 9 / 5) + 32", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
-          "unit": "celsius",
+          "unit": "fahrenheit",
+          "decimals": 1,
           "thresholds": { "mode": "absolute", "steps": [
             { "color": "green", "value": null },
-            { "color": "yellow", "value": 65 },
-            { "color": "red", "value": 80 }
+            { "color": "yellow", "value": 149 },
+            { "color": "red", "value": 176 }
           ]}
         }
       },

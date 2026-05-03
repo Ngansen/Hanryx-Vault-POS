@@ -54,6 +54,15 @@ services:
       # bounce to the wrong URL and JS/CSS assets 404.
       GF_SERVER_ROOT_URL: "https://hanryxvault.tailcfc0a3.ts.net/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Anonymous read-only access — required so the 7" diagnostics-screen
+      # kiosk can show the dashboard without prompting for a login. The
+      # admin login form still works for editing from the laptop. Tailnet
+      # membership is what gates external access; anonymous here only
+      # means "anyone reaching Grafana can read", which is fine inside
+      # the tailnet.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
       # Default admin password stays at 'admin' on first login (operator
       # changes it interactively, per Q3 of the install conversation).
     networks: [hanryx_net]
