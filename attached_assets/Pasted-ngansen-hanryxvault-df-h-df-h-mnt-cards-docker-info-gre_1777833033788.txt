@@ -1,0 +1,65 @@
+ngansen@hanryxvault:~ $ df -h /
+df -h /mnt/cards
+docker info | grep -i 'docker root dir'
+docker ps
+ls /var/lib/docker.old 2>/dev/null && echo "old copy still there" || echo "old copy already removed"Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   27G   30G  47% /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1       1.8T   22G  1.8T   2% /mnt/cards
+WARNING: No memory limit support
+ Docker Root Dir: /mnt/cards/docker
+WARNING: No swap limit support
+CONTAINER ID   IMAGE                             COMMAND                  CREATED          STATUS                             PORTS                                                      NAMES
+f7e93e636ea4   pi-setup-pos                      "/entrypoint.sh"         19 seconds ago   Up 11 seconds (healthy)            0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp                pi-setup-pos-1
+b20adab7c951   pi-setup-storefront               "docker-entrypoint.sh"   19 seconds ago   Up 11 seconds (health: starting)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp                pi-setup-storefront-1
+a6213f5dee6c   edoburu/pgbouncer:latest          "/entrypoint.sh /usr…"   19 seconds ago   Up 11 seconds (healthy)            5432/tcp                                                   pi-setup-pgbouncer-1
+0f7e59b19831   redis:7-alpine                    "docker-entrypoint.s…"   25 seconds ago   Up 17 seconds (healthy)            6379/tcp                                                   pi-setup-redis-1
+b851232c4236   pgvector/pgvector:pg16            "docker-entrypoint.s…"   25 seconds ago   Up 17 seconds (healthy)            5432/tcp                                                   pi-setup-db-1
+fa5fd80a952b   pi-setup-recognizer               "python -u server.py"    25 seconds ago   Up 17 seconds (healthy)            8081/tcp                                                   pi-setup-recognizer-1
+5cabd86d2c31   pi-setup-pokeapi                  "/docker-entrypoint.…"   25 seconds ago   Up 17 seconds (healthy)            80/tcp                                                     pi-setup-pokeapi-1
+3cc7d462bbad   grafana/grafana:latest            "/run.sh"                4 minutes ago    Up 30 seconds                      3000/tcp                                                   grafana
+17b04eb522ad   prom/prometheus:latest            "/bin/prometheus --c…"   4 minutes ago    Up 30 seconds                      100.125.5.34:9090->9090/tcp                                prometheus
+6c1e1b7c6ab3   prom/node-exporter:latest         "/bin/node_exporter …"   4 minutes ago    Up 31 seconds                                                                                 node-exporter
+df65adaa0828   jc21/nginx-proxy-manager:latest   "/init"                  4 minutes ago    Up 30 seconds                      100.125.5.34:80-81->80-81/tcp, 100.125.5.34:443->443/tcp   npm
+326d3bf91f1a   adminer:latest                    "entrypoint.sh docke…"   4 minutes ago    Up 30 seconds                      100.125.5.34:8081->8080/tcp                                adminer
+9922709f364a   pi-setup-sync                     "/entrypoint.sh pyth…"   28 hours ago     Up 31 seconds                      8080/tcp                                                   pi-setup-sync-1
+473f1030983a   ollama/ollama:0.4.7               "/bin/ollama serve"      6 days ago       Up 31 seconds (health: starting)   11434/tcp                                                  pi-setup-assistant-1
+old copy already removed
+ngansen@hanryxvault:~ $ ping -c3 192.168.86.22
+sudo nmap -sn 192.168.86.0/24 | grep -B2 -i 'raspberry\|pi'
+tailscale status | grep -iE 'sat|pi'
+PING 192.168.86.22 (192.168.86.22) 56(84) bytes of data.
+64 bytes from 192.168.86.22: icmp_seq=1 ttl=64 time=126 ms
+64 bytes from 192.168.86.22: icmp_seq=2 ttl=64 time=63.8 ms
+64 bytes from 192.168.86.22: icmp_seq=3 ttl=64 time=399 ms
+
+--- 192.168.86.22 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+rtt min/avg/max/mdev = 63.751/196.288/398.803/145.459 ms
+sudo: nmap: command not found
+ngansen@hanryxvault:~ $ # 1. Exact ssh error message (the verbose flag is crucial here)
+ssh -v -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new ngansen@192.168.86.22 2>&1 | head -40 
+
+# 2. Is port 22 even open?
+nc -zv -w 3 192.168.86.22 22 2>&1
+
+# 3. In case sshd was moved to a non-standard port 
+for p in 22 2222 22022 8022 2200; do
+  nc -zv -w 2 192.168.86.22 $p 2>&1 | grep -E 'open|succeeded'
+done
+
+# 4. Is it on tailscale under a different name?
+tailscale status | grep -v '^$'
+debug1: OpenSSH_10.0p2 Debian-7+deb13u2, OpenSSL 3.5.5 27 Jan 2026
+debug1: Reading configuration data /etc/ssh/ssh_config
+debug1: Reading configuration data /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf
+debug1: /etc/ssh/ssh_config line 21: Applying options for *
+debug1: Connecting to 192.168.86.22 [192.168.86.22] port 22.
+debug1: connect to address 192.168.86.22 port 22: Connection refused
+ssh: connect to host 192.168.86.22 port 22: Connection refused
+nc: connect to 192.168.86.22 port 22 (tcp) failed: Connection refused
+100.125.5.34    hanryxvault      ngansen84@  linux    -                                                    
+100.89.6.91     desktop-ah0ahak  ngansen84@  windows  idle; offline, last seen 19m ago, tx 37896 rx 31072  
+100.119.98.95   iphone172        ngansen84@  iOS      -                                                    
+100.118.170.69  noahs-tab-a11    ngansen84@  android  offline, last seen 14h ago                           
+ngansen@hanryxvault:~ $ 
