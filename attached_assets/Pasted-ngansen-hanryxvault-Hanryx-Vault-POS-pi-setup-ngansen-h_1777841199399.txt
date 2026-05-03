@@ -1,0 +1,85 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull
+cd pi-setup && docker compose up -d
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 808 bytes | 62.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   9fa557c..3c9e2f5  main       -> origin/main
+Updating 9fa557c..3c9e2f5
+Fast-forward
+ pi-setup/.dockerignore | 6 ++++++
+ 1 file changed, 6 insertions(+)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] up 0/1
+ ⠋ Image pi-setup-recognizer Building         0.0s
+[+] Building 1.3s (25/56)                         
+ => [internal] load local bake definitions   0.0s
+ => => reading from stdin 2.46kB             0.0s
+ => [storefront internal] load build defini  0.0s
+ => => transferring dockerfile: 4.54kB       0.0s
+ => [pokeapi internal] load build definitio  0.0s
+ => => transferring dockerfile: 1.86kB       0.0s
+ => [sync internal] load build definition f  0.0s
+ => => transferring dockerfile: 7.14kB       0.0s
+ => [recognizer internal] load build defini  0.0s
+ => => transferring dockerfile: 4.78kB       0.0s
+ => [pos internal] load metadata for docker  0.1s
+ => [pokeapi internal] load metadata for do  0.1s
+ => [storefront internal] load metadata for  0.1s
+ => [sync internal] load .dockerignore       0.0s
+ => => transferring context: 1.12kB          0.0s
+ => [recognizer internal] load .dockerignor  0.0s
+ => => transferring context: 2B              0.0s
+ => [storefront internal] load .dockerignor  0.0s
+ => => transferring context: 2B              0.0s
+ => [pokeapi internal] load .dockerignore    0.0s
+ => => transferring context: 2B              0.0s
+ => [pos internal] load build context        0.5s
+ => => transferring context: 8.76MB          0.3s
+ => [recognizer builder 1/7] FROM docker.io  0.7s
+ => => resolve docker.io/library/python:3.1  0.1s
+ => => extracting sha256:bb3f2b52e6af242cee  0.1s
+ => [recognizer internal] load build contex  0.0s
+ => => transferring context: 69B             0.0s
+ => [storefront internal] load build contex  0.0s
+ => => transferring context: 42B             0.0s
+ => CANCELED [storefront builder 1/8] FROM   0.2s
+ => => resolve docker.io/library/node:20.18  0.2s
+ => CANCELED [pokeapi 1/5] FROM docker.io/l  0.9s
+ => => resolve docker.io/library/nginx:1.27  0.2s
+ => [pokeapi internal] load build context    0.3s
+ => => transferring context: 59B             0.0s
+ => CACHED [storefront builder 2/8] RUN set  0.0s
+ => CACHED [storefront builder 3/8] RUN apt  0.0s
+ => CACHED [storefront builder 4/8] WORKDIR  0.0s
+ => ERROR [storefront builder 5/8] COPY sto  0.0s
+ => CANCELED [pos builder 2/7] RUN set -eux  0.0s
+ => CANCELED [recognizer 2/7] RUN set -eux;  0.0s
+------
+ > [storefront builder 5/8] COPY storefront-src/ .[+] up 0/5
+ ⠙ Image pi-setup-recognizer Building         1.3s
+ ⠙ Image pi-setup-pokeapi    Building         1.3s
+ ⠙ Image pi-setup-pos        Building         1.3s
+ ⠙ Image pi-setup-storefront Building         1.3s
+ ⠙ Image pi-setup-sync       Building         1.3s
+Dockerfile:46
+
+--------------------
+
+  44 |     WORKDIR /app
+
+  45 |     
+
+  46 | >>> COPY storefront-src/ .
+
+  47 |     
+
+  48 |     # `npm ci` requires a committed `package-lock.json` — without one it falls
+
+--------------------
+
+target storefront: failed to solve: failed to compute cache key: failed to calculate checksum of ref ip8jpbs1ffkvgu62nfgzx9aop::awvdzfye826c05uamzdf5hsxo: "/storefront-src": not found
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
