@@ -27,40 +27,22 @@
 # image) — see `../docs/REPRODUCIBILITY.md` for the bump procedure.
 FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e
 
-# ── apt snapshot pin ─────────────────────────────────────────────────────────
-# Lock apt to a specific point in time on snapshot.debian.org so two
-# `docker compose build` runs install byte-identical .deb files. Without this,
-# Debian security updates between rebuilds silently change the bits in the
-# image (e.g. ffmpeg, libpq5). Bump APT_SNAPSHOT_DATE deliberately — see
-# `../docs/REPRODUCIBILITY.md` for the full bump procedure.
-ARG APT_SNAPSHOT_DATE=20260415T022652Z
+# ── apt snapshot pin (DISABLED) ──────────────────────────────────────────────
+# snapshot.debian.org is unreachable from Docker BuildKit on the Pi after the
+# data-root migration. Using default Debian repos from the base image instead.
+# Base image is pinned by @sha256 digest so the Debian release is still locked.
+# Re-enable when Docker networking to snapshot.debian.org is fixed — see
+# `../docs/REPRODUCIBILITY.md` for the procedure.
+# ARG APT_SNAPSHOT_DATE=20260415T022652Z
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-RUN set -eux; \
-    rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
-    { \
-        echo "Types: deb"; \
-        echo "URIs: https://snapshot.debian.org/archive/debian/${APT_SNAPSHOT_DATE}/"; \
-        echo "Suites: bookworm bookworm-updates"; \
-        echo "Components: main"; \
-        echo "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg"; \
-        echo "Check-Valid-Until: no"; \
-        echo ""; \
-        echo "Types: deb"; \
-        echo "URIs: https://snapshot.debian.org/archive/debian-security/${APT_SNAPSHOT_DATE}/"; \
-        echo "Suites: bookworm-security"; \
-        echo "Components: main"; \
-        echo "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg"; \
-        echo "Check-Valid-Until: no"; \
-    } > /etc/apt/sources.list.d/snapshot.sources
-
 # Tesseract + per-language traineddata so OCR works across EN / KR / JP / CHS.
 # libpq5 = psycopg2 runtime; ffmpeg + libGL = opencv video & image decode.
-RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-kor \
