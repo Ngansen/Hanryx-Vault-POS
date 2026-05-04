@@ -1,0 +1,134 @@
+ngansen@hanryxvault:~ $ # Ping each live IP and immediately grab its MAC in one pass
+for ip in 23 24 26 27 28 31 32 33 35 37 41 42 47 50 51 59 60 62 63 64 77 101 187 229 239 240 248 249; do
+  ping -c1 -W1 192.168.86.$ip &>/dev/null
+  mac=$(ip neigh show 192.168.86.$ip dev wlan0 | awk '{print $5}')
+  echo "192.168.86.$ip  $mac"
+done | sort
+192.168.86.101  
+192.168.86.187  
+192.168.86.229  
+192.168.86.23  
+192.168.86.239  
+192.168.86.24  
+192.168.86.240  
+192.168.86.248  
+192.168.86.249  
+192.168.86.26  
+192.168.86.27  
+192.168.86.28  
+192.168.86.31  
+192.168.86.32  
+192.168.86.33  
+192.168.86.35  
+192.168.86.37  
+192.168.86.41  
+192.168.86.42  
+192.168.86.47  
+192.168.86.50  
+192.168.86.51  
+192.168.86.59  
+192.168.86.60  
+192.168.86.62  
+192.168.86.63  
+192.168.86.64  
+192.168.86.77  
+ngansen@hanryxvault:~ $ # Or use arp-scan (much more reliable - install if missing)
+sudo apt install -y arp-scan
+sudo arp-scan --interface=wlan0 --localnet | grep -iE 'raspberry|b8:27:eb|dc:a6:32|e4:5f:01|2c:cf:67|d8:3a:dd'
+Installing:                     
+  arp-scan
+
+Installing dependencies:
+  ieee-data
+  libauthen-sasl-perl
+  libclone-perl
+  libdata-dump-perl
+  libencode-locale-perl
+  libfile-listing-perl
+  libfont-afm-perl
+  libhtml-form-perl
+  libhtml-format-perl
+  libhtml-parser-perl
+  libhtml-tagset-perl
+  libhtml-tree-perl
+  libhttp-cookies-perl
+  libhttp-daemon-perl
+  libhttp-date-perl
+  libhttp-message-perl
+  libhttp-negotiate-perl
+  libio-compress-brotli-perl
+  libio-html-perl
+  libio-socket-ssl-perl
+  liblwp-mediatypes-perl
+  liblwp-protocol-https-perl
+  libmailtools-perl
+  libnet-http-perl
+  libnet-smtp-ssl-perl
+  libnet-ssleay-perl
+  libtext-csv-perl
+  libtext-csv-xs-perl
+  libtimedate-perl
+  libtry-tiny-perl
+  liburi-perl
+  libwww-perl
+  libwww-robotrules-perl
+  perl-openssl-defaults
+
+Suggested packages:
+  libdigest-hmac-perl    libmime-base32-perl
+  libgssapi-perl         libregexp-ipv6-perl
+  libcrypt-ssleay-perl   libauthen-ntlm-perl
+  libsub-name-perl       debhelper
+  libbusiness-isbn-perl
+
+Summary:
+  Upgrading: 0, Installing: 35, Removing: 0, Not Upgrading: 41
+  Download size: 4,723 kB
+  Space needed: 23.1 MB / 25.6 GB available
+
+Get:1 http://deb.debian.org/debian trixie/main arm64 arp-scan arm64 1.10.0-2+b2 [486 kB]
+Get:2 http://deb.debian.org/debian trixie/main arm64 libencode-locale-perl all 1.05-3 [12.9 kB]
+Get:3 http://deb.debian.org/debian trixie/main arm64 libtimedate-perl all 2.3300-2 [39.3 kB]
+Get:4 http://deb.debian.org/debian trixie/main arm64 libhttp-date-perl all 6.06-1 [10.7 kB]
+Get:5 http://deb.debian.org/debian trixie/main arm64 libfile-listing-perl all 6.16-1 [12.4 kB]
+Get:6 http://deb.debian.org/debian trixie/main arm64 libhtml-tagset-perl all 3.24-1 [14.7 kB]
+Get:7 http://deb.debian.org/debian trixie/main arm64 liburi-perl all 5.30-1 [105 kB]
+Get:8 http://deb.debian.org/debian trixie/main arm64 libhtml-parser-perl arm64 3.83-1+b2 [97.5 kB]
+Get:9 http://deb.debian.org/debian trixie/main arm64 libhtml-tree-perl all 5.07-3 [211 kB]
+Get:10 http://deb.debian.org/debian trixie/main arm64 libclone-perl arm64 0.47-1+b1 [13.7 kB]
+Get:11 http://deb.debian.org/debian trixie/main arm64 libio-html-perl all 1.004-3 [16.2 kB]
+Get:12 http://deb.debian.org/debian trixie/main arm64 liblwp-mediatypes-perl all 6.04-2 [20.2 kB]
+Get:13 http://deb.debian.org/debian trixie/main arm64 libhttp-message-perl all 7.00-2 [79.8 kB]
+Get:14 http://deb.debian.org/debian trixie/main arm64 libhttp-cookies-perl all 6.11-1 [19.1 kB]
+Get:15 http://deb.debian.org/debian trixie/main arm64 libhttp-negotiate-perl all 6.01-2 [13.1 kB]
+Get:16 http://deb.debian.org/debian trixie/main arm64 perl-openssl-defaults arm64 7+b2 [6,712 B]
+Get:17 http://deb.debian.org/debian trixie/main arm64 libnet-ssleay-perl arm64 1.94-3 [323 kB]
+Get:18 http://deb.debian.org/debian trixie/main arm64 libio-socket-ssl-perl all 2.089-1 [223 kB]
+Get:19 http://deb.debian.org/debian trixie/main arm64 libnet-http-perl all 6.23-1 [23.9 kB]
+Get:20 http://deb.debian.org/debian trixie/main arm64 liblwp-protocol-https-perl all 6.14-1 [10.8 kB]
+Get:21 http://deb.debian.org/debian trixie/main arm64 libtry-tiny-perl all 0.32-1 [22.9 kB]
+Get:22 http://deb.debian.org/debian trixie/main arm64 libwww-robotrules-perl all 6.02-1 [12.9 kB]
+Get:23 http://deb.debian.org/debian trixie/main arm64 libwww-perl all 6.78-1 [183 kB]
+Get:24 http://deb.debian.org/debian trixie/main arm64 ieee-data all 20240722 [2,221 kB]
+Get:25 http://deb.debian.org/debian trixie/main arm64 libauthen-sasl-perl all 2.1700-1 [44.8 kB]
+Get:26 http://deb.debian.org/debian trixie/main arm64 libdata-dump-perl all 1.25-1 [28.4 kB]
+Get:27 http://deb.debian.org/debian trixie/main arm64 libfont-afm-perl all 1.20-4 [13.1 kB]
+Get:28 http://deb.debian.org/debian trixie/main arm64 libhtml-form-perl all 6.12-1 [32.3 kB]
+Setting up libwww-robotrules-perl (6.02-1) ...
+Setting up libhtml-parser-perl:arm64 (3.83-1+b2) ...
+Setting up libio-socket-ssl-perl (2.089-1) ...
+Setting up libhttp-message-perl (7.00-2) ...
+Setting up libhtml-form-perl (6.12-1) ...
+Setting up libhttp-negotiate-perl (6.01-2) ...
+Setting up libhttp-cookies-perl (6.11-1) ...
+Setting up libhtml-tree-perl (5.07-3) ...
+Setting up libhtml-format-perl (2.16-2) ...
+Setting up libnet-smtp-ssl-perl (1.04-2) ...
+Setting up libmailtools-perl (2.22-1) ...
+Setting up libhttp-daemon-perl (6.16-1) ...
+Setting up libwww-perl (6.78-1) ...
+Setting up liblwp-protocol-https-perl (6.14-1) ...
+Processing triggers for man-db (2.13.1-1) ...
+WARNING: Cannot open MAC/Vendor file ieee-oui.txt: Permission denied
+WARNING: Cannot open MAC/Vendor file mac-vendor.txt: Permission denied
+ngansen@hanryxvault:~
