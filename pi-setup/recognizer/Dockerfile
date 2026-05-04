@@ -33,7 +33,7 @@ FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98c
 # Debian security updates between rebuilds silently change the bits in the
 # image (e.g. ffmpeg, libpq5). Bump APT_SNAPSHOT_DATE deliberately — see
 # `../docs/REPRODUCIBILITY.md` for the full bump procedure.
-ARG APT_SNAPSHOT_DATE=20260415T000000Z
+ARG APT_SNAPSHOT_DATE=20260415T022652Z
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

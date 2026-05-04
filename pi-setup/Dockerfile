@@ -19,7 +19,7 @@ FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98c
 #
 # Bump APT_SNAPSHOT_DATE deliberately when picking up security updates — see
 # `docs/REPRODUCIBILITY.md` for the full bump procedure.
-ARG APT_SNAPSHOT_DATE=20260415T000000Z
+ARG APT_SNAPSHOT_DATE=20260415T022652Z
 
 RUN set -eux; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
@@ -87,7 +87,7 @@ FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98c
 # Same lock as the builder stage above. Keep ARG defaults in lock-step so a
 # `docker compose build` without overrides produces identical bits in both
 # stages.
-ARG APT_SNAPSHOT_DATE=20260415T000000Z
+ARG APT_SNAPSHOT_DATE=20260415T022652Z
 
 RUN set -eux; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \

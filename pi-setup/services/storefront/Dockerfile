@@ -17,7 +17,7 @@ FROM node:20.18.0-bookworm-slim@sha256:28fbbb764069c698ead61d6a739a7615e8f0e07a4
 # Debian security updates between rebuilds silently change the bits in the
 # image. Bump APT_SNAPSHOT_DATE deliberately — see
 # `../../docs/REPRODUCIBILITY.md` for the full bump procedure.
-ARG APT_SNAPSHOT_DATE=20260415T000000Z
+ARG APT_SNAPSHOT_DATE=20260415T022652Z
 
 RUN set -eux; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
