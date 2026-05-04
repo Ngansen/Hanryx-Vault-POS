@@ -1,0 +1,31 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ # Is the proxy (NPM) running?
+docker ps --format '{{.Names}} {{.Status}}' | grep -i -E 'proxy|npm|nginx'
+
+# Is node-exporter actually serving metrics?
+curl -s http://localhost:9100/metrics | head -3
+
+# What does Prometheus see for its targets?
+curl -s http://100.125.5.34:9090/api/v1/targets | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for t in data.get('data',{}).get('activeTargets',[]):
+    print(f\"{t['labels'].get('job','?'):15s} {t['scrapeUrl']:40s} {t['health']}\")" 2>/dev/null || echo "Prometheus not reachable on 9090"
+
+docker logs prometheus --tail 10rs
+# HELP go_gc_duration_seconds A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 1.9612e-05
+node-kiosk      http://192.168.86.22:9100/metrics        down
+node-main       http://host.docker.internal:9100/metrics up
+prometheus      http://localhost:9090/metrics            up
+time=2026-05-04T02:38:33.218Z level=INFO source=compact.go:590 msg="write block started" component=tsdb mint=1777838402704 maxt=1777845600000 ulid=01KQRDM182ZV4DKWEF63BC30CC
+time=2026-05-04T02:38:33.724Z level=INFO source=compact.go:627 msg="write block completed" component=tsdb mint=1777838402704 maxt=1777845600000 ulid=01KQRDM182ZV4DKWEF63BC30CC duration=506.234878ms ooo=false
+time=2026-05-04T02:38:33.725Z level=INFO source=head.go:1478 msg="Head GC started" component=tsdb caller=truncateMemory
+time=2026-05-04T02:38:33.734Z level=INFO source=head.go:1482 msg="Head GC completed" component=tsdb caller=truncateMemory duration=9.423307ms
+time=2026-05-04T02:38:33.735Z level=INFO source=checkpoint.go:109 msg="Creating checkpoint" component=tsdb from_segment=17 to_segment=21 mint=1777845600000
+time=2026-05-04T02:38:33.854Z level=INFO source=head.go:1443 msg="WAL checkpoint complete" component=tsdb first=17 last=21 duration=119.698305ms
+time=2026-05-04T02:38:34.573Z level=INFO source=compact.go:562 msg="compact blocks" component=tsdb count=3 mint=1777809600000 maxt=1777831200000 ulid=01KQRDM1VZCAY7YKFBKBHCE5RD sources="[01KQQ5N101MEMVYXA27YK39WWK 01KQQCH2TK9YEB0TJVW77CV3PT 01KQQKCSE1GGM854XJEG5A3RKR]" duration=718.603544ms
+time=2026-05-04T02:38:34.593Z level=INFO source=db.go:2077 msg="Deleting obsolete block" component=tsdb block=01KQQ5N101MEMVYXA27YK39WWK
+time=2026-05-04T02:38:34.608Z level=INFO source=db.go:2077 msg="Deleting obsolete block" component=tsdb block=01KQQCH2TK9YEB0TJVW77CV3PT
+time=2026-05-04T02:38:34.631Z level=INFO source=db.go:2077 msg="Deleting obsolete block" component=tsdb block=01KQQKCSE1GGM854XJEG5A3RKR
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
