@@ -27,9 +27,9 @@
 set -u
 
 LOG=/tmp/grafana-kiosk.log
-URL="http://localhost:3000/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark"
+URL="http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark"
 USER_DATA_DIR=/tmp/chromium-grafana
-HEALTH_URL="http://localhost:3000/api/health"
+HEALTH_URL="http://localhost:3001/api/health"
 
 : > "$LOG"
 exec >>"$LOG" 2>&1
