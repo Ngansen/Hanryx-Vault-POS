@@ -1,0 +1,28 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # What display server?
+echo "XDG_SESSION_TYPE: ${XDG_SESSION_TYPE:-not set}"
+echo "WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-not set}"
+echo "DISPLAY: ${DISPLAY:-not set}"
+
+# List connected displays via the kernel
+ls -la /sys/class/drm/*/status 2>/dev/null
+for f in /sys/class/drm/*/status; do echo "$f: $(cat $f 2>/dev/null)"; done
+
+# What's currently running on screen?
+pgrep -a chromium | head -5
+XDG_SESSION_TYPE: tty
+WAYLAND_DISPLAY: not set
+DISPLAY: not set
+-rw-r--r-- 1 root root 16384 May  4 02:28 /sys/class/drm/card1-HDMI-A-1/status
+-rw-r--r-- 1 root root 16384 May  3 18:00 /sys/class/drm/card1-HDMI-A-2/status
+-rw-r--r-- 1 root root 16384 May  4 02:28 /sys/class/drm/card1-Writeback-1/status
+-rw-r--r-- 1 root root 16384 May  4 02:28 /sys/class/drm/card1-Writeback-2/status
+/sys/class/drm/card1-HDMI-A-1/status: disconnected
+/sys/class/drm/card1-HDMI-A-2/status: connected
+/sys/class/drm/card1-Writeback-1/status: unknown
+/sys/class/drm/card1-Writeback-2/status: unknown
+5880 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --enable-remote-extensions --load-extension --use-angle=gles --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required https://hanryxvault.tailcfc0a3.ts.net/grafana/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+5925 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+5926 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+5929 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+5959 /usr/lib/chromium/chromium --type=gpu-process --enable-gpu-rasterization --ozone-platform=wayland --render-node-override=/dev/dri/card1 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,1823041356257966746,3200287279001855707,262144 --field-trial-handle=3,i,4357037374686746530,4626781111180690942,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15973713404096041871,17243991182051149021,4 --trace-process-track-uuid=3190708988185955192
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
