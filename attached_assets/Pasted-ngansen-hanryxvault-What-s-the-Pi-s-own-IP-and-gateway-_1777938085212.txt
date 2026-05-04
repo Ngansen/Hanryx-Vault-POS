@@ -1,0 +1,82 @@
+ngansen@hanryxvault:~ $ # What's the Pi's own IP and gateway?
+ip -4 addr show | grep inet
+ip route | grep default
+
+# Check tailscale - the satellite might be reachable that way
+tailscale status
+    inet 127.0.0.1/8 scope host lo
+    inet 192.168.10.1/24 brd 192.168.10.255 scope global noprefixroute eth0
+    inet 192.168.86.36/24 brd 192.168.86.255 scope global dynamic noprefixroute wlan0
+    inet 100.125.5.34/32 scope global tailscale0
+    inet 10.8.0.1/24 scope global wg0
+    inet 172.20.0.1/16 brd 172.20.255.255 scope global br-03e4f0e8c9d6
+    inet 172.19.0.1/16 brd 172.19.255.255 scope global br-2c1cf3b5a911
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+default via 192.168.86.1 dev wlan0 proto dhcp src 192.168.86.36 metric 600 
+100.125.5.34    hanryxvault      ngansen84@  linux    -                          
+100.89.6.91     desktop-ah0ahak  ngansen84@  windows  offline, last seen 1d ago  
+100.119.98.95   iphone172        ngansen84@  iOS      -                          
+100.118.170.69  noahs-tab-a11    ngansen84@  android  -                          
+ngansen@hanryxvault:~ $ # Scan the direct ethernet subnet
+for i in {2..10}; do ping -c1 -W1 192.168.10.$i &>/dev/null && echo "192.168.10.$i is UP"; done
+
+# Once we find it, SSH using that IP
+# ssh ngansen@192.168.10.2
+
+# Also check arp on the eth0 interface
+ip neigh show dev eth0
+192.168.10.4 FAILED 
+192.168.10.156 lladdr f6:01:ba:93:6b:d7 STALE 
+192.168.86.41 lladdr 26:79:85:b6:ed:80 STALE 
+192.168.10.145 INCOMPLETE 
+192.168.10.3 FAILED 
+192.168.10.6 FAILED 
+192.168.10.158 lladdr d8:6c:63:f0:85:96 DELAY 
+192.168.10.5 FAILED 
+192.168.10.8 INCOMPLETE 
+192.168.10.157 lladdr c4:3d:1a:5e:89:e5 REACHABLE 
+192.168.10.180 FAILED 
+192.168.10.7 FAILED 
+192.168.10.10 INCOMPLETE 
+192.168.10.2 FAILED 
+192.168.10.9 INCOMPLETE 
+fe80::da6c:63ff:fef0:859c lladdr d8:6c:63:f0:85:9c STALE 
+fe80::da6c:63ff:fef5:9f1b lladdr d8:6c:63:f5:9f:1b router REACHABLE 
+fe80::26:826d:7291:2b4b lladdr 62:95:21:81:3f:ea STALE 
+fe80::19b9:44b0:8847:5fa lladdr c4:3d:1a:5e:89:e5 STALE 
+2600:6c44:427f:2676:da6c:63ff:fef5:9f1a lladdr d8:6c:63:f5:9f:1b router STALE 
+ngansen@hanryxvault:~ $ # Clean scan - sequential, only show hits
+for i in {1..254}; do
+  ping -c1 -W1 192.168.86.$i &>/dev/null && echo "192.168.86.$i UP"
+done
+192.168.86.1 UP
+192.168.86.23 UP
+192.168.86.24 UP
+192.168.86.26 UP
+192.168.86.27 UP
+192.168.86.28 UP
+192.168.86.31 UP
+192.168.86.32 UP
+192.168.86.33 UP
+192.168.86.35 UP
+192.168.86.36 UP
+192.168.86.37 UP
+192.168.86.41 UP
+192.168.86.42 UP
+192.168.86.47 UP
+192.168.86.50 UP
+192.168.86.51 UP
+192.168.86.59 UP
+192.168.86.60 UP
+192.168.86.62 UP
+192.168.86.63 UP
+192.168.86.64 UP
+192.168.86.77 UP
+192.168.86.101 UP
+192.168.86.187 UP
+192.168.86.229 UP
+192.168.86.239 UP
+192.168.86.240 UP
+192.168.86.248 UP
+192.168.86.249 UP
+ngansen@hanryxvault:~ $
