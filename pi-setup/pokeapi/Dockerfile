@@ -22,7 +22,7 @@ FROM nginx:1.27.2-alpine@sha256:74175cf34632e88c6cfe206897cbfe2d2fecf9bf033c40e7
 # `apk policy <pkg>` command for finding the current version inside the
 # nginx:1.27.2-alpine@sha256:… base image).
 ARG ALPINE_GIT_VERSION=2.45.4-r0
-ARG ALPINE_BASH_VERSION=5.2.37-r0
+ARG ALPINE_BASH_VERSION=5.2.26-r0
 
 RUN apk add --no-cache \
         git=${ALPINE_GIT_VERSION} \
