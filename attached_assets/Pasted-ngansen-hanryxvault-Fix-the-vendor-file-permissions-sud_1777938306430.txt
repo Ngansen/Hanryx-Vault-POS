@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~ $ # Fix the vendor file permissions
+sudo chmod +r /usr/share/arp-scan/*.txt 2>/dev/null
+
+# Run the full scan - shows everything with vendor names
+sudo arp-scan --interface=wlan0 --localnet
+Interface: wlan0, type: EN10MB, MAC: 88:a2:9e:bd:9d:39, IPv4: 192.168.86.36
+WARNING: Cannot open MAC/Vendor file ieee-oui.txt: Permission denied
+WARNING: Cannot open MAC/Vendor file mac-vendor.txt: Permission denied
+Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
+192.168.86.1    d8:6c:63:f5:9f:1b       (Unknown)
+192.168.86.28   d8:6c:63:f0:85:96       (Unknown)
+192.168.86.47   9c:4f:5f:8e:85:12       (Unknown)
+192.168.86.42   9c:4f:5f:6c:c6:08       (Unknown)
+192.168.86.64   b8:7b:d4:e3:27:61       (Unknown)
+192.168.86.24   24:62:ab:2f:f8:b2       (Unknown)
+192.168.86.33   d8:f1:5b:ca:97:28       (Unknown)
+192.168.86.23   f0:a7:31:94:76:ad       (Unknown)
+192.168.86.26   24:62:ab:43:82:05       (Unknown)
+192.168.86.27   24:62:ab:2f:1d:92       (Unknown)
+192.168.86.28   d8:6c:63:f0:85:9c       (Unknown) (DUP: 2)
+192.168.86.41   26:79:85:b6:ed:80       (Unknown: locally administered)
+192.168.86.20   18:b4:30:cc:ea:23       (Unknown)
+192.168.86.51   f0:a7:31:94:7f:05       (Unknown)
+192.168.86.77   50:91:e3:0f:77:83       (Unknown)
+192.168.86.37   50:91:e3:0f:78:ae       (Unknown)
+192.168.86.59   50:91:e3:0f:68:64       (Unknown)
+192.168.86.60   5c:62:8b:12:57:35       (Unknown)
+192.168.86.62   ca:6a:10:13:78:5a       (Unknown: locally administered)
+192.168.86.63   ca:6a:10:10:42:b0       (Unknown: locally administered)
+192.168.86.31   6a:3f:00:aa:28:8b       (Unknown: locally administered)
+192.168.86.29   74:90:bc:85:a4:6e       (Unknown)
+192.168.86.101  50:91:e3:0f:71:d3       (Unknown)
+192.168.86.240  40:ed:00:44:38:18       (Unknown)
+192.168.86.32   00:1c:c2:98:b1:1c       (Unknown)
+
+34 packets received by filter, 0 packets dropped by kernel
+Ending arp-scan 1.10.0: 256 hosts scanned in 1.871 seconds (136.83 hosts/sec). 24 responded
+ngansen@hanryxvault:~ $
