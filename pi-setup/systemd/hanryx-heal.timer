@@ -1,0 +1,16 @@
+[Unit]
+Description=HanryxVault — run recover.sh every 2 minutes
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+
+[Timer]
+# Run 30s after boot, then every 2 minutes.
+# 2-min cadence catches WiFi flaps, dead Chromium, container crashes
+# within a single trade-show transaction window without spamming logs.
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=10s
+Persistent=false
+Unit=hanryx-heal.service
+
+[Install]
+WantedBy=timers.target
