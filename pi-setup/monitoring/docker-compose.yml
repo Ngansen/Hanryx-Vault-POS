@@ -21,10 +21,14 @@ services:
     container_name: prometheus
     restart: unless-stopped
     ports:
-      # Direct on tailnet IP for ad-hoc queries.
-      # URL: http://100.125.5.34:9090/
-      # No cert (admin tool); access already gated by tailnet membership.
-      - "100.125.5.34:9090:9090"
+      # Bound on all interfaces — same as node-exporter (:9100) and grafana
+      # (:3001). Previously bound to the Tailscale IP only, but Docker tries
+      # the bind at container-start time, before tailscaled has assigned the
+      # interface address on a cold boot, so the bind silently failed and
+      # Prometheus became unreachable from any host shell. 0.0.0.0 makes the
+      # bind survive any boot order. Access stays gated by the home WiFi /
+      # tailnet membership the same way the POS on :8080 already is.
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-data:/prometheus
