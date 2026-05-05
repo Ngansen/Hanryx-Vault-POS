@@ -1,0 +1,14 @@
+[Unit]
+Description=HanryxVault — run postgres backup hourly
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/scripts/postgres-backup.sh
+
+[Timer]
+# First run 5 minutes after boot, then every hour at :07 (off-peak vs the heal sweep)
+OnBootSec=5min
+OnCalendar=*-*-* *:07:00
+AccuracySec=1min
+Persistent=true
+Unit=hanryx-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

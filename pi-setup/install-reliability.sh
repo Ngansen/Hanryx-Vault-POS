@@ -37,11 +37,27 @@ echo "[→] Installing systemd units"
 install -m 0644 "$SYSD_SRC/hanryx-heal.service" /etc/systemd/system/hanryx-heal.service
 install -m 0644 "$SYSD_SRC/hanryx-heal.timer"   /etc/systemd/system/hanryx-heal.timer
 install -m 0644 "$SYSD_SRC/hanryx-boot.service" /etc/systemd/system/hanryx-boot.service
+
+# Postgres backup units (only on Pis that run docker — installer is idempotent
+# either way; the service has ConditionPathIsMountPoint=/mnt/cards so it
+# silently skips on satellites without the USB drive).
+if [ -f "$SYSD_SRC/hanryx-postgres-backup.service" ]; then
+    install -m 0644 "$SYSD_SRC/hanryx-postgres-backup.service" /etc/systemd/system/hanryx-postgres-backup.service
+    install -m 0644 "$SYSD_SRC/hanryx-postgres-backup.timer"   /etc/systemd/system/hanryx-postgres-backup.timer
+fi
+chmod +x "$REPO_DIR/pi-setup/scripts/postgres-backup.sh" 2>/dev/null || true
+chmod +x "$REPO_DIR/pi-setup/scripts/postgres-restore.sh" 2>/dev/null || true
+chmod +x "$REPO_DIR/pi-setup/scripts/preflight-usb-check.sh" 2>/dev/null || true
+
 systemctl daemon-reload
 
 echo "[→] Enabling timers + boot service"
 systemctl enable --now hanryx-heal.timer
 systemctl enable --now hanryx-boot.service
+if [ -f /etc/systemd/system/hanryx-postgres-backup.timer ] && command -v docker >/dev/null 2>&1; then
+    systemctl enable --now hanryx-postgres-backup.timer
+    echo "[✓] postgres backup timer enabled (hourly)"
+fi
 
 echo ""
 echo "[i] Status:"
