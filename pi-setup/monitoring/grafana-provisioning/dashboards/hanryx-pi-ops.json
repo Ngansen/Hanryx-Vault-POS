@@ -23,12 +23,13 @@
         "label": "UGreen device",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "query": { "query": "label_values(node_filesystem_size_bytes{mountpoint=\"/mnt/cards\"}, device)", "refId": "StandardVariableQuery" },
-        "refresh": 1,
-        "regex": "/^/dev/(.+?)p?[0-9]*$/",
+        "query": { "query": "label_values(node_disk_io_time_seconds_total{device=~\"sd[a-z]+|nvme[0-9]+n[0-9]+\"}, device)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
         "sort": 1,
         "includeAll": false,
-        "multi": false
+        "multi": false,
+        "current": { "selected": true, "text": "sda", "value": "sda" }
       }
     ]
   },
