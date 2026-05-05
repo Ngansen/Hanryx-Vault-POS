@@ -1,0 +1,18 @@
+[Unit]
+Description=HanryxVault — recover.sh self-heal sweep
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+After=docker.service tailscaled.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Run as root so we can restart docker containers, ss-check ports, and
+# sudo-as-graphical-user for the chromium relaunch step.
+User=root
+ExecStart=/bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh --quiet
+# Don't kill the chromium child process the script relaunches
+KillMode=process
+TimeoutStartSec=120
+# Don't fail the timer if recovery still has issues — we'll try again next tick.
+SuccessExitStatus=0 1
+# StandardOutput=journal

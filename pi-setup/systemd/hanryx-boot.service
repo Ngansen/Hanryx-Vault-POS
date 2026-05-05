@@ -1,0 +1,24 @@
+[Unit]
+Description=HanryxVault — block until system is healthy at boot
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+After=docker.service tailscaled.service network-online.target graphical.target
+Wants=network-online.target
+# Run BEFORE the chromium kiosk autostart fires
+Before=hanryx-grafana-kiosk.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+# Try recovery up to 5 times at boot — gives WiFi/Tailscale/docker time
+# to fully come up before we declare the system ready and let kiosk launch.
+ExecStart=/bin/bash -c '\
+  for i in 1 2 3 4 5; do \
+    /bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh --quiet && exit 0; \
+    sleep 15; \
+  done; \
+  echo "boot recovery exhausted retries"; exit 0'
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
