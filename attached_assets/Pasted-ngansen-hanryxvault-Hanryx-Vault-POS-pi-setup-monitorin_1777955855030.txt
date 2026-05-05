@@ -1,0 +1,37 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ # Is the prometheus container running and what port is it on?
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|prom'
+
+# Direct test - get raw HTTP status
+curl -v http://localhost:9090/api/v1/query?query=up 2>&1 | head -20
+
+# What ports are actually listening?
+ss -tlnp 2>/dev/null | grep -E '9090|9100|3001'
+NAMES                   STATUS                   PORTS
+prometheus              Up 5 hours               
+* Host localhost:9090 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying [::1]:9090...
+* connect to ::1 port 9090 from ::1 port 39532 failed: Connection refused
+*   Trying 127.0.0.1:9090...
+* connect to 127.0.0.1 port 9090 from 127.0.0.1 port 43820 failed: Connection refused
+* Failed to connect to localhost port 9090 after 0 ms: Could not connect to server
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+* closing connection #0
+curl: (7) Failed to connect to localhost port 9090 after 0 ms: Could not connect to server
+LISTEN 0      4096                                     0.0.0.0:3001       0.0.0.0:*          
+LISTEN 0      4096                                           *:9100             *:*          
+LISTEN 0      4096                                        [::]:3001          [::]:*          
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ PROM=http://100.125.5.34:9090
+
+# Does prometheus see sda disk metrics?
+curl -s "$PROM/api/v1/query?query=node_disk_io_time_seconds_total" | jq -r '.data.result[] | "\(.metric.device)  \(.metric.job)"'
+
+# Disk IOPS panel query
+curl -s --data-urlencode 'query=rate(node_disk_reads_completed_total{device="sda"}[1m])' "$PROM/api/v1/query" | jq
+
+# What devices is the dashboard variable seeing now?
+curl -s --data-urlencode 'query=node_disk_io_time_seconds_total{device=~"sd[a-z]+|nvme[0-9]+n[0-9]+"}' "$PROM/api/v1/query" | jq -r '.data.result[].metric.device' | sort -u
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ h
