@@ -1,0 +1,17 @@
+[Unit]
+Description=HanryxVault — hourly PostgreSQL backup to /mnt/cards
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/scripts/postgres-backup.sh
+After=docker.service mnt-cards.mount
+Wants=mnt-cards.mount
+ConditionPathIsMountPoint=/mnt/cards
+
+[Service]
+Type=oneshot
+User=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ExecStart=/bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/scripts/postgres-backup.sh
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal
