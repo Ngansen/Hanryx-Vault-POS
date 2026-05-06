@@ -1,0 +1,61 @@
+ngansen@hanryxvault:~ $ echo "=== GRAFANA REACHABLE? ==="
+curl -sI http://localhost:3001/ | head -3
+curl -sI 'http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&kiosk' | head -3
+
+echo "=== WHAT URL IS CHROMIUM ACTUALLY LOADING? ==="
+ps -ef | grep '[c]hromium --kiosk' | grep -oE 'http[s]?://[^ ]+' | head -3
+
+echo "=== WAYLAND OUTPUTS (is the screen on?) ===" 
+WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 wlr-randr 2>&1 | head -20
+
+echo "=== ANY CHROMIUM RECENT CRASHES? ==="
+ls -lt ~/.config/chromium/Crash\ Reports/ 2>/dev/nil -20lctl --user -b 0 --no-pager 2>/dev/null | ta
+=== GRAFANA REACHABLE? ===
+HTTP/1.1 200 OK
+Cache-Control: no-store
+Content-Type: text/html; charset=UTF-8
+HTTP/1.1 200 OK
+Cache-Control: no-store
+Content-Type: text/html; charset=UTF-8
+=== WHAT URL IS CHROMIUM ACTUALLY LOADING? ===
+=== WAYLAND OUTPUTS (is the screen on?) ===
+failed to connect to display
+=== ANY CHROMIUM RECENT CRASHES? ===
+total 20
+-rw------- 1 ngansen ngansen   40 May  6 21:53 settings.dat
+drwx------ 2 ngansen ngansen 4096 Apr 14 21:01 attachments
+drwx------ 2 ngansen ngansen 4096 Apr 14 21:01 completed
+drwx------ 2 ngansen ngansen 4096 Apr 14 21:01 pending
+=== KIOSK SCRIPT LOGS ===
+[2026-05-06T21:53:14+00:00] launching chromium kiosk
+Opening in existing browser session.
+[2026-05-06T21:53:14+00:00] launching chromium kiosk
+[2026-05-06T21:53:14+00:00] chromium exited rc=0 — relaunching in 5 s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Opening in existing browser session.
+[2026-05-06T21:53:14+00:00] chromium exited rc=0 — relaunching in 5 s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[2026-05-06T21:53:19+00:00] launching chromium kiosk
+Opening in existing browser session.
+[2026-05-06T21:53:19+00:00] chromium exited rc=0 — relaunching in 5 s
+[2026-05-06T21:53:19+00:00] launching chromium kiosk
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Opening in existing browser session.
+[2026-05-06T21:53:20+00:00] chromium exited rc=0 — relaunching in 5 s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[2026-05-06T21:53:24+00:00] launching chromium kiosk
+Opening in existing browser session.
+[2026-05-06T21:53:25+00:00] chromium exited rc=0 — relaunching in 5 s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[2026-05-06T21:53:25+00:00] launching chromium kiosk
+Opening in existing browser session.
+[2026-05-06T21:53:25+00:00] chromium exited rc=0 — relaunching in 5 s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+-- No entries --
+ngansen@hanryxvault:~ $
