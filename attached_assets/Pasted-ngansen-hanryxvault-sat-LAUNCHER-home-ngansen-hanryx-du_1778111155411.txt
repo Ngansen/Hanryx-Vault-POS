@@ -1,0 +1,94 @@
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== first see what FULL env launcher actually inherits (not just filtered) ==="
+cat /tmp/launcher-env-*-Admin.log 2>/dev/null | sort -u
+
+echo "=== fix: strip wayland env vars + force XDG_SESSION_TYPE=x11 ==="
+sudo sed -i 's|env -u CHROMIUM_FLAGS DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000|env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11|' "$LAUNCHER"
+grep -n 'env -i HOME' "$LAUNCHER"
+
+r/1000 wlr-randr 2>&1 | head -20NTIME_DIR=/run/use
+=== first see what FULL env launcher actually inherits (not just filtered) ===
+CHROMIUM_FLAGS=
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+DISPLAY=:0
+HOME=/home/ngansen
+INVOCATION_ID=73f9b1780021487595c7ca7db9f96090
+_JAVA_AWT_WM_NONREPARENTING=1
+JOURNAL_STREAM=9:101423
+LABWC_PID=20027
+LABWC_VER=0.9.2
+LANG=en_GB.UTF-8
+LOGNAME=ngansen
+MAIL=/var/mail/ngansen
+MOZ_ENABLE_WAYLAND=1
+OLDPWD=/home/ngansen
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+PWD=/home/ngansen
+SHELL=/bin/bash
+SHLVL=1
+SYSTEMD_EXEC_PID=20027
+TERM=linux
+USER=ngansen
+_=/usr/bin/env
+WAYLAND_DISPLAY=wayland-0
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_CURRENT_DESKTOP=labwc:wlroots
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SEAT=seat0
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=hanryx-kiosk
+XDG_SESSION_ID=25
+XDG_SESSION_TYPE=wayland
+XDG_VTNR=1
+=== fix: strip wayland env vars + force XDG_SESSION_TYPE=x11 ===
+315:        env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 \
+=== clean restart ===
+Killed
+[1]+  Killed                  sudo -u ngansen env -i DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin "$BIN" "${NEW_ARGS[@]}" > /tmp/manual-argv-test.log 2>&1
+Killed
+=== filtered launcher log ===
+[18:45:00] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:45:00] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:45:00] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:45:00] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[21877:21877:0506/184500.614941:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:45:01] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:45:01] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:45:04] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:45:04] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:45:04] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:45:04] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[21963:21963:0506/184504.737995:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:45:05] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:45:05] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:45:11] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:45:11] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[22245:22259:0506/184511.806669:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[22245:22259:0506/184511.854440:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[22245:22259:0506/184511.889626:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[22245:22259:0506/184511.917743:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+=== chromium hvault windows alive? (target: 2 = admin + kiosk) ===
+2
+=== which monitors are filled? ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 1024,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+ngansen@hanryxvault-sat:~ $
