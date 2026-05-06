@@ -1,0 +1,213 @@
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== env actually inside running launcher process ==="
+LPID=$(pgrep -f hanryx-dual-monitor.sh | head -1)
+echo "launcher PID=$LPID"
+sudo cat /proc/$LPID/environ 2>/dev/null | tr '\0' '\n' | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|HOME|USER|XDG_SESSION)' | sort 
+
+echo "=== env actually inside running chromium process ==="
+CPID=$(pgrep -f 'chromium.*user-data-dir=/home/ngansen/.hanryx' | head -1)
+echo "chromium PID=$CPID"
+sudo cat /proc/$CPID/environ 2>/dev/null | tr '\0' '\n' | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|HOME|USER|XDG_SESSION)' | sort00rep -af 'chromium.*hvault' | head -2 | cut -c1-2
+=== env actually inside running launcher process ===
+launcher PID=11920
+DISPLAY=:0
+HOME=/home/ngansen
+USER=ngansen
+WAYLAND_DISPLAY=wayland-0
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=hanryx-kiosk
+XDG_SESSION_ID=15
+XDG_SESSION_TYPE=wayland
+=== env actually inside running chromium process ===
+chromium PID=12495
+=== what does the live chromium say in its OWN log? (not the launcher log) ===
+=== switch BACK to x11 + inject explicit env wrapper before chromium ===
+=== verify patch landed ===
+311-        START=$(date +%s)
+312:        env -u CHROMIUM_FLAGS DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+313-            "$CHROMIUM_BIN" \
+314-            "${FLAGS[@]}" \
+=== restart ===
+Killed
+Killed
+=== launcher log filtered ===
+[18:28:41] Chromium binary: /usr/lib/chromium/chromium
+[18:28:41] Chromium binary: /usr/lib/chromium/chromium
+[18:28:42] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:28:42] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:28:42] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:28:42] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[14673:14673:0506/182842.671750:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:28:43] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:43] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:46] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:28:46] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:28:46] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:28:46] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[14724:14724:0506/182846.827121:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:28:47] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:47] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:53] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:28:53] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:28:57] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:28:57] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== alive chromium hvault windows? ===
+2
+14988 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-upda
+15126 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-upda
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== process tree of launcher → chromium ===" 
+ps --forest -eo pid,ppid,user,cmd | grep -E 'labwc|hanryx-dual|chromium' | grep -v grep | head -25
+
+echo "=== find the TOP chromium (parent is bash launcher) ==="
+for p in $(pgrep -f 'chromium.*user-data-dir=/home/ngansen/.hanryx'); do
+    PPID=$(ps -p $p -o ppid= 2>/dev/null | tr -d ' ')
+    PCMD=$(ps -p $PPID -o comm= 2>/dev/null)
+    echo "PID=$p PPID=$PPID parent=$PCMD"
+done
+
+echo "=== env of TOP chromium ==="
+TOPCHROME=$(pgrep -f 'chromium.*user-data-dir=/hom    wlr-randr 2>&1 | head -5LAY=wayland-0 XDG_RUNT
+=== process tree of launcher → chromium ===
+  14839    9673 ngansen       \_ /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+  14847   14839 ngansen           \_ /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  14963   14847 ngansen           |   \_ /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,8695044040565911776,5095744622120466936,262144 --field-trial-handle=3,i,7832507422326893463,12572529164482055382,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8321296742377004276,2183641211487998783,4 --trace-process-track-uuid=3190708994745248135
+  14966   14963 ngansen           |       \_ /usr/lib/chromium/chromium --type=broker
+  14848   14839 ngansen           \_ /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  14851   14848 ngansen           |   \_ /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  14902   14851 ngansen           |       \_ /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,11681431528922955940,2007006446904865827,524288 --field-trial-handle=3,i,7832507422326893463,12572529164482055382,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8321296742377004276,2183641211487998783,4 --trace-process-track-uuid=3190708990060038890
+  14922   14851 ngansen           |       \_ /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778107146242758 --launch-time-ticks=2986120910 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5984890618670654830,14839867478840942428,2097152 --field-trial-handle=3,i,7832507422326893463,12572529164482055382,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8321296742377004276,2183641211487998783,4 --trace-process-track-uuid=3190708991934122588
+  15482   14851 ngansen           |       \_ /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --disable-gpu-compositing --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=13 --time-ticks-at-unix-epoch=-1778107146242758 --launch-time-ticks=3082335364 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,11864057265630160516,5846059946900870401,2097152 --field-trial-handle=3,i,7832507422326893463,12572529164482055382,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8321296742377004276,2183641211487998783,4 --trace-process-track-uuid=3190708998493415531
+  14897   14839 ngansen           \_ /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,10136094239720299371,6785628866263488846,524288 --field-trial-handle=3,i,7832507422326893463,12572529164482055382,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8321296742377004276,2183641211487998783,4 --trace-process-track-uuid=3190708989122997041
+  14435       1 ngansen  /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+  14663   14435 ngansen   \_ /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+  14988   14663 ngansen   |   \_ /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+  14996   14988 ngansen   |       \_ /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable
+  15111   14996 ngansen   |       |   \_ /usr/lib/chromium/chromium --type=gpu-process --disable-dev-shm-usage --disable-breakpad --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,7058463657881651982,2738282144222933687,262144 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708995682289984
+  15114   15111 ngansen   |       |   |   \_ /usr/lib/chromium/chromium --type=broker
+  15640   14996 ngansen   |       |   \_ /usr/lib/chromium/chromium --type=utility --utility-sub-type=on_device_model.mojom.OnDeviceModelService --lang=en-GB --service-sandbox-type=on_device_model_execution --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16564775649855913772,18214756379760846768,524288 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708996619331833
+  15642   15640 ngansen   |       |       \_ /usr/lib/chromium/chromium --type=broker
+  14997   14988 ngansen   |       \_ /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable
+  14999   14997 ngansen   |       |   \_ /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable
+  15043   14999 ngansen   |       |       \_ /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,11628967367025434520,717077765255362455,524288 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708990060038890
+  15065   14999 ngansen   |       |       \_ /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1778107146242759 --launch-time-ticks=2987812135 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,7563406085560264299,4723297359299638690,2097152 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708990997080739
+  15082   14999 ngansen   |       |       \_ /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=7 --time-ticks-at-unix-epoch=-1778107146242759 --launch-time-ticks=2987892711 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12480005887460463576,15536650263420446093,2097152 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708992871164437
+  15027   14988 ngansen   |       \_ /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --subproc-heap-profiling --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,15590568654996309759,11189912401150388279,524288 --field-trial-handle=3,i,15796954816847390309,14441208092423945782,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,15462872116422756965,7056997228575189078,4 --trace-process-track-uuid=3190708989122997041
+  14705   14435 ngansen   \_ /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+=== find the TOP chromium (parent is bash launcher) ===
+-bash: PPID: readonly variable
+=== env of TOP chromium ===
+TOPCHROME=14988
+=== switch to WAYLAND + add --no-sandbox + --enable-features=UseOzonePlatform ===
+6:#   • Uses XWayland (--ozone-platform=wayland) — survives labwc/greeter session swaps
+7:    --no-sandbox
+267:    --ozone-platform=wayland
+268:    --no-sandbox
+=== restart ===
+Killed
+Killed
+=== filtered log ===
+[18:32:12] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:32:12] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:32:12] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:32:12] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:32:14] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:32:14] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:32:14] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:32:14] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[16137:16137:0506/183214.202425:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[16137:16137:0506/183214.202491:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[18:32:15] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:32:15] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:32:18] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:32:18] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:32:18] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:32:18] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[16187:16187:0506/183218.405611:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[16187:16187:0506/183218.405680:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[18:32:19] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:32:19] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:32:25] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:32:25] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+=== chromium hvault count + env of top chromium ===
+1
+NEWTOP=16504
+=== windows visible to labwc? ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== identify PID 9673 (parent of rogue grafana chromium) ==="
+ps -p 9673 -o pid,ppid,user,cmd 2>/dev/null
+ps -ef | awk '$2==9673 || $3==9673'
+
+echo "=== list ALL hanryx services + check grafana-kiosk ==="
+systemctl list-unit-files 'hanryx*' --no-pager
+sudo systemctl status hanryx-grafana-kiosk.service --no-pager -l 2>/dev/null | head -15
+
+echo "=== DISABLE grafana-kiosk on satellite (it's main-Pi-only) ==="
+sudo systemctl disable --now hanryx-grafana-kiosk.service 2>&1
+# Also any autostart desktop file
+sudo find /etc/xdg/autostart /home/ngansen/.config/autostart -name '*grafana*' 2>/dev/null -exec rm pgrep -af 'grafana\|chromium-grafana' | wc -ld be 
+=== identify PID 9673 (parent of rogue grafana chromium) ===
+    PID    PPID USER     CMD
+   9673    9668 ngansen  bash /home/ngansen/Hanryx
+ngansen     9673    9668  0 18:14 ?        00:00:00 bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+ngansen    16351    9673  0 18:32 ?        00:00:00 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+=== list ALL hanryx services + check grafana-kiosk ===
+UNIT FILE                      STATE    PRESET 
+hanryx-boot.service            enabled  enabled
+hanryx-heal.service            static   -      
+hanryx-kiosk.service           enabled  enabled
+hanryx-postgres-backup.service static   -      
+hanryx-watchdog.service        enabled  enabled
+hanryx-heal.timer              enabled  enabled
+hanryx-postgres-backup.timer   disabled enabled
+
+7 unit files listed.
+=== DISABLE grafana-kiosk on satellite (it's main-Pi-only) ===
+Failed to disable unit: Unit hanryx-grafana-kiosk.service does not exist
+=== nuke rogue grafana processes ===
+Killed
+Killed
+Killed
+remaining grafana procs (should be empty):
+=== switch hvault BACK to x11 (grafana itself uses x11 successfully on this Pi) ===
+6:#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
+7:    --no-sandbox
+267:    --ozone-platform=x11
+268:    --no-sandbox
+=== full clean restart ===
+Killed
+Killed
+=== filtered log ===
+[18:34:07] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:34:07] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:34:07] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:34:07] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[17294:17294:0506/183407.092478:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:34:08] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:34:08] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:34:11] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:34:11] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:34:11] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:34:11] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[17342:17342:0506/183411.141897:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:34:12] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:34:12] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:34:18] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:34:18] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:34:22] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:34:22] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== chromium hvault windows alive? ===
+2
+=== any rogue grafana came back? (should be 0) ===
+0
+ngansen@hanryxvaul
