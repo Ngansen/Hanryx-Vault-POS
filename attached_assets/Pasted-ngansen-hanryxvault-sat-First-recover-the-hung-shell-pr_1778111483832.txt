@@ -1,0 +1,25 @@
+ngansen@hanryxvault-sat:~ $ # First, recover the hung shell — press Ctrl+C, then ENTER
+# Then paste this entire block:
+
+# Write the test as a script file (no backslash issues)
+sudo tee /tmp/chrome-envi-test.sh >/dev/null <<'EOF'
+#!/bin/bash
+exec env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --no-sandbox --user-data-dir=/tmp/test-envi-shell about:blank
+EOF
+sudo chmod +x /tmp/chrome-envi-test.sh
+
+ll | grep -iE 'auth|xauth' | head -5 -1) 2>/dev/nu
+=== run as ngansen ===
+[2] 23535
+[2]+  Done                    sudo -u ngansen /tmp/chrome-envi-test.sh > /tmp/test-envi-shell.log 2>&1
+PID=23535 alive? NO
+23017 sudo -u ngansen env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --no-sandbox --user-data-dir=/tmp/test-envi-shell about:blank
+23020 sudo -u ngansen env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --no-sandbox --user-data-dir=/tmp/test-envi-shell about:blank
+[1]+  Killed                  sudo -u ngansen env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --no-sandbox --user-data-dir=/tmp/test-envi-shell about:blank > /tmp/test-envi-shell.log 2>&1
+Killed
+--- log ---
+Opening in existing browser session.
+=== xauth list (what cookies actually exist?) ===
+hanryxvault-sat/unix:0  MIT-MAGIC-COOKIE-1  57ad0d3594176b2632865e9319c90803
+=== Xwayland's auth file (if any) ===
+ngansen@hanryxvault-sat:~ $
