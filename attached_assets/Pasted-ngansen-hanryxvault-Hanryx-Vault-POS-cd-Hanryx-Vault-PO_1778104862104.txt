@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && git pull
+sudo pkill -f diagnostics-grafana-kiosk 2>/dev/null
+pkill -f 'chromium.*grafana' 2>/dev/null
+sleep 3
+rm -f /tmp/grafana-kiosk.lock /tmp/chromium-grafana/SingletonLock 2>/dev/null
+
+DISPLAY=:0 nohup bash ~/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >/dev/null 2>&1 &
+sleep 8
+tail -15 /tmp/grafana-kiosk.log
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 637 bytes | 159.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   c12da99..6eca832  main       -> origin/main
+Updating c12da99..6eca832
+Fast-forward
+ .../diagnostics-grafana-kiosk.sh   | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+[1]+  Terminated              DISPLAY=:0 nohup bash ~/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh > /dev/null 2>&1
+[1] 56523
+[56580:56580:0506/215901.670820:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[56580:56580:0506/215901.670993:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[56580:56580:0506/215901.671041:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[56580:56580:0506/215901.671249:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[56580:56580:0506/215901.673587:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[56649:56649:0506/215901.942904:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[56649:56649:0506/215901.943049:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[56649:56649:0506/215901.943094:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[56649:56649:0506/215901.943130:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[56649:56649:0506/215901.944395:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[56663:56663:0506/215902.085630:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[56663:56663:0506/215902.085740:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[56663:56663:0506/215902.085775:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[56663:56663:0506/215902.085809:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[56663:56663:0506/215902.086868:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
