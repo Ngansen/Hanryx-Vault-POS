@@ -1,0 +1,35 @@
+/usnganngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ # 1. Is /usr/lib/chromium/chromium a real binary or yet another wrapper on satellite?
+file /usr/lib/chromium/chromium
+ls -la /usr/lib/chromium/chromium
+
+# 2. Does the launcher hardcode any of these flags?
+grep -nE 'no-decommit-pooled-pages|force-renderer-accessibility|CHROMIUM_FLAGS' \
+    ~/.hanryx-dual-monitor.sh
+
+# 3. Show the EXACT chromium invocation lines in the launcher
+grep -n -A2 -B1 '"\$CHROMIUM_BIN"' ~/.hanryx-dual-monitor.sh
+
+# 4. Definitive search — every place this flag string lives on disk
+sudo grep -rln 'no-decommit-pooled-pages' /etc /usr/lib/chromium /usr/share/chromium /opt 2>/dev/nul    /var/log/hanryx-kiosk.log | tail -10Manual ove
+/usr/lib/chromium/chromium: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, for GNU/Linux 3.7.0, BuildID[sha1]=9c44ee960061551f284c0f1587fc33c54e6f3c8a, stripped
+-rwxr-xr-x 1 root root 277678928 Apr 17 12:40 /usr/lib/chromium/chromium
+231:unset CHROMIUM_FLAGS
+232:export CHROMIUM_FLAGS=""
+311-        START=$(date +%s)
+312:        "$CHROMIUM_BIN" \
+313-            "${FLAGS[@]}" \
+314-            --user-data-dir="$profile" \
+[06:26:55] Chromium binary: /usr/bin/chromium
+[17:39:24] Chromium binary: /usr/bin/chromium
+[17:39:24] Chromium binary: /usr/bin/chromium
+[06:26:55] Detected output: HDMI-A-1  (1024px wide)
+[06:26:55] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-1
+[17:39:24] Detected output: HDMI-A-2  (800px wide)
+[17:39:24] Detected output: HDMI-A-2  (800px wide)
+[17:39:24] Detected output: HDMI-A-1  (1024px wide)
+[17:39:24] Detected output: HDMI-A-1  (1024px wide)
+[17:39:24] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[17:39:24] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[17:39:24] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[17:39:24] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
