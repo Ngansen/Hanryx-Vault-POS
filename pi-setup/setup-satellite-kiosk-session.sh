@@ -29,6 +29,21 @@ err()  { echo -e "${RED}[✗]${NC} $*" >&2; }
 
 [ "$(id -u)" -eq 0 ] || { err "Run as root (sudo bash $0)"; exit 1; }
 
+# ── Hostname guard — this script is SATELLITE ONLY ───────────────────────────
+# Main Pi (hanryxvault) runs only the diagnostic screen; it must NOT become a
+# dual-monitor kiosk or it will lose its dashboard and drop to a text console.
+EXPECTED_HOST="hanryxvault-sat"
+ACTUAL_HOST="$(hostname)"
+if [ "$ACTUAL_HOST" != "$EXPECTED_HOST" ]; then
+    err "ABORT: this script is for the SATELLITE Pi only (expected hostname '$EXPECTED_HOST')."
+    err "       Current hostname is '$ACTUAL_HOST'. Running this on the main Pi would replace"
+    err "       its diagnostic desktop with a kiosk session. Refusing to continue."
+    err ""
+    err "       If you really mean to run it here, set: SKIP_HOSTNAME_GUARD=1 sudo bash $0"
+    [ "${SKIP_HOSTNAME_GUARD:-0}" = "1" ] || exit 1
+    warn "SKIP_HOSTNAME_GUARD=1 set — proceeding anyway. You have been warned."
+fi
+
 KIOSK_USER="${KIOSK_USER:-ngansen}"
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
 [ -d "$KIOSK_HOME" ] || { err "User $KIOSK_USER has no home dir"; exit 1; }
