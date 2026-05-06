@@ -47,18 +47,44 @@ echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
 step "1. System packages"
-apt-get update -qq
-CHROMIUM_PKG=chromium
-apt-cache show "$CHROMIUM_PKG" >/dev/null 2>&1 || CHROMIUM_PKG=chromium-browser
-info "Using chromium package: $CHROMIUM_PKG"
+apt-get update -qq || warn "apt-get update had warnings"
+
+# Install non-chromium deps first so a chromium quirk doesn't block everything
 apt-get install -y --no-install-recommends \
-    git curl jq zstd wlr-randr unclutter \
-    "$CHROMIUM_PKG" openssh-server \
-    avahi-daemon avahi-utils \
-    nginx \
+    git curl jq zstd wlr-randr unclutter openssh-server \
+    avahi-daemon avahi-utils nginx \
     python3-pip python3-venv \
-    || die "apt-get install failed"
-ok "Required packages present"
+    || die "apt-get install (base packages) failed"
+ok "Base packages installed"
+
+# Chromium: try in order — already present, then chromium, then chromium-browser,
+# then snap (Ubuntu-style), then bail with a clear message.
+if command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1; then
+    ok "Chromium already installed: $(command -v chromium chromium-browser 2>/dev/null | head -1)"
+else
+    CHROMIUM_INSTALLED=0
+    for pkg in chromium chromium-browser rpi-chromium-mods; do
+        if apt-cache policy "$pkg" 2>/dev/null | grep -q 'Candidate: [^(]'; then
+            info "Trying apt install $pkg…"
+            if apt-get install -y --no-install-recommends "$pkg"; then
+                ok "Installed $pkg"
+                CHROMIUM_INSTALLED=1
+                break
+            fi
+        fi
+    done
+    if [ "$CHROMIUM_INSTALLED" -eq 0 ]; then
+        warn "Chromium not in apt — trying snap fallback…"
+        if command -v snap >/dev/null 2>&1 && snap install chromium; then
+            ok "Installed chromium via snap"
+        else
+            warn "Could not install Chromium automatically."
+            warn "After bootstrap finishes, install manually:  sudo apt install chromium-browser  (or chromium)"
+            warn "Continuing — kiosk launcher will fail until Chromium is present."
+        fi
+    fi
+fi
+ok "Required packages step complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
 step "2. Hostname → $NEW_HOSTNAME"
