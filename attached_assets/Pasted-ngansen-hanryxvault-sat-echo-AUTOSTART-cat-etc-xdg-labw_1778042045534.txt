@@ -1,0 +1,94 @@
+ngansen@hanryxvault-sat:~ $ echo "=== AUTOSTART ==="
+cat /etc/xdg/labwc/autostart
+echo "=== LABWC PROCESSES (any user labwc?) ==="
+ps -eo pid,user,cmd | grep -E 'labwc|Xwayland|chromium' | grep -v grep
+echo "=== LIGHTDM SESSION HISTORY ==="
+sudo journalctl -u lightdm --since "today" --no-pager | grep -E 'opened|closed|Exited|terminated|labwc' | tail -30
+echo "=== LABWC USER ERRORS ==="
+ls -la ~/.cache/labwc/ ~/.local/share/labwc/ 2>/dev/null
+ls -la ~/.xsession-errors 2>/dev/null && tail -40 ~/.xsession-errors
+echo "=== SYSTEMD USER SERVICES ==="
+systemctl --user list-units --type=service --no-pager 2>/dev/null
+=== AUTOSTART ===
+/usr/bin/lwrespawn /usr/bin/pcmanfm-pi &
+/usr/bin/lwrespawn /usr/bin/wf-panel-pi &
+/usr/bin/kanshi &
+/usr/bin/lxsession-xdg-autostart
+=== LABWC PROCESSES (any user labwc?) ===
+   2138 lightdm  /usr/bin/labwc -C /etc/xdg/labwc-greeter/
+   2390 ngansen  /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+=== LIGHTDM SESSION HISTORY ===
+[sudo] password for ngansen: 
+May 05 23:24:38 hanryxvault-sat lightdm[1277]: pam_unix(lightdm-autologin:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 05 23:24:46 hanryxvault-sat lightdm[2101]: pam_unix(lightdm-greeter:session): session opened for user lightdm(uid=104) by (uid=0)
+May 05 23:24:47 hanryxvault-sat lightdm[2101]: pam_unix(lightdm-greeter:session): session opened for user lightdm(uid=104) by (uid=0)
+=== LABWC USER ERRORS ===
+-rw------- 1 ngansen ngansen 10179 May  5 23:32 /home/ngansen/.xsession-errors
+[23:25:17] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=10s
+[23:25:18] [Admin] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[23:25:20] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=10s
+[23:25:21] [Kiosk] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[23:25:38] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=20s
+[23:25:39] [Admin] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[23:25:41] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=20s
+[23:25:42] [Kiosk] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[23:26:19] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=40s
+[23:26:20] [Admin] crashed in 0s (count=4, mode=fallback(--disable-gpu))
+[23:26:22] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=40s
+[23:26:23] [Kiosk] crashed in 0s (count=4, mode=fallback(--disable-gpu))
+[23:27:20] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:27:21] [Admin] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[23:27:21] [Admin] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[23:27:23] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:27:24] [Kiosk] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[23:27:24] [Kiosk] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[23:28:21] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:28:22] [Admin] crashed in 0s (count=6, mode=fallback(--disable-gpu))
+[23:28:24] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:28:25] [Kiosk] crashed in 0s (count=6, mode=fallback(--disable-gpu))
+[23:29:22] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:29:24] [Admin] crashed in 1s (count=7, mode=fallback(--disable-gpu))
+[23:29:25] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:29:26] [Kiosk] crashed in 0s (count=7, mode=fallback(--disable-gpu))
+[23:30:24] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:30:25] [Admin] crashed in 0s (count=8, mode=fallback(--disable-gpu))
+[23:30:26] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:30:27] [Kiosk] crashed in 0s (count=8, mode=fallback(--disable-gpu))
+[23:31:25] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:31:26] [Admin] crashed in 0s (count=9, mode=fallback(--disable-gpu))
+[23:31:27] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:31:29] [Kiosk] crashed in 1s (count=9, mode=fallback(--disable-gpu))
+[23:32:26] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[23:32:27] [Admin] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[23:32:27] [Admin] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+[23:32:29] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[23:32:30] [Kiosk] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[23:32:30] [Kiosk] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+=== SYSTEMD USER SERVICES ===
+  UNIT      LOAD   ACTIVE    SUB        DESCRIPTI…
+  dbus.ser… loaded active    running    D-Bus Use…
+  filter-c… loaded active    running    PipeWire …
+  gvfs-afc… loaded active    running    Virtual f…
+  gvfs-dae… loaded active    running    Virtual f…
+  gvfs-goa… loaded active    running    Virtual f…
+  gvfs-gph… loaded active    running    Virtual f…
+  gvfs-mtp… loaded active    running    Virtual f…
+  gvfs-udi… loaded active    running    Virtual f…
+  mpris-pr… loaded active    running    Bluetooth…
+  pipewire… loaded active    running    PipeWire …
+  pipewire… loaded active    running    PipeWire …
+● rpi-conn… loaded activati… auto-rest… WayVNC pr…
+  rpi-conn… loaded active    running    Raspberry…
+  wireplum… loaded active    running    Multimedi…
+● xdg-desk… loaded failed    failed     Portal se…
+  xdg-desk… loaded active    running    Portal se…
+  xdg-docu… loaded active    running    flatpak d…
+  xdg-perm… loaded active    running    sandboxed…
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+18 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'.
+ngansen@hanryxvault-sat:~
