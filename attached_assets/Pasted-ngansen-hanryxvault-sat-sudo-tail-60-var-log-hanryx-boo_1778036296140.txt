@@ -1,0 +1,88 @@
+ngansen@hanryxvault-sat:~ $ sudo tail -60 /var/log/hanryx-bootstrap.log
+echo "----"
+ls -la ~/.hanryx-dual-monitor.sh ~/.hanryx/ 2>&1
+echo "----"
+ps aux | grep -E 'chromium|labwc|wayfire' | grep -v grep
+[→] Installing systemd units
+[→] Enabling timers + boot service
+Created symlink '/etc/systemd/system/timers.target.wants/hanryx-heal.timer' → '/etc/systemd/system/hanryx-heal.timer'.
+Created symlink '/etc/systemd/system/multi-user.target.wants/hanryx-boot.service' → '/etc/systemd/system/hanryx-boot.service'.
+
+[i] Status:
+● hanryx-heal.timer - HanryxVault — run recover.sh every 2 minutes
+     Loaded: loaded (/etc/systemd/system/hanryx-heal.timer; enabled; preset: enabled)
+     Active: active (waiting) since Tue 2026-05-05 21:43:04 CDT; 3min 28s ago
+ Invocation: 54aa9061cbf94e4289cd369cbce793aa
+    Trigger: Tue 2026-05-05 21:47:06 CDT; 33s left
+   Triggers: ● hanryx-heal.service
+       Docs: file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+
+May 05 21:43:04 hanryxvault-sat systemd[1]: Started hanryx-heal.timer - HanryxVault — run recover.sh every 2 minutes.
+
+NEXT                            LEFT LAST                              PASSED UNIT                         ACTIVATES
+Tue 2026-05-05 21:47:06 CDT      33s Tue 2026-05-05 21:46:06 CDT      26s ago hanryx-heal.timer            hanryx-heal.service
+
+[✓] Reliability stack installed
+
+  Manual recovery:           hanryx-recover
+  Quiet recovery (one line): hanryx-recover --quiet
+  Just fix kiosks:           hanryx-recover --kiosk-only
+  Watch the heal log:        tail -f /var/log/hanryx-recover.log
+  See last status:           cat /run/hanryx-status
+
+[✓] Reliability stack installed
+
+══ 7. Satellite config defaults ══
+[✓] Created /home/ngansen/.hanryx/satellite.conf
+
+══ 8. Final verification ══
+
+  Hostname:        hanryxvault-sat
+  mDNS:            hanryxvault-sat.local
+  Tailscale IP:    100.121.45.69
+  Tailscale name:  hanryxvault-sat
+  Main Pi reach:   OK
+  Heal timer:      enabled
+  Watchdog:        not-found
+not installed
+  Launcher script: MISSING
+
+
+══ 9. SSH from main Pi check ══
+  After reboot, from the main Pi you should be able to:
+    ssh ngansen@hanryxvault-sat
+    ssh ngansen@hanryxvault-sat.local
+    ssh ngansen@100.121.45.69
+
+  Tailscale SSH is enabled — you can also use:
+    tailscale ssh ngansen@hanryxvault-sat
+    (no key setup needed, uses Tailscale identity)
+
+
+══ DONE ══
+[✓] Bootstrap complete. Full log: /var/log/hanryx-bootstrap.log
+
+[i] Skipping reboot — run 'sudo reboot' when ready.
+----
+ls: cannot access '/home/ngansen/.hanryx-dual-monitor.sh': No such file or directory
+/home/ngansen/.hanryx/:
+total 12
+drwxr-xr-x  2 ngansen ngansen 4096 May  5 21:46 .
+drwx------ 15 ngansen ngansen 4096 May  5 21:46 ..
+-rw-r--r--  1 ngansen ngansen  580 May  5 21:46 satellite.conf
+----
+ngansen     1282  0.1  1.8 501584 78304 ?        Ssl  21:22   0:02 /usr/bin/labwc -m
+ngansen     1337  0.0  0.0  10288  1536 ?        Ss   21:22   0:00 /usr/bin/ssh-agent /usr/bin/labwc-pi
+ngansen    29464 11.8  7.1 50987056 297296 ?     Rl   21:54   0:13 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension= --use-angle=gles http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required
+ngansen    29482  0.0  0.0 50346496 4048 ?       Sl   21:54   0:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+ngansen    29484  0.0  0.0 50338176 3568 ?       S    21:54   0:00 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=4 --shared-client-connection
+ngansen    29488  0.0  1.5 50715472 65728 ?      S    21:54   0:00 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen    29489  0.0  1.5 50715600 65952 ?      S    21:54   0:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen    29491  0.2  0.5 50715600 21696 ?      S    21:54   0:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen    29516  2.9  3.5 51043616 145504 ?     Sl   21:54   0:03 /usr/lib/chromium/chromium --type=gpu-process --disable-dev-shm-usage --enable-gpu-rasterization --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,15316484731555169285,15392032298733253192,262144 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190708988185955192
+ngansen    29519  0.8  2.4 50758400 100848 ?     Sl   21:54   0:01 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --disable-dev-shm-usage --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,10654113186701657412,5807757103471690438,524288 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190708989122997041
+ngansen    29523  0.0  1.1 50766128 48160 ?      Sl   21:54   0:00 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --disable-dev-shm-usage --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,11552589617295073362,3269984292190549680,524288 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190708990060038890
+ngansen    29551  7.5  6.3 1459444480 262208 ?   Rl   21:54   0:08 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --js-flags=--no-decommit-pooled-pages --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778034168691439 --launch-time-ticks=1923607049 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,9888947290727782437,17218290501009132765,2097152 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190708991934122588
+ngansen    34838 20.8  2.3 1459417680 95600 ?    Sl   21:56   0:00 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --js-flags=--no-decommit-pooled-pages --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=164 --time-ticks-at-unix-epoch=-1778034168691439 --launch-time-ticks=2039925319 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,10045770626984764291,1631882295572746927,2097152 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190709139986734730
+ngansen    34880 50.0  1.7 1459416592 71968 ?    Sl   21:56   0:00 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --js-flags=--no-decommit-pooled-pages --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=165 --time-ticks-at-unix-epoch=-1778034168691439 --launch-time-ticks=2040121470 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,6436688089501357093,6399329139196413603,2097152 --field-trial-handle=3,i,10358623140470018838,15753376158905312050,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,3103026999376787244,5573842532485445255,4 --trace-process-track-uuid=3190709140923776579
+ngansen@hanryxvault-sat:~ $
