@@ -1,0 +1,89 @@
+ngansen@hanryxvault:~ $ echo "=== ALL HANRYX UNITS (full names) ==="
+systemctl list-unit-files 'hanryx-*' --no-pager
+echo ""
+systemctl list-units 'hanryx-*' --all --no-pager --plain --no-legend
+
+echo ""
+echo "=== LAST 20 LOG LINES OF EACH ACTIVATING/FAILED UNIT ==="
+for u in $(systemctl list-units 'hanryx-*' --all --no-legend --plain | awk '$3=="activating" || $3=="failed" {print $1}'); do
+  echo "--- $u ---"
+  sudo journalctl -u "$u" -b 0 --no-pager | tail -20
+done
+
+echo ""
+free -h== LOAD NOW (give it 30s after running this
+=== ALL HANRYX UNITS (full names) ===
+UNIT FILE                  STATE    PRESET 
+hanryx-boot.service        enabled  enabled
+hanryx-docker-heal.service static   -      
+hanryx-docker.service      enabled  enabled
+hanryx-kiosk.service       disabled enabled
+hanryx-nat.service         enabled  enabled
+hanryx-pos.service         enabled  enabled
+hanryx-docker-heal.timer   enabled  enabled
+
+7 unit files listed.
+
+hanryx-boo… loaded    active   exited  HanryxVaul…
+hanryx-doc… loaded    inactive dead    HanryxVaul…
+hanryx-doc… loaded    active   exited  HanryxVaul…
+hanryx-gra… not-found inactive dead    hanryx-gra…
+hanryx-hea… not-found failed   failed  hanryx-hea…
+hanryx-nat… loaded    active   exited  HanryxVaul…
+hanryx-pos… loaded    failed   failed  HanryxVaul…
+hanryx-doc… loaded    active   waiting Run hanryx…
+
+=== LAST 20 LOG LINES OF EACH ACTIVATING/FAILED UNIT ===
+--- hanryx-heal.service ---
+May 06 21:12:11 hanryxvault systemd[1]: hanryx-heal.service: This usually indicates unclean termination of a previous run, or service implementation deficiencies.
+May 06 21:12:11 hanryxvault systemd[1]: hanryx-heal.service: Found left-over process 14932 (chrome_crashpad) in control group while starting unit. Ignoring.
+May 06 21:12:11 hanryxvault systemd[1]: hanryx-heal.service: This usually indicates unclean termination of a previous run, or service implementation deficiencies.
+May 06 21:12:12 hanryxvault systemd[1]: Starting hanryx-heal.service - HanryxVault — recover.sh self-heal sweep...
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Main process exited, code=killed, status=15/TERM
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Failed with result 'signal'.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 3522 (sudo) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 3528 (bash) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14434 (docker) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14722 (chromium) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14915 (chrome_crashpad) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14924 (chromium) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14925 (chromium) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 14932 (chrome_crashpad) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 15170 (chromium) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 15180 (bash) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 15181 (docker) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 15182 (grep) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: hanryx-heal.service: Unit process 15196 (docker-compose) remains running after unit stopped.
+May 06 21:12:38 hanryxvault systemd[1]: Stopped hanryx-heal.service - HanryxVault — recover.sh self-heal sweep.
+--- hanryx-pos.service ---
+May 06 21:05:51 hanryxvault systemd[1]: Starting hanryx-pos.service - HanryxVault POS — Docker Compose...
+May 06 21:05:51 hanryxvault git[1993]: fatal: detected dubious ownership in repository at '/home/ngansen/Hanryx-Vault-POS'
+May 06 21:05:51 hanryxvault git[1993]: To add an exception for this directory, call:
+May 06 21:05:51 hanryxvault git[1993]:         git config --global --add safe.directory /home/ngansen/Hanryx-Vault-POS
+May 06 21:05:51 hanryxvault systemd[1]: hanryx-pos.service: Control process exited, code=exited, status=128/n/a
+May 06 21:05:51 hanryxvault systemd[1]: hanryx-pos.service: Failed with result 'exit-code'.
+May 06 21:05:51 hanryxvault systemd[1]: Failed to start hanryx-pos.service - HanryxVault POS — Docker Compose.
+
+=== LABWC AUTOSTART (main Pi user) ===
+---
+environment  rc.xml
+
+=== GRAFANA KIOSK DESKTOP FILE ===
+hanryx-grafana-kiosk.desktop
+hanryx-kiosk.desktop.disabled
+hanryx-monitor.desktop.disabled
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Diagnostics (Grafana)
+Comment=Fullscreen Grafana dashboard kiosk for the 7" diagnostics screen
+Exec=/bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
+Terminal=false
+
+=== LOAD NOW (give it 30s after running this) ===
+ 21:15:25 up 9 min,  3 users,  load average: 6.16, 12.94, 7.13
+               total        used        free      shared  buff/cache   available
+Mem:           7.9Gi       3.1Gi       4.0Gi       511Mi       1.4Gi       4.8Gi
+Swap:          2.0Gi       582Mi       1.4Gi
+ngansen@hanryxvault:~
