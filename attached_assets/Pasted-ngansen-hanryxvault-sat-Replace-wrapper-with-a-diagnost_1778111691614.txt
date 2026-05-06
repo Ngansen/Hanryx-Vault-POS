@@ -1,0 +1,102 @@
+ngansen@hanryxvault-sat:~ $ # Replace wrapper with a diagnostic version
+sudo tee /usr/local/bin/hvault-chromium-wrapper >/dev/null <<'EOF'
+#!/bin/bash
+LOG=/tmp/hvault-wrapper-$$-$(date +%s).log
+{
+    echo "=== WRAPPER PID=$$ PPID=$PPID at $(date +%H:%M:%S.%N) ==="
+    echo "--- argv ($#) ---"; printf "  %s\n" "$@" 
+    echo "--- inherited env ---"; env | sort
+    echo "--- /tmp/.X11-unix ---"; ls -la /tmp/.X11-unix/ 2>&1
+    echo "--- /home/ngansen/.Xauthority ---"; ls -la /home/ngansen/.Xauthority 2>&1
+    echo "--- read access to Xauthority? ---"; head -c 1 /home/ngansen/.Xauthority >/dev/null 2>&1 && echo OK || echo FAIL_$?
+cat "$WRAPPER_LOG"_LOG ---"ault-wrapper-*.log 2>/d
+Killed
+Killed
+=== wrapper log (first invocation) ===
+-rw-rw-r-- 1 ngansen ngansen 2497 May  6 18:53 /tmp/hvault-wrapper-25457-1778111636.log
+-rw-rw-r-- 1 ngansen ngansen 2497 May  6 18:54 /tmp/hvault-wrapper-25536-1778111640.log
+--- /tmp/hvault-wrapper-25536-1778111640.log ---
+=== WRAPPER PID=25536 PPID=25515 at 18:54:00.176821209 ===
+--- argv (27) ---
+  --kiosk
+  --no-first-run
+  --noerrdialogs
+  --disable-infobars
+  --disable-session-crashed-bubble
+  --disable-translate
+  --disable-features=Translate,TranslateUI
+  --check-for-update-interval=31536000
+  --autoplay-policy=no-user-gesture-required
+  --disable-background-networking
+  --disable-default-apps
+  --disable-extensions
+  --disable-sync
+  --disable-breakpad
+  --disable-component-update
+  --no-process-singleton
+  --ozone-platform=x11
+  --no-sandbox
+  --enable-features=VaapiVideoDecoder
+  --disable-dev-shm-usage
+  --allow-file-access-from-files
+  --disable-web-security
+  --password-store=basic
+  --use-mock-keychain
+  --user-data-dir=/home/ngansen/.hanryx/kiosk-profile
+  --class=hvault-kiosk
+  file:///tmp/hvault-splash-kiosk.html
+--- inherited env ---
+CHROMIUM_FLAGS=
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+DISPLAY=:0
+HOME=/home/ngansen
+INVOCATION_ID=cd5d714c80ff41a4912a6f1c57b8b6b1
+_JAVA_AWT_WM_NONREPARENTING=1
+JOURNAL_STREAM=9:124212
+LABWC_PID=25047
+LABWC_VER=0.9.2
+LANG=en_GB.UTF-8
+LOGNAME=ngansen
+MAIL=/var/mail/ngansen
+MOZ_ENABLE_WAYLAND=1
+OLDPWD=/home/ngansen
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+PWD=/home/ngansen
+SHELL=/bin/bash
+SHLVL=2
+SYSTEMD_EXEC_PID=25047
+TERM=linux
+USER=ngansen
+_=/usr/bin/env
+WAYLAND_DISPLAY=wayland-0
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_CURRENT_DESKTOP=labwc:wlroots
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SEAT=seat0
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=hanryx-kiosk
+XDG_SESSION_ID=31
+XDG_SESSION_TYPE=wayland
+XDG_VTNR=1
+--- /tmp/.X11-unix ---
+total 0
+drwxrwxrwt  2 root    root      60 May  6 18:53 .
+drwxrwxrwt 61 root    root    1720 May  6 18:54 ..
+srwxrwxr-x  1 ngansen ngansen    0 May  6 18:53 X0
+--- /home/ngansen/.Xauthority ---
+-rw------- 1 ngansen ngansen 60 May  6 06:26 /home/ngansen/.Xauthority
+--- read access to Xauthority? ---
+OK
+--- can we connect to X socket? ---
+bash: line 1: /tmp/.X11-unix/X0: No such device or address
+SOCKET_CONNECT_FAIL_1
+--- /proc/self/status (Uid, Gid, Groups) ---
+Uid:    1000    1000    1000    1000
+Gid:    1000    1000    1000    1000
+Groups: 4 5 20 24 27 29 44 46 60 100 102 983 984 986 988 989 992 996 1000 
+CapEff: 0000000800000000
+NoNewPrivs:     0
+--- about to exec env -i chromium ---
+[25536:25536:0506/185400.320521:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[25536:25536:0506/185400.320715:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+ngansen@hanryxvault-sat:~ $
