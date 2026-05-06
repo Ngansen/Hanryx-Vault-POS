@@ -79,10 +79,13 @@ xset -dpms          2>/dev/null || true
 xset s noblank      2>/dev/null || true
 unclutter -idle 0.5 -root >/dev/null 2>&1 &
 
-# Resolve chromium binary (Bookworm = chromium, older RPi OS = chromium-browser)
+# Resolve chromium binary. Prefer the REAL binary at /usr/lib/chromium/chromium
+# over the /usr/bin/chromium wrapper script — the Pi OS wrapper adds default
+# flags (--no-decommit-pooled-pages, --force-renderer-accessibility, etc.)
+# that newer chromium versions reject, causing immediate exit.
 CHROMIUM=""
-for c in chromium chromium-browser; do
-    if command -v "$c" >/dev/null 2>&1; then
+for c in /usr/lib/chromium/chromium /usr/lib/chromium-browser/chromium-browser chromium chromium-browser; do
+    if [[ -x "$c" ]] || command -v "$c" >/dev/null 2>&1; then
         CHROMIUM="$c"
         break
     fi
