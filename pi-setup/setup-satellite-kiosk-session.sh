@@ -49,12 +49,19 @@ install -d -m 755 /etc/hanryx-kiosk/labwc
 cat > /etc/hanryx-kiosk/labwc/autostart << EOF
 #!/bin/sh
 # HanryxVault kiosk autostart — runs ONCE when labwc starts.
+# Already runs as the logged-in user ($KIOSK_USER); no sudo needed.
 # No panel, no file manager, no compositor effects. Just the launcher.
-sleep 3
-exec sudo -u $KIOSK_USER --preserve-env=WAYLAND_DISPLAY,XDG_RUNTIME_DIR,DISPLAY \\
-    $LAUNCH_SCRIPT >> /var/log/hanryx-kiosk.log 2>&1 &
+sleep 3 && $LAUNCH_SCRIPT >> /var/log/hanryx-kiosk.log 2>&1 &
 EOF
 chmod +x /etc/hanryx-kiosk/labwc/autostart
+
+# Also disable the system-level hanryx-watchdog if it's running the launcher
+# from outside the session (PPID=1 means no Wayland, no XWayland, no display).
+# The watchdog is only a health-check; we keep it running. But verify it's NOT
+# spawning the launcher.
+if systemctl is-enabled hanryx-watchdog.service >/dev/null 2>&1; then
+    info "hanryx-watchdog.service is enabled (health-check only — keeping it)"
+fi
 
 cat > /etc/hanryx-kiosk/labwc/environment << 'EOF'
 XDG_CURRENT_DESKTOP=labwc:wlroots
