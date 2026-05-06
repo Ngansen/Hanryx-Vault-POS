@@ -30,10 +30,25 @@ LOG=/tmp/grafana-kiosk.log
 URL="http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark"
 USER_DATA_DIR=/tmp/chromium-grafana
 HEALTH_URL="http://localhost:3001/api/health"
+LOCK_FILE=/tmp/grafana-kiosk.lock
+
+# Single-instance guard — multiple launchers would fight over USER_DATA_DIR
+# and cause "Opening in existing browser session" / rc=0 crash loops.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[$(date -Is)] another grafana-kiosk launcher holds the lock — exiting" >> "$LOG"
+    exit 0
+fi
+
+# Override Pi OS's /etc/chromium.d/* default flags. They include flags that
+# newer chromium versions (147+) reject (e.g. --no-decommit-pooled-pages),
+# causing chromium to exit immediately every launch. We control all flags
+# explicitly below.
+export CHROMIUM_FLAGS=""
 
 : > "$LOG"
 exec >>"$LOG" 2>&1
-echo "[$(date -Is)] diagnostics-grafana-kiosk starting"
+echo "[$(date -Is)] diagnostics-grafana-kiosk starting (PID $$)"
 
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/home/$(id -un)/.Xauthority}"
