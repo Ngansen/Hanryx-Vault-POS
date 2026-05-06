@@ -1,0 +1,128 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== service ==="
+systemctl status hanryx-kiosk.service --no-pager -l | head -25
+echo "=== last 20 journal lines ==="
+sudo journalctl -u hanryx-kiosk.service -n 20 --no-pager
+echo "=== labwc + launcher running? ==="
+pgrep -af labwc
+pgrep -af hanryx-dual-monitor
+echo "=== chromium running? ==="
+pgrep -af chromium | head -3
+echo "=== log file owner + size ==="
+ls -la /var/log/hanryx-kiosk.log
+echo "=== autostart still in place? ==="
+cat /etc/hanryx-kiosk/labwc/autostart
+echo "=== launcher script first 5 lines + first if-block ==="
+head -5 /home/ngansen/.hanryx-dual-monitor.sh
+sed -n '225,240p' /home/ngansen/.hanryx-dual-monit2>&1 | head -40me/ngansen/.hanryx-dual-monitor.sh 
+=== service ===
+● hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)
+     Loaded: loaded (/etc/systemd/system/hanryx-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Wed 2026-05-06 18:05:52 CDT; 3min 50s ago
+ Invocation: e6141afff5a44f6e8c19cd87d10744c0
+       Docs: https://github.com/Ngansen/Hanryx-Vault-POS
+   Main PID: 6737 (labwc)
+      Tasks: 0 (limit: 4750)
+        CPU: 12ms
+     CGroup: /system.slice/hanryx-kiosk.service
+             ‣ 6737 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+May 06 18:05:52 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 18:05:52 hanryxvault-sat (k-launch)[6737]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+=== last 20 journal lines ===
+May 06 17:43:31 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:43:31 hanryxvault-sat (k-launch)[3135]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 17:49:32 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 17:49:32 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 17:49:32 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 17:49:32 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:49:32 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:49:32 hanryxvault-sat (k-launch)[4201]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 17:52:06 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 17:52:06 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 17:52:06 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 17:52:06 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:52:06 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:52:06 hanryxvault-sat (k-launch)[4837]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 18:05:51 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 18:05:51 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 18:05:51 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 18:05:51 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 18:05:52 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 18:05:52 hanryxvault-sat (k-launch)[6737]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+=== labwc + launcher running? ===
+6737 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+=== chromium running? ===
+1881 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+7374 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+7376 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+=== log file owner + size ===
+-rw-rw-r-- 1 ngansen ngansen 158 May  6 18:05 /var/log/hanryx-kiosk.log
+=== autostart still in place? ===
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts, as ngansen.
+# No panel, no file manager. Just the dual-monitor launcher.
+sleep 3 && /home/ngansen/.hanryx-dual-monitor.sh >> /var/log/hanryx-kiosk.log 2>&1 &
+=== launcher script first 5 lines + first if-block ===
+#!/usr/bin/env bash
+# =============================================================================
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.2 XWayland fix)
+# =============================================================================
+# Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
+log "Splash pages written"
+
+# ── Find chromium binary (prefer Pi OS wrapper, NOT raw binary) ─────────────
+# /usr/bin/chromium and chromium-browser are wrapper scripts that set up
+# the correct env (XDG, GTK, fontconfig). The raw /usr/lib/chromium/chromium
+# binary skips that setup and fails to connect to Wayland/XWayland on Pi 5.
+unset CHROMIUM_FLAGS
+export CHROMIUM_FLAGS=""
+
+if   [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
+elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+else                                         CHROMIUM_BIN=chromium
+fi
+log "Chromium binary: $CHROMIUM_BIN"
+
+=== try running launcher manually as ngansen to see what happens ===
++ set -u
++ LOG_FILE=/var/log/hanryx-kiosk.log
++ LOCK_FILE=/tmp/hanryx-kiosk-launcher.lock
++ exec
++ flock -n 9
++ log ============================================
++ tee -a /var/log/hanryx-kiosk.log
+++ date +%H:%M:%S
++ echo '[18:09:42] ============================================'
+[18:09:42] ============================================
++ log 'HanryxVault satellite kiosk v6.2 starting (XWayland mode)'
++ tee -a /var/log/hanryx-kiosk.log
+++ date +%H:%M:%S
++ echo '[18:09:42] HanryxVault satellite kiosk v6.2 starting (XWayland mode)'
+[18:09:42] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+++ id -un
++ log 'PID=7867  USER=ngansen  PPID=7866'
++ tee -a /var/log/hanryx-kiosk.log
+++ date +%H:%M:%S
++ echo '[18:09:42] PID=7867  USER=ngansen  PPID=7866'
+[18:09:42] PID=7867  USER=ngansen  PPID=7866
++ log 'Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=unset'
++ tee -a /var/log/hanryx-kiosk.log
+++ date +%H:%M:%S
++ echo '[18:09:42] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=unset'
+[18:09:42] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=unset
++ log ============================================
++ tee -a /var/log/hanryx-kiosk.log
+++ date +%H:%M:%S
++ echo '[18:09:42] ============================================'
+[18:09:42] ============================================
++ export XDG_RUNTIME_DIR=/run/user/1000
++ XDG_RUNTIME_DIR=/run/user/1000
++ LIVE_WD=
++ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+++ find_live_wayland
+++ '[' -n wayland-0 ']'
+++ probe_wayland wayland-0
+++ local name=wayland-0
+++ WAYLAND_DISPLAY=wayland-0
+ngansen@hanryxvault-
