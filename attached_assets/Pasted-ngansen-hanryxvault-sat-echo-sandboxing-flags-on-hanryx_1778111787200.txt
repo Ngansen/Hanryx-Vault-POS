@@ -1,0 +1,55 @@
+ngansen@hanryxvault-sat:~ $ echo "=== sandboxing flags on hanryx-kiosk.serviceecho "=== sandboxing flags on hanryx-kiosk.service ==="service | grep -isudo systemctl show hanryx-kiosk.service | grep -iE 'PrivateNetwork|RestrictNamespaces|RestrictAddressFamilies|NetworkNamespace|JoinsNamespace'
+echo "=== compare network namespace of launcher vsecho "=== compare network namespace of launcher vs our shell ===" hanryx-dual-monitor.sh | head -1)
+LPID=$(pgrep -f hanryx-dual-monitor.sh | head -1)Decho "launcher net ns: $(sudo readlink /proc/$LPID/ns/net)" shell net ns: $(readlink /proc/self/ns/necho "our shell net ns: $(readlink /proc/self/ns/net)" "launcher ipc ns: $(sudo readlink /proc/$LPIDecho "launcher ipc ns: $(sudo readlink /proc/$LPID/ns/ipc)" shell ipc ns: $(readlink /proc/self/ns/iecho "our shell ipc ns: $(readlink /proc/self/ns/ipc)"
+echo "=== full hanryx-kiosk.service unit ==="
+echo "=== full hanryx-kiosk.service unit ==="
+sudo systemctl cat hanryx-kiosk.service | cat
+=== sandboxing flags on hanryx-kiosk.service ===
+PrivateNetwork=no
+RestrictNamespaces=no
+=== compare network namespace of launcher vs our shell ===
+launcher net ns: net:[4026531840]
+our shell net ns: net:[4026531840]
+launcher ipc ns: ipc:[4026531839]
+our shell ipc ns: ipc:[4026531839]
+=== full hanryx-kiosk.service unit ===
+# /etc/systemd/system/hanryx-kiosk.service
+[Unit]
+Description=HanryxVault Satellite Kiosk (labwc on tty1)
+Documentation=https://github.com/Ngansen/Hanryx-Vault-POS
+# Wait for the seat (graphics + input) and the network to be ready.
+After=systemd-user-sessions.service seatd.service network-online.target
+Wants=seatd.service network-online.target
+# Own the graphical seat.
+Conflicts=getty@tty1.service lightdm.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=ngansen
+Group=ngansen
+PAMName=login
+WorkingDirectory=/home/ngansen
+
+# Bind to tty1 so labwc/wlroots can grab the KMS device.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+
+ExecStart=/usr/local/bin/hanryx-kiosk-launch
+
+# If labwc dies, restart — but back off so we don't hammer.
+Restart=always
+RestartSec=5s
+# Don't give up after N failures (kiosk must always come back).
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=graphical.target
+ngansen@hanryxvault-sat:~ $
