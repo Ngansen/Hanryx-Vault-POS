@@ -613,14 +613,16 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
-# ── Find chromium binary (prefer Pi OS wrapper, NOT raw binary) ─────────────
-# /usr/bin/chromium and chromium-browser are wrapper scripts that set up
-# the correct env (XDG, GTK, fontconfig). The raw /usr/lib/chromium/chromium
-# binary skips that setup and fails to connect to Wayland/XWayland on Pi 5.
-if   [ -x /usr/bin/chromium-browser ];  then CHROMIUM_BIN=/usr/bin/chromium-browser
-elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
-elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
-else                                         CHROMIUM_BIN=chromium
+# ── Find chromium binary (prefer the REAL binary, NOT the Pi OS wrapper) ───
+# /usr/bin/chromium and chromium-browser are wrapper scripts that inject
+# default flags from /etc/chromium.d/* (e.g. --no-decommit-pooled-pages,
+# --force-renderer-accessibility) which newer chromium versions reject.
+# The raw /usr/lib/chromium/chromium binary lets us control all flags.
+if   [ -x /usr/lib/chromium/chromium ];          then CHROMIUM_BIN=/usr/lib/chromium/chromium
+elif [ -x /usr/lib/chromium-browser/chromium-browser ]; then CHROMIUM_BIN=/usr/lib/chromium-browser/chromium-browser
+elif [ -x /usr/bin/chromium-browser ];           then CHROMIUM_BIN=/usr/bin/chromium-browser
+elif [ -x /usr/bin/chromium ];                   then CHROMIUM_BIN=/usr/bin/chromium
+else                                                  CHROMIUM_BIN=chromium
 fi
 log "Chromium binary: $CHROMIUM_BIN"
 

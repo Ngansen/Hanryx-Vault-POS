@@ -1,0 +1,143 @@
+ngansen@hanryxvault-sat:~ $ echo "=== service status ==="
+systemctl status hanryx-kiosk.service --no-pager -l | head -20
+echo "=== service journal (last 40) ==="
+sudo journalctl -u hanryx-kiosk.service -n 40 --no-pager
+echo "=== launcher log ==="
+ls -la /var/log/hanryx-kiosk.log
+tail -40 /var/log/hanryx-kiosk.log 2>/dev/null
+echo "=== is the launcher script there + executable? ==="
+ls -la /home/ngansen/.hanryx-dual-monitor.sh
+echo "=== is the autostart fired? ==="
+cat /etc/hanryx-kiosk/labwc/autostart
+echo "=== chromium running? ==="
+pgrep -af chromium | head -5
+echo "=== wayland socket ==="
+ls -la /run/user/$(id -u ngansen)/wayland-* 2>/dev| head -30un/user/$(id -u ngansen) wlr-randr 2>&1 
+=== service status ===
+● hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)
+     Loaded: loaded (/etc/systemd/system/hanryx-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Wed 2026-05-06 17:43:31 CDT; 2min 41s ago
+ Invocation: 55ff05ec2cf54c6a947c3516645b486d
+       Docs: https://github.com/Ngansen/Hanryx-Vault-POS
+   Main PID: 3135 (labwc)
+      Tasks: 0 (limit: 4750)
+        CPU: 14ms
+     CGroup: /system.slice/hanryx-kiosk.service
+             ‣ 3135 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+May 06 17:43:31 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Scheduled restart job, restart counter is at 3.
+May 06 17:43:31 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:43:31 hanryxvault-sat (k-launch)[3135]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+=== service journal (last 40) ===
+[sudo] password for ngansen: 
+May 06 17:39:11 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 06 17:39:12 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 06 17:39:12 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 06 17:39:13 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 06 17:39:19 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:39:19 hanryxvault-sat (k-launch)[1373]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 17:39:24 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=10/USR1
+May 06 17:39:24 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 17:39:29 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Scheduled restart job, restart counter is at 1.
+May 06 17:39:29 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:39:29 hanryxvault-sat (k-launch)[1828]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 17:42:52 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 17:42:52 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 17:42:57 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Scheduled restart job, restart counter is at 2.
+May 06 17:42:57 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:42:57 hanryxvault-sat (k-launch)[2752]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 17:43:26 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 17:43:26 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 17:43:31 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Scheduled restart job, restart counter is at 3.
+May 06 17:43:31 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 17:43:31 hanryxvault-sat (k-launch)[3135]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+=== launcher log ===
+-rw-rw-r-- 1 ngansen ngansen 1082308 May  6 17:45 /var/log/hanryx-kiosk.log
+[2894:2894:0506/174325.859460:ERROR:ui/gl/gl_surface_presentation_helper.cc:260] GetVSyncParametersIfAvailable() failed for 2 times!
+[17:43:26] [Kiosk] exited code=0 after 27s — restarting in 5s
+[17:43:26] [Kiosk] exited code=0 after 27s — restarting in 5s
+[17:43:26] [Admin] exited code=0 after 27s — restarting in 5s
+[17:43:26] [Admin] exited code=0 after 27s — restarting in 5s
+[17:43:31] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=5s
+[17:43:31] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=5s
+[17:43:31] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=5s
+[17:43:31] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=5s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+[17:43:34] Another launcher instance is already running — exiting (PID 3155)
+[17:43:34] Another launcher instance is already running — exiting (PID 3155)
+[3287:3287:0506/174405.560712:ERROR:ui/gl/gl_surface_presentation_helper.cc:260] GetVSyncParametersIfAvailable() failed for 1 times!
+[3287:3287:0506/174407.909628:ERROR:ui/gl/gl_surface_presentation_helper.cc:260] GetVSyncParametersIfAvailable() failed for 2 times!
+[3272:3272:0506/174408.683514:ERROR:ui/gl/gl_surface_presentation_helper.cc:260] GetVSyncParametersIfAvailable() failed for 1 times!
+[3171:3241:0506/174408.864640:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[3165:3228:0506/174409.991961:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[3287:3287:0506/174410.216981:ERROR:gpu/command_buffer/service/shared_image/shared_image_factory.cc:998] Could not find SharedImageBackingFactory with params: usage: Gles2Read|RasterRead|DisplayRead|CpuWriteOnly|CpuRead, format: (Y_UV, 420, 8unorm, ExtSamplerOff), share_between_threads: 0, gmb_type: shared_memory, size: 854x480, debug_label: MediaGmbVideoFramePoolMappableSI_Pid:3354_Pid:3354
+[0506/174410.236629:WARNING:third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc:264] fpsimd not found
+[3287:3287:0506/174410.243057:ERROR:gpu/ipc/service/shared_image_stub.cc:209] SharedImageStub: Unable to create shared image
+[3287:3287:0506/174410.246574:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.249550:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.252956:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.300550:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.341073:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.372556:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.423430:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3287:3287:0506/174410.455660:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:252] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[3272:3272:0506/174412.599859:ERROR:ui/gl/gl_surface_presentation_helper.cc:260] GetVSyncParametersIfAvailable() failed for 2 times!
+[3165:3228:0506/174432.292208:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[3171:3241:0506/174434.025266:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[3165:3228:0506/174512.914268:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[3171:3241:0506/174523.679522:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+=== is the launcher script there + executable? ===
+-rwxr-xr-x 1 ngansen ngansen 17914 May  5 23:23 /home/ngansen/.hanryx-dual-monitor.sh
+=== is the autostart fired? ===
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts, as ngansen.
+# No panel, no file manager. Just the dual-monitor launcher.
+sleep 3 && /home/ngansen/.hanryx-dual-monitor.sh >> /var/log/hanryx-kiosk.log 2>&1 &
+=== chromium running? ===
+1881 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+3165 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+3171 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+3202 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+3204 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=channel=built on Debian GNU/Linux 13 (trixie) --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=4 --shared-client-connection
+=== wayland socket ===
+srwxrwxr-x 1 ngansen ngansen 0 May  6 17:43 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May  6 17:39 /run/user/1000/wayland-0.lock
+=== outputs ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 1024,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1280x1024 px, 60.020000 Hz
+    1280x960 px, 60.000000 Hz
+    1152x864 px, 59.966999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1024x768 px, 60.004002 Hz
+ngansen@hanryxvault-sat:~ $
