@@ -392,7 +392,7 @@ cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 # HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.2 XWayland fix)
 # =============================================================================
 # Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
-#   • Uses native Wayland Chromium (--ozone-platform=wayland) — NO XWayland
+#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
 #   • Detects outputs with wlr-randr (xrandr does not work under labwc)
 #   • Places each Chromium window on the right monitor via labwc rc.xml rules
 #     (--window-position is ignored under Wayland; you MUST use compositor rules)
@@ -649,8 +649,8 @@ COMMON_FLAGS=(
     --disable-breakpad
     --disable-component-update
     --no-process-singleton
-    --ozone-platform=wayland
-    --enable-features=UseOzonePlatform,VaapiVideoDecoder
+    --ozone-platform=x11
+    --enable-features=VaapiVideoDecoder
     --disable-dev-shm-usage
     --allow-file-access-from-files
     --disable-web-security
@@ -669,7 +669,7 @@ launch_window() {
     local FALLBACK_FLAGS=()
     for f in "${COMMON_FLAGS[@]}"; do
         case "$f" in
-            --enable-features=UseOzonePlatform,VaapiVideoDecoder) FALLBACK_FLAGS+=("--enable-features=UseOzonePlatform") ;;
+            --enable-features=VaapiVideoDecoder) FALLBACK_FLAGS+=() ;;
             *) FALLBACK_FLAGS+=("$f") ;;
         esac
     done

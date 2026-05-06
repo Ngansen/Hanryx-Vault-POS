@@ -1,0 +1,63 @@
+ngansen@hanryxvault-sat:~ $ # Show the launcher's startup — wayland detection block
+sed -n '/HanryxVault satellite kiosk/,/Live Wayland\|FATAL/p' /var/log/hanryx-kiosk.log | head -40
+
+echo "---LIVE SESSION ENV---"
+# What WAYLAND_DISPLAY does labwc actually expose? 
+ls -la /run/user/1000/wayland-* 2>/dev/null
+ps -eo pid,cmd | grep -E 'labwc|wayfire' | grep -v grep
+
+echo "---LAUNCHER ENV CHECK---"
+# What env did the launcher actually run chromium with?
+sudo grep -E 'ENV|export|WAYLAND_DISPLAY|XDG_RUNTIME|--ozone' /var/log/hanryx-kiosk.log | head -20
+
+echo "---CHROMIUM CMDLINE---"
+00 auxww | grep '[c]hromium' | head -3 | cut -c1-3
+[22:05:13] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:05:13] PID=1472  USER=ngansen  PPID=1
+[22:05:13] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:05:13] ============================================
+[22:05:13] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:06:18] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:06:18] PID=1482  USER=ngansen  PPID=1
+[22:06:18] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:06:18] ============================================
+[22:06:18] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:21:27] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:21:27] PID=1467  USER=ngansen  PPID=1
+[22:21:27] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:21:27] ============================================
+[22:21:27] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:24:53] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:24:53] PID=1479  USER=ngansen  PPID=1
+[22:24:53] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:24:53] ============================================
+[22:24:53] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:29:25] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:29:25] PID=1481  USER=ngansen  PPID=1
+[22:29:25] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:29:25] ============================================
+[22:29:25] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:33:48] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:33:48] PID=1477  USER=ngansen  PPID=1
+[22:33:48] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:33:48] ============================================
+[22:33:48] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:36:55] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:36:55] PID=1479  USER=ngansen  PPID=1
+[22:36:55] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:36:55] ============================================
+[22:36:55] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[22:59:01] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[22:59:01] PID=1477  USER=ngansen  PPID=1
+[22:59:01] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[22:59:01] ============================================
+[22:59:01] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+---LIVE SESSION ENV---
+srwxrwxr-x 1 ngansen ngansen 0 May  5 23:15 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May  5 23:15 /run/user/1000/wayland-0.lock
+   2136 /usr/bin/labwc -C /etc/xdg/labwc-greeter/
+---LAUNCHER ENV CHECK---
+grep: /var/log/hanryx-kiosk.log: binary file matches
+---CHROMIUM CMDLINE---
+ngansen     2386  0.0  0.0   7056  3248 ?        Ss   23:15   0:00 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if
+ngansen@hanryxvault-sat:~ $
