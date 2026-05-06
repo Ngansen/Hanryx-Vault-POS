@@ -1,0 +1,57 @@
+ngansen@hanryxvault-sat:~ $ # Kill ALL stale chromium first
+sudo pkill -9 -f /usr/lib/chromium/chromium 2>/dev/null
+sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null
+sleep 2
+echo "stale chromium remaining: $(pgrep -af /usr/lib/chromium/chromium | wc -l)"
+
+# Write a wrapper that handles env-i + exec of chromium with strace fallback
+sudo tee /usr/local/bin/hvault-chromium-wrapper >/dev/null <<'EOF'
+#!/bin/bash
+# Strip ALL inherited env, then exec chromium with clean X11 env
+exec env -i \
+    HOME=/home/ngansen \
+    USER=ngansen \
+pgrep -af 'chromium.*hvault' | wc -lget 2) ==="nry
+Killed
+Killed
+stale chromium remaining: 0
+=== verify patched launch block ===
+        fi
+        log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        env > /tmp/launcher-env-$$-$name.log 2>&1; printf "%s\n" "$CHROMIUM_BIN" "${FLAGS[@]}" > /tmp/launcher-argv-$$-$name.log
+        /usr/local/bin/hvault-chromium-wrapper \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+=== restart ===
+=== filtered log ===
+[18:52:33] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:52:33] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:52:33] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:52:33] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[24232:24232:0506/185233.267363:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:52:34] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:52:34] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:52:37] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:52:37] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:52:37] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:52:37] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[24306:24306:0506/185237.353278:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:52:38] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:52:38] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:52:44] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:52:44] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:52:48] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:52:48] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== chromium hvault count (target 2) ===
+2
+ngansen@hanryxvault-sat:~ $
