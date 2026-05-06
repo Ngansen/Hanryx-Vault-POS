@@ -1,0 +1,193 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== re-enable hanryx-boot (I disabled it incorrectly) ==="
+sudo systemctl enable hanryx-boot.service
+sudo systemctl is-enabled hanryx-boot.service
+
+echo "=== find ALL processes holding the launcher lock ==="
+sudo fuser -v /tmp/hanryx-kiosk-launcher.lock 2>&1 
+ps -ef | grep -E 'hanryx-dual-monitor|hanryx-kiosk-launcher' | grep -v grep
+
+echo "=== nuclear kill: every bash that has the launcher script open ==="
+sudo lsof /tmp/hanryx-kiosk-launcher.lock 2>/dev/null
+for pid in $(sudo fuser /tmp/hanryx-kiosk-launcher.lock 2>/dev/null); do
+ead -4-af 'chromium.*hvault\|chromium --kiosk' | h
+=== re-enable hanryx-boot (I disabled it incorrectly) ===
+Created symlink '/etc/systemd/system/multi-user.target.wants/hanryx-boot.service' → '/etc/systemd/system/hanryx-boot.service'.
+enabled
+=== find ALL processes holding the launcher lock ===
+=== nuclear kill: every bash that has the launcher script open ===
+Killed
+Killed
+=== confirm nothing holds the lock now ===
+Specified filename /tmp/hanryx-kiosk-launcher.lock does not exist.
+lock free
+no launchers running
+=== restart kiosk ===
+=== launcher log (full, since we just truncated) ===
+[18:16:07] ============================================
+[18:16:07] ============================================
+[18:16:07] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[18:16:07] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[18:16:07] PID=10294  USER=ngansen  PPID=1
+[18:16:07] PID=10294  USER=ngansen  PPID=1
+[18:16:07] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:16:07] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:16:07] ============================================
+[18:16:07] ============================================
+[18:16:07] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:16:07] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:16:07] Loaded config from /home/ngansen/.hanryx/satellite.conf
+[18:16:07] Loaded config from /home/ngansen/.hanryx/satellite.conf
+[18:16:07] Admin URL : http://hanryxvault:8080/admin
+[18:16:07] Admin URL : http://hanryxvault:8080/admin
+[18:16:07] Kiosk URL : http://hanryxvault:8080/kiosk
+[18:16:07] Kiosk URL : http://hanryxvault:8080/kiosk
+[18:16:07] Health URL: http://hanryxvault:8080/health
+[18:16:07] Health URL: http://hanryxvault:8080/health
+[18:16:07] Main Pi reachable immediately
+[18:16:07] Main Pi reachable immediately
+[18:16:07] Probing outputs with wlr-randr…
+[18:16:07] Probing outputs with wlr-randr…
+[18:16:07] wlr-randr output (44 lines):
+[18:16:07] wlr-randr output (44 lines):
+[18:16:07]   | HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+[18:16:07]   | HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+[18:16:07]   |   Make: Mediatrix Peripherals Inc
+[18:16:07]   |   Make: Mediatrix Peripherals Inc
+[18:16:07]   |   Model: MPI5008
+[18:16:07]   |   Model: MPI5008
+[18:16:07]   |   Serial: 0x00000001
+[18:16:07]   |   Serial: 0x00000001
+[18:16:07]   |   Physical size: 150x100 mm
+[18:16:07]   |   Physical size: 150x100 mm
+[18:16:07]   |   Enabled: yes
+[18:16:07]   |   Enabled: yes
+[18:16:07]   |   Modes:
+[18:16:07]   |   Modes:
+[18:16:07]   |     800x480 px, 59.995998 Hz (preferred, current)
+[18:16:07]   |     800x480 px, 59.995998 Hz (preferred, current)
+[18:16:07]   |   Position: 1024,0
+[18:16:07]   |   Position: 1024,0
+[18:16:07]   |   Transform: normal
+[18:16:07]   |   Transform: normal
+[18:16:07]   |   Scale: 1.000000
+[18:16:07]   |   Scale: 1.000000
+[18:16:07]   |   Adaptive Sync: disabled
+[18:16:07]   |   Adaptive Sync: disabled
+[18:16:07]   | HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+[18:16:07]   | HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+[18:16:07]   |   Make: DZX
+[18:16:07]   |   Make: DZX
+[18:16:07]   |   Model: Z3
+[18:16:07]   |   Model: Z3
+[18:16:07]   |   Serial: 0000000000000
+[18:16:07]   |   Serial: 0000000000000
+[18:16:07]   |   Physical size: 150x90 mm
+[18:16:07]   |   Physical size: 150x90 mm
+[18:16:07]   |   Enabled: yes
+[18:16:07]   |   Enabled: yes
+[18:16:07]   |   Modes:
+[18:16:07]   |   Modes:
+[18:16:07]   |     1024x600 px, 60.004002 Hz (preferred, current)
+[18:16:07]   |     1024x600 px, 60.004002 Hz (preferred, current)
+[18:16:07]   |     1920x1080 px, 60.000000 Hz
+[18:16:07]   |     1920x1080 px, 60.000000 Hz
+[18:16:07]   |     1920x1080 px, 60.000000 Hz
+[18:16:07]   |     1920x1080 px, 60.000000 Hz
+[18:16:07]   |     1920x1080 px, 59.939999 Hz
+[18:16:07]   |     1920x1080 px, 59.939999 Hz
+[18:16:07]   |     1280x1024 px, 60.020000 Hz
+[18:16:07]   |     1280x1024 px, 60.020000 Hz
+[18:16:07]   |     1280x960 px, 60.000000 Hz
+[18:16:07]   |     1280x960 px, 60.000000 Hz
+[18:16:07]   |     1152x864 px, 59.966999 Hz
+[18:16:07]   |     1152x864 px, 59.966999 Hz
+[18:16:07]   |     1280x720 px, 60.000000 Hz
+[18:16:07]   |     1280x720 px, 60.000000 Hz
+[18:16:07]   |     1280x720 px, 60.000000 Hz
+[18:16:07]   |     1280x720 px, 60.000000 Hz
+[18:16:07]   |     1280x720 px, 59.939999 Hz
+[18:16:07]   |     1280x720 px, 59.939999 Hz
+[18:16:07]   |     1024x768 px, 60.004002 Hz
+[18:16:07]   |     1024x768 px, 60.004002 Hz
+[18:16:07]   |     1440x480 px, 60.000000 Hz
+[18:16:07]   |     1440x480 px, 60.000000 Hz
+[18:16:07]   |     1440x480 px, 59.939999 Hz
+[18:16:07]   |     1440x480 px, 59.939999 Hz
+[18:16:07]   |     1024x640 px, 59.987999 Hz
+[18:16:07]   |     1024x640 px, 59.987999 Hz
+[18:16:07]   |     800x600 px, 60.317001 Hz
+[18:16:07]   |     800x600 px, 60.317001 Hz
+[18:16:07]   |     720x480 px, 60.000000 Hz
+[18:16:07]   |     720x480 px, 60.000000 Hz
+[18:16:07]   |     720x480 px, 60.000000 Hz
+[18:16:07]   |     720x480 px, 60.000000 Hz
+[18:16:07]   |     720x480 px, 59.939999 Hz
+[18:16:07]   |     720x480 px, 59.939999 Hz
+[18:16:07]   |     720x480 px, 59.939999 Hz
+[18:16:07]   |     720x480 px, 59.939999 Hz
+[18:16:07]   |     640x480 px, 60.000000 Hz
+[18:16:07]   |     640x480 px, 60.000000 Hz
+[18:16:07]   |     640x480 px, 59.939999 Hz
+[18:16:07]   |     640x480 px, 59.939999 Hz
+[18:16:07]   |   Position: 0,0
+[18:16:07]   |   Position: 0,0
+[18:16:07]   |   Transform: normal
+[18:16:07]   |   Transform: normal
+[18:16:07]   |   Scale: 1.000000
+[18:16:07]   |   Scale: 1.000000
+[18:16:07]   |   Adaptive Sync: disabled
+[18:16:07]   |   Adaptive Sync: disabled
+[18:16:07] Detected output: HDMI-A-2  (800px wide)
+[18:16:07] Detected output: HDMI-A-2  (800px wide)
+[18:16:07] Detected output: HDMI-A-1  (1024px wide)
+[18:16:07] Detected output: HDMI-A-1  (1024px wide)
+[18:16:07] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[18:16:07] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[18:16:07] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[18:16:07] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[18:16:07] Splash pages written
+[18:16:07] Splash pages written
+[18:16:07] Chromium binary: /usr/lib/chromium/chromium
+[18:16:07] Chromium binary: /usr/lib/chromium/chromium
+[18:16:07] DISPLAY=:0  (XWayland via labwc)
+[18:16:07] DISPLAY=:0  (XWayland via labwc)
+[18:16:08] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:16:08] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:16:08] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:16:08] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[10534:10534:0506/181608.309217:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[10534:10534:0506/181608.309278:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[18:16:09] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:16:09] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:16:12] Both windows launched — Tailscale tunnel active
+[18:16:12] Both windows launched — Tailscale tunnel active
+[18:16:12] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:16:12] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:16:12] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:16:12] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:16:12] Heartbeat loop started (PID 10656)
+[18:16:12] Heartbeat loop started (PID 10656)
+[10648:10648:0506/181612.352342:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[10648:10648:0506/181612.352424:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[18:16:13] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:16:13] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:16:17] Another launcher instance is already running — exiting (PID 10766)
+[18:16:17] Another launcher instance is already running — exiting (PID 10766)
+[18:16:19] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:16:19] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[10833:10833:0506/181619.832648:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[10833:10833:0506/181619.832869:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[10833:10833:0506/181619.832937:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[10833:10833:0506/181619.832984:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[10833:10833:0506/181619.834336:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[10893:10893:0506/181620.111866:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[10893:10893:0506/181620.111982:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[10893:10893:0506/181620.112040:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[10893:10893:0506/181620.112080:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[10893:10893:0506/181620.113814:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[10782:10804:0506/181622.442911:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[10782:10804:0506/181622.444122:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR
+[18:16:23] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:16:23] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== chromium hvault windows now? ===
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
