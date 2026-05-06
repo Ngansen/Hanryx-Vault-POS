@@ -1,0 +1,60 @@
+ngansen@hanryxvault:~ $ journalctl -u hanryx-pos.service -b 0 --no-pager | tail -30
+journalctl -u hanryx-docker.service -b 0 --no-pager | tail -20
+docker compose -f /home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml ps 2>&1 | head -20
+May 06 21:33:36 hanryxvault systemd[1]: Starting hanryx-pos.service - HanryxVault POS — Docker Compose...
+May 06 21:33:39 hanryxvault git[2807]: Already up to date.
+May 06 21:33:43 hanryxvault docker[3095]: time="2026-05-06T21:33:43Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-assistant-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-recognizer-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-pokeapi-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-redis-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-storefront-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-pgbouncer-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-sync-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-pos-1 Running
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-redis-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-redis-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Waiting
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Healthy
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-redis-1 Healthy
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Healthy
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Healthy
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-db-1 Healthy
+May 06 21:33:44 hanryxvault docker[3095]:  Container pi-setup-redis-1 Healthy
+May 06 21:33:44 hanryxvault systemd[1]: Finished hanryx-pos.service - HanryxVault POS — Docker Compose.
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-recognizer-1 Starting
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-db-1 Starting
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-recognizer-1 Started
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-redis-1 Started
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-db-1 Started
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-db-1 Waiting
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-db-1 Waiting
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-db-1 Waiting
+May 06 21:34:01 hanryxvault docker[3094]:  Container pi-setup-redis-1 Waiting
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-db-1 Healthy
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-db-1 Healthy
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-storefront-1 Starting
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-db-1 Healthy
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-pgbouncer-1 Starting
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-redis-1 Healthy
+May 06 21:34:06 hanryxvault docker[3094]:  Container pi-setup-pos-1 Starting
+May 06 21:34:07 hanryxvault docker[3094]:  Container pi-setup-pgbouncer-1 Started
+May 06 21:34:07 hanryxvault docker[3094]:  Container pi-setup-pos-1 Started
+May 06 21:34:07 hanryxvault docker[3094]:  Container pi-setup-storefront-1 Started
+May 06 21:34:07 hanryxvault systemd[1]: Finished hanryx-docker.service - HanryxVault Docker.
+time="2026-05-06T21:44:11Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED          STATUS                      PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7        "/bin/ollama serve"      assistant    2 days ago       Up 10 minutes (unhealthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           10 minutes ago   Up 10 minutes (healthy)     5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    10 minutes ago   Up 10 minutes (healthy)     5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      38 minutes ago   Up 10 minutes (healthy)     80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          10 minutes ago   Up 10 minutes (healthy)     0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   10 minutes ago   Up 10 minutes (healthy)     8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        10 minutes ago   Up 10 minutes (healthy)     6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   10 minutes ago   Up 10 minutes (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync              "/entrypoint.sh pyth…"   sync         2 days ago       Up 10 minutes               8080/tcp
+ngansen@hanryxvault:~
