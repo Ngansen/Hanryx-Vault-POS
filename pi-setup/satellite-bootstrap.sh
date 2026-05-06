@@ -48,9 +48,12 @@ echo ""
 # ─────────────────────────────────────────────────────────────────────────────
 step "1. System packages"
 apt-get update -qq
+CHROMIUM_PKG=chromium
+apt-cache show "$CHROMIUM_PKG" >/dev/null 2>&1 || CHROMIUM_PKG=chromium-browser
+info "Using chromium package: $CHROMIUM_PKG"
 apt-get install -y --no-install-recommends \
     git curl jq zstd wlr-randr unclutter \
-    chromium-browser openssh-server \
+    "$CHROMIUM_PKG" openssh-server \
     avahi-daemon avahi-utils \
     nginx \
     python3-pip python3-venv \
