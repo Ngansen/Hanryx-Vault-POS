@@ -654,6 +654,10 @@ COMMON_FLAGS=(
     --disable-dev-shm-usage
     --allow-file-access-from-files
     --disable-web-security
+    # Skip the GNOME keyring "Choose password for new keyring" dialog that
+    # blocks chromium on first run when no logind session created the keyring.
+    --password-store=basic
+    --use-mock-keychain
 )
 
 # ── Kill any stale chromium / locks ─────────────────────────────────────────
