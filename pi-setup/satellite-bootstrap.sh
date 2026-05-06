@@ -1,202 +1,202 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Pi One-Shot Bootstrap
+# satellite-bootstrap.sh — ONE-SHOT post-reflash setup for the satellite Pi
 #
-# Run on a FRESH Raspberry Pi OS (Bookworm/Trixie 64-bit) install — typically
-# right after Raspberry Pi Imager has flashed the SD card with WiFi + SSH
-# pre-configured. Handles everything from blank Pi to a working dual-monitor
-# kiosk that joins Tailscale and reports metrics to the Main Pi.
+# Run this once on a freshly flashed Pi OS Bookworm satellite Pi after
+# completing first-boot setup (user 'ngansen' created, WiFi joined).
 #
-# Usage (on the satellite Pi, after first SSH):
-#   curl -fsSL https://raw.githubusercontent.com/Ngansen/Hanryx-Vault-POS/main/pi-setup/satellite-bootstrap.sh | bash
+# What it does, in order:
+#   1.  apt update + install required packages
+#   2.  Set hostname to hanryxvault-sat (avoids collision with main Pi)
+#   3.  Install Tailscale and prompt for auth
+#   4.  Run the dual-monitor kiosk installer (setup-satellite-kiosk-boot.sh)
+#   5.  Run the reliability stack (install-reliability.sh)
+#   6.  Configure ~/.hanryx/satellite.conf with sensible defaults
+#   7.  Offer to reboot
 #
-# Or with a Tailscale auth key (skips browser prompt):
-#   curl -fsSL https://raw.githubusercontent.com/Ngansen/Hanryx-Vault-POS/main/pi-setup/satellite-bootstrap.sh \
-#     | TAILSCALE_AUTH_KEY=tskey-auth-xxxxx bash
-#
-# Optional env vars:
-#   TAILSCALE_AUTH_KEY  Pre-authorise this Pi without the browser link.
-#   MAIN_PI_HOST        Main Pi Tailscale IP (default 100.125.5.34).
-#   SAT_HOSTNAME        Tailscale hostname for this device (default hanryxvault-sat).
-#   SCREENS             1 or 2 — how many monitors are plugged in (default 2).
-#   SKIP_KIOSK          Set to 1 to install monitoring only, no Chromium kiosk.
-#
-# What this script does:
-#   1. apt update + upgrade (with auto-yes)
-#   2. Installs base tools: git, curl, jq, ca-certificates
-#   3. Installs prometheus-node-exporter on port 9100 (so Main Pi's Grafana
-#      can chart this satellite)
-#   4. Installs Tailscale and joins your tailnet
-#   5. Clones the Hanryx-Vault-POS repo to ~/Hanryx-Vault-POS
-#   6. Runs the existing setup-satellite-kiosk-boot.sh non-interactively
-#      using the Main Pi as $MAIN_PI_HOST (skipped if SKIP_KIOSK=1)
-#   7. Prints a summary block with the new IPs — copy-paste ready for
-#      updating prometheus.yml on the Main Pi.
+# Idempotent — safe to re-run if a step fails.
+# All progress logged to /var/log/hanryx-bootstrap.log
 # =============================================================================
-set -euo pipefail
+set -u
 
-# ── Defaults ────────────────────────────────────────────────────────────────
-MAIN_PI_HOST="${MAIN_PI_HOST:-100.125.5.34}"
-SAT_HOSTNAME="${SAT_HOSTNAME:-hanryxvault-sat}"
-SCREENS="${SCREENS:-2}"
-SKIP_KIOSK="${SKIP_KIOSK:-0}"
-REPO_URL="${REPO_URL:-https://github.com/Ngansen/Hanryx-Vault-POS.git}"
+LOG=/var/log/hanryx-bootstrap.log
+exec > >(tee -a "$LOG") 2>&1
 
-CURRENT_USER="${SUDO_USER:-$(whoami)}"
+C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; B='\033[1m'; N='\033[0m'
+step()  { echo ""; echo -e "${B}${C}══ $1 ══${N}"; }
+ok()    { echo -e "${G}[✓]${N} $1"; }
+info()  { echo -e "${C}[i]${N} $1"; }
+warn()  { echo -e "${Y}[!]${N} $1"; }
+bad()   { echo -e "${R}[✗]${N} $1"; }
+die()   { bad "$1"; exit 1; }
+
+[ "$EUID" -ne 0 ] && die "Run with sudo: sudo bash $0"
+
+CURRENT_USER="${SUDO_USER:-ngansen}"
 HOME_DIR=$(getent passwd "$CURRENT_USER" | cut -d: -f6)
-REPO_DIR="$HOME_DIR/Hanryx-Vault-POS"
-
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
-RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
-ok()    { echo -e "${GREEN}[✓]${NC} $1"; }
-info()  { echo -e "${YELLOW}[→]${NC} $1"; }
-note()  { echo -e "${CYAN}[i]${NC} $1"; }
-fatal() { echo -e "${RED}[✗]${NC} $1" >&2; exit 1; }
-
-require_root() {
-    if [ "$EUID" -ne 0 ]; then
-        info "Re-running with sudo…"
-        exec sudo -E bash "$0" "$@"
-    fi
-}
-require_root "$@"
+REPO_DIR="${REPO_DIR:-$HOME_DIR/Hanryx-Vault-POS}"
+MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-hanryxvault}"
+NEW_HOSTNAME="${NEW_HOSTNAME:-hanryxvault-sat}"
 
 echo ""
-echo -e "${BOLD}  HanryxVault — Satellite Pi One-Shot Bootstrap${NC}"
-echo "  ============================================================"
-echo "  User           : $CURRENT_USER"
-echo "  Home           : $HOME_DIR"
-echo "  Main Pi (TS)   : $MAIN_PI_HOST"
-echo "  Sat hostname   : $SAT_HOSTNAME"
-echo "  Screens        : $SCREENS"
-echo "  Skip kiosk     : $SKIP_KIOSK"
-echo "  Repo           : $REPO_URL"
-echo "  ============================================================"
+echo -e "${B}  HanryxVault — Satellite Pi One-Shot Bootstrap${N}"
+echo "  $(date -Is)"
+echo "  user=$CURRENT_USER  home=$HOME_DIR  repo=$REPO_DIR"
+echo "  target hostname=$NEW_HOSTNAME  main pi=$MAIN_PI_TS_HOST"
 echo ""
 
-# ── 1. apt update ───────────────────────────────────────────────────────────
-info "Updating apt cache…"
-DEBIAN_FRONTEND=noninteractive apt-get update -qq
-ok "apt cache updated"
+# ─────────────────────────────────────────────────────────────────────────────
+step "1. System packages"
+apt-get update -qq
+apt-get install -y --no-install-recommends \
+    git curl jq zstd wlr-randr unclutter \
+    chromium-browser openssh-server \
+    avahi-daemon avahi-utils \
+    nginx \
+    python3-pip python3-venv \
+    || die "apt-get install failed"
+ok "Required packages present"
 
-info "Installing base tools (git, curl, jq, ca-certificates)…"
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl jq ca-certificates gnupg lsb-release \
-    >/dev/null
-ok "Base tools installed"
-
-# ── 2. node-exporter — so Grafana on the Main Pi can chart this Pi ──────────
-info "Installing prometheus-node-exporter…"
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq prometheus-node-exporter >/dev/null
-systemctl enable --now prometheus-node-exporter >/dev/null 2>&1 || true
-sleep 2
-if curl -fsS --max-time 3 http://localhost:9100/metrics >/dev/null 2>&1; then
-    ok "node-exporter healthy on :9100"
+# ─────────────────────────────────────────────────────────────────────────────
+step "2. Hostname → $NEW_HOSTNAME"
+CURRENT_HN=$(hostname)
+if [ "$CURRENT_HN" != "$NEW_HOSTNAME" ]; then
+    echo "$NEW_HOSTNAME" > /etc/hostname
+    hostnamectl set-hostname "$NEW_HOSTNAME"
+    sed -i '/127\.0\.1\.1/d' /etc/hosts
+    echo "127.0.1.1  $NEW_HOSTNAME ${NEW_HOSTNAME}.local" >> /etc/hosts
+    systemctl restart avahi-daemon 2>/dev/null || true
+    ok "Hostname changed: $CURRENT_HN → $NEW_HOSTNAME"
 else
-    note "node-exporter installed but /metrics not yet responding — will retry on first reboot"
+    ok "Hostname already $NEW_HOSTNAME"
 fi
 
-# ── 3. Tailscale ────────────────────────────────────────────────────────────
-info "Installing Tailscale…"
+# ─────────────────────────────────────────────────────────────────────────────
+step "3. Tailscale install + auth"
 if ! command -v tailscale >/dev/null 2>&1; then
+    info "Installing Tailscale…"
     curl -fsSL https://tailscale.com/install.sh | sh
-    ok "Tailscale installed"
-else
-    ok "Tailscale already present ($(tailscale version | head -1))"
 fi
-
-systemctl enable --now tailscaled >/dev/null 2>&1 || true
-
-if [ -n "${TAILSCALE_AUTH_KEY:-}" ]; then
-    info "Authenticating Tailscale with provided key…"
-    tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$SAT_HOSTNAME" --accept-routes 2>/dev/null \
-        || tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$SAT_HOSTNAME" 2>/dev/null \
-        || true
+if ! tailscale status >/dev/null 2>&1; then
+    info "Starting Tailscale (you will be prompted to visit a URL to authenticate)…"
+    tailscale up --hostname="$NEW_HOSTNAME" --ssh || warn "tailscale up failed — re-run manually after bootstrap"
 else
-    note "No TAILSCALE_AUTH_KEY env var — running interactive auth."
-    note "Open the URL printed below in any browser to approve this Pi."
-    echo ""
-    tailscale up --hostname="$SAT_HOSTNAME" --accept-routes &
-    TS_PID=$!
-    sleep 5
-    read -rp "  Press Enter once you have approved the device in the Tailscale admin… "
-    wait "$TS_PID" 2>/dev/null || true
+    info "Updating Tailscale hostname to $NEW_HOSTNAME…"
+    tailscale set --hostname="$NEW_HOSTNAME" 2>/dev/null \
+        || tailscale up --reset --hostname="$NEW_HOSTNAME" --ssh 2>/dev/null \
+        || warn "Tailscale rename failed — run manually: sudo tailscale up --reset --hostname=$NEW_HOSTNAME --ssh"
 fi
+TS_IP=$(tailscale ip -4 2>/dev/null | head -1 || echo "(not connected)")
+ok "Tailscale: $TS_IP  ($NEW_HOSTNAME)"
 
-TS_IP=$(tailscale ip -4 2>/dev/null | head -1 || echo "not-connected")
-ok "Tailscale IP: $TS_IP"
-
-# Reachability check Main Pi
-if ping -c1 -W2 "$MAIN_PI_HOST" >/dev/null 2>&1; then
-    ok "Main Pi $MAIN_PI_HOST reachable over Tailscale"
-else
-    note "Main Pi $MAIN_PI_HOST not pingable yet — Tailscale may still be settling"
-fi
-
-# ── 4. Clone repo ───────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+step "4. Repository clone / update"
 if [ ! -d "$REPO_DIR/.git" ]; then
-    info "Cloning $REPO_URL → $REPO_DIR…"
-    sudo -u "$CURRENT_USER" git clone --depth=20 "$REPO_URL" "$REPO_DIR"
-    ok "Repo cloned"
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        info "Cloning private repo with GITHUB_TOKEN…"
+        sudo -u "$CURRENT_USER" git clone \
+            "https://${GITHUB_TOKEN}@github.com/Ngansen/Hanryx-Vault-POS.git" \
+            "$REPO_DIR" || die "git clone failed"
+    else
+        die "GITHUB_TOKEN env var not set and $REPO_DIR doesn't exist. Re-run with: sudo GITHUB_TOKEN=... bash $0"
+    fi
 else
-    info "Repo already present — pulling latest…"
-    sudo -u "$CURRENT_USER" git -C "$REPO_DIR" pull --ff-only || \
-        note "git pull failed — leaving working tree as-is"
+    info "Repo present — pulling latest…"
+    sudo -u "$CURRENT_USER" git -C "$REPO_DIR" pull --ff-only \
+        || warn "git pull failed — continuing with whatever is checked out"
+fi
+ok "Repo at $REPO_DIR"
+
+# ─────────────────────────────────────────────────────────────────────────────
+step "5. Dual-monitor kiosk installer"
+KIOSK_INSTALL="$REPO_DIR/pi-setup/setup-satellite-kiosk-boot.sh"
+if [ -f "$KIOSK_INSTALL" ]; then
+    # The installer is interactive (asks Tailscale y/n etc) — feed defaults
+    # via env vars and pipe a series of "y\n" answers to the prompts.
+    USE_TAILSCALE=y MAIN_PI_TS_HOST="$MAIN_PI_TS_HOST" \
+        bash "$KIOSK_INSTALL" </dev/null \
+        || warn "kiosk installer reported errors — review $LOG"
+    ok "Kiosk installer complete"
+else
+    warn "Kiosk installer not found at $KIOSK_INSTALL — skipping"
 fi
 
-# ── 5. Run dual-monitor kiosk setup (unless skipped) ────────────────────────
-if [ "$SKIP_KIOSK" = "1" ]; then
-    note "SKIP_KIOSK=1 — skipping Chromium kiosk install"
+# ─────────────────────────────────────────────────────────────────────────────
+step "6. Reliability stack (heal timer + recover.sh)"
+RELIABILITY="$REPO_DIR/pi-setup/install-reliability.sh"
+if [ -f "$RELIABILITY" ]; then
+    REPO_DIR="$REPO_DIR" bash "$RELIABILITY" \
+        || warn "reliability installer had warnings — review $LOG"
+    ok "Reliability stack installed"
 else
-    KIOSK_SCRIPT="$REPO_DIR/pi-setup/setup-satellite-kiosk-boot.sh"
-    if [ -x "$KIOSK_SCRIPT" ] || [ -f "$KIOSK_SCRIPT" ]; then
-        info "Running dual-monitor kiosk setup…"
-        # Pre-seed config so the existing script runs non-interactively
-        SAT_CONF_DIR="$HOME_DIR/.hanryx"
-        mkdir -p "$SAT_CONF_DIR"
-        cat > "$SAT_CONF_DIR/satellite.conf" <<EOF
-MAIN_PI_TS_HOST=$MAIN_PI_HOST
-ADMIN_URL=http://$MAIN_PI_HOST:8080/admin
-KIOSK_URL=http://$MAIN_PI_HOST:8080/kiosk
-HEALTH_URL=http://$MAIN_PI_HOST:8080/health
+    warn "install-reliability.sh not found — skipping"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+step "7. Satellite config defaults"
+CONFIG_DIR="$HOME_DIR/.hanryx"
+CONFIG_FILE="$CONFIG_DIR/satellite.conf"
+mkdir -p "$CONFIG_DIR"
+if [ ! -f "$CONFIG_FILE" ]; then
+    cat > "$CONFIG_FILE" << EOF
+# HanryxVault satellite configuration — created by satellite-bootstrap.sh
+# Edit and reboot to take effect, or restart the launcher.
+
+MAIN_PI_TS_HOST=$MAIN_PI_TS_HOST
+ADMIN_URL=http://\${MAIN_PI_TS_HOST}:8080/admin
+KIOSK_URL=http://\${MAIN_PI_TS_HOST}:8080/kiosk
+HEALTH_URL=http://\${MAIN_PI_TS_HOST}:8080/health
 USE_TAILSCALE=y
+
+# Pin which HDMI output shows admin (10.1") vs kiosk (5").
+# Run after first boot to set these:  bash pi-setup/satellite-screens.sh
+# ADMIN_OUTPUT=HDMI-A-1
+# KIOSK_OUTPUT=HDMI-A-2
+
+# Set to 'y' to swap if you can't easily switch HDMI cables
 SWAP_SCREENS=n
 EOF
-        chown -R "$CURRENT_USER:$CURRENT_USER" "$SAT_CONF_DIR"
-
-        # Auto-answer the two prompts: "1" (Tailscale) + "1" (no swap)
-        # MAIN_PI_HOST + TAILSCALE_AUTH_KEY are already in the env via sudo -E
-        if printf '1\n\n1\n' | MAIN_PI_HOST="$MAIN_PI_HOST" \
-            bash "$KIOSK_SCRIPT"; then
-            ok "Kiosk setup completed"
-        else
-            note "Kiosk setup exited non-zero — review /var/log/hanryx-kiosk.log on next boot"
-        fi
-    else
-        note "Kiosk script not found at $KIOSK_SCRIPT — skipping"
-    fi
+    chown -R "$CURRENT_USER:$CURRENT_USER" "$CONFIG_DIR"
+    ok "Created $CONFIG_FILE"
+else
+    info "Config exists — leaving alone: $CONFIG_FILE"
 fi
 
-# ── 6. Final summary ────────────────────────────────────────────────────────
-LAN_IP=$(hostname -I | awk '{print $1}')
+# ─────────────────────────────────────────────────────────────────────────────
+step "8. Final verification"
 echo ""
-echo -e "${BOLD}  ============================================================${NC}"
-echo -e "${BOLD}  Satellite bootstrap complete${NC}"
-echo -e "${BOLD}  ============================================================${NC}"
-echo "  Hostname        : $(hostname)"
-echo "  LAN IP          : $LAN_IP"
-echo "  Tailscale IP    : $TS_IP"
-echo "  Tailscale name  : $SAT_HOSTNAME"
-echo "  node-exporter   : http://$LAN_IP:9100/metrics"
-echo "                  : http://$TS_IP:9100/metrics  (preferred — never changes)"
+echo "  Hostname:        $(hostname)"
+echo "  mDNS:            $(hostname).local"
+echo "  Tailscale IP:    $(tailscale ip -4 2>/dev/null | head -1 || echo 'not connected')"
+echo "  Tailscale name:  $(tailscale status --self --peers=false 2>/dev/null | awk 'NR==1{print $2}' || echo unknown)"
+echo "  Main Pi reach:   $(ping -c1 -W2 "$MAIN_PI_TS_HOST" >/dev/null 2>&1 && echo OK || echo FAIL)"
+echo "  Heal timer:      $(systemctl is-enabled hanryx-heal.timer 2>/dev/null || echo 'not installed')"
+echo "  Watchdog:        $(systemctl is-enabled hanryx-watchdog 2>/dev/null || echo 'not installed')"
+echo "  Launcher script: $([ -f "$HOME_DIR/.hanryx-dual-monitor.sh" ] && echo present || echo MISSING)"
 echo ""
-echo -e "${CYAN}  ── Next step on the MAIN Pi ────────────────────────────────${NC}"
-echo "  Update Prometheus to scrape the new satellite IP, then reload:"
+
+# ─────────────────────────────────────────────────────────────────────────────
+step "9. SSH from main Pi check"
+echo "  After reboot, from the main Pi you should be able to:"
+echo "    ssh ngansen@${NEW_HOSTNAME}"
+echo "    ssh ngansen@${NEW_HOSTNAME}.local"
+echo "    ssh ngansen@$(tailscale ip -4 2>/dev/null | head -1)"
 echo ""
-echo "    cd ~/Hanryx-Vault-POS/pi-setup/monitoring"
-echo "    bash update-satellite-target.sh $TS_IP"
-echo "    docker kill -s HUP prometheus"
+echo "  Tailscale SSH is enabled — you can also use:"
+echo "    tailscale ssh ngansen@${NEW_HOSTNAME}"
+echo "    (no key setup needed, uses Tailscale identity)"
 echo ""
-echo -e "${CYAN}  ── Reboot recommended ──────────────────────────────────────${NC}"
-echo "    sudo reboot"
+
+# ─────────────────────────────────────────────────────────────────────────────
+step "DONE"
+ok "Bootstrap complete. Full log: $LOG"
 echo ""
+read -t 30 -rp "  Reboot now to activate everything? [Y/n] (auto-yes in 30s): " REBOOT_ANS || REBOOT_ANS=y
+REBOOT_ANS="${REBOOT_ANS:-y}"
+if [[ "${REBOOT_ANS,,}" == "y" ]]; then
+    info "Rebooting in 5 seconds…"
+    sleep 5
+    reboot
+else
+    info "Skipping reboot — run 'sudo reboot' when ready."
+fi
