@@ -1,0 +1,116 @@
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== full chromium call block (likely lines 305-325) ==="
+sed -n '290,330p' "$LAUNCHER"
+
+echo "=== does launcher unset/clear env? ==="
+grep -nE 'unset |env -i|env -u|^export ' "$LAUNCHER" | head -20
+=== full chromium call block (likely lines 305-325) ===
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
+    while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash}"
+            first_run=0
+        else
+            START_URL="$url"
+        fi
+        if [ "$using_fallback" -eq 1 ]; then
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
+        else
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
+        fi
+        log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        "$CHROMIUM_BIN" \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            # Stable run — reset crash budget + backoff
+            quick_crashes=0
+            backoff=5
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "[$name] child process ended — restarting in ${backoff}s"
+        else
+=== does launcher unset/clear env? ===
+36:export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+81:export WAYLAND_DISPLAY="$LIVE_WD"
+231:unset CHROMIUM_FLAGS
+232:export CHROMIUM_FLAGS=""
+245:export DISPLAY="${DISPLAY:-:0}"
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== env actually inside running launcher process ==="
+LPID=$(pgrep -f hanryx-dual-monitor.sh | head -1)
+echo "launcher PID=$LPID"
+sudo cat /proc/$LPID/environ 2>/dev/null | tr '\0' '\n' | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|HOME|USER|XDG_SESSION)' | sort 
+
+echo "=== env actually inside running chromium process ==="
+CPID=$(pgrep -f 'chromium.*user-data-dir=/home/ngansen/.hanryx' | head -1)
+echo "chromium PID=$CPID"
+sudo cat /proc/$CPID/environ 2>/dev/null | tr '\0' '\n' | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|HOME|USER|XDG_SESSION)' | sort00rep -af 'chromium.*hvault' | head -2 | cut -c1-2
+=== env actually inside running launcher process ===
+launcher PID=11920
+DISPLAY=:0
+HOME=/home/ngansen
+USER=ngansen
+WAYLAND_DISPLAY=wayland-0
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SESSION_CLASS=user
+XDG_SESSION_DESKTOP=hanryx-kiosk
+XDG_SESSION_ID=15
+XDG_SESSION_TYPE=wayland
+=== env actually inside running chromium process ===
+chromium PID=12495
+=== what does the live chromium say in its OWN log? (not the launcher log) ===
+=== switch BACK to x11 + inject explicit env wrapper before chromium ===
+=== verify patch landed ===
+311-        START=$(date +%s)
+312:        env -u CHROMIUM_FLAGS DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+313-            "$CHROMIUM_BIN" \
+314-            "${FLAGS[@]}" \
+=== restart ===
+Killed
+Killed
+=== launcher log filtered ===
+[18:28:41] Chromium binary: /usr/lib/chromium/chromium
+[18:28:41] Chromium binary: /usr/lib/chromium/chromium
+[18:28:42] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:28:42] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:28:42] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:28:42] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[14673:14673:0506/182842.671750:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:28:43] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:43] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:46] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:28:46] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:28:46] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:28:46] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[14724:14724:0506/182846.827121:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:28:47] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:47] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:28:53] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:28:53] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:28:57] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:28:57] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== alive chromium hvault windows? ===
+2
+14988 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-upda
+15126 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-upda
+ngansen@hanryxvault-sat:~ $
