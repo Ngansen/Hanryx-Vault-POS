@@ -1,0 +1,75 @@
+ngansen@hanryxvault-sat:~ $ echo "=== full launcher chromium-launch block (lines 290-345) ==="
+sudo sed -n '290,345p' /home/ngansen/.hanryx-dual-monitor.sh
+
+echo
+echo "=== ALL 'env' invocation lines in launcher (any leftovers?) ==="
+grep -n '^[[:space:]]*env ' /home/ngansen/.hanryx-dual-monitor.sh
+
+echo
+echo "=== test 2 RETRY: single line, no backslashes ==="
+sudo -u ngansen env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --no-sandbox --user-data-dir=/tmp/test-envi-shell abou&1 && echo YPID alive? $(ps -p $SPID >/dev/null 2>
+=== full launcher chromium-launch block (lines 290-345) ===
+            --enable-features=VaapiVideoDecoder) FALLBACK_FLAGS+=() ;;
+            *) FALLBACK_FLAGS+=("$f") ;;
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
+    while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash}"
+            first_run=0
+        else
+            START_URL="$url"
+        fi
+        if [ "$using_fallback" -eq 1 ]; then
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
+        else
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
+        fi
+        log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        env > /tmp/launcher-env-$$-$name.log 2>&1; printf "%s\n" "$CHROMIUM_BIN" "${FLAGS[@]}" > /tmp/launcher-argv-$$-$name.log
+        env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 \
+            "$CHROMIUM_BIN" \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            # Stable run — reset crash budget + backoff
+            quick_crashes=0
+            backoff=5
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "[$name] child process ended — restarting in ${backoff}s"
+        else
+            if [ "$ELAPSED" -lt 4 ]; then
+                quick_crashes=$(( quick_crashes + 1 ))
+                log "[$name] crashed in ${ELAPSED}s (count=$quick_crashes, mode=$mode)"
+                # Exponential backoff capped at max_backoff
+                backoff=$(( backoff * 2 ))
+                if [ "$backoff" -gt "$max_backoff" ]; then backoff=$max_backoff; fi
+                # First time we hit 2 quick crashes on ANGLE → drop to fallback
+                if [ "$using_fallback" -eq 0 ] && [ "$quick_crashes" -ge 2 ]; then
+                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+                    using_fallback=1
+                    quick_crashes=0
+
+=== ALL 'env' invocation lines in launcher (any leftovers?) ===
+314:        env > /tmp/launcher-env-$$-$name.log 2>&1; printf "%s\n" "$CHROMIUM_BIN" "${FLAGS[@]}" > /tmp/launcher-argv-$$-$name.log
+315:        env -i HOME=/home/ngansen USER=ngansen PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=x11 \
+
+=== test 2 RETRY: single line, no backslashes ===
+[1] 23017
+>
