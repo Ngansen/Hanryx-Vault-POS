@@ -1,0 +1,58 @@
+ngansen@hanryxvault-sat:~ $ cd ~/Hanryx-Vault-POS
+git pull
+bash pi-setup/setup-satellite-kiosk-boot.sh
+Already up to date.
+
+  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)
+  ============================================================
+
+  Network layout:
+    Main Pi (home)   = Docker stack + POS server
+    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet
+    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi
+
+  How does this satellite connect to the Main Pi?
+    1) Tailscale VPN  — works anywhere, home ↔ shop  [DEFAULT]
+    2) Direct LAN IP  — both Pis must be on the same network
+
+  Choose [1/2] (default: 1 — Tailscale): 
+
+  Enter the Main Pi's Tailscale IP (100.x.x.x) or hostname:
+  Main Pi Tailscale IP [hanryxvault]: 
+
+  Which monitor should show the CUSTOMER KIOSK screen?
+    1) Right monitor / HDMI port 2  (default)
+    2) Left  monitor / HDMI port 1  (swap)
+
+  Choose [1/2] (current: 1 — normal): 
+
+  User          : ngansen
+  Main Pi (TS)  : hanryxvault
+  Monitor 1     : http://hanryxvault:8080/admin  (staff admin)
+  Monitor 2     : http://hanryxvault:8080/kiosk  (customer kiosk)
+  Screen swap   : n  (y = kiosk on left/HDMI-1)
+  Tablet proxy  : port 8080 → hanryxvault:8080
+  Connection    : Tailscale VPN
+  Logs          : /var/log/hanryx-kiosk.log
+
+[✓] Config saved → /home/ngansen/.hanryx/satellite.conf
+[→] Setting Pi to boot to desktop with auto-login…
+==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-unit-files ====
+Authentication is required to manage system service or unit files.
+Authenticating as: ngansen
+Password: 
+polkit-agent-helper-1: pam_authenticate failed: Authentication failure
+==== AUTHENTICATION FAILED ====
+==== AUTHENTICATING FOR org.freedesktop.systemd1.reload-daemon ====
+Authentication is required to reload the systemd state.
+Authenticating as: ngansen
+Password: 
+polkit-agent-helper-1: pam_authenticate failed: Authentication failure
+==== AUTHENTICATION FAILED ====
+[✓] Boot to desktop auto-login set
+[→] Installing required packages…
+E: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)
+E: Unable to lock directory /var/lib/apt/lists/
+W: Problem unlinking the file /var/cache/apt/pkgcache.bin - RemoveCaches (13: Permission denied)
+W: Problem unlinking the file /var/cache/apt/srcpkgcache.bin - RemoveCaches (13: Permission denied)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
