@@ -1,0 +1,51 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== what does hanryx-boot.service do? (might be respawning grafana on satellite) ==="
+sudo systemctl cat hanryx-boot.service 2>/dev/null | head -30
+sudo systemctl is-enabled hanryx-boot.service 2>/dev/null
+
+echo "=== rewrite autostart with DISPLAY + XAUTHORITY exported ==="
+sudo tee /etc/hanryx-kiosk/labwc/autostart >/dev/null << 'AEOF'
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts.
+# Must export DISPLAY/XAUTHORITY because chromium uses --ozone-platform=x11
+# (XWayland), and setsid+nohup detaches from labwc's env.
+pgrep -af grafanarafana on satellite? (should be e
+=== what does hanryx-boot.service do? (might be respawning grafana on satellite) ===
+# /etc/systemd/system/hanryx-boot.service
+[Unit]
+Description=HanryxVault — block until system is healthy at boot
+Documentation=file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+After=docker.service tailscaled.service network-online.target graphical.target
+Wants=network-online.target
+# Run BEFORE the chromium kiosk autostart fires
+Before=hanryx-grafana-kiosk.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+# Try recovery up to 5 times at boot — gives WiFi/Tailscale/docker time
+# to fully come up before we declare the system ready and let kiosk launch.
+ExecStart=/bin/bash -c '\
+  for i in 1 2 3 4 5; do \
+    /bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh --quiet && exit 0; \
+    sleep 15; \
+  done; \
+  echo "boot recovery exhausted retries"; exit 0'
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+enabled
+=== rewrite autostart with DISPLAY + XAUTHORITY exported ===
+=== disable hanryx-boot.service IF it launches grafana on satellite ===
+Removed '/etc/systemd/system/multi-user.target.wants/hanryx-boot.service'.
+hanryx-boot.service disabled (was launching grafana on satellite)
+=== nuke stale processes + restart ===
+Killed
+Killed
+Killed
+=== launcher log (last 30) ===
+[18:13:29] Another launcher instance is already running — exiting (PID 9559)
+[18:13:29] Another launcher instance is already running — exiting (PID 9559)
+=== chromium hvault windows ===
+ngansen@hanryx
