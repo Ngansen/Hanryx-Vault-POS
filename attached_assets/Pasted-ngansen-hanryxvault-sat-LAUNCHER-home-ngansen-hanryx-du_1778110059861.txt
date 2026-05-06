@@ -1,0 +1,56 @@
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== full chromium call block (likely lines 305-325) ==="
+sed -n '290,330p' "$LAUNCHER"
+
+echo "=== does launcher unset/clear env? ==="
+grep -nE 'unset |env -i|env -u|^export ' "$LAUNCHER" | head -20
+=== full chromium call block (likely lines 305-325) ===
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+
+    log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
+    while true; do
+        if [ "$first_run" -eq 1 ]; then
+            START_URL="file://${splash}"
+            first_run=0
+        else
+            START_URL="$url"
+        fi
+        if [ "$using_fallback" -eq 1 ]; then
+            FLAGS=("${FALLBACK_FLAGS[@]}")
+            mode="fallback(--disable-gpu)"
+        else
+            FLAGS=("${COMMON_FLAGS[@]}")
+            mode="ANGLE swiftshader"
+        fi
+        log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
+        rm -f "$profile"/Singleton* 2>/dev/null
+        START=$(date +%s)
+        "$CHROMIUM_BIN" \
+            "${FLAGS[@]}" \
+            --user-data-dir="$profile" \
+            --class="$app_id" \
+            "$START_URL" >> "$LOG_FILE" 2>&1
+        EXIT=$?
+        ELAPSED=$(( $(date +%s) - START ))
+        # Check if it forked into a child (chromium often does)
+        sleep 1
+        if pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; then
+            log "[$name] launcher exited code=$EXIT after ${ELAPSED}s — child still alive, waiting"
+            # Stable run — reset crash budget + backoff
+            quick_crashes=0
+            backoff=5
+            while pgrep -f -- "user-data-dir=${profile}" > /dev/null 2>&1; do
+                sleep 3
+            done
+            log "[$name] child process ended — restarting in ${backoff}s"
+        else
+=== does launcher unset/clear env? ===
+36:export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+81:export WAYLAND_DISPLAY="$LIVE_WD"
+231:unset CHROMIUM_FLAGS
+232:export CHROMIUM_FLAGS=""
+245:export DISPLAY="${DISPLAY:-:0}"
+ngansen@hanryxvault-sat:~ $
