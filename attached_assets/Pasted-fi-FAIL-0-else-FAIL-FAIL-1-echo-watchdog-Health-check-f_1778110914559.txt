@@ -1,0 +1,60 @@
+fi; \
+      FAIL=0; \
+    else \
+      FAIL=$((FAIL+1)); \
+      echo "[watchdog] Health check failed #$FAIL>
+      if [ "$FAIL" -eq 3 ]; then \
+        echo "[watchdog] 3 consecutive failures —>
+      fi; \
+    fi; \
+    sleep 30; \
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+
+=== add env-dump diagnostic INSIDE the launcher right before chromium call ===
+313-        START=$(date +%s)
+314:        env > /tmp/launcher-env-$$-$name.log 2>&1
+315:        env -u CHROMIUM_FLAGS DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+316-            "$CHROMIUM_BIN" \
+=== clean restart ===
+Killed
+Killed
+Killed
+
+^C
+=== captured env files ===
+-rw-rw-r-- 1 ngansen ngansen 742 May  6 18:41 /tmp/launcher-env-18743-Admin.log
+-rw-rw-r-- 1 ngansen ngansen 742 May  6 18:41 /tmp/launcher-env-18743-Kiosk.log
+--- env at first chromium launch ---
+DISPLAY=:0
+HOME=/home/ngansen
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+USER=ngansen
+WAYLAND_DISPLAY=wayland-0
+XAUTHORITY=/home/ngansen/.Xauthority
+XDG_RUNTIME_DIR=/run/user/1000
+=== filtered launcher log ===
+[18:41:20] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:41:20] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:41:20] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:41:20] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18985:18985:0506/184120.614227:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:41:21] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:41:21] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:41:24] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:41:24] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:41:24] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:41:24] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[19058:19058:0506/184124.669703:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[18:41:25] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:41:25] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+=== chromium hvault count ===
+0
+=== rogue grafana came back? ===
+ngansen@hanryxvault-sat:~ $
