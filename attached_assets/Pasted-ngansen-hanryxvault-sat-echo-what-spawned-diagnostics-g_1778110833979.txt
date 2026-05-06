@@ -1,0 +1,191 @@
+ngansen@hanryxvault-sat:~ $ echo "=== what spawned diagnostics-grafana-kiosk.sh? walk up parent chain ==="
+PPID9673=9668
+ps -p 9668 -o pid,ppid,user,cmd 2>/dev/null || echo "9668 already dead"
+ps -ef | awk '$2==9668'
+
+echo "=== inspect every hanryx service that might spawn grafana ==="
+for svc in hanryx-watchdog hanryx-heal hanryx-boot; do
+    echo "--- $svc ---"
+    sudo systemctl cat $svc.service 2>/dev/null | grep -E 'ExecStart|grafana|kiosk'
+done
+
+echo "=== search EVERYWHERE for diagnostics-grafana-kiosk references ==="
+sudo grep -rln 'diagnostics-grafana-kiosk' /etc /htail -10 /tmp/chrome-x-test.log"dev/null || echo N
+=== what spawned diagnostics-grafana-kiosk.sh? walk up parent chain ===
+    PID    PPID USER     CMD
+9668 already dead
+=== inspect every hanryx service that might spawn grafana ===
+--- hanryx-watchdog ---
+ExecStart=/bin/bash -c '\
+  LOG="/var/log/hanryx-kiosk.log"; \
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+--- hanryx-heal ---
+ExecStart=/bin/bash /home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh --quiet
+--- hanryx-boot ---
+# Run BEFORE the chromium kiosk autostart fires
+Before=hanryx-grafana-kiosk.service
+# to fully come up before we declare the system ready and let kiosk launch.
+ExecStart=/bin/bash -c '\
+=== search EVERYWHERE for diagnostics-grafana-kiosk references ===
+/home/ngansen/.config/chromium/Crash Reports/pending/7aad147f-ece4-4550-a6b7-d85ee11ba6f2.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/273bd7a8-9988-4f93-ad53-a9b511115333.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/1a43ee11-985a-462e-8fae-909e08787a71.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/74417557-4cb3-4504-9834-6da8d037d0ac.dmp
+/home/ngansen/Hanryx-Vault-POS/.git/index
+/home/ngansen/Hanryx-Vault-POS/pi-setup/hanryx-grafana-kiosk.desktop
+/home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+/home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+/etc/xdg/autostart/:
+total 84
+drwxr-xr-x  2 root root 4096 Apr 20 19:17 .
+drwxr-xr-x 18 root root 4096 May  6 17:38 ..
+-rw-r--r--  1 root root  167 Nov  5  2024 autotouch.desktop
+-rw-r--r--  1 root root  204 Mar  3 03:10 env-display.desktop
+-rw-r--r--  1 root root 8877 Mar 20  2025 gnome-keyring-pkcs11.desktop
+-rw-r--r--  1 root root 8341 Mar 20  2025 gnome-keyring-secrets.desktop
+-rw-r--r--  1 root root 6825 Mar 20  2025 gnome-keyring-ssh.desktop
+-rw-r--r--  1 root root 2640 Aug  5  2025 lxpolkit.desktop
+-rw-r--r--  1 root root 7775 Aug 11  2023 polkit-mate-authentication-agent-1.desktop
+-rw-r--r--  1 root root  172 Oct 10  2025 pprompt.desktop
+-rw-r--r--  1 root root  192 Mar  3 03:10 pwrkey.desktop
+-rw-r--r--  1 root root  139 Apr 20 19:10 squeekboard.desktop
+-rw-r--r--  1 root root  118 Mar  3 03:10 xcompmgr.desktop
+-rw-r--r--  1 root root  212 Dec 20  2024 xdg-user-dirs.desktop
+-rw-r--r--  1 root root  184 Mar  3 03:10 xwayauth.desktop
+=== is XWayland actually running RIGHT NOW? ===
+17460 Xwayland :0 -rootless -core -terminate 10 -listenfd 29 -listenfd 30 -displayfd 62 -wm 59
+total 0
+drwxrwxrwt  2 root    root     60 May  6 18:34 .
+drwxrwxrwt 42 root    root    980 May  6 18:37 ..
+srwxrwxr-x  1 ngansen ngansen   0 May  6 18:34 X0
+=== test X access NON-headless as ngansen (proves X really works) ===
+sudo: xdpyinfo: command not found
+[1] 18078
+non-headless chromium PID=18078 alive?   18078
+YES
+18078 sudo -u ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority /usr/lib/chromium/chromium --ozone-platform=x11 --no-sandbox --disable-gpu --user-data-dir=/tmp/test-x about:blank
+18081 sudo -u ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority /usr/lib/chromium/chromium --ozone-platform=x11 --no-sandbox --disable-gpu --user-data-dir=/tmp/test-x about:blank
+[1]+  Killed                  sudo -u ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority /usr/lib/chromium/chromium --ozone-platform=x11 --no-sandbox --disable-gpu --user-data-dir=/tmp/test-x about:blank > /tmp/chrome-x-test.log 2>&1
+Killed
+--- chrome-x-test log ---
+[18082:18082:0506/183711.667309:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[18082:18096:0506/183711.667401:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[18082:18082:0506/183711.676216:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[18082:18096:0506/183711.818900:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[18082:18096:0506/183711.818944:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[18082:18082:0506/183715.235497:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[18082:18082:0506/183715.245902:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[18082:18082:0506/183715.246425:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[18082:18082:0506/183715.249336:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[18082:18082:0506/183715.259958:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== full hanryx-watchdog.service (truncated last time) ==="
+sudo systemctl cat hanryx-watchdog.service
+
+echo "=== add env-dump diagnostic INSIDE the launcher right before chromium call ==="
+# Insert 'env > /tmp/launcher-env-$name-$$.log' before the env -u line
+sudo sed -i '/env -u CHROMIUM_FLAGS DISPLAY=:0/i\        env > /tmp/launcher-env-$$-$name.log 2>&1' "$LAUNCHER"
+grep -n -B1 -A1 'launcher-env\|env -u CHROMIUM_FLAGS' "$LAUNCHER" | head -10
+
+echo "=== clean restart ==="
+sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null
+sudo pkill -9 -f /usr/lib/chromium/chromium 2>/devhanryx-grafana' | head -3afana\|chromium-grafana\|
+=== full hanryx-watchdog.service (truncated last time) ===
+# /etc/systemd/system/hanryx-watchdog.service
+[Unit]
+Description=HanryxVault Satellite Network Watchdog
+After=network-online.target
+
+[Service]
+Type=simple
+User=ngansen
+Environment=HOME=/home/ngansen
+ExecStart=/bin/bash -c '\
+  LOG="/var/log/hanryx-kiosk.log"; \
+  CONF="/home/ngansen/.hanryx/satellite.conf"; \
+  FAIL=0; \
+  while true; do \
+    source "$CONF" 2>/dev/null || true; \
+    HURL="${HEALTH_URL:-http://hanryxvault:8080/h>
+    if curl -sf --max-time 3 "$HURL" > /dev/null >
+      if [ "$FAIL" -ge 3 ]; then \
+        echo "[watchdog] Server back online — kil>
+        pkill -f chromium 2>/dev/null; \
+      fi; \
+      FAIL=0; \
+    else \
+      FAIL=$((FAIL+1)); \
+      echo "[watchdog] Health check failed #$FAIL>
+      if [ "$FAIL" -eq 3 ]; then \
+        echo "[watchdog] 3 consecutive failures —>
+      fi; \
+    fi; \
+    sleep 30; \
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+lines 21-38/38 (END)
+      fi; \
+      FAIL=0; \
+    else \
+      FAIL=$((FAIL+1)); \
+      echo "[watchdog] Health check failed #$FAIL>
+      if [ "$FAIL" -eq 3 ]; then \
+        echo "[watchdog] 3 consecutive failures —>
+      fi; \
+    fi; \
+    sleep 30; \
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+lines 21-38/38 (END)
+      fi; \
+      FAIL=0; \
+    else \
+      FAIL=$((FAIL+1)); \
+      echo "[watchdog] Health check failed #$FAIL>
+      if [ "$FAIL" -eq 3 ]; then \
+        echo "[watchdog] 3 consecutive failures —>
+      fi; \
+    fi; \
+    sleep 30; \
+  done'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/hanryx-kiosk.log
+StandardError=append:/var/log/hanryx-kiosk.log
+
+[Install]
+WantedBy=multi-user.target
+lines 21-38/38 (END)
