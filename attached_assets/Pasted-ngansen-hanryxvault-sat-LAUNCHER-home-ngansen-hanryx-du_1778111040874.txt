@@ -1,0 +1,79 @@
+ngansen@hanryxvault-sat:~ $ LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+
+echo "=== is XWayland alive after the latest restart? ==="
+pgrep -af Xwayland
+ls -la /tmp/.X11-unix/ 2>/dev/null
+
+echo "=== capture FULL launcher chromium argv to a file ==="
+# Replace the env-dump with one that ALSO writes the full argv file
+sudo sed -i '/env > \/tmp\/launcher-env-/d' "$LAUNCHER"
+sudo sed -i '/env -u CHROMIUM_FLAGS DISPLAY=:0/i\        env > /tmp/launcher-env-$$-$name.log 2>&1; printf "%s\\n" "$CHROMIUM_BIN" "${FLAGS[@]}" > /tmp/launcher-argv-$$-$name.log' "$LAUNCHER"
+grep -n -B1 -A2 'launcher-argv\|env -u CHROMIUM_FLfi  head -15 /tmp/manual-argv-test.log5 lines) ---
+=== is XWayland alive after the latest restart? ===
+19130 Xwayland :0 -rootless -core -terminate 10 -listenfd 29 -listenfd 30 -displayfd 60 -wm 57
+total 0
+drwxrwxrwt  2 root    root      60 May  6 18:41 .
+drwxrwxrwt 46 root    root    1120 May  6 18:43 ..
+srwxrwxr-x  1 ngansen ngansen    0 May  6 18:41 X0
+=== capture FULL launcher chromium argv to a file ===
+313-        START=$(date +%s)
+314:        env > /tmp/launcher-env-$$-$name.log 2>&1; printf "%s\n" "$CHROMIUM_BIN" "${FLAGS[@]}" > /tmp/launcher-argv-$$-$name.log
+315:        env -u CHROMIUM_FLAGS DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+316-            "$CHROMIUM_BIN" \
+317-            "${FLAGS[@]}" \
+=== restart and let one cycle run ===
+Killed
+Killed
+=== confirm XWayland still alive AFTER restart ===
+total 0
+drwxrwxrwt  2 root    root      60 May  6 18:43 .
+drwxrwxrwt 46 root    root    1160 May  6 18:43 ..
+srwxrwxr-x  1 ngansen ngansen    0 May  6 18:43 X0
+=== FULL chromium argv the launcher used (Admin) ===
+/usr/lib/chromium/chromium
+--kiosk
+--no-first-run
+--noerrdialogs
+--disable-infobars
+--disable-session-crashed-bubble
+--disable-translate
+--disable-features=Translate,TranslateUI
+--check-for-update-interval=31536000
+--autoplay-policy=no-user-gesture-required
+--disable-background-networking
+--disable-default-apps
+--disable-extensions
+--disable-sync
+--disable-breakpad
+--disable-component-update
+--no-process-singleton
+--ozone-platform=x11
+--no-sandbox
+--enable-features=VaapiVideoDecoder
+--disable-dev-shm-usage
+--allow-file-access-from-files
+--disable-web-security
+--password-store=basic
+--use-mock-keychain
+=== now manually run THAT EXACT argv as ngansen with explicit env ===
+[1] 20515
+manual-argv chromium PID=20515 alive? YES
+0
+Killed
+--- manual test log (first 15 lines) ---
+[0506/184329.198062:ERROR:chrome/app/chrome_main_delegate.cc:1076] Web security may only be disabled if '--user-data-dir' is also specified with a non-default value.
+[20522:20536:0506/184329.516195:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20522:20536:0506/184329.566807:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20522:20536:0506/184329.619280:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20522:20536:0506/184329.646021:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20522:20536:0506/184329.646049:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20564:20564:0506/184329.673060:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[20564:20564:0506/184329.673185:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[20564:20564:0506/184329.673228:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[20564:20564:0506/184329.673323:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[20564:20564:0506/184329.674675:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[20522:20522:0506/184329.760174:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[20522:20536:0506/184329.760280:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[20522:20522:0506/184329.765261:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[20522:20522:0506/184329.776574:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+ngansen@hanryxvault-sat:~ $
