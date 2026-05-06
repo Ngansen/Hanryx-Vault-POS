@@ -613,6 +613,15 @@ write_splash "$KIOSK_URL" "KIOSK DISPLAY" "$SPLASH_KIOSK"
 write_splash "$ADMIN_URL" "ADMIN PORTAL"  "$SPLASH_ADMIN"
 log "Splash pages written"
 
+# ── Clear CHROMIUM_FLAGS env var ───────────────────────────────────────────
+# Pi OS sets $CHROMIUM_FLAGS via /etc/chromium.d/* for the wrapper script.
+# When inherited via PAM/systemd it leaks into the chromium *binary's* env
+# even when we call /usr/lib/chromium/chromium directly. Nuke it so our
+# explicit flags below are the only ones used. (Newer chromium versions
+# reject the Pi defaults like --no-decommit-pooled-pages.)
+unset CHROMIUM_FLAGS
+export CHROMIUM_FLAGS=""
+
 # ── Find chromium binary (prefer the REAL binary, NOT the Pi OS wrapper) ───
 # /usr/bin/chromium and chromium-browser are wrapper scripts that inject
 # default flags from /etc/chromium.d/* (e.g. --no-decommit-pooled-pages,
