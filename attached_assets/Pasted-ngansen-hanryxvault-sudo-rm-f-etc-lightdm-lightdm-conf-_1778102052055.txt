@@ -1,0 +1,103 @@
+ngansen@hanryxvault:~ $ sudo rm -f /etc/lightdm/lightdm.conf.d/60-hanryx-kiosk.conf
+sudo rm -f /usr/share/wayland-sessions/hanryx-kiosk.desktop
+[ -f ~/.config/labwc/autostart.disabled-by-kiosk-session ] && \
+  mv ~/.config/labwc/autostart.disabled-by-kiosk-session ~/.config/labwc/autostart
+sudo systemctl restart lightdm
+ngansen@hanryxvault:~ $ echo "=== WHAT'S EATING THE CPU ==="
+top -bn1 | head -20
+
+echo "=== HANRYX SERVICES ON MAIN PI (should NOT exist) ==="
+systemctl list-units 'hanryx-*' --all --no-pager
+
+echo "=== STOP AND DISABLE THEM ==="
+sudo systemctl stop hanryx-watchdog.service hanryx-heal.service hanryx-heal.timer 2>/dev/null
+sudo systemctl disable hanryx-watchdog.service hanryx-heal.service hanryx-heal.timer 2>/dev/null
+sudo rm -f /etc/systemd/system/hanryx-watchdog.service \
+           /etc/systemd/system/hanryx-heal.service \
+           /etc/systemd/system/hanryx-heal.timer
+-1^Co pid,user,%cpu,%mem,cmd --sort=-%cpu | head 
+ngansen@hanryxvault:~ $ echo "=== WHAT'S EATING THE CPU ==="
+top -bn1 | head -20
+
+echo "=== HANRYX SERVICES ON MAIN PI (should NOT exist) ==="
+systemctl list-units 'hanryx-*' --all --no-pager
+
+echo "=== STOP AND DISABLE THEM ==="
+sudo systemctl stop hanryx-watchdog.service hanryx-heal.service hanryx-heal.timer 2>/dev/null
+sudo systemctl disable hanryx-watchdog.service hanryx-heal.service hanryx-heal.timer 2>/dev/null
+sudo rm -f /etc/systemd/system/hanryx-watchdog.service \
+           /etc/systemd/system/hanryx-heal.service \
+           /etc/systemd/system/hanryx-heal.timer
+-15-eo pid,user,%cpu,%mem,cmd --sort=-%cpu | head 
+=== WHAT'S EATING THE CPU ===
+top - 21:12:33 up 6 min,  3 users,  load average: 30.25, 15.23, 6.27
+Tasks: 437 total,   1 running, 434 sleeping,   0 stopped,   2 zombie
+%Cpu(s):  8.4 us,  7.9 sy,  0.0 ni,  0.0 id, 83.8 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   8058.9 total,    109.1 free,   7662.5 used,   1135.1 buff/cache     
+MiB Swap:   2048.0 total,      0.0 free,   2048.0 used.    396.4 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+     74 root      20   0       0      0      0 S   3.7   0.0   0:06.90 kswapd3
+  15057 ngansen   20   0   10336   4768   2416 R   3.7   0.1   0:00.01 top
+      1 root      20   0   25952   7520   3664 S   0.0   0.1   0:01.47 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_wo+
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+      8 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.06 kworker+
+     11 root      20   0       0      0      0 I   0.0   0.0   0:00.10 kworker+
+     12 root      20   0       0      0      0 I   0.0   0.0   0:00.24 kworker+
+=== HANRYX SERVICES ON MAIN PI (should NOT exist) ===
+  UNIT    LOAD     ACTIVE   SUB     JOB   DESCRIP…
+  hanryx… loaded   active   exited        HanryxV…
+● hanryx… loaded   activat… start   start HanryxV…
+  hanryx… loaded   active   exited        HanryxV…
+● hanryx… not-fou… inactive dead          hanryx-…
+● hanryx… loaded   activat… start   start HanryxV…
+  hanryx… loaded   active   exited        HanryxV…
+● hanryx… loaded   failed   failed        HanryxV…
+  hanryx… loaded   active   running       Run han…
+  hanryx… loaded   active   running       HanryxV…
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+        JOB    → Pending job for the unit.
+
+9 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.
+=== STOP AND DISABLE THEM ===
+
+
+=== KILL ANY ROGUE LAUNCHER + CHROMIUM ===
+=== REMOVE THE SATELLITE LAUNCHER SCRIPT FROM MAIN PI ===
+=== ENSURE NOTHING IS LOOPING ===
+top - 21:13:40 up 8 min,  3 users,  load average: 28.65, 17.98, 7.88
+Tasks: 341 total,   1 running, 337 sleeping,   0 stopped,   3 zombie
+%Cpu(s):  0.0 us,  5.7 sy,  0.0 ni, 73.6 id, 20.8 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :   8058.9 total,   5407.9 free,   2026.5 used,    886.8 buff/cache     
+MiB Swap:   2048.0 total,   1188.4 free,    859.6 used.   6032.5 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+   1244 root      20   0 3527872  59936  17424 S   9.1   0.7   0:05.91 dockerd
+   2093 root      20   0     336    176     96 S   9.1   0.0   0:00.25 s6-supe+
+  16624 ngansen   20   0   10336   4800   2416 R   9.1   0.1   0:00.01 top
+    PID USER     %CPU %MEM CMD
+  16639 root      8.3  0.0 /bin/sh -c wget -qO- http://127.0.0.1/healthz || exit 1
+   3343 999       6.8  0.5 /opt/venv/bin/python /opt/venv/bin/gunicorn -c gunicorn.conf.py server:app
+  16535 ngansen   5.6  0.7 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16552 ngansen   4.8  0.8 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16443 ngansen   4.8  1.3 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --enable-remote-extensions --load-extension --use-angle=gles --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+  16539 ngansen   4.7  0.7 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16536 ngansen   4.6  0.8 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16527 ngansen   4.5  0.7 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16528 ngansen   4.5  0.7 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16555 ngansen   3.8  0.8 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+  16547 ngansen   3.8  0.7 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+   1791 472       3.6  6.9 grafana server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini --packaging=docker cfg:default.log.mode=console cfg:default.paths.data=/var/lib/grafana cfg:default.paths.logs=/var/log/grafana cfg:default.paths.plugins=/var/lib/grafana/plugins cfg:default.paths.provisioning=/etc/grafana/provisioning
+   2041 999       2.7  0.2 /opt/venv/bin/python /opt/venv/bin/gunicorn -c gunicorn.conf.py server:app
+  16447 ngansen   2.6  0.7 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --enable-remote-extensions --load-extension= --use-angle=gles http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required
+ngansen@hanryxvault:~ $ 
