@@ -1,0 +1,58 @@
+ngansen@hanryxvault-sat:~ $ cd ~/Hanryx-Vault-POS && git pull
+
+LAUNCHER=~/.hanryx-dual-monitor.sh
+
+# 1. Add keyring-skip flags (idempotent — only inserts if not already there)
+grep -q 'password-store=basic' "$LAUNCHER" || \
+    sed -i '/--disable-web-security/a\    --password-store=basic\n    --use-mock-keychain' "$LAUNCHER"
+
+# 2. Force the real chromium binary (bypass /usr/bin/chromium wrapper)
+sed -i 's|^if   \[ -x /usr/bin/chromium-browser \].*|if   [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium|' "$LAUNCHER"
+# Quick check of both edits
+d -4p -af 'chromium.*kiosk\|chromium.*admin' | hea
+remote: Enumerating objects: 11, done.
+remote: Counting objects: 100% (11/11), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 8 (delta 6), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (8/8), 1.29 KiB | 101.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   b3850f0..ace3a7b  main       -> origin/main
+Updating b3850f0..ace3a7b
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 22 ++++++----
+ 1 file changed, 14 insertions(+), 8 deletions(-)
+=== flags ===
+231:if   [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+232:elif [ -x /usr/bin/chromium ];          then CHROMIUM_BIN=/usr/bin/chromium
+233:elif [ -x /usr/lib/chromium/chromium ]; then CHROMIUM_BIN=/usr/lib/chromium/chromium
+234:else                                         CHROMIUM_BIN=chromium
+268:    --password-store=basic
+269:    --use-mock-keychain
+=== last 25 launcher log lines ===
+[17:49:33] [Admin] exited code=0 after 361s — restarting in 5s
+[17:49:33] [Kiosk] exited code=0 after 361s — restarting in 5s
+[17:49:33] [Kiosk] exited code=0 after 361s — restarting in 5s
+[17:49:35] Another launcher instance is already running — exiting (PID 4219)
+[17:49:35] Another launcher instance is already running — exiting (PID 4219)
+[17:49:38] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=5s
+[17:49:38] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=5s
+[17:49:38] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=5s
+[17:49:38] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=5s
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+Error: unrecognized flag --no-decommit-pooled-pages
+Try --help for options
+=== chromium PIDs (should be exactly 2 main + crashpads) ===
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ 
