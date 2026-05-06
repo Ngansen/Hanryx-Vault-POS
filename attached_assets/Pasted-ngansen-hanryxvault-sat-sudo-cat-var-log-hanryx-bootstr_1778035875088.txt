@@ -1,0 +1,311 @@
+ngansen@hanryxvault-sat:~ $ sudo cat /var/log/hanryx-bootstrap.log
+
+  HanryxVault — Satellite Pi One-Shot Bootstrap
+  2026-05-05T21:32:03-05:00
+  user=ngansen  home=/home/ngansen  repo=/home/ngansen/Hanryx-Vault-POS
+  target hostname=hanryxvault-sat  main pi=hanryxvault
+
+
+══ 1. System packages ══
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package chromium-browser is not available, but is referred to by another package.
+This may mean that the package is missing, has been obsoleted, or
+is only available from another source
+
+E: Package 'chromium-browser' has no installation candidate
+[✗] apt-get install failed
+
+  HanryxVault — Satellite Pi One-Shot Bootstrap
+  2026-05-05T21:34:07-05:00
+  user=ngansen  home=/home/ngansen  repo=/home/ngansen/Hanryx-Vault-POS
+  target hostname=hanryxvault-sat  main pi=hanryxvault
+
+
+══ 1. System packages ══
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package chromium-browser is not available, but is referred to by another package.
+This may mean that the package is missing, has been obsoleted, or
+is only available from another source
+
+E: Package 'chromium-browser' has no installation candidate
+[✗] apt-get install failed
+
+  HanryxVault — Satellite Pi One-Shot Bootstrap
+  2026-05-05T21:34:39-05:00
+  user=ngansen  home=/home/ngansen  repo=/home/ngansen/Hanryx-Vault-POS
+  target hostname=hanryxvault-sat  main pi=hanryxvault
+
+
+══ 1. System packages ══
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package chromium-browser is not available, but is referred to by another package.
+This may mean that the package is missing, has been obsoleted, or
+is only available from another source
+
+E: Package 'chromium-browser' has no installation candidate
+[✗] apt-get install failed
+
+  HanryxVault — Satellite Pi One-Shot Bootstrap
+  2026-05-05T21:39:43-05:00
+  user=ngansen  home=/home/ngansen  repo=/home/ngansen/Hanryx-Vault-POS
+  target hostname=hanryxvault-sat  main pi=hanryxvault
+
+
+══ 1. System packages ══
+Reading package lists...
+Building dependency tree...
+Reading state information...
+git is already the newest version (1:2.47.3-0+deb13u1).
+git set to manually installed.
+curl is already the newest version (8.14.1-2+deb13u2).
+zstd is already the newest version (1.5.7+dfsg-1).
+zstd set to manually installed.
+wlr-randr is already the newest version (0.4.1-1).
+wlr-randr set to manually installed.
+openssh-server is already the newest version (1:10.0p1-7+deb13u2).
+openssh-server set to manually installed.
+avahi-daemon is already the newest version (0.8-16).
+python3-pip is already the newest version (25.1.1+dfsg-1+rpt1).
+python3-pip set to manually installed.
+python3-venv is already the newest version (3.13.5-1).
+The following additional packages will be installed:
+  libjq1 libonig5 nginx-common
+Suggested packages:
+  fcgiwrap nginx-doc
+Recommended packages:
+  unclutter-startup
+The following NEW packages will be installed:
+  avahi-utils jq libjq1 libonig5 nginx nginx-common unclutter
+0 upgraded, 7 newly installed, 0 to remove and 13 not upgraded.
+Need to get 1,141 kB of archives.
+After this operation, 3,595 kB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main arm64 avahi-utils arm64 0.8-16 [45.8 kB]
+Get:2 http://deb.debian.org/debian trixie/main arm64 libonig5 arm64 6.9.9-1+b1 [181 kB]
+Get:3 http://deb.debian.org/debian trixie/main arm64 libjq1 arm64 1.7.1-6+deb13u1 [148 kB]
+Get:4 http://deb.debian.org/debian trixie/main arm64 jq arm64 1.7.1-6+deb13u1 [77.2 kB]
+Get:5 http://deb.debian.org/debian trixie/main arm64 nginx-common all 1.26.3-3+deb13u2 [109 kB]
+Get:6 http://deb.debian.org/debian trixie/main arm64 nginx arm64 1.26.3-3+deb13u2 [568 kB]
+Get:7 http://deb.debian.org/debian trixie/main arm64 unclutter arm64 8-25+nmu1 [12.5 kB]
+Preconfiguring packages ...
+Fetched 1,141 kB in 1s (2,135 kB/s)
+Selecting previously unselected package avahi-utils.
+(Reading database ... 120502 files and directories currently installed.)
+Preparing to unpack .../0-avahi-utils_0.8-16_arm64.deb ...
+Unpacking avahi-utils (0.8-16) ...
+Selecting previously unselected package libonig5:arm64.
+Preparing to unpack .../1-libonig5_6.9.9-1+b1_arm64.deb ...
+Unpacking libonig5:arm64 (6.9.9-1+b1) ...
+Selecting previously unselected package libjq1:arm64.
+Preparing to unpack .../2-libjq1_1.7.1-6+deb13u1_arm64.deb ...
+Unpacking libjq1:arm64 (1.7.1-6+deb13u1) ...
+Selecting previously unselected package jq.
+Preparing to unpack .../3-jq_1.7.1-6+deb13u1_arm64.deb ...
+Unpacking jq (1.7.1-6+deb13u1) ...
+Selecting previously unselected package nginx-common.
+Preparing to unpack .../4-nginx-common_1.26.3-3+deb13u2_all.deb ...
+Unpacking nginx-common (1.26.3-3+deb13u2) ...
+Selecting previously unselected package nginx.
+Preparing to unpack .../5-nginx_1.26.3-3+deb13u2_arm64.deb ...
+Unpacking nginx (1.26.3-3+deb13u2) ...
+Selecting previously unselected package unclutter.
+Preparing to unpack .../6-unclutter_8-25+nmu1_arm64.deb ...
+Unpacking unclutter (8-25+nmu1) ...
+Setting up avahi-utils (0.8-16) ...
+Setting up nginx-common (1.26.3-3+deb13u2) ...
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+Setting up unclutter (8-25+nmu1) ...
+update-alternatives: using /usr/bin/unclutter-classic to provide /usr/bin/unclutter (unclutter) in auto mode
+Setting up libonig5:arm64 (6.9.9-1+b1) ...
+Setting up nginx (1.26.3-3+deb13u2) ...
+Upgrading binary: nginx.
+Setting up libjq1:arm64 (1.7.1-6+deb13u1) ...
+Setting up jq (1.7.1-6+deb13u1) ...
+Processing triggers for man-db (2.13.1-1) ...
+Processing triggers for libc-bin (2.41-12+rpt1+deb13u2) ...
+[✓] Base packages installed
+[✓] Chromium already installed: /usr/bin/chromium
+[✓] Required packages step complete
+
+══ 2. Hostname → hanryxvault-sat ══
+[✓] Hostname already hanryxvault-sat
+
+══ 3. Tailscale install + auth ══
+[i] Installing Tailscale…
+Installing Tailscale for debian trixie, using method apt
++ mkdir -p --mode=0755 /usr/share/keyrings
++ curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
++ tee /usr/share/keyrings/tailscale-archive-keyring.gpg
++ chmod 0644 /usr/share/keyrings/tailscale-archive-keyring.gpg
++ curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list
++ tee /etc/apt/sources.list.d/tailscale.list
+# Tailscale packages for debian trixie
+deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
++ chmod 0644 /etc/apt/sources.list.d/tailscale.list
++ apt-get update
+Hit:1 http://deb.debian.org/debian trixie InRelease
+Hit:2 http://deb.debian.org/debian trixie-updates InRelease
+Hit:3 http://deb.debian.org/debian-security trixie-security InRelease
+Get:4 https://pkgs.tailscale.com/stable/debian trixie InRelease
+Hit:5 http://archive.raspberrypi.com/debian trixie InRelease
+Get:6 https://pkgs.tailscale.com/stable/debian trixie/main all Packages [354 B]
+Get:7 https://pkgs.tailscale.com/stable/debian trixie/main armhf Packages [14.3 kB]
+Get:8 https://pkgs.tailscale.com/stable/debian trixie/main arm64 Packages [14.4 kB]
+Fetched 35.7 kB in 1s (58.4 kB/s)
+Reading package lists...
++ [ -n  ]
++ apt-get install -y tailscale tailscale-archive-keyring
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  iptables libip4tc2 libip6tc2
+Suggested packages:
+  firewalld
+The following NEW packages will be installed:
+  iptables libip4tc2 libip6tc2 tailscale tailscale-archive-keyring
+0 upgraded, 5 newly installed, 0 to remove and 13 not upgraded.
+Need to get 34.2 MB of archives.
+After this operation, 76.0 MB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main arm64 libip4tc2 arm64 1.8.11-2 [19.6 kB]
+Get:2 http://deb.debian.org/debian trixie/main arm64 libip6tc2 arm64 1.8.11-2 [19.8 kB]
+Get:3 http://deb.debian.org/debian trixie/main arm64 iptables arm64 1.8.11-2 [354 kB]
+Get:4 https://pkgs.tailscale.com/stable/debian trixie/main arm64 tailscale arm64 1.96.4 [33.8 MB]
+Get:5 https://pkgs.tailscale.com/stable/debian trixie/main all tailscale-archive-keyring all 1.35.181 [3,082 B]
+Fetched 34.2 MB in 5s (6,458 kB/s)
+Selecting previously unselected package libip4tc2:arm64.
+(Reading database ... 120604 files and directories currently installed.)
+Preparing to unpack .../libip4tc2_1.8.11-2_arm64.deb ...
+Unpacking libip4tc2:arm64 (1.8.11-2) ...
+Selecting previously unselected package libip6tc2:arm64.
+Preparing to unpack .../libip6tc2_1.8.11-2_arm64.deb ...
+Unpacking libip6tc2:arm64 (1.8.11-2) ...
+Selecting previously unselected package iptables.
+Preparing to unpack .../iptables_1.8.11-2_arm64.deb ...
+Unpacking iptables (1.8.11-2) ...
+Selecting previously unselected package tailscale.
+Preparing to unpack .../tailscale_1.96.4_arm64.deb ...
+Unpacking tailscale (1.96.4) ...
+Selecting previously unselected package tailscale-archive-keyring.
+Preparing to unpack .../tailscale-archive-keyring_1.35.181_all.deb ...
+Unpacking tailscale-archive-keyring (1.35.181) ...
+Setting up libip4tc2:arm64 (1.8.11-2) ...
+Setting up tailscale-archive-keyring (1.35.181) ...
+Setting up libip6tc2:arm64 (1.8.11-2) ...
+Setting up iptables (1.8.11-2) ...
+update-alternatives: using /usr/sbin/iptables-legacy to provide /usr/sbin/iptables (iptables) in auto mode
+update-alternatives: using /usr/sbin/ip6tables-legacy to provide /usr/sbin/ip6tables (ip6tables) in auto mode
+update-alternatives: using /usr/sbin/iptables-nft to provide /usr/sbin/iptables (iptables) in auto mode
+update-alternatives: using /usr/sbin/ip6tables-nft to provide /usr/sbin/ip6tables (ip6tables) in auto mode
+update-alternatives: using /usr/sbin/arptables-nft to provide /usr/sbin/arptables (arptables) in auto mode
+update-alternatives: using /usr/sbin/ebtables-nft to provide /usr/sbin/ebtables (ebtables) in auto mode
+Setting up tailscale (1.96.4) ...
+Created symlink '/etc/systemd/system/multi-user.target.wants/tailscaled.service' → '/usr/lib/systemd/system/tailscaled.service'.
+Processing triggers for man-db (2.13.1-1) ...
+Processing triggers for libc-bin (2.41-12+rpt1+deb13u2) ...
++ [ false = true ]
++ set +x
+Installation complete! Log in to start using Tailscale by running:
+
+tailscale up
+[i] Starting Tailscale (you will be prompted to visit a URL to authenticate)…
+
+To authenticate, visit:
+
+        https://login.tailscale.com/a/1c7b24ab010364
+
+Success.
+[✓] Tailscale: 100.121.45.69  (hanryxvault-sat)
+
+══ 4. Repository clone / update ══
+[i] Cloning private repo with GITHUB_TOKEN…
+Cloning into '/home/ngansen/Hanryx-Vault-POS'...
+Updating files: 100% (752/752), done.
+[✓] Repo at /home/ngansen/Hanryx-Vault-POS
+
+══ 5. Dual-monitor kiosk installer ══
+
+  HanryxVault — Satellite Pi 5 Dual-Monitor Setup (v3)
+  ============================================================
+
+  Network layout:
+    Main Pi (home)   = Docker stack + POS server
+    Satellite (here) = dual-monitor kiosk + nginx proxy for the tablet
+    Tablet (shop)    = connects to THIS Pi locally — routed to Main Pi
+
+  How does this satellite connect to the Main Pi?
+    1) Tailscale VPN  — works anywhere, home ↔ shop  [DEFAULT]
+    2) Direct LAN IP  — both Pis must be on the same network
+
+[!] kiosk installer reported errors — review /var/log/hanryx-bootstrap.log
+[✓] Kiosk installer complete
+
+══ 6. Reliability stack (heal timer + recover.sh) ══
+[→] Installing recover.sh wrapper at /usr/local/bin/hanryx-recover
+[✓] you can now run 'hanryx-recover' from anywhere
+[→] Installing systemd units
+[→] Enabling timers + boot service
+Created symlink '/etc/systemd/system/timers.target.wants/hanryx-heal.timer' → '/etc/systemd/system/hanryx-heal.timer'.
+Created symlink '/etc/systemd/system/multi-user.target.wants/hanryx-boot.service' → '/etc/systemd/system/hanryx-boot.service'.
+
+[i] Status:
+● hanryx-heal.timer - HanryxVault — run recover.sh every 2 minutes
+     Loaded: loaded (/etc/systemd/system/hanryx-heal.timer; enabled; preset: enabled)
+     Active: active (waiting) since Tue 2026-05-05 21:43:04 CDT; 3min 28s ago
+ Invocation: 54aa9061cbf94e4289cd369cbce793aa
+    Trigger: Tue 2026-05-05 21:47:06 CDT; 33s left
+   Triggers: ● hanryx-heal.service
+       Docs: file:///home/ngansen/Hanryx-Vault-POS/pi-setup/recover.sh
+
+May 05 21:43:04 hanryxvault-sat systemd[1]: Started hanryx-heal.timer - HanryxVault — run recover.sh every 2 minutes.
+
+NEXT                            LEFT LAST                              PASSED UNIT                         ACTIVATES
+Tue 2026-05-05 21:47:06 CDT      33s Tue 2026-05-05 21:46:06 CDT      26s ago hanryx-heal.timer            hanryx-heal.service
+
+[✓] Reliability stack installed
+
+  Manual recovery:           hanryx-recover
+  Quiet recovery (one line): hanryx-recover --quiet
+  Just fix kiosks:           hanryx-recover --kiosk-only
+  Watch the heal log:        tail -f /var/log/hanryx-recover.log
+  See last status:           cat /run/hanryx-status
+
+[✓] Reliability stack installed
+
+══ 7. Satellite config defaults ══
+[✓] Created /home/ngansen/.hanryx/satellite.conf
+
+══ 8. Final verification ══
+
+  Hostname:        hanryxvault-sat
+  mDNS:            hanryxvault-sat.local
+  Tailscale IP:    100.121.45.69
+  Tailscale name:  hanryxvault-sat
+  Main Pi reach:   OK
+  Heal timer:      enabled
+  Watchdog:        not-found
+not installed
+  Launcher script: MISSING
+
+
+══ 9. SSH from main Pi check ══
+  After reboot, from the main Pi you should be able to:
+    ssh ngansen@hanryxvault-sat
+    ssh ngansen@hanryxvault-sat.local
+    ssh ngansen@100.121.45.69
+
+  Tailscale SSH is enabled — you can also use:
+    tailscale ssh ngansen@hanryxvault-sat
+    (no key setup needed, uses Tailscale identity)
+
+
+══ DONE ══
+[✓] Bootstrap complete. Full log: /var/log/hanryx-bootstrap.log
+
+[i] Skipping reboot — run 'sudo reboot' when ready.
+ngansen@hanryxvault-sat:
