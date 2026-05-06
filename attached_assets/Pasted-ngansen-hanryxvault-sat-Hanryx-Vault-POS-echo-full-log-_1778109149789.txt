@@ -1,0 +1,66 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== full log content (last 158 bytes since 18:05) ==="
+cat /var/log/hanryx-kiosk.log
+
+echo "=== autostart file perms (must be executable!) ==="
+ls -la /etc/hanryx-kiosk/labwc/autostart
+
+echo "=== where is the rogue grafana-kiosk autostart on satellite? ==="
+sudo grep -rln 'grafana-kiosk\|hanryx-grafana' /etc /home/ngansen/.config 2>/dev/null
+ls -la /home/ngansen/.config/autostart/ 2>/dev/null
+
+echo "=== KILL the rogue grafana kiosk on satellite (it's main-Pi-only) ==="
+sudo pkill -9 -f 'diagnostics-grafana-kiosk\|chrom| head -5 'chromium.*hvault\|hanryx-dual-monitor' 
+=== full log content (last 158 bytes since 18:05) ===
+[18:05:55] Another launcher instance is already running — exiting (PID 6757)
+[18:05:55] Another launcher instance is already running — exiting (PID 6757)
+[18:09:42] ============================================
+[18:09:42] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[18:09:42] PID=7867  USER=ngansen  PPID=7866
+[18:09:42] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=unset
+[18:09:42] ============================================
+-bash: !: event not found
+-rwxr-xr-x 1 root root 231 May  6 17:38 /etc/hanryx-kiosk/labwc/autostart
+=== where is the rogue grafana-kiosk autostart on satellite? ===
+/etc/systemd/system/hanryx-boot.service
+/home/ngansen/.config/chromium/Crash Reports/pending/7aad147f-ece4-4550-a6b7-d85ee11ba6f2.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/273bd7a8-9988-4f93-ad53-a9b511115333.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/1a43ee11-985a-462e-8fae-909e08787a71.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/74417557-4cb3-4504-9834-6da8d037d0ac.dmp
+=== KILL the rogue grafana kiosk on satellite (it's main-Pi-only) ===
+killed
+=== make autostart truly resilient (setsid + explicit shell) ===
+-rwxr-xr-x 1 root root 277 May  6 18:11 /etc/hanryx-kiosk/labwc/autostart
+=== restart kiosk ===
+=== log after restart ===
+[8517:8517:0506/181144.190174:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[18:11:45] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:11:45] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:11:48] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:11:48] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:11:48] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:11:48] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:11:48] Both windows launched — Tailscale tunnel active
+[18:11:48] Both windows launched — Tailscale tunnel active
+[18:11:48] Heartbeat loop started (PID 8579)
+[18:11:48] Heartbeat loop started (PID 8579)
+[8565:8565:0506/181148.280924:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[8565:8565:0506/181148.280984:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[8612:8612:0100/000000.299637:ERROR:content/zygote/zygote_linux.cc:669] write: Broken pipe (32)
+[18:11:49] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:11:49] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:11:53] Another launcher instance is already running — exiting (PID 8753)
+[18:11:53] Another launcher instance is already running — exiting (PID 8753)
+[18:11:55] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:11:55] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[8922:8922:0506/181155.512605:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[8922:8922:0506/181155.512765:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[8922:8922:0506/181155.512865:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[8922:8922:0506/181155.512934:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[8922:8922:0506/181155.514080:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[8984:8984:0506/181155.817266:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[8984:8984:0506/181155.817383:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[8984:8984:0506/181155.817446:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[8984:8984:0506/181155.817481:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[8984:8984:0506/181155.818727:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+=== chromium hvault windows? ===
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
