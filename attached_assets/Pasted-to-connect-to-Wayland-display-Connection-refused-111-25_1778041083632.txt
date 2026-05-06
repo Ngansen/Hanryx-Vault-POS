@@ -1,0 +1,40 @@
+to connect to Wayland display: Connection refused (111)
+[2578:2578:0505/231554.036864:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2578:2578:0505/231554.036881:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:15:55] [Admin] crashed in 1s (count=1, mode=fallback(--disable-gpu))
+[23:15:56] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=5s
+[2647:2647:0505/231556.904608:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2647:2647:0505/231556.904672:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2647:2647:0505/231556.904688:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:15:57] [Kiosk] crashed in 0s (count=1, mode=fallback(--disable-gpu))
+[23:16:05] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=10s
+[2731:2731:0505/231605.199292:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2731:2731:0505/231605.199356:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2731:2731:0505/231605.199372:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:16:06] [Admin] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[23:16:07] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=10s
+[2795:2795:0505/231608.061147:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2795:2795:0505/231608.061209:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2795:2795:0505/231608.061225:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:16:09] [Kiosk] crashed in 1s (count=2, mode=fallback(--disable-gpu))
+[23:16:26] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=20s
+[2920:2920:0505/231626.361309:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2920:2920:0505/231626.361376:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2920:2920:0505/231626.361392:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:16:27] [Admin] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[23:16:29] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=20s
+[2987:2987:0505/231629.709310:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[2987:2987:0505/231629.709425:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[2987:2987:0505/231629.709451:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:16:30] [Kiosk] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[23:17:07] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=40s
+[3250:3250:0505/231707.530063:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[3250:3250:0505/231707.530135:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[3250:3250:0505/231707.530152:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:17:08] [Admin] crashed in 0s (count=4, mode=fallback(--disable-gpu))
+[23:17:10] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=40s
+[3323:3323:0505/231710.866253:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[3323:3323:0505/231710.866318:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[3323:3323:0505/231710.866334:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[23:17:11] [Kiosk] crashed in 0s (count=4, mode=fallback(--disable-gpu))
+ngansen@hanryxvault-sat:~
