@@ -1,0 +1,63 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== is XWayland running? does X socket exist? ==="
+pgrep -af Xwayland || echo "NO XWayland process"
+ls -la /tmp/.X11-unix/ 2>/dev/null || echo "NO /tmp/.X11-unix"
+
+echo "=== labwc xwayland support compiled in? ===" 
+labwc --version 2>&1
+ldd "$(which labwc)" 2>/dev/null | grep -i xwayland
+which Xwayland
+
+echo "=== switch the launcher to NATIVE Wayland (no X needed) ==="
+LAUNCHER=/home/ngansen/.hanryx-dual-monitor.sh
+sudo sed -i 's|--ozone-platform=x11|--ozone-platform=wayland|g' "$LAUNCHER"
+# Wayland windows match by app_id (set via --classpgrep -af 'chromium.*hvault' | head -4g/hanryx-kio
+=== is XWayland running? does X socket exist? ===
+10807 Xwayland :0 -rootless -core -terminate 10 -listenfd 29 -listenfd 30 -displayfd 62 -wm 59
+total 0
+drwxrwxrwt  2 root    root     60 May  6 18:16 .
+drwxrwxrwt 29 root    root    720 May  6 18:18 ..
+srwxrwxr-x  1 ngansen ngansen   0 May  6 18:16 X0
+=== labwc xwayland support compiled in? ===
+labwc 0.9.2 (+xwayland +nls +rsvg +libsfdo)
+/usr/bin/Xwayland
+=== switch the launcher to NATIVE Wayland (no X needed) ===
+6:#   • Uses XWayland (--ozone-platform=wayland) — survives labwc/greeter session swaps
+266:    --ozone-platform=wayland
+=== nuke + restart ===
+Killed
+Killed
+
+
+=== launcher log (should show NO 'Missing X server') ===
+[18:18:26] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:18:26] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[18:18:26] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:18:26] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[18:18:26] Chromium binary: /usr/lib/chromium/chromium
+[18:18:26] Chromium binary: /usr/lib/chromium/chromium
+[18:18:26] DISPLAY=:0  (XWayland via labwc)
+[18:18:26] DISPLAY=:0  (XWayland via labwc)
+[18:18:27] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:18:27] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:18:27] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[18:18:27] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[12159:12159:0506/181827.833680:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[12159:12159:0506/181827.833742:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[18:18:28] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:18:28] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:18:31] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:18:31] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:18:31] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[18:18:31] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[12220:12220:0506/181831.955613:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[12220:12220:0506/181831.955687:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[18:18:32] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:18:32] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[18:18:38] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:18:38] [Admin] → http://hanryxvault:8080/admin  (ANGLE swiftshader)  backoff=10s
+[18:18:42] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+[18:18:42] [Kiosk] → http://hanryxvault:8080/kiosk  (ANGLE swiftshader)  backoff=10s
+=== chromium hvault windows ===
+12495 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=wayland --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+12628 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=wayland --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
