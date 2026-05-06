@@ -1,0 +1,38 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ LAUNCHER=~/.hanryx-dual-monitor.sh
+
+# 1. Verify the password-store flag actually landed in the launcher
+echo "=== keyring flags in launcher ==="
+grep -nE 'password-store|use-mock-keychain|CHROMIUM_FLAGS' "$LAUNCHER"
+
+# 2. Verify it's in the LIVE chromium command lines
+echo "=== flags chromium is ACTUALLY running with ==="
+ps -ef | grep '[/]usr/lib/chromium/chromium' | head -2 | tr ' ' '\n' | grep -E 'password|keychain|decommit|user-data-dir|class' | sort -u
+
+# 3. Why isn't kiosk window on 5" screen?
+echo "=== launcher log — what did Kiosk window do? 2>/dev/null/ /etc/xdg/ /etc/pam.d/ /etc/security/
+=== keyring flags in launcher ===
+231:unset CHROMIUM_FLAGS
+232:export CHROMIUM_FLAGS=""
+271:    --password-store=basic
+272:    --use-mock-keychain
+=== flags chromium is ACTUALLY running with ===
+--class=hvault-admin
+--class=hvault-kiosk
+--js-flags=--no-decommit-pooled-pages
+--user-data-dir=/home/ngansen/.hanryx/admin-profile
+--user-data-dir=/home/ngansen/.hanryx/kiosk-profile
+=== launcher log — what did Kiosk window do? ===
+grep: /var/log/hanryx-kiosk.log: binary file matches
+=== chromium processes alive (should be 2: admin + kiosk) ===
+4881 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+4903 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+=== source of bad flag ===
+/etc/chromium.d/00-rpi-vars:1:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-renderer-accessibility --enable-remote-extensions"
+/etc/chromium.d/dev-shm:12:     export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-dev-shm-usage"
+/etc/chromium.d/default-flags:4:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --show-component-extension-options"
+/etc/chromium.d/default-flags:7:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-gpu-rasterization"
+/etc/chromium.d/default-flags:10:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-default-browser-check"
+/etc/chromium.d/default-flags:13:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-pings"
+/etc/chromium.d/default-flags:16:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --media-router=0"
+/etc/chromium.d/extensions:2:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"
+/etc/chromium.d/extensions:5:export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --load-extension=`ls -dm /usnganngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
