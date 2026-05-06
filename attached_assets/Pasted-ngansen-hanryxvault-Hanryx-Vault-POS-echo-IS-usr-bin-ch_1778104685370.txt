@@ -1,0 +1,67 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ echo "=== IS /usr/bin/chromium A SCRIPT OR BINARY? ==="
+file /usr/bin/chromium
+head -50 /usr/bin/chromium 2>/dev/null
+
+echo "=== WHERE DOES --no-decommit-pooled-pages COME FROM? ==="
+sudo grep -rn 'no-decommit-pooled-pages' /etc/chromium* /etc/chromium-browser/ /etc/default/chromium* 2>/dev/null
+
+echo "=== REAL CHROMIUM BINARY ==="
+ls -la /usr/lib/chromium/chromium 2>/dev/null
+file /usr/lib/chromium/chromium 2>/dev/null
+=== IS /usr/bin/chromium A SCRIPT OR BINARY? ===
+/usr/bin/chromium: POSIX shell script, ASCII text executable
+#!/bin/sh
+
+# Chromium launcher
+
+# Authors:
+#  Fabien Tassin <fta@sofaraway.org>
+# License: GPLv2 or later
+
+APPNAME=chromium
+
+GDB=/usr/bin/gdb
+LIBDIR=/usr/lib/$APPNAME
+CHROMIUM_FLAGS=""
+
+usage () {
+  echo "$APPNAME [-h|--help] [-g|--debug] [--no-memcheck] [--temp-profile] [options] [URL]"
+  echo
+  echo "        -g or --debug              Start within $GDB"
+  echo "        -h or --help               This help screen"
+  echo "        --no-memcheck              Skip warning on low RAM devices"
+  echo "        --temp-profile             Start with a new and temporary profile"
+  echo "        --enable-remote-extensions Allow extensions from remote sites"
+  echo
+  echo " Other supported options are:"
+  MANWIDTH=80 man chromium | sed -e '1,/OPTIONS/d; /ENVIRONMENT/,$d'
+  echo " See 'man chromium' for more details"
+}
+
+display_msg() {
+  if [ -z "$DISPLAY" ]; then
+    echo "$@" 1>&2
+  else
+    zenoty --title=Chromium --text="$@"
+  fi
+}
+
+display_qstn() {
+  if [ -z "$DISPLAY" ]; then
+    echo "$1"
+  else
+    zenoty --title=Chromium --text="$1" --question --ok-label="$2" \
+      --cancel-label=Cancel --icon-name=dialog-warning
+  fi
+}
+
+nosse3="\
+The hardware on this system lacks support for the sse3 instruction set.
+The upstream chromium project no longer supports this configuration.
+For more information, please read and possibly provide input to their
+bug tracking system at http://crbug.com/1123353"
+=== WHERE DOES --no-decommit-pooled-pages COME FROM? ===
+=== REAL CHROMIUM BINARY ===
+-rwxr-xr-x 1 root root 277678928 Apr 11 12:26 /usr/lib/chromium/chromium
+/usr/lib/chromium/chromium: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, for GNU/Linux 3.7.0, BuildID[sha1]=0bb70a5f4f25adabb2b63bc2deef9c9264f8bb1f, stripped
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
