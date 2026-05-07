@@ -1,0 +1,98 @@
+ngansen@hanryxvault:~ $ echo "=== A. who is on tty1 / what's drawing the 7\" screen ==="
+who
+sudo ps -ef | grep -E 'tty1|chromium|grafana|labwc|xinit|startx|seatd|gdm|lightdm|getty' | grep -v grep
+echo
+echo "=== B. is the diagnostic kiosk service installed/running? ==="
+systemctl list-unit-files | grep -iE 'grafana|hanryx-grafana|hanryx-diagnostic' 2>&1
+systemctl is-active hanryx-grafana-kiosk.service 2>&1
+systemctl status hanryx-grafana-kiosk.service --no-pager -n 10 2>&1 | head -25
+echo
+echo "=== C. is the diagnostic script even on disk + executable? ==="
+ls -la /home/ngansen/Hanryx-Vault-POS/pi-setup/diasudo tail -30 /tmp/grafana-kiosk.log 2>&1sk log if
+=== A. who is on tty1 / what's drawing the 7" screen ===
+ngansen  sshd pts/0   2026-05-07 23:37 (192.168.86.31)
+ngansen  seat0        2026-05-07 01:36
+ngansen  tty1         2026-05-07 01:36
+root        1027       1  0 01:36 ttyAMA10 00:00:00 /sbin/agetty -o -- \u --noreset --noclear --keep-baud 115200,57600,38400,9600 - vt220
+ngansen     1144    1026  0 01:36 tty1     00:00:00 -bash
+472         2123    1972  0 01:37 ?        00:04:13 grafana server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini --packaging=docker cfg:default.log.mode=console cfg:default.paths.data=/var/lib/grafana cfg:default.paths.logs=/var/log/grafana cfg:default.paths.plugins=/var/lib/grafana/plugins cfg:default.paths.provisioning=/etc/grafana/provisioning
+root        4571       1  0 01:37 ?        00:00:00 sudo -u ngansen env DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 nohup bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+ngansen     4576    4571  0 01:37 ?        00:00:18 bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+
+=== B. is the diagnostic kiosk service installed/running? ===
+inactive
+Unit hanryx-grafana-kiosk.service could not be found.
+
+=== C. is the diagnostic script even on disk + executable? ===
+-rwxrwxr-x 1 ngansen ngansen 4841 May  6 21:58 /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+
+=== D. is grafana itself up on localhost:3001? ===
+{
+  "database": "ok",
+  "version": "13.0.1",
+  "commit": "a100054f"
+}  ✅ grafana healthy
+NAMES                                STATUS                    PORTS
+fef8e7f1e424_pi-setup-pgbouncer-1    Up 22 hours (unhealthy)   5432/tcp
+pi-setup-pos-1                       Up 22 hours (unhealthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-db-1                        Up 22 hours (unhealthy)   5432/tcp
+pi-setup-redis-1                     Up 22 hours (unhealthy)   6379/tcp
+bff5b829bafb_pi-setup-recognizer-1   Up 22 hours (unhealthy)   8081/tcp
+pi-setup-pokeapi-1                   Up 22 hours (unhealthy)   80/tcp
+pi-setup-sync-1                      Up 22 hours               8080/tcp
+pi-setup-storefront-1                Up 22 hours (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-assistant-1                 Up 22 hours (unhealthy)   11434/tcp
+pi-setup-pgbouncer-1                 Up 22 hours (unhealthy)   5432/tcp
+pi-setup-recognizer-1                Up 22 hours (unhealthy)   8081/tcp
+prometheus                           Up 22 hours               0.0.0.0:9090->9090/tcp, [::]:9090->9090/tcp
+grafana                              Up 22 hours               0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+npm                                  Up 22 hours               
+adminer                              Up 22 hours               
+node-exporter                        Up 22 hours               
+
+=== E. what's autostarting on the main pi? ===
+lrwxrwxrwx  1 root root   39 May  5 21:28 hanryx-boot.service -> /etc/systemd/system/hanryx-boot.service
+lrwxrwxrwx  1 root root   41 Apr 15 00:23 hanryx-docker.service -> /etc/systemd/system/hanryx-docker.service
+lrwxrwxrwx  1 root root   38 Apr  5 20:29 hanryx-nat.service -> /etc/systemd/system/hanryx-nat.service
+lrwxrwxrwx  1 root root   38 Apr 15 00:13 hanryx-pos.service -> /etc/systemd/system/hanryx-pos.service
+-rw-rw-r--  1 ngansen ngansen  291 May  3 17:58 hanryx-grafana-kiosk.desktop
+-rw-r--r--  1 ngansen ngansen  381 Apr 15 00:14 hanryx-kiosk.desktop.disabled
+-rw-rw-r--  1 ngansen ngansen  285 May  3 13:58 hanryx-monitor.desktop.disabled
+
+=== F. what physical screen layout does the main pi have? ===
+           system boot  2026-05-07 01:36
+ngansen  + sshd pts/0   2026-05-07 23:37   .       1253123 (192.168.86.31)
+ngansen  ? seat0        2026-05-07 01:36   ?          1026
+ngansen  - tty1         2026-05-07 01:36 22:00        1026
+
+=== G. last 30 lines of grafana kiosk log if any ===
+[591989:591989:0507/072128.899710:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[591989:591989:0507/072128.899760:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:28+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:33+00:00] launching /usr/lib/chromium/chromium kiosk
+[592036:592036:0507/072134.008350:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592036:592036:0507/072134.008401:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:34+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:39+00:00] launching /usr/lib/chromium/chromium kiosk
+[592082:592082:0507/072139.121761:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592082:592082:0507/072139.121818:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:39+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:44+00:00] launching /usr/lib/chromium/chromium kiosk
+[592130:592130:0507/072144.228782:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592130:592130:0507/072144.228838:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:44+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:49+00:00] launching /usr/lib/chromium/chromium kiosk
+[592285:592285:0507/072149.337990:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592285:592285:0507/072149.338052:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:49+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:54+00:00] launching /usr/lib/chromium/chromium kiosk
+[592336:592336:0507/072154.444272:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592336:592336:0507/072154.444334:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:54+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:21:59+00:00] launching /usr/lib/chromium/chromium kiosk
+[592385:592385:0507/072159.554741:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592385:592385:0507/072159.554803:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[2026-05-07T07:21:59+00:00] chromium exited rc=1 — relaunching in 5 s
+[2026-05-07T07:22:04+00:00] launching /usr/lib/chromium/chromium kiosk
+[592433:592433:0507/072204.673193:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[592433:592433:05ngansen@hanryxvault:~ $
