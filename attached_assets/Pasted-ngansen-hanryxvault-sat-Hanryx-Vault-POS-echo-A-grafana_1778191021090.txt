@@ -1,0 +1,110 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== A. grafana chromium cmdline (this one works on wayland-0) ==="
+ps -eo pid,user,args | grep -E '/usr/lib/chromium/chromium.*chromium-grafana' | grep -v grep | head -1 | tr ' ' '\n' | grep -E '^--' | sort -u
+
+echo
+echo "=== B. our admin chromium flags (from launcher) ==="
+sudo journalctl -u hanryx-kiosk.service -n 200 --no-pager | grep -oE -- '--[a-zA-Z][a-zA-Z0-9=_/.,:-]*' | sort -u | head -50
+
+echo
+echo "=== C. live wayland env (must match what labwc spawned) ==="
+LABWC_PID=$(pgrep -x labwc | head -1)
+echo "labwc PID: $LABWC_PID"
+sudo cat /proc/$LABWC_PID/environ | tr '\0' '\n' | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR|XDG_SENFIG_HOME)=' || echo "  (launcher not running)"_CO
+=== A. grafana chromium cmdline (this one works on wayland-0) ===
+--autoplay-policy=no-user-gesture-required
+--check-for-update-interval=31536000
+--disable-features=TranslateUI
+--disable-infobars
+--disable-pinch
+--disable-translate
+--kiosk
+--noerrdialogs
+--no-first-run
+--overscroll-history-navigation=0
+--user-data-dir=/tmp/chromium-grafana
+
+=== B. our admin chromium flags (from launcher) ===
+
+=== C. live wayland env (must match what labwc spawned) ===
+labwc PID: 322928
+USER=ngansen
+XDG_SESSION_TYPE=wayland
+HOME=/home/ngansen
+XDG_RUNTIME_DIR=/run/user/1000
+
+=== D. manually launch ONE chromium with our exact flags + stderr to file ===
+    (running as ngansen, into the labwc wayland session)
+PID=325407
+  STILL ALIVE after 8s — chromium itself is fine, the launcher context is the problem
+
+=== E. last 60 lines of chromium stderr (the actual error) ===
+[325407:325407:0507/165551.744131:VERBOSE1:components/device_event_log/device_event_log_impl.cc:204] [16:55:51.744] USB: USER: usb_service_linux.cc:297 USB device added: path=/dev/bus/usb/001/003 vendor=1133 "Logitech", product=50475 "USB Receiver", serial="", guid=4bb01308-6e3a-4af6-863c-e3d9ad26670f
+[325407:325407:0507/165551.744409:VERBOSE1:components/device_event_log/device_event_log_impl.cc:204] [16:55:51.744] USB: USER: usb_service_linux.cc:297 USB device added: path=/dev/bus/usb/001/004 vendor=1121 "YuRiot", product=19846 "Barcode Scanner Keyboard", serial="00000000011C", guid=4d932114-e60b-44b1-a9b8-8ff523a2af1d
+[325407:325407:0507/165551.752844:VERBOSE1:chrome/browser/web_applications/locks/partitioned_lock_manager.cc:262] Acquiring <PartitionedLockId>{id: 0x31, partition: 0} for SynchronizeInstalledApps@chrome/browser/web_applications/externally_managed_app_manager.cc:186
+[325407:325407:0507/165551.752861:VERBOSE1:chrome/browser/web_applications/locks/partitioned_lock_manager.cc:243] All locks acquired for SynchronizeInstalledApps@chrome/browser/web_applications/externally_managed_app_manager.cc:186
+[325407:325407:0507/165551.752940:VERBOSE1:chrome/browser/web_applications/locks/partitioned_lock_manager.cc:286] Releasing <PartitionedLockId>{id: 0x31, partition: 0} requested by SynchronizeInstalledApps@chrome/browser/web_applications/externally_managed_app_manager.cc:186
+[325407:325430:0507/165552.110612:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[325407:325430:0507/165552.110651:VERBOSE1:google_apis/gcm/engine/registration_request.cc:256] Delaying GCM registration of app: com.google.android.gms, for 29702 milliseconds.
+[325456:325461:0507/165552.110752:VERBOSE1:base/files/file_util_posix.cc:309] Cannot stat "/home/ngansen/.hanryx/admin-profile/Default/Cache/Cache_Data/dd8cd7ce6312e569_0": No such file or directory (2)
+[325456:325461:0507/165552.110775:VERBOSE1:base/files/file_util_posix.cc:309] Cannot stat "/home/ngansen/.hanryx/admin-profile/Default/Cache/Cache_Data/dd8cd7ce6312e569_1": No such file or directory (2)
+[325456:325461:0507/165552.110786:VERBOSE1:base/files/file_util_posix.cc:309] Cannot stat "/home/ngansen/.hanryx/admin-profile/Default/Cache/Cache_Data/dd8cd7ce6312e569_s": No such file or directory (2)
+[325407:325407:0507/165553.729901:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT does not have a segment info.
+[325407:325407:0507/165553.729926:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT failed to get score from database, executing server model.
+[325407:325407:0507/165553.729944:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT server segment info not available
+[325407:325407:0507/165553.729955:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.729965:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT has expired or unavailable result.
+[325407:325407:0507/165553.729974:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT failed to get database model score, trying default model.
+[325407:325407:0507/165553.729986:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT signal collection not met
+[325407:325407:0507/165553.730001:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER does not have a segment info.
+[325407:325407:0507/165553.730012:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER failed to get score from database, executing server model.
+[325407:325407:0507/165553.730020:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER server segment info not available
+[325407:325407:0507/165553.730028:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730036:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER has expired or unavailable result.
+[325407:325407:0507/165553.730044:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER failed to get database model score, trying default model.
+[325407:325407:0507/165553.730054:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SEARCH_USER signal collection not met
+[325407:325407:0507/165553.730067:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SHOPPING_USER does not have a segment info.
+[325407:325407:0507/165553.730077:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SHOPPING_USER failed to get score from database, executing server model.
+[325407:325407:0507/165553.730085:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SHOPPING_USER server segment info not available
+[325407:325407:0507/165553.730094:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=OPTIMIZATION_TARGET_SEGMENTATION_SHOPPING_USER failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730102:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:252] GetCachedModelScore: Retrieved prediction from database: PredictionResult: timestamp: 13422590248662042 result 0: 0 for segment OPTIMIZATION_TARGET_SEGMENTATION_SHOPPING_USER
+[325407:325407:0507/165553.730126:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:29] ComputeDiscreteMapping: segment=: result=0, rank=0
+[325407:325407:0507/165553.730141:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=CROSS_DEVICE_USER_SEGMENT does not have a segment info.
+[325407:325407:0507/165553.730152:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=CROSS_DEVICE_USER_SEGMENT failed to get score from database, executing server model.
+[325407:325407:0507/165553.730160:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=CROSS_DEVICE_USER_SEGMENT server segment info not available
+[325407:325407:0507/165553.730169:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=CROSS_DEVICE_USER_SEGMENT failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730177:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=CROSS_DEVICE_USER_SEGMENT has expired or unavailable result.
+[325407:325407:0507/165553.730185:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=CROSS_DEVICE_USER_SEGMENT failed to get database model score, trying default model.
+[325407:325407:0507/165553.730199:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=CROSS_DEVICE_USER_SEGMENT signal collection not met
+[325407:325407:0507/165553.730212:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=RESUME_HEAVY_USER_SEGMENT does not have a segment info.
+[325407:325407:0507/165553.730221:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=RESUME_HEAVY_USER_SEGMENT failed to get score from database, executing server model.
+[325407:325407:0507/165553.730229:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=RESUME_HEAVY_USER_SEGMENT server segment info not available
+[325407:325407:0507/165553.730237:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=RESUME_HEAVY_USER_SEGMENT failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730245:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=RESUME_HEAVY_USER_SEGMENT has expired or unavailable result.
+[325407:325407:0507/165553.730253:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=RESUME_HEAVY_USER_SEGMENT failed to get database model score, trying default model.
+[325407:325407:0507/165553.730266:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=RESUME_HEAVY_USER_SEGMENT signal collection not met
+[325407:325407:0507/165553.730279:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=PASSWORD_MANAGER_USER does not have a segment info.
+[325407:325407:0507/165553.730289:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=PASSWORD_MANAGER_USER failed to get score from database, executing server model.
+[325407:325407:0507/165553.730297:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=PASSWORD_MANAGER_USER server segment info not available
+[325407:325407:0507/165553.730305:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=PASSWORD_MANAGER_USER failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730313:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=PASSWORD_MANAGER_USER has expired or unavailable result.
+[325407:325407:0507/165553.730321:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=PASSWORD_MANAGER_USER failed to get database model score, trying default model.
+[325407:325407:0507/165553.730337:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=PASSWORD_MANAGER_USER signal collection not met
+[325407:325407:0507/165553.730350:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:226] GetCachedModelScore: segment=CHROME_USER_ENGAGEMENT does not have a segment info.
+[325407:325407:0507/165553.730359:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:172] OnGotModelScore: segment=CHROME_USER_ENGAGEMENT failed to get score from database, executing server model.
+[325407:325407:0507/165553.730367:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:277] ExecuteModelAndGetScore: segment=CHROME_USER_ENGAGEMENT server segment info not available
+[325407:325407:0507/165553.730376:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:201] OnGotModelScore: segment=CHROME_USER_ENGAGEMENT failed to get score from executing server model, getting score from default model from db.
+[325407:325407:0507/165553.730384:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:240] GetCachedModelScore: segment=CHROME_USER_ENGAGEMENT has expired or unavailable result.
+[325407:325407:0507/165553.730392:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:210] OnGotModelScore: segment=CHROME_USER_ENGAGEMENT failed to get database model score, trying default model.
+[325407:325407:0507/165553.730401:VERBOSE1:components/segmentation_platform/internal/selection/segment_result_provider.cc:295] ExecuteModelAndGetScore: segment=CHROME_USER_ENGAGEMENT signal collection not met
+[325407:325407:0507/165553.730468:VERBOSE1:components/segmentation_platform/internal/database/cached_result_writer.cc:106] IsPrefUpdateRequiredForClient: previous client_result for segmentation_key: shopping_user has not yet expired. Expiration: 2026-05-09 01:17:28.662117 UTC
+[325407:325442:0507/165556.156038:VERBOSE1:chrome/browser/shutdown_signal_handlers_posix.cc:131] Handling shutdown for signal 15.
+
+=== F. compare: is the launcher running chromium under a different env? ===
+launcher PID: 322943
+USER=ngansen
+XDG_SESSION_TYPE=wayland
+HOME=/home/ngansen
+WAYLAND_DISPLAY=wayland-0
+XDG_RUNTIME_DIR=/run/user/1000
+DISPLAY=:0
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ 
