@@ -1,0 +1,50 @@
+ngansen@hanryxvault-sat:~ $ echo "=== A. who is the PARENT of the grafana chromium ==="
+GP=$(pgrep -f 'user-data-dir=/tmp/chromium-grafana' | head -1)
+echo "  grafana PID: $GP"
+PPID_=$(ps -o ppid= -p $GP | tr -d ' ')
+echo "  parent PID: $PPID_"
+ps -o pid,ppid,user,etime,cmd -p $PPID_
+echo
+echo "  → grandparent:"
+GPPID=$(ps -o ppid= -p $PPID_ | tr -d ' ')
+ps -o pid,ppid,user,etime,cmd -p $GPPID
+echo
+echo "  → all the way up:"
+pstree -palus $GP | head -20
+
+echo
+echo "=== B. grep EVERY conf/script for the grafana launch ==="
+sudo grep -rln 'chromium-grafana\|hanryx-pi-ops' / 2>/dev/null | grep -vE '/proc/|/sys/|/tmp/chromiusystemctl list-unit-files 'hanryx*' --no-pagerte =
+=== A. who is the PARENT of the grafana chromium ===
+  grafana PID: 338948
+  parent PID: 6101
+    PID    PPID USER         ELAPSED CMD
+   6101    6096 ngansen     20:57:55 bash /home/ng
+
+  → grandparent:
+    PID    PPID USER         ELAPSED CMD
+   6096       1 root        20:57:55 sudo -u ngans
+
+  → all the way up:
+systemd,1 splash
+  `-sudo,6096 -u ngansen env DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 nohup bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+      `-bash,6101,ngansen /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+          `-chromium,338948 --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+              |-chromium,338956
+              |   |-chromium,339092
+              |   |   |-chromium,339095
+              |   |   |-{chromium},339096
+              |   |   |-{chromium},339097
+              |   |   |-{chromium},339098
+              |   |   |-{chromium},339099
+              |   |   |-{chromium},339100
+              |   |   `-{chromium},339111
+              |   `-chromium,339657
+              |       |-chromium,339659
+              |       |-{chromium},339660
+              |       |-{chromium},339661
+              |       |-{chromium},339662
+              |       |-{chromium},339663
+              |       |-{chromium},339664
+
+=== B. grep EVERY conf/script for the grafana launch ===
