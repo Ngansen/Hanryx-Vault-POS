@@ -389,10 +389,10 @@ info "Writing dual-monitor launcher…"
 cat > "$LAUNCH_SCRIPT" << 'LAUNCH'
 #!/usr/bin/env bash
 # =============================================================================
-# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.2 XWayland fix)
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.3 wayland-native)
 # =============================================================================
 # Pi 5 Bookworm runs labwc (Wayland compositor). This launcher:
-#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
+#   • Uses native Wayland Chromium (--ozone-platform=wayland) — NO XWayland
 #   • Detects outputs with wlr-randr (xrandr does not work under labwc)
 #   • Places each Chromium window on the right monitor via labwc rc.xml rules
 #     (--window-position is ignored under Wayland; you MUST use compositor rules)
@@ -731,15 +731,13 @@ COMMON_FLAGS=(
     --ozone-platform=wayland
     # NOTE: chromium only honours the LAST --enable-features=, so we MUST merge
     # all features into a single flag. Splitting them silently drops earlier values.
-    --enable-features=UseOzonePlatform
-    # Pi 5 V3D GPU process crashes under wayland (TerminationStatus=4) within
-    # seconds of startup, taking the browser down with it. Software rendering
-    # via swiftshader is rock-solid for two small kiosk pages and is the only
-    # reliable choice for trade-show use. VAAPI is deliberately NOT enabled
-    # because it requires the GPU process we just disabled.
-    --no-sandbox
-    --disable-gpu
-    --use-gl=swiftshader
+    # This exact combination was confirmed working April 2026 with both monitors
+    # rendering correctly (commit 17b8636). DO NOT add --no-sandbox, --disable-gpu,
+    # or --use-gl=swiftshader to defaults — chromium 147 rejects those combos
+    # silently (exit code 1 in <1s with no useful stderr) when added on top of
+    # this set. If GPU misbehaves, the launch loop drops to FALLBACK_FLAGS below
+    # which adds --disable-gpu --use-gl=swiftshader after 2 quick crashes.
+    --enable-features=UseOzonePlatform,VaapiVideoDecoder
     --disable-dev-shm-usage
     --allow-file-access-from-files
     --disable-web-security
@@ -759,11 +757,18 @@ launch_window() {
     local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
     local first_run=1 quick_crashes=0 using_fallback=0
     local backoff=5 max_backoff=60
-    # COMMON_FLAGS already uses --disable-gpu --use-gl=swiftshader (the only
-    # reliable mode on Pi 5 V3D + wayland). Fallback is identical for now;
-    # kept as a separate array so we can add further degradations later
-    # (e.g. --disable-features=Vulkan) without touching the launch loop.
-    local FALLBACK_FLAGS=("${COMMON_FLAGS[@]}")
+    # Fallback flags — used after 2 quick crashes on COMMON_FLAGS.
+    # Drops VAAPI (which needs a working GPU process) and adds software rendering.
+    # This was the working April-2026 strategy: try GPU first, degrade only if needed.
+    local FALLBACK_FLAGS=()
+    for f in "${COMMON_FLAGS[@]}"; do
+        case "$f" in
+            --enable-features=UseOzonePlatform,VaapiVideoDecoder)
+                FALLBACK_FLAGS+=("--enable-features=UseOzonePlatform") ;;
+            *) FALLBACK_FLAGS+=("$f") ;;
+        esac
+    done
+    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
 
     log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
     while true; do
@@ -778,7 +783,7 @@ launch_window() {
             mode="fallback(--disable-gpu)"
         else
             FLAGS=("${COMMON_FLAGS[@]}")
-            mode="ANGLE swiftshader"
+            mode="default(GPU+VAAPI)"
         fi
         log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
         rm -f "$profile"/Singleton* 2>/dev/null
