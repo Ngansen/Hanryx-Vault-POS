@@ -697,7 +697,20 @@ if [ "$x_ready" -ne 1 ]; then
     log "WARN: XWayland socket $X_SOCK never accepted in 30s — chromium will likely fail; proceeding anyway"
 fi
 
-# ── Common Chromium flags (XWayland — Pi OS supported path) ─────────────────
+# ── Common Chromium flags (NATIVE Wayland — required for dual-monitor) ──────
+# Why native Wayland (not XWayland):
+#   • Each chromium window becomes its OWN wlr-foreign-toplevel surface with
+#     its OWN app_id (set via --app-id below). labwc's <windowRule> matches
+#     that app_id and MoveToOutput moves the actual wlr surface to the target
+#     output — wlroots then composites it onto that output's framebuffer. The
+#     5" HDMI-A-2 actually paints chromium content this way.
+#   • Under XWayland (--ozone-platform=x11) ALL chromium windows share one
+#     rootless XWayland wayland surface, identified only by WM_CLASS. labwc
+#     MoveToOutput on a non-primary wlr-output is buggy in 0.9.2 — the surface
+#     is "moved" but HDMI-A-2 keeps painting only the compositor bg colour.
+#   • The original reason we switched to XWayland (ECONNREFUSED at startup)
+#     is now solved by find_live_wayland/probe_wayland in this script — we
+#     wait for the socket to be live before launching chromium.
 COMMON_FLAGS=(
     --kiosk
     --no-first-run
@@ -715,7 +728,8 @@ COMMON_FLAGS=(
     --disable-breakpad
     --disable-component-update
     --no-process-singleton
-    --ozone-platform=x11
+    --ozone-platform=wayland
+    --enable-features=UseOzonePlatform
     --enable-features=VaapiVideoDecoder
     --disable-dev-shm-usage
     --allow-file-access-from-files
@@ -767,6 +781,7 @@ launch_window() {
             "${FLAGS[@]}" \
             --user-data-dir="$profile" \
             --class="$app_id" \
+            --app-id="$app_id" \
             "$START_URL" >> "$LOG_FILE" 2>&1
         EXIT=$?
         ELAPSED=$(( $(date +%s) - START ))
