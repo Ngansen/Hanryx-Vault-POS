@@ -1,0 +1,53 @@
+ngansen@hanryxvault-sat:~ $ echo "=== current XWayland processes + display number ==="
+pgrep -af Xwayland
+ls -la /tmp/.X11-unix/
+echo "=== which X sockets are ACTUALLY listening? (ss) ==="
+sudo ss -xl | grep -E 'X11|@.X'
+echo "=== sockets owned by xwayland ==="
+sudo lsof -p $(pgrep Xwayland | head -1) 2>/dev/null | grep -E 'unix|X11|sock' | head -10
+echo "=== launcher's labwc PID + autostart status ==="
+pgrep -af labwc
+echo "=== quick chromium test NOW from sshd to see if :0 even works ==="
+sudo pkill -9 -f /tmp/test-now 2>/dev/null
+sudo -u ngansen env -i HOME=/home/ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/bin /usr/lib/chromium/chromium --kiosk --no-sandbox --ozone-platform=x11 --user-data-dir=/tmp/test-now about:blank >/tmsudo pkill -9 -f /tmp/test-d1 2>/dev/null/test-d1.
+=== current XWayland processes + display number ===
+28336 Xwayland :0 -rootless -core -terminate 10 -listenfd 29 -listenfd 30 -displayfd 60 -wm 57
+total 0
+drwxrwxrwt  2 root    root      60 May  6 19:00 .
+drwxrwxrwt 75 root    root    2300 May  6 19:02 ..
+srwxrwxr-x  1 ngansen ngansen    0 May  6 19:00 X0
+=== which X sockets are ACTUALLY listening? (ss) ===
+u_str LISTEN 0      0                                     @/tmp/.X11-unix/X0 137954            * 0   
+u_str LISTEN 0      0                                      /tmp/.X11-unix/X0 137955            * 0   
+=== sockets owned by xwayland ===
+Xwayland 28336 ngansen mem       REG              179,2     67296   5939 /usr/lib/aarch64-linux-gnu/libX11-xcb.so.1.0.0
+Xwayland 28336 ngansen mem       REG              179,2   1395344   5941 /usr/lib/aarch64-linux-gnu/libX11.so.6.4.0
+Xwayland 28336 ngansen   2u     unix 0x000000003953d2ee       0t0 138881 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  10u     unix 0x00000000155c63a1       0t0 138008 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  11u     unix 0x00000000e61f1a7f       0t0 138012 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  12u     unix 0x000000005c1b7d6b       0t0 138178 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  13u     unix 0x00000000568f67ef       0t0 138180 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  14u     unix 0x00000000b395e163       0t0 141336 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  15u     unix 0x00000000f5432d0c       0t0 141337 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+Xwayland 28336 ngansen  16u     unix 0x000000000d6b4d0c       0t0 142422 @/tmp/.X11-unix/X0 type=STREAM (CONNECTED)
+=== launcher's labwc PID + autostart status ===
+28265 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+=== quick chromium test NOW from sshd to see if :0 even works ===
+Killed
+[1] 29152
+alive: 11
+[29156:29170:0506/190212.327451:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[29156:29170:0506/190212.330431:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[29156:29170:0506/190212.382732:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[29156:29170:0506/190212.463352:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[29156:29156:0506/190212.469956:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+Killed
+=== try DISPLAY=:1 too in case labwc spawned XWayland on display 1 ===
+[2] 29295
+[1]-  Killed                  sudo -u ngansen env -i HOME=/home/ngansen DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/bin /usr/lib/chromium/chromium --kiosk --no-sandbox --ozone-platform=x11 --user-data-dir=/tmp/test-now about:blank > /tmp/test-now.log 2>&1
+[2]+  Exit 1                  sudo -u ngansen env -i HOME=/home/ngansen DISPLAY=:1 XAUTHORITY=/home/ngansen/.Xauthority XDG_RUNTIME_DIR=/run/user/1000 PATH=/usr/bin /usr/lib/chromium/chromium --kiosk --no-sandbox --ozone-platform=x11 --user-data-dir=/tmp/test-d1 about:blank > /tmp/test-d1.log 2>&1
+DISPLAY=:1 alive: 0
+[29299:29299:0506/190217.276528:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[29299:29299:0506/190217.276599:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+Killed
+ngansen@hanryxvault-sat:~ $
