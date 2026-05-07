@@ -1,0 +1,101 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu May  7 00:49:10 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ ssh ngansen@hanryxvault-sat
+# or by IP:
+ssh ngansen@100.121.45.69
+ngansen@hanryxvault-sat:~ $ # Use a chromium child as the env source — guaranteed to be owned by ngansen
+CHROME_PID=$(pgrep -f 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | head -1)
+echo "Using env from chromium PID $CHROME_PID:"
+tr '\0' '\n' < /proc/$CHROME_PID/environ | grep -E '^(DISPLAY|XAUTHORITY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR)='
+
+ENV_VARS=$(tr '\0' '\n' < /proc/$CHROME_PID/environ | grep -E '^(DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|WAYLAND_DISPLAY)=' | xargs)
+echo
+echo "=== WM_CLASS / Position of every chromium toplevel ==="
+env $ENV_VARS sh -c '
+  for wid in $(xdotool search --onlyvisible --classname chromium 2>/dev/null); do
+    name=$(xdotool getwindowname "$wid" 2>/dev/nulp -oE -- '--(class|name|app)=[^ ]*'| head -1 | gre
+Using env from chromium PID 1755:
+-bash: /proc/1755/environ: Permission denied
+-bash: /proc/1755/environ: Permission denied
+
+=== WM_CLASS / Position of every chromium toplevel ===
+
+=== Sanity: is xwininfo finding two roots-children windows on different outputs? ===
+
+=== ps for both chromium parents (verify --class= flag actually present) ===
+--user-data-dir=/home/ngansen/.hanryx/admin-profile
+--class=hvault-admin
+--user-data-dir=/home/ngansen/.hanryx/kiosk-profile
+--class=hvault-kiosk
+---admin parent---
+--class=hvault-admin
+---kiosk parent---
+--class=hvault-kiosk
+ngansen@hanryxvault-sat:~ $ set +e
+
+# ── 0. Setup: stop the kiosk service so it can't fight us ───────────────────
+echo "=== STAGE 0: stop service, capture env ==="
+sudo systemctl stop hanryx-kiosk.service
+sudo pkill -9 -f chromium 2>/dev/null
+sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null
+sleep 2
+
+# Pull DISPLAY/XAUTHORITY from labwc itself (sudo bypasses PR_SET_DUMPABLE)
+LABWC_PID=$(pgrep -ox labwc | head -1)
+echo "labwc PID: $LABWC_PID"
+ENV_VARS=$(sudo cat /proc/$LABWC_PID/environ 2>/dev/null \
+  | tr '\0' '\n' \
+  | grep -E '^(DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|WAYLAND_DISPLAY)=' \
+bove.)"Also paste the geom= lines and any errors a
+=== STAGE 0: stop service, capture env ===
+[sudo] password for ngansen: 
+Killed
+Killed
+labwc PID: 
+Env from labwc: 
+
+=== STAGE 1: wildcard MoveToOutput → HDMI-A-2 ===
+00:00:00.000 [../src/main.c:112] LABWC_PID not set
+[1] 3618
+[1]+  Exit 1                  env $ENV_VARS chromium --no-first-run --noerrdialogs --disable-infobars --ozone-platform=x11 --user-data-dir=/tmp/chrome-test --class=test-window --window-size=400,300 "data:text/html,<body style=background:red><h1>STAGE1</h1>" > /tmp/chrome1.log 2>&1
+Where did the red window land?
+👉 LOOK AT THE SCREENS: did the RED window appear on the 5" or 10.1"?
+Killed
+
+=== STAGE 2: same rule, but chromium --kiosk (tests fullscreen interaction) ===
+[1] 3739
+[1]+  Exit 1                  env $ENV_VARS chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --ozone-platform=x11 --user-data-dir=/tmp/chrome-test --class=test-window "data:text/html,<body style=background:lime><h1>STAGE2 KIOSK</h1>" > /tmp/chrome2.log 2>&1
+👉 LOOK AT THE SCREENS: did the GREEN --kiosk window appear on the 5" or 10.1"?
+Killed
+
+=== STAGE 3: launch on default output, then move via wlrctl ===
+Unpacking wlrctl (0.2.2-2) ...
+Setting up wlrctl (0.2.2-2) ...
+Processing triggers for man-db (2.13.1-1) ...
+[1] 3913
+[1]+  Exit 1                  env $ENV_VARS chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --user-data-dir=/tmp/chrome-test --class=test-window "data:text/html,<body style=background:blue><h1 style=color:white>STAGE3</h1>" > /tmp/chrome3.log 2>&1
+wlrctl toplevel list:
+wlrctl: ../main.c:177: main: Assertion `state.display' failed.
+Trying wlrctl move...
+wlrctl: ../main.c:177: main: Assertion `state.display' failed.
+Aborted
+wlrctl: ../main.c:177: main: Assertion `state.display' failed.
+👉 LOOK AT THE SCREENS: where is the BLUE window?
+Killed
+
+=== STAGE 4: restore + restart ===
+00:00:00.000 [../src/main.c:112] LABWC_PID not set
+
+================ SUMMARY — answer these ================
+STAGE 1 RED window  →  which monitor? [5" / 10.1" / neither]
+STAGE 2 GREEN --kiosk window → which monitor?
+STAGE 3 BLUE window after wlrctl → which monitor?
+(Also paste the geom= lines and any errors above.)
+ngansen@hanryxvault-sat:~ $ 
