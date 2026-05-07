@@ -1,0 +1,110 @@
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== current containers ==="
+docker compose ps 2>&1 | head -20
+
+echo "=== does .env exist? ==="
+ls -la .env 2>&1
+if [ ! -f .env ]; then
+    echo "→ creating from .env.example"
+    cp .env.example .env
+    # generate strong session secret if placeholder
+    sed -i "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" .env
+    sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 16)/" .env
+    grep -E '^(SESSION_SECRET|DB_PASSWORD|ADMIN_PASSWORD)=' .env | sed 's/=.*/=<set>/'
+docker compose logs --tail=30 pos 2>&1 | tail -40h
+=== current containers ===
+time="2026-05-07T00:10:05Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+NAME                    IMAGE                      COMMAND                  SERVICE      CREATED       STATUS                   PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7        "/bin/ollama serve"      assistant    2 days ago    Up 3 hours (unhealthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:pg16     "docker-entrypoint.s…"   db           3 hours ago   Up 3 hours (healthy)     5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:latest   "/entrypoint.sh /usr…"   pgbouncer    3 hours ago   Up 3 hours (healthy)     5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi           "/docker-entrypoint.…"   pokeapi      3 hours ago   Up 3 hours (healthy)     80/tcp
+pi-setup-pos-1          pi-setup-pos               "/entrypoint.sh"         pos          3 hours ago   Up 3 hours (healthy)     0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer        "python -u server.py"    recognizer   3 hours ago   Up 3 hours (healthy)     8081/tcp
+pi-setup-redis-1        redis:7-alpine             "docker-entrypoint.s…"   redis        3 hours ago   Up 3 hours (healthy)     6379/tcp
+pi-setup-storefront-1   pi-setup-storefront        "docker-entrypoint.sh"   storefront   3 hours ago   Up 3 hours (unhealthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync              "/entrypoint.sh pyth…"   sync         2 days ago    Up 3 hours               8080/tcp
+=== does .env exist? ===
+-rw------- 1 ngansen ngansen 357 Apr 25 13:03 .env
+=== bringing up db + redis + pos (this may take a few minutes for first build) ===
+#19 exporting attestation manifest sha256:205d294480eaa404152f4ab6642afa4cc7d1ac4c6eb09b1acc47a738482486de 0.1s done
+#19 exporting manifest list sha256:9c0dd64f697d95617447ff9485e38e9e53cea2d386e492ed5db8650078572799 0.0s done
+#19 naming to docker.io/library/pi-setup-pos:latest
+#19 naming to docker.io/library/pi-setup-pos:latest done
+#19 unpacking to docker.io/library/pi-setup-pos:latest
+#19 unpacking to docker.io/library/pi-setup-pos:latest 0.6s done
+#19 DONE 7.2s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image pi-setup-pos Built 
+ Container pi-setup-db-1 Recreate 
+ Container pi-setup-redis-1 Recreate 
+ db Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ redis Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container pi-setup-db-1 Recreated 
+ Container pi-setup-redis-1 Recreated 
+ Container pi-setup-pos-1 Recreate 
+ pos Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container pi-setup-pos-1 Recreated 
+ Container pi-setup-redis-1 Starting 
+ Container pi-setup-db-1 Starting 
+ Container pi-setup-redis-1 Started 
+ Container pi-setup-db-1 Started 
+ Container pi-setup-db-1 Waiting 
+ Container pi-setup-redis-1 Waiting 
+ Container pi-setup-redis-1 Healthy 
+ Container pi-setup-db-1 Healthy 
+ Container pi-setup-pos-1 Starting 
+ Container pi-setup-pos-1 Started 
+=== waiting 20s for pos to become healthy ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME               IMAGE                                                                                                  COMMAND                  SERVICE   CREATED          STATUS                    PORTS
+pi-setup-db-1      pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10   "docker-entrypoint.s…"   db        31 seconds ago   Up 25 seconds (healthy)   5432/tcp
+pi-setup-pos-1     pi-setup-pos                                                                                           "/entrypoint.sh"         pos       29 seconds ago   Up 20 seconds (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-redis-1   redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275             "docker-entrypoint.s…"   redis     31 seconds ago   Up 26 seconds (healthy)   6379/tcp
+=== /health probe ===
+< Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+< X-Request-ID: 06cc67c8b919
+< X-Content-Type-Options: nosniff
+< X-Frame-Options: SAMEORIGIN
+< Referrer-Policy: strict-origin-when-cross-origin
+< Vary: Accept-Encoding, Cookie
+< 
+{ [315 bytes data]
+* Connection #0 to host localhost left intact
+{"db_size_mb":212.04,"inventory":63,"local_sales":9,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1778112653503,"total_sales":9,"uptime_s":18,"version":"2.0","wal_size_mb":0.0}
+=== last 30 lines of pos logs ===
+time="2026-05-07T00:10:53Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:39 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:40 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:41 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:42 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:43 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:43 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:44 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:44 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:45 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:45 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:46 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:46 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:47 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:47 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:48 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:48 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:49 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:49 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:50 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:50 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:51 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:52 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:52 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:53 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 127.0.0.1 - - [07/May/2026:00:10:53 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/7.88.1"
+pos-1  | 172.19.0.1 - - [07/May/2026:00:10:53 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/8.14.1"
+pos-1  | 100.121.45.69 - - [07/May/2026:00:10:53 +0000] "GET /kiosk/state.json HTTP/1.1" 200 139 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
