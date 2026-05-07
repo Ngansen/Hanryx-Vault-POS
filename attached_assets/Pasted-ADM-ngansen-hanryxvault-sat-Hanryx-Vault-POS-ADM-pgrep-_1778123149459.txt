@@ -1,0 +1,25 @@
+ADM=$ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ ADM=$(pgrep -f -- 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | head -1)ata-dir=/home/ngansen/.haKSK=$(pgrep -f -- 'user-data-dir=/home/ngansen/.hanryx/kiosk-profile' | head -1)gs ==="
+echo "=== admin (PID $ADM) flags ==="tr '\0' '\n' cat /proc/$ADM/cmdline 2>/dev/null | tr '\0' '\n' | grep -E 'ozone-platform|app-id|class='
+echo "=== kiosk (PID $KSK) flags ==="
+echo "=== kiosk (PID $KSK) flags ==="tr '\0' '\n' cat /proc/$KSK/cmdline 2>/dev/null | tr '\0' '\n' | grep -E 'ozone-platform|app-id|class='
+echo "=== wlr toplevels (app_ids?) ==="
+echo "=== wlr toplevels (app_ids?) ==="IR=/run/useWAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 wlrctl toplevel list 2>&1
+echo "👉 What's on each screen NOW?"
+echo "👉 What's on each screen NOW?"
+echo "   10.1\":"
+echo "   5\":"
+=== admin (PID 13358) flags ===
+/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+
+=== kiosk (PID 13372) flags ===
+/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+
+=== wlr toplevels (app_ids?) ===
+chromium-browser (/home/ngansen/.hanryx/kiosk-profile): HanryxVault - Chromium
+chromium-browser (/home/ngansen/.hanryx/admin-profile): HanryxVault POS — Dashboard - Chromium
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+
+👉 What's on each screen NOW?
+   10.1":
+   5":
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
