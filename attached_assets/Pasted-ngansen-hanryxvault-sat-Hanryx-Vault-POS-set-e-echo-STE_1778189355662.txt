@@ -1,0 +1,64 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ set +e
+
+echo === STEP 1: start service - this brings labwc back ===
+sudo systemctl start hanryx-kiosk.service
+echo " sleeping 12s for labwc + launcher startup…" 
+sleep 12
+
+echo === STEP 2: which wayland sockets exist now ===
+ls -la /run/user/1000/wayland-* 2>/dev/null
+
+echo === STEP 3: which one is LIVE ===
+LIVE=""
+for sock in /run/user/1000/wayland-*; do
+  [ -S "$sock" ] || continue
+  case "$sock" in *.lock) continue ;; esac
+echo "👉 Screens NOW?  10.1\":   5\":"ar/log/hanry
+=== STEP 1: start service - this brings labwc back ===
+ sleeping 12s for labwc + launcher startup…
+=== STEP 2: which wayland sockets exist now ===
+srwxrwxr-x 1 ngansen ngansen 0 May  7 16:27 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May  6 21:03 /run/user/1000/wayland-0.lock
+=== STEP 3: which one is LIVE ===
+ LIVE: wayland-0
+=== STEP 4: is labwc actually running ===
+315100 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+=== STEP 5: wait another 30s, then check chromium survival ===
+  admin: PID= etime=
+  kiosk: PID= etime=
+=== STEP 6: toplevels via the LIVE socket ===
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+=== STEP 7: launcher log — what wayland did the launcher pick ===
+[16:10:59] [Admin] crashed in 0s (count=1027, mode=fallback(--disable-gpu))
+[16:10:59] [Admin] crashed in 0s (count=1027, mode=fallback(--disable-gpu))
+[16:12:00] [Kiosk] crashed in 0s (count=1028, mode=fallback(--disable-gpu))
+[16:12:00] [Kiosk] crashed in 0s (count=1028, mode=fallback(--disable-gpu))
+[16:12:01] [Admin] crashed in 1s (count=1028, mode=fallback(--disable-gpu))
+[16:12:01] [Admin] crashed in 1s (count=1028, mode=fallback(--disable-gpu))
+[16:13:02] [Kiosk] crashed in 1s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Kiosk] crashed in 1s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Admin] crashed in 0s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Admin] crashed in 0s (count=1029, mode=fallback(--disable-gpu))
+[16:28:02] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[16:28:02] Initial env: WAYLAND_DISPLAY=wayland-0  XDG_RUNTIME_DIR=/run/user/1000  DISPLAY=:0
+[16:28:02] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[16:28:02] Live Wayland compositor on wayland-0 (XDG_RUNTIME_DIR=/run/user/1000)
+[16:28:06] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[16:28:06] [Admin] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[16:28:10] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[16:28:10] [Kiosk] crashed in 0s (count=1, mode=ANGLE swiftshader)
+[16:28:17] [Admin] crashed in 0s (count=2, mode=ANGLE swiftshader)
+[16:28:17] [Admin] crashed in 0s (count=2, mode=ANGLE swiftshader)
+[16:28:22] [Kiosk] crashed in 1s (count=2, mode=ANGLE swiftshader)
+[16:28:22] [Kiosk] crashed in 1s (count=2, mode=ANGLE swiftshader)
+[16:28:24] [Admin] crashed in 1s (count=1, mode=fallback(--disable-gpu))
+[16:28:24] [Admin] crashed in 1s (count=1, mode=fallback(--disable-gpu))
+[16:28:28] [Kiosk] crashed in 0s (count=1, mode=fallback(--disable-gpu))
+[16:28:28] [Kiosk] crashed in 0s (count=1, mode=fallback(--disable-gpu))
+[16:28:35] [Admin] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[16:28:35] [Admin] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[16:28:39] [Kiosk] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+[16:28:39] [Kiosk] crashed in 0s (count=2, mode=fallback(--disable-gpu))
+
+👉 Screens NOW?  10.1":   5":
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
