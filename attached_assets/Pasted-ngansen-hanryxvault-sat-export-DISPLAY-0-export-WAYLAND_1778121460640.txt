@@ -1,0 +1,72 @@
+ngansen@hanryxvault-sat:~ $ export DISPLAY=:0
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+echo "=== kiosk chromium running? ==="
+pgrep -af 'kiosk-profile' | grep -v zygote | grep -v -- '--type=' | head -3
+
+echo
+echo "=== ALL chromium toplevels (any class) ==="
+for wid in $(xdotool search --classname chromium 2>/dev/null) $(xdotool search --name 'HanryxVault\|Chromium' 2>/dev/null); do
+  cls=$(xprop -id $wid WM_CLASS 2>/dev/null | head -1)
+  geom=$(xdotool getwindowgeometry $wid 2>/dev/null | tr '\n' ' ')
+  echo "wid=$wid cls=$cls $geom"
+echo "   5\":"":"n each screen NOW?"wid 2>/dev/nul
+=== kiosk chromium running? ===
+8286 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+
+=== ALL chromium toplevels (any class) ===
+wid=12582916 cls= Window 12582916   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=14680065 cls= Window 14680065   Position: 10,10 (screen: 0)   Geometry: 10x10 
+wid=16777220 cls= Window 16777220   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=18874369 cls= Window 18874369   Position: 10,10 (screen: 0)   Geometry: 10x10 
+wid=4194308 cls= Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=6291457 cls= Window 6291457   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+=== launcher log tail ===
+[21:32:56] [Kiosk] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[21:32:56] [Kiosk] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[21:33:56] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[21:33:56] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[21:33:56] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[21:33:56] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[7694:7694:0506/213357.014100:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[7694:7694:0506/213357.014232:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[7709:7709:0506/213357.071618:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[7709:7709:0506/213357.071691:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[21:33:58] [Admin] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[21:33:58] [Admin] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[21:33:58] [Kiosk] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[21:33:58] [Kiosk] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[21:34:27] Another launcher instance is already running — exiting (PID 8143)
+[21:34:27] Another launcher instance is already running — exiting (PID 8143)
+[21:34:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[21:34:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[21:34:58] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[21:34:58] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[8270:8306:0506/213501.859472:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[8270:8306:0506/213529.038078:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[8286:8323:0506/213559.229569:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[8270:8306:0506/213610.362088:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[8286:8323:0506/213619.605514:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+
+=== forcibly resize+move EVERY chromium window: kiosk to (1024,0)+800x480, admin stays (0,0)+1024x600 ===
+  wid=4194308 cls=
+  wid=12582916 cls=
+  wid=16777220 cls=
+  wid=6291457 cls=
+  wid=14680065 cls=
+  wid=18874369 cls=
+
+=== final geometry ===
+ | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 12582916   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 16777220   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 6291457   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 14680065   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 18874369   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+👉 What's on each screen NOW?
+   10.1":
+   5":
+ngansen@h

@@ -554,8 +554,13 @@ else
 fi
 
 # ── Write labwc rc.xml window rules so each app_id lands on right output ────
-LABWC_RC="$HOME/.config/labwc/rc.xml"
-mkdir -p "$HOME/.config/labwc"
+# CRITICAL: the satellite kiosk session starts labwc with `-C /etc/hanryx-kiosk/labwc`
+# (see setup-satellite-kiosk-session.sh / setup-satellite-kiosk-systemd.sh). That
+# means labwc reads its rc.xml from /etc/hanryx-kiosk/labwc/rc.xml and IGNORES
+# ~/.config/labwc/rc.xml entirely. Writing to the user path leaves the rules
+# silently unread — which cost us many debug cycles. Always write to the -C dir.
+LABWC_RC="/etc/hanryx-kiosk/labwc/rc.xml"
+sudo mkdir -p /etc/hanryx-kiosk/labwc
 #
 # labwc 0.9.x schema notes (verified against labwc 0.9.2):
 #   • <action name="MoveToOutput"> takes the target as an *attribute*
@@ -568,7 +573,7 @@ mkdir -p "$HOME/.config/labwc"
 #     class component of WM_CLASS (XWayland). Chromium with --class=foo sets
 #     the class component to "Foo" (capitalised first letter), so we match
 #     case-insensitively by globbing the first character.
-cat > "$LABWC_RC" << RCEOF
+sudo tee "$LABWC_RC" > /dev/null << RCEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <labwc_config>
   <windowRules>
@@ -581,7 +586,7 @@ cat > "$LABWC_RC" << RCEOF
   </windowRules>
 </labwc_config>
 RCEOF
-log "labwc rc.xml written → Admin→${WL_ADMIN:-default}  Kiosk→${WL_KIOSK:-default}"
+log "labwc rc.xml written to $LABWC_RC → Admin→${WL_ADMIN:-default}  Kiosk→${WL_KIOSK:-default}"
 # labwc reload: there is no `labwcctl` binary, and the reload signal is SIGHUP
 # (NOT SIGUSR1). The canonical CLI is `labwc --reconfigure`, which itself just
 # sends SIGHUP to the running instance. We try the CLI first, fall back to a
