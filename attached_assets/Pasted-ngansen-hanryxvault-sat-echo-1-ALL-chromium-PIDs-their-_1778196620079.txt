@@ -1,0 +1,119 @@
+ngansen@hanryxvault-sat:~ $ echo "=== 1. ALL chromium PIDs + their URL ==="
+for pid in $(pgrep -f /usr/lib/chromium/chromium); do
+  CMD=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)
+  PROF=$(echo "$CMD" | grep -oE 'user-data-dir=[^ ]+' | head -1)
+  URL=$(echo "$CMD" | grep -oE 'https?://[^ ]+|file://[^ ]+' | head -1)
+  TYPE=$(echo "$CMD" | grep -oE -- '--type=[^ ]+' | head -1)
+  [ -z "$TYPE" ] && echo "  PID=$pid  $PROF  URL=$URL"
+done
+
+echo
+echo "=== 2. toplevels (windows actually visible) ==="
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/use'watchdog|launch|crashed|killed|exit'og | grep -E 
+=== 1. ALL chromium PIDs + their URL ===
+  PID=337329  user-data-dir=/home/ngansen/.hanryx/admin-profile  URL=file:///tmp/hvault-splash-admin.html
+  PID=337454  user-data-dir=/home/ngansen/.hanryx/kiosk-profile  URL=file:///tmp/hvault-splash-kiosk.html
+  PID=338948  user-data-dir=/tmp/chromium-grafana  URL=http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+
+=== 2. toplevels (windows actually visible) ===
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+hvault-kiosk: HanryxVault - Chromium
+hvault-admin: HanryxVault POS — Dashboard - Chromium
+
+=== 3. grafana service + autostart files ===
+inactive
+/home/ngansen/.config/chromium/Crash Reports/pending/7aad147f-ece4-4550-a6b7-d85ee11ba6f2.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/273bd7a8-9988-4f93-ad53-a9b511115333.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/f980d011-da0d-4c97-bd32-5046dfe3c444.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/1a43ee11-985a-462e-8fae-909e08787a71.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/74417557-4cb3-4504-9834-6da8d037d0ac.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/85426d20-efe5-4a8a-984d-93fc308a65e6.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/bcfe495e-c3bc-4442-90d0-440a41ff29bc.dmp
+
+=== 4. watchdog log — has it killed chromium recently? ===
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] Both windows launched — Tailscale tunnel active
+[18:10:08] Both windows launched — Tailscale tunnel active
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+ngansen@hanryxvault-sat:~ $ echo "=== A. who is the PARENT of the grafana chromium ==="
+GP=$(pgrep -f 'user-data-dir=/tmp/chromium-grafana' | head -1)
+echo "  grafana PID: $GP"
+PPID_=$(ps -o ppid= -p $GP | tr -d ' ')
+echo "  parent PID: $PPID_"
+ps -o pid,ppid,user,etime,cmd -p $PPID_
+echo
+echo "  → grandparent:"
+GPPID=$(ps -o ppid= -p $PPID_ | tr -d ' ')
+ps -o pid,ppid,user,etime,cmd -p $GPPID
+echo
+echo "  → all the way up:"
+pstree -palus $GP | head -20
+
+echo
+echo "=== B. grep EVERY conf/script for the grafana launch ==="
+sudo grep -rln 'chromium-grafana\|hanryx-pi-ops' / 2>/dev/null | grep -vE '/proc/|/sys/|/tmp/chromiusystemctl list-unit-files 'hanryx*' --no-pagerte =
+=== A. who is the PARENT of the grafana chromium ===
+  grafana PID: 338948
+  parent PID: 6101
+    PID    PPID USER         ELAPSED CMD
+   6101    6096 ngansen     20:57:55 bash /home/ng
+
+  → grandparent:
+    PID    PPID USER         ELAPSED CMD
+   6096       1 root        20:57:55 sudo -u ngans
+
+  → all the way up:
+systemd,1 splash
+  `-sudo,6096 -u ngansen env DISPLAY=:0 WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 nohup bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+      `-bash,6101,ngansen /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+          `-chromium,338948 --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+              |-chromium,338956
+              |   |-chromium,339092
+              |   |   |-chromium,339095
+              |   |   |-{chromium},339096
+              |   |   |-{chromium},339097
+              |   |   |-{chromium},339098
+              |   |   |-{chromium},339099
+              |   |   |-{chromium},339100
+              |   |   `-{chromium},339111
+              |   `-chromium,339657
+              |       |-chromium,339659
+              |       |-{chromium},339660
+              |       |-{chromium},339661
+              |       |-{chromium},339662
+              |       |-{chromium},339663
+              |       |-{chromium},339664
+
+=== B. grep EVERY conf/script for the grafana launch ===
+
+^C
+
+=== C. labwc autostart ===
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts, as ngansen.
+# NO setsid/nohup: keep launcher inside systemd cgroup so service stop kills it.
+sleep 3 && /home/ngansen/.hanryx-dual-monitor.sh >> /var/log/hanryx-kiosk.log 2>&1 &
+---
+total 24
+drwxr-xr-x 2 root root 4096 May  6 17:38 .
+drwxr-xr-x 3 root root 4096 May  6 17:38 ..
+-rwxr-xr-x 1 root root  251 May  7 16:13 autostart
+-rw-r--r-- 1 root root  113 May  6 17:38 environment
+-rw-r--r-- 1 root root   37 May  6 17:38 menu.xml
+-rw-r--r-- 1 root root  339 May  7 18:10 rc.xml
+
+=== D. ALL hanryx-* services + their state ===
+UNIT FILE                      STATE    PRESET 
+hanryx-boot.service            enabled  enabled
+hanryx-grafana-kiosk.service   masked   enabled
+hanryx-heal.service            static   -      
+hanryx-kiosk.service           enabled  enabled
+hanryx-postgres-backup.service static   -      
+hanryx-watchdog.service        enabled  enabled
+hanryx-heal.timer              enabled  enabled
+hanryx-postgres-backup.timer   disabled enabled
+
+8 unit files listed.
+ngansen@hanryxvault-sat:~ $
