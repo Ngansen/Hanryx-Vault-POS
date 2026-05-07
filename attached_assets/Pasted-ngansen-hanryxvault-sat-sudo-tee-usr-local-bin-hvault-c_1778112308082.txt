@@ -1,0 +1,42 @@
+ngansen@hanryxvault-sat:~ $ sudo tee /usr/local/bin/hvault-chromium-wrapper >/dev/null <<'EOF'
+#!/bin/bash
+# Wait up to 30s for XWayland to actually accept connections on :0
+# (labwc spawns Xwayland lazily; firing chromium too early gets ECONNREFUSED)
+for i in $(seq 1 60); do
+    if python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect("/tmp/.X11-unix/X0"); s.close()' 2>/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+exec env -i \
+    HOME=/home/ngansen USER=ngansen LOGNAME=ngansen \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:es:' | head -10r 2>&1 | grep -E 'HDMI|Position|Mod
+=== clean restart ===
+Killed
+Killed
+
+
+=== filtered launcher log ===
+[19:04:23] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[19:04:23] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[19:04:23] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[19:04:23] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[19:04:27] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[19:04:27] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[19:04:27] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[19:04:27] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+=== chromium hvault count (target = 2 main, many subprocs) ===
+0
+--- main chromium processes ---
+30034 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --no-sandbox --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin file:///tmp/hvault-splash-admin.html
+30083 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --no-sandbox --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk file:///tmp/hvault-splash-kiosk.html
+=== monitors filled? ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Modes:
+  Position: 1024,0
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Modes:
+  Position: 0,0
+ngansen@hanryxvault-sat:~ $ 
+ngansen@hanryxvault-sat:~ $ 
+ngansen@hanryxvault-sat:~ $
