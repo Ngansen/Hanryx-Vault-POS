@@ -936,8 +936,8 @@ ExecStart=/bin/bash -c '\\
     HURL="\${HEALTH_URL:-http://hanryxvault:8080/health}"; \\
     if curl -sf --max-time 3 "\$HURL" > /dev/null 2>&1; then \\
       if [ "\$FAIL" -ge 3 ]; then \\
-        echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "\$LOG"; \\
-        pkill -f chromium 2>/dev/null; \\
+        echo "[watchdog] Server back online — killing kiosk Chromium so launcher restart loop reconnects" | tee -a "\$LOG"; \\
+        pkill -f 'user-data-dir=/home/ngansen/.hanryx/' 2>/dev/null; \\
       fi; \\
       FAIL=0; \\
     else \\
