@@ -1,0 +1,86 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $ # Which output is each chromium window on?
+for pid in $(pgrep -f 'user-data-dir=/home/ngansen/.hanryx' | xargs -I{} sh -c "pgrep -P {} 2>/dev/null; echo {}" | sort -u); do
+  cmd=$(tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null)
+  case "$cmd" in
+    *admin-profile*) role="ADMIN " ;;
+    *kiosk-profile*) role="KIOSK " ;;
+    *) continue ;;
+  esac
+  echo "=== $role pid=$pid ==="
+done
+
+echo "=== labwc rc.xml output assignments ==="
+grep -A1 -E 'app_id|name=' ~/.config/labwc/rc.xml | head -40
+
+doneho "wid=$wid | $name | $geom"ndowname "$wid" 2
+=== ADMIN  pid=8177 ===
+=== ADMIN  pid=8185 ===
+=== ADMIN  pid=8186 ===
+=== ADMIN  pid=8189 ===
+=== ADMIN  pid=8220 ===
+=== ADMIN  pid=8227 ===
+=== ADMIN  pid=8276 ===
+=== ADMIN  pid=8303 ===
+=== ADMIN  pid=8313 ===
+=== KIOSK  pid=8348 ===
+=== KIOSK  pid=8383 ===
+=== KIOSK  pid=8384 ===
+=== KIOSK  pid=8389 ===
+=== KIOSK  pid=8428 ===
+=== KIOSK  pid=8439 ===
+=== KIOSK  pid=8482 ===
+=== KIOSK  pid=8509 ===
+=== KIOSK  pid=8519 ===
+=== labwc rc.xml output assignments ===
+      <action name="MoveToOutput"><output>HDMI-A-1</output></action>
+    </windowRule>
+--
+      <action name="MoveToOutput"><output>HDMI-A-2</output></action>
+    </windowRule>
+=== monitors detected by labwc ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 1024,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1280x1024 px, 60.020000 Hz
+    1280x960 px, 60.000000 Hz
+    1152x864 px, 59.966999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1024x768 px, 60.004002 Hz
+    1440x480 px, 60.000000 Hz
+    1440x480 px, 59.939999 Hz
+    1024x640 px, 59.987999 Hz
+    800x600 px, 60.317001 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 59.939999 Hz
+    720x480 px, 59.939999 Hz
+    640x480 px, 60.000000 Hz
+    640x480 px, 59.939999 Hz
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+=== window geometry per output (via xdotool) ===
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $
