@@ -1,0 +1,68 @@
+ngansen@hanryxvault-sat:~ $ echo "=== A. find what autospawns grafana on the satellite ==="
+sudo grep -rEn 'chromium-grafana|localhost:3001|grafana' \
+    /etc/hanryx-kiosk \
+    /etc/xdg/autostart \
+    /home/ngansen/.config/autostart \
+    /home/ngansen/.config/labwc \
+    /etc/systemd/system \
+    /etc/systemd/user \
+    2>/dev/null | grep -v Binary
+
+echo
+echo "=== B. FULL restart (kills labwc + autostart, respawns clean) ==="
+sudo systemctl stop hanryx-kiosk.service
+sudo pkill -9 -f 'hanryx-dual-monitor' 2>/dev/null 
+sudo pkill -9 -f '/usr/lib/chromium/chromium' 2>/decho "👉 Screens NOW?  10.1\":   5\":"gIR=/run/use
+=== A. find what autospawns grafana on the satellite ===
+/etc/systemd/system/hanryx-boot.service:7:Before=hanryx-grafana-kiosk.service
+
+=== B. FULL restart (kills labwc + autostart, respawns clean) ===
+Killed
+Killed
+ any chromium/launcher left? (should be empty):
+  all clear
+ sleeping 30s…
+
+=== C. survival ===
+  admin: PID=337329 etime=00:24
+  kiosk: PID=337454 etime=00:20
+  grafana stray (should be killed if A pointed at the source):
+337462 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+337496 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+337497 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+337502 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+337547 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,3249330290398462125,15700737008804077929,524288 --field-trial-handle=3,i,17840065689384534916,9466206444598523396,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,9248856657785174601,4657522447095006540,4 --trace-process-track-uuid=3190708989122997041
+337553 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,15404444174443183804,14169492287300908403,524288 --field-trial-handle=3,i,17840065689384534916,9466206444598523396,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,9248856657785174601,4657522447095006540,4 --trace-process-track-uuid=3190708990060038890
+337630 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778119380245745 --launch-time-ticks=76028765692 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,4684058816029595627,14334842159058731826,2097152 --field-trial-handle=3,i,17840065689384534916,9466206444598523396,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,9248856657785174601,4657522447095006540,4 --trace-process-track-uuid=3190708991934122588
+337685 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,10162523543337132195,8246514809830233702,262144 --field-trial-handle=3,i,17840065689384534916,9466206444598523396,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,9248856657785174601,4657522447095006540,4 --trace-process-track-uuid=3190708994745248135
+337735 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --disable-gpu-compositing --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=11 --time-ticks-at-unix-epoch=-1778119380245745 --launch-time-ticks=76034963032 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,743467613374183526,1747561105049554593,2097152 --field-trial-handle=3,i,17840065689384534916,9466206444598523396,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,9248856657785174601,4657522447095006540,4 --trace-process-track-uuid=3190708996619331833
+
+=== D. toplevels ===
+hvault-kiosk: HanryxVault - Chromium
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+hvault-admin: HanryxVault POS — Dashboard - Chromium
+
+=== E. launcher log tail ===
+[18:10:03] DISPLAY=:0  (XWayland via labwc)
+[18:10:03] DISPLAY=:0  (XWayland via labwc)
+[18:10:03] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[18:10:03] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[18:10:03] XWayland socket ready on /tmp/.X11-unix/X0 after 500ms
+[18:10:03] XWayland socket ready on /tmp/.X11-unix/X0 after 500ms
+[18:10:04] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:10:04] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[18:10:04] [Admin] → file:///tmp/hvault-splash-admin.html  (default(GPU+VAAPI))  backoff=5s
+[18:10:04] [Admin] → file:///tmp/hvault-splash-admin.html  (default(GPU+VAAPI))  backoff=5s
+[337329:337349:0507/181008.300173:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] Both windows launched — Tailscale tunnel active
+[18:10:08] Both windows launched — Tailscale tunnel active
+[18:10:08] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[18:10:08] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[18:10:08] Heartbeat loop started (PID 337463)
+[18:10:08] Heartbeat loop started (PID 337463)
+[337454:337454:0507/181009.444050:ERROR:mojo/public/cpp/bindings/lib/interface_endpoint_client.cc:748] Message 2 rejected by interface blink.mojom.Widget
+
+👉 Screens NOW?  10.1":   5":
+ngansen@hanryxvault-sat:~ $
