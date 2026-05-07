@@ -1,0 +1,43 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull --ff-only && cd pi-setup
+
+# Re-extract launcher with the new SIGHUP-based reload
+awk "/^cat > \"\\\$LAUNCH_SCRIPT\" << 'LAUNCH'\$/{p=1; next} /^LAUNCH\$/{p=0} p" \
+    setup-satellite-kiosk-boot.sh > /tmp/new-launcher.sh
+echo "=== reload block (should mention SIGHUP) ==="
+grep -n -E 'labwc --reconfigure|pkill -HUP|SIGHUP' /tmp/new-launcher.sh
+
+sudo install -o ngansen -g ngansen -m 755 /tmp/new-launcher.sh /home/ngansen/.hanryx-dual-monitor.sh 
+
+iosk.log | tail -25ssigned|WARN' /var/log/hanryx-k
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.21 KiB | 620.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   8358e67..f52dadc  main       -> origin/main
+Updating 8358e67..f52dadc
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 16 +++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+=== reload block (should mention SIGHUP) ===
+196:# labwc reload: there is no `labwcctl` binary, and the reload signal is SIGHUP
+197:# (NOT SIGUSR1). The canonical CLI is `labwc --reconfigure`, which itself just
+198:# sends SIGHUP to the running instance. We try the CLI first, fall back to a
+201:if labwc --reconfigure 2>>"$LOG_FILE"; then
+203:elif pkill -HUP -x labwc 2>>"$LOG_FILE"; then
+204:    log "labwc reloaded via SIGHUP"
+Killed
+Killed
+=== launcher log (look for 'labwc reloaded via …') ===
+[20:17:20] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[20:17:20] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[20:17:20] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[20:17:20] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[20:17:20] labwc reloaded via --reconfigure
+[20:17:20] labwc reloaded via --reconfigure
+[20:17:22] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[20:17:22] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[20:17:26] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[20:17:26] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $
