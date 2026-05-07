@@ -1,0 +1,87 @@
+ngansen@hanryxvault-sat:~ $ export DISPLAY=:0
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+# 1. Confirm admin's current X position (should be 1024 if rule put it on HDMI-A-2)
+echo "=== current geometry (admin should be at X=1024) ==="
+for wid in $(xdotool search --classname chromium 2>/dev/null); do
+  cls=$(xprop -id $wid WM_CLASS 2>/dev/null | head -1)
+  geom=$(xdotool getwindowgeometry $wid 2>/dev/null | tr '\n' ' ')
+  echo "$cls | $geom"
+done
+
+# 2. Restore correct mapping + force re-fullscreen on target output
+ 10.1\" and kiosk shop on 5\""— should be admin on
+=== current geometry (admin should be at X=1024) ===
+ | Window 6291460   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 8388609   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 10485761   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+=== writing corrected rc.xml (admin→HDMI-A-1, kiosk→HDMI-A-2 with re-fullscreen) ===
+00:00:00.000 [../src/main.c:112] LABWC_PID not set
+
+
+=== geometry AFTER fix (admin should be 1024x600 @ 0,0; kiosk 800x480 @ 1024,0) ===
+ | Window 6291460   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 8388609   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 10485761   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+👉 Look at both screens — should be admin on 10.1" and kiosk shop on 5"
+ngansen@hanryxvault-sat:~ $ 
+ngansen@hanryxvault-sat:~ $ export DISPLAY=:0
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+# Restore correct mapping
+sudo tee /etc/hanryx-kiosk/labwc/rc.xml > /dev/null << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="[Hh]vault-admin">
+      <action name="MoveToOutput" output="HDMI-A-1"/>
+    </windowRule>
+    <windowRule identifier="[Hh]vault-kiosk">
+      <action name="MoveToOutput" output="HDMI-A-2"/>
+    </windowRule>
+  </windowRules>
+text, blank, or black?)"\" show now? (green KIOSK 
+Killed
+[1] 5799
+[1]+  Exit 1                  nohup chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=x11 --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin "data:text/html,<body style=background:#222;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-size:64px>ADMIN 10.1\"" > /tmp/admin.log 2>&1
+[1] 5929
+[1]+  Exit 1                  nohup chromium --no-first-run --noerrdialogs --ozone-platform=x11 --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk --window-size=800,480 --window-position=0,0 "data:text/html,<body style=background:#005;color:lime;display:flex;align-items:center;justify-content:center;height:100vh;font-size:48px>KIOSK 5\"" > /tmp/kiosk.log 2>&1
+=== geometry now ===
+👉 What does the 5" show now? (green KIOSK text, blank, or black?)
+ngansen@hanryxvault-sat:~ $ export DISPLAY=:0
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+# 1. Restore correct rule
+sudo tee /etc/hanryx-kiosk/labwc/rc.xml > /dev/null << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="[Hh]vault-admin">
+      <action name="MoveToOutput" output="HDMI-A-1"/>
+    </windowRule>
+    <windowRule identifier="[Hh]vault-kiosk">
+      <action name="MoveToOutput" output="HDMI-A-2"/>
+    </windowRule>
+  </windowRules>
+echo "   5\":"":"n each screen now?" $KIOSK_WID 2>
+Killed
+=== xrandr / X root size ===
+Screen 0: minimum 16 x 16, current 1824 x 600, maximum 32767 x 32767
+HDMI-A-1 connected 1024x600+0+0 (normal left inverted right x axis y axis) 150mm x 90mm
+   1024x600      59.85*+
+   800x600       59.86  
+   640x480       59.38  
+1024 600
+kiosk wid=
+
+👉 What's on each screen now?
+   10.1":
+   5":
+ngansen@hanryxvault-sat:~ $
