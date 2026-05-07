@@ -1,0 +1,67 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull --ff-only && cd pi-setup
+
+# Re-extract the launcher (it embeds the rc.xml writer)
+awk "/^cat > \"\\\$LAUNCH_SCRIPT\" << 'LAUNCH'\$/{p=1; next} /^LAUNCH\$/{p=0} p" \
+    setup-satellite-kiosk-boot.sh > /tmp/new-launcher.sh
+echo "Should show output= as ATTRIBUTE (not <output>...):"
+grep -A1 'MoveToOutput' /tmp/new-launcher.sh | head -8
+
+sudo install -o ngansen -g ngansen -m 755 /tmp/new-launcher.sh /home/ngansen/.hanryx-dual-monitor.sh 
+
+# Full clean restart so labwc re-reads rc.xml fromL' /var/log/hanryx-kiosk.log | tail -25rc.xml|FATA
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.30 KiB | 221.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   31d8fd4..8358e67  main       -> origin/main
+Updating 31d8fd4..8358e67
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 20 ++++++++--
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+Should show output= as ATTRIBUTE (not <output>...):
+#   • <action name="MoveToOutput"> takes the target as an *attribute*
+#     (output="HDMI-A-1"), NOT as a child element <output>...</output>.
+--
+      <action name="MoveToOutput" output="${WL_ADMIN}"/>
+    </windowRule>
+--
+      <action name="MoveToOutput" output="${WL_KIOSK}"/>
+    </windowRule>
+Killed
+Killed
+=== rc.xml that was actually written ===
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="[Hh]vault-admin">
+      <action name="MoveToOutput" output="HDMI-A-1"/>
+    </windowRule>
+    <windowRule identifier="[Hh]vault-kiosk">
+      <action name="MoveToOutput" output="HDMI-A-2"/>
+    </windowRule>
+  </windowRules>
+</labwc_config>
+=== launcher log ===
+[20:03:59] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[20:03:59] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[20:04:00] Admin URL : http://hanryxvault:8080/admin
+[20:04:00] Admin URL : http://hanryxvault:8080/admin
+[20:04:00] Kiosk URL : http://hanryxvault:8080/kiosk
+[20:04:00] Kiosk URL : http://hanryxvault:8080/kiosk
+[20:04:00] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[20:04:00] Auto-assigned by width: Admin(1024px)=HDMI-A-1  Kiosk(800px)=HDMI-A-2
+[20:04:00] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[20:04:00] labwc rc.xml written → Admin→HDMI-A-1  Kiosk→HDMI-A-2
+[20:04:00] DISPLAY=:0  (XWayland via labwc)
+[20:04:00] DISPLAY=:0  (XWayland via labwc)
+[20:04:00] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[20:04:00] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[20:04:05] XWayland socket ready on /tmp/.X11-unix/X0 after 5500ms
+[20:04:05] XWayland socket ready on /tmp/.X11-unix/X0 after 5500ms
+[20:04:06] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[20:04:06] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[20:04:10] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[20:04:10] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $
