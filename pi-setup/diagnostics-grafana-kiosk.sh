@@ -26,6 +26,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 
+# ── Hostname guard ──────────────────────────────────────────────────────────
+# This kiosk is for the MAIN pi's 7" admin diagnostic screen ONLY. Grafana
+# binds to localhost:3001 only on the main pi; on the satellite localhost:3001
+# does not exist and chromium shows ERR_CONNECTION_REFUSED on whichever HDMI
+# output labwc happens to place it on. Bail loudly so this never silently
+# hijacks a satellite kiosk screen again.
+HOSTNAME_NOW="$(hostname -s 2>/dev/null || hostname)"
+case "$HOSTNAME_NOW" in
+  hanryxvault) ;;  # main pi — proceed
+  *)
+    echo "[diagnostics-grafana-kiosk] refusing to run on host '$HOSTNAME_NOW'" >&2
+    echo "[diagnostics-grafana-kiosk] this script is for the MAIN pi (hanryxvault) ONLY" >&2
+    echo "[diagnostics-grafana-kiosk] grafana is at localhost:3001 only on the main pi" >&2
+    exit 2
+    ;;
+esac
+
 LOG=/tmp/grafana-kiosk.log
 URL="http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark"
 USER_DATA_DIR=/tmp/chromium-grafana
