@@ -647,8 +647,9 @@ log "DISPLAY=$DISPLAY  (XWayland via labwc)"
 # before Xwayland has bound its socket, connect() returns ECONNREFUSED and
 # chromium dies with "Missing X server or $DISPLAY". Block here until the
 # X socket is real (up to 30s), so the launch loop only ever sees a live X.
-X_SOCK="/tmp/.X11-unix/X${DISPLAY#:}"
-X_SOCK="${X_SOCK%%.*}"   # strip ".0" from ":0.0" style
+DISP_NUM="${DISPLAY#:}"      # ":0" → "0", ":0.0" → "0.0"
+DISP_NUM="${DISP_NUM%%.*}"   # strip optional ".N" screen suffix → "0"
+X_SOCK="/tmp/.X11-unix/X${DISP_NUM}"
 log "Waiting for XWayland to accept connections on $X_SOCK …"
 x_ready=0
 for i in $(seq 1 60); do
