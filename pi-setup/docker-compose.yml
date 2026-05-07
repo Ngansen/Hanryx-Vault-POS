@@ -22,7 +22,28 @@ services:
       POSTGRES_USER:     vaultpos
       POSTGRES_PASSWORD: ${DB_PASSWORD:-vaultpos}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres data dir lives on the UGreen USB drive at
+      # /mnt/cards/postgres-data by default — same drive as
+      # cards_master images, CLIP/OCR model files, and the FAISS
+      # index. Keeping the DB and the bulky offline assets on the
+      # same physical drive means a single removable medium carries
+      # the entire offline state of the POS (embeddings + OCR text
+      # + image local paths + model files) — pull the drive, plug it
+      # into a different Pi, `docker compose up`, and you're trading
+      # again at a different booth.
+      #
+      # The DB_DATA_DIR env var is the migration knob: set it in
+      # pi-setup/.env to the legacy Docker-volume path
+      # (`/var/lib/docker/volumes/pi-setup_pgdata/_data`) on the
+      # first boot AFTER pulling this commit, run
+      # `pi-setup/scripts/move_pgdata_to_drive.sh`, then unset
+      # DB_DATA_DIR so the default takes over. See the script for
+      # the full safety-checked migration flow.
+      - type: bind
+        source: ${DB_DATA_DIR:-/mnt/cards/postgres-data}
+        target: /var/lib/postgresql/data
+        bind:
+          propagation: rslave
       - ./init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vaultpos -d vaultpos"]
@@ -170,6 +191,19 @@ services:
       # if the local mirror is unreachable.
       POKEAPI_BASE_URL: ${POKEAPI_BASE_URL:-http://pokeapi/api/v2}
 
+      # PaddleOCR model cache root (one subdir per language: korean/,
+      # japan/, ch/, en/). On the USB drive by default so the
+      # ~50-100MB-per-language model downloads survive container
+      # rebuilds and SD card reflashes. The ocr_index worker reads
+      # this and passes per-language det_model_dir/rec_model_dir to
+      # PaddleOCR; if the dir is empty PaddleOCR downloads the
+      # models there on first use.
+      OCR_MODELS_DIR: ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+
+      # CLIP visual-recognition model file. The clip_embed worker
+      # mmaps this ONNX file into onnxruntime; ~350MB on disk.
+      CLIP_MODEL_PATH: ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
+
       # Pokémon-card-recognizer service (separate container, see below).
       RECOGNIZER_BASE_URL: ${RECOGNIZER_BASE_URL:-http://recognizer:8081}
 
@@ -205,8 +239,25 @@ services:
       # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
       # NOTIFY_EMAIL:      alerts@example.com
     volumes:
-      - pos-data:/data
-      - card-images:/app/card-images
+      # Flask /data — uploads, transient scratch, scan-queue artifacts.
+      # Lives on the USB drive by default so it survives a `docker
+      # compose down -v` and so the SD card stays read-mostly (extends
+      # SD lifetime — writes are the #1 killer of consumer microSD).
+      # Override via POS_DATA_DIR in pi-setup/.env to keep on SD card.
+      - type: bind
+        source: ${POS_DATA_DIR:-/mnt/cards/pos-data}
+        target: /data
+        bind:
+          propagation: rslave
+      # Card-image cache (legacy/transient). On the drive for the
+      # same SD-longevity reason. The canonical card-image storage
+      # is /mnt/cards/cards_master/ via HANRYX_LOCAL_DB_DIR — this
+      # mount is for the Flask app's local working copy.
+      - type: bind
+        source: ${CARD_IMAGES_DIR:-/mnt/cards/card-images}
+        target: /app/card-images
+        bind:
+          propagation: rslave
       # Idle-screen video playlist (downloaded by hanryxvault-kiosk-videos.timer
       # on the host into /opt/hanryxvault/kiosk/videos/).  Read-only inside the
       # container; Flask serves them via /kiosk/videos/<file>.
@@ -330,6 +381,11 @@ services:
       REDIS_URL:       redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
       HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+      # Same on-drive defaults as the pos service — the workers/run
+      # CLI runs equally well in either container, so both need to
+      # know where the model files live.
+      OCR_MODELS_DIR:      ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+      CLIP_MODEL_PATH:     ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
       SYNC_TICK_SECONDS:   ${SYNC_TICK_SECONDS:-60}
       SYNC_LOG_LEVEL:      ${SYNC_LOG_LEVEL:-INFO}
       # Inherit the same upstream API keys the importers need so we don't
@@ -391,7 +447,11 @@ services:
       # being a hard dependency for the assistant container.
       - ollama-data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      # Ollama image has no curl/wget — use the bundled `ollama` CLI which
+      # exits 0 only when the daemon on $OLLAMA_HOST (default 127.0.0.1:11434)
+      # responds. Falls back to a TCP connect via /dev/tcp if the CLI is ever
+      # missing, so the check survives image upgrades.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || (exec 3<>/dev/tcp/127.0.0.1/11434) 2>/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -416,7 +476,16 @@ services:
     build: ./pokeapi
     restart: unless-stopped
     volumes:
-      - pokeapi-data:/usr/share/nginx/html
+      # Offline PokeAPI mirror static files (~240 MB after first sync).
+      # On the USB drive by default. Override with POKEAPI_DATA_DIR if
+      # you want to keep it on SD (small enough that it's reasonable
+      # either way; default-on-drive matches the rest of the bulky
+      # state).
+      - type: bind
+        source: ${POKEAPI_DATA_DIR:-/mnt/cards/pokeapi-data}
+        target: /usr/share/nginx/html
+        bind:
+          propagation: rslave
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
       interval: 30s
@@ -458,7 +527,8 @@ services:
       # Hits the dedicated /health route in the storefront (server/index.ts) —
       # returns 200 instantly, no DB call, no auth, no body parsing. Independent
       # of business routes so a transient DB hiccup doesn't restart the container.
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      # Node base image has no curl; use node's built-in http module instead.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -471,11 +541,13 @@ services:
         max-file: "3"
 
 volumes:
-  pgdata:
-  pos-data:
-  card-images:
-  pokeapi-data:
-  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). Kept on SD
-  # card rather than USB so the assistant container doesn't hard-depend
-  # on the USB being plugged in to start.
+  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). The ONLY
+  # remaining named volume — every other piece of bulky state has been
+  # moved to bind-mounts on /mnt/cards (see the `db`, `pos`, and
+  # `pokeapi` service blocks above). Ollama stays on SD on purpose:
+  # if the USB drive is unplugged, the assistant container should
+  # still come up and answer "I'm offline" rather than failing to
+  # start at all. See pi-setup/scripts/move-volumes-to-drive.sh for
+  # the one-time migration of the four legacy volumes (pgdata,
+  # pos-data, card-images, pokeapi-data) to the drive.
   ollama-data:
