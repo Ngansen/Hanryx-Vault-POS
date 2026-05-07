@@ -1,0 +1,84 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== /etc/hanryx-kiosk/labwc/autostart ==="
+sudo cat /etc/hanryx-kiosk/labwc/autostart
+echo
+echo "=== /usr/local/bin/hanryx-kiosk-launch ==="
+sudo cat /usr/local/bin/hanryx-kiosk-launch
+echo
+echo "=== confirm the launcher file we 'installed' actually has wayland ==="
+grep -n -- '--ozone-platform' /home/ngansen/.hanryx-dual-monitor.sh
+echo
+echo "=== md5 compare: live launcher vs repo launcher ==="
+md5sum /home/ngansen/.hanryx-dual-monitor.sh ~/Hanryx-Vault-POS/pi-setup/setup-satellite-kiosk-boot.sh
+echo
+echo "=== ALL files anywhere on system that contain literal --ozone-platform=x11 (not in comments) =doneD=$ppidID=$PID  cmd=$cmd"$PID -o ppid=,cmd= 2>
+=== /etc/hanryx-kiosk/labwc/autostart ===
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts.
+# Must export DISPLAY/XAUTHORITY because chromium uses --ozone-platform=x11
+# (XWayland), and setsid+nohup detaches from labwc's env.
+(
+    sleep 5
+    export DISPLAY=:0
+    export XAUTHORITY=/home/ngansen/.Xauthority
+    export WAYLAND_DISPLAY=wayland-0
+    export XDG_RUNTIME_DIR=/run/user/1000
+    export XDG_SESSION_TYPE=wayland
+    export MOZ_ENABLE_WAYLAND=1
+    setsid nohup /bin/bash /home/ngansen/.hanryx-dual-monitor.sh \
+        >> /var/log/hanryx-kiosk.log 2>&1 < /dev/null &
+) &
+
+=== /usr/local/bin/hanryx-kiosk-launch ===
+#!/bin/sh
+# Launched by hanryx-kiosk.service as ngansen. Sets the runtime env labwc
+# needs when started outside a logind session (no greeter).
+set -e
+
+export HOME="/home/ngansen"
+export USER="ngansen"
+export LOGNAME="ngansen"
+export SHELL="/bin/bash"
+
+# logind/seatd-friendly runtime dir (XDG_RUNTIME_DIR must exist + be 0700)
+export XDG_RUNTIME_DIR="/run/user/1000"
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chown "ngansen:ngansen" "$XDG_RUNTIME_DIR"
+    chmod 0700 "$XDG_RUNTIME_DIR"
+fi
+
+# Kiosk-session env (also re-applied by /etc/hanryx-kiosk/labwc/environment)
+export XDG_CURRENT_DESKTOP=labwc:wlroots
+export XDG_SESSION_DESKTOP=hanryx-kiosk
+export XDG_SESSION_TYPE=wayland
+export MOZ_ENABLE_WAYLAND=1
+
+cd "$HOME"
+exec /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+=== confirm the launcher file we 'installed' actually has wayland ===
+395:#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
+707:#   • Under XWayland (--ozone-platform=x11) ALL chromium windows share one
+731:    --ozone-platform=wayland
+
+=== md5 compare: live launcher vs repo launcher ===
+0294e03790be943513594e0dd31618cb  /home/ngansen/.hanryx-dual-monitor.sh
+0294e03790be943513594e0dd31618cb  /home/ngansen/Hanryx-Vault-POS/pi-setup/setup-satellite-kiosk-boot.sh
+
+=== ALL files anywhere on system that contain literal --ozone-platform=x11 (not in comments) ===
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --no-first-run --noerrdialogs --disable-infobars     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     --window-size=400,300     "data:text/html,<body style=background:red><h1>STAGE1</h1>"     >/tmp/chrome1.log 2>&1 &
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --kiosk --no-first-run --noerrdialogs --disable-infobars     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     "data:text/html,<body style=background:lime><h1>STAGE2 KIOSK</h1>"     >/tmp/chrome2.log 2>&1 &
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --kiosk --no-first-run --noerrdialogs     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     "data:text/html,<body style=background:blue><h1 style=color:white>STAGE3</h1>"     >/tmp/chrome3.log 2>&1 &
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-40-var-log-hanryx-kiosk-log-ec_1776517621931.txt:2725 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk --app-id=hvault-kiosk http://192.168.86.36:8080/kiosk
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3871 210672 /usr/lib/chromium/chromium --type=gpu-process --disable-gpu-sandbox --disable-dev-shm-usage --enable-gpu-rasterization --enable-low-end-device-mode --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/left --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,16901224356694899215,7730574352691355913,262144 --field-trial-handle=3,i,1903093330645518925,5407113539686885704,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16283037622257091941,12387580342487376372,4 --trace-process-track-uuid=3190708988185955192
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3993 180256 /usr/lib/chromium/chromium --type=gpu-process --disable-gpu-sandbox --disable-dev-shm-usage --enable-gpu-rasterization --enable-low-end-device-mode --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/right --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,15933794565929182368,6145749744827548865,262144 --field-trial-handle=3,i,10198441723225613958,1316528541886112321,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16059913524610509417,18312610585956751546,4 --trace-process-track-uuid=3190708988185955192
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3900 175408 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/left --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --js-flags=--max-old-space-size=128 --enable-low-end-device-mode --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1776600526019882 --launch-time-ticks=957595325 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12072790061047105457,11221309756515780589,2097152 --field-trial-handle=3,i,1903093330645518925,5407113539686885704,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16283037622257091941,12387580342487376372,4 --trace-process-track-uuid=3190708990997080739
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-sudo-apt-update-qq-sudo-apt-install_1776518263215.txt:inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-sudo-apt-update-qq-sudo-apt-install_1776518263215.txt:inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+/home/ngansen/Hanryx-Vault-POS/pi-setup/SATELLITE_AUDIT.md:**Fix**: pick one and stick to it. For Pi OS Bookworm Chromium I recommend XWayland (more reliable hardware-decode on Pi 5) with explicit `--ozone-platform=x11`, and use `WM_CLASS` matching in the rules.
+
+=== what process is the parent of chromium 14787? trace the chain back to systemd ===
+  PID=14787  cmd=/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+  PID=1736  cmd=/bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+  PID=1500  cmd=/bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen@hanryxvault-sat:~/Hanryx-Vault-PO
