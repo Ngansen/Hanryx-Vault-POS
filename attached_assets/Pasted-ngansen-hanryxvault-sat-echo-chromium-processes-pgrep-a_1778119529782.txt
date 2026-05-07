@@ -1,0 +1,96 @@
+ngansen@hanryxvault-sat:~ $ echo "=== chromium processes ==="
+pgrep -af chromium | grep -E 'admin-profile|kiosk-profile' | grep -v zygote
+
+echo
+echo "=== launcher log (last 40) ==="
+sudo tail -40 /var/log/hanryx-kiosk.log
+
+echo
+echo "=== kiosk splash content ==="
+ls -la /tmp/hvault-splash-kiosk.html 2>&1
+head -20 /tmp/hvault-splash-kiosk.html 2>&1
+
+echo
+echo "👉 Look at the 5\": is it (a) just dim blue, (b) blue with a HanryxVault splash/loading text, or (c) showing the kiosk shop UI?"
+=== chromium processes ===
+1746 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin file:///tmp/hvault-splash-admin.html
+1804 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16286764507201296063,6345364911343264080,524288 --field-trial-handle=3,i,18413478077996300542,4080021775095746860,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,5973824480524508375,17744289626261255582,4 --trace-process-track-uuid=3190708989122997041
+1813 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16879007060537614915,7779607474295221189,524288 --field-trial-handle=3,i,18413478077996300542,4080021775095746860,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,5973824480524508375,17744289626261255582,4 --trace-process-track-uuid=3190708990060038890
+1830 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=25374872 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12335796264924213792,611157389368700781,2097152 --field-trial-handle=3,i,18413478077996300542,4080021775095746860,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,5973824480524508375,17744289626261255582,4 --trace-process-track-uuid=3190708991934122588
+1857 /usr/lib/chromium/chromium --type=gpu-process --disable-dev-shm-usage --disable-breakpad --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,17500655974422925526,2988176652210663887,262144 --field-trial-handle=3,i,18413478077996300542,4080021775095746860,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,5973824480524508375,17744289626261255582,4 --trace-process-track-uuid=3190708993808206286
+1924 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk file:///tmp/hvault-splash-kiosk.html
+1975 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5584296555696313465,3667362316848874997,524288 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708989122997041
+1985 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/admin-profile --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --disable-gpu-compositing --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=9 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=26499927 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,2160830401095932088,13245719479737888301,2097152 --field-trial-handle=3,i,18413478077996300542,4080021775095746860,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,5973824480524508375,17744289626261255582,4 --trace-process-track-uuid=3190708994745248135
+1999 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,1576027889633061491,5197946697571872285,524288 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708990060038890
+2022 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=26643839 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12896054912432391009,16092131685845630303,2097152 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708991934122588
+2062 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --disable-breakpad --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=8 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=26861023 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16846087948761157259,17932999585888825687,2097152 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708993808206286
+2090 /usr/lib/chromium/chromium --type=gpu-process --disable-dev-shm-usage --disable-breakpad --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,9515803496310806778,18049936360704687637,262144 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708995682289984
+2101 /usr/lib/chromium/chromium --type=utility --utility-sub-type=audio.mojom.AudioService --lang=en-GB --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12677755698403192086,17857417371451111299,524288 --field-trial-handle=3,i,12811558775996012387,17025137738437345055,262144 --enable-features=VaapiVideoDecoder --disable-features=EyeDropper,Translate,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,8635502962932533591,7041243013176336964,4 --trace-process-track-uuid=3190708996619331833
+
+=== launcher log (last 40) ===
+[21:03:21] XWayland socket ready on /tmp/.X11-unix/X0 after 500ms
+[21:03:22] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[21:03:22] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[21:03:22] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[21:03:22] [Admin] → file:///tmp/hvault-splash-admin.html  (ANGLE swiftshader)  backoff=5s
+[1798:1798:0506/210325.245424:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[1798:1798:0506/210325.245629:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[1798:1798:0506/210325.245675:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[1798:1798:0506/210325.245711:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[1798:1798:0506/210325.255921:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[1842:1842:0506/210325.915296:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[1842:1842:0506/210325.915417:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[1842:1842:0506/210325.915459:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[1842:1842:0506/210325.915498:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[1842:1842:0506/210325.916391:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[21:03:26] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[21:03:26] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[21:03:26] Both windows launched — Tailscale tunnel active
+[21:03:26] Both windows launched — Tailscale tunnel active
+[21:03:26] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[21:03:26] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (ANGLE swiftshader)  backoff=5s
+[1970:1970:0506/210326.879792:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[1970:1970:0506/210326.881885:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[1970:1970:0506/210326.881971:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[1970:1970:0506/210326.882013:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[1970:1970:0506/210326.883855:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[21:03:27] Heartbeat loop started (PID 2043)
+[21:03:27] Heartbeat loop started (PID 2043)
+[2040:2040:0506/210327.166797:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[2040:2040:0506/210327.167867:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[2040:2040:0506/210327.167948:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[2040:2040:0506/210327.167993:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[2040:2040:0506/210327.170807:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[2080:2080:0506/210327.330540:ERROR:ui/gl/gl_context_egl.cc:120] GLES3 is unsupported and ES version fallback is disabled
+[2080:2080:0506/210327.330664:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[2080:2080:0506/210327.330734:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[2080:2080:0506/210327.330775:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[2080:2080:0506/210327.333421:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[1746:1768:0506/210330.061797:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[1746:1768:0506/210355.784945:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+
+=== kiosk splash content ===
+-rw-rw-r-- 1 ngansen ngansen 1975 May  6 21:03 /tmp/hvault-splash-kiosk.html
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>HanryxVault — Connecting…</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0a;color:#fff;font-family:'Segoe UI',sans-serif;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       height:100vh;overflow:hidden}
+  .logo{font-size:72px;margin-bottom:28px;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.7;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}
+  h1{font-size:36px;font-weight:900;color:#facc15;letter-spacing:2px;margin-bottom:8px}
+  .sub{font-size:15px;color:#555;margin-bottom:48px;letter-spacing:1px}
+  .dot-wrap{display:flex;gap:12px;margin-bottom:36px}
+  .dot{width:12px;height:12px;border-radius:50%;background:#facc15;
+       animation:bounce 1.4s ease-in-out infinite}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+  .status{font-size:13px;color:#333;min-height:20px;letter-spacing:.5px}
+  .label{position:fixed;bottom:20px;right:24px;font-size:11px;color:#222;letter-spacing:1px}
+</style></head><body>
+<div class="logo">🃏</div><h1>HanryxVault</h1><p class="sub">Trading Card Shop</p>
+
+👉 Look at the 5": is it (a) just dim blue, (b) blue with a HanryxVault splash/loading text, or (c) showing the kiosk shop UI?
+ngansen@hanryxvault-sat:~ $
