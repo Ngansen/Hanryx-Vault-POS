@@ -1,0 +1,107 @@
+ngansen@hanryxvault:~ $ echo "=== A. show what's currently on tty1 + the autologin override ==="
+sudo systemctl status getty@tty1.service --no-pager -n 5
+sudo find /etc/systemd/system -name '*.conf' -path '*getty*' -exec ls -la {} \; -exec cat {} \;
+ls /etc/systemd/system/getty.target.wants/
+
+echo
+echo "=== B. nuke ALL tty1 getty + autologin + our broken service ==="
+sudo systemctl stop hanryx-grafana-kiosk.service
+sudo systemctl stop getty@tty1.service
+sudo systemctl mask getty@tty1.service
+sudo rm -rf /etc/systemd/system/getty@tty1.service.d
+sudo rm -rf /etc/systemd/system/getty.target.wants/getty@tty1.service
+sudo pkill -KILL -t tty1 2>/dev/null
+echo "===-n 40l -u hanryx-grafana-kiosk.service --
+=== A. show what's currently on tty1 + the autologin override ===
+● getty@tty1.service - Getty on tty1
+     Loaded: loaded (/usr/lib/systemd/system/getty@.service; disabled; preset: enabled)
+     Active: active (running) since Thu 2026-05-07 23:46:57 GMT; 1min 44s ago
+ Invocation: 4ee60c60059e431db9b8810fca9ca7f3
+       Docs: man:agetty(8)
+             man:systemd-getty-generator(8)
+             https://0pointer.de/blog/projects/serial-console.html
+   Main PID: 1264132 (agetty)
+      Tasks: 1 (limit: 9570)
+        CPU: 11ms
+     CGroup: /system.slice/system-getty.slice/getty@tty1.service
+             └─1264132 /sbin/agetty -o "-- \\u" -…
+
+May 07 23:46:57 hanryxvault systemd[1]: getty@tt….
+May 07 23:46:57 hanryxvault systemd[1]: Started ….
+Hint: Some lines were ellipsized, use -l to show in full.
+ls: cannot access '/etc/systemd/system/getty.target.wants/': No such file or directory
+
+=== B. nuke ALL tty1 getty + autologin + our broken service ===
+Created symlink '/etc/systemd/system/getty@tty1.service' → '/dev/null'.
+  who/what on tty1 now:
+  tty1 free ✅
+
+=== C. show the unit + the labwc journal from last try ===
+[Unit]
+Description=HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1)
+After=systemd-user-sessions.service multi-user.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ngansen
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/home/ngansen
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/bin/labwc -C /etc/hanryx-grafana-kiosk/labwc
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
+---
+May 07 23:45:09 hanryxvault (labwc)[1261684]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:45:09 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:14 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 24.
+May 07 23:45:14 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:15 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:20 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 25.
+May 07 23:45:20 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:20 hanryxvault (labwc)[1261935]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:45:20 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:25 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 26.
+May 07 23:45:25 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:26 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:31 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 27.
+May 07 23:45:31 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:31 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:36 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 28.
+May 07 23:45:36 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:36 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:42 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 29.
+May 07 23:45:42 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:42 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:47 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 30.
+May 07 23:45:47 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:47 hanryxvault (labwc)[1262564]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:45:47 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:53 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 31.
+May 07 23:45:53 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:53 hanryxvault (labwc)[1262657]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:45:53 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:45:58 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 32.
+May 07 23:45:58 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:45:58 hanryxvault (labwc)[1262772]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:45:58 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Deactivated successfully.
+May 07 23:46:03 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Scheduled restart job, restart counter is at 33.
+May 07 23:46:03 hanryxvault systemd[1]: Started hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+May 07 23:46:04 hanryxvault (labwc)[1262894]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 23:46:56 hanryxvault systemd[1]: Stopping hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1)...
+May 07 23:46:57 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 23:46:57 hanryxvault systemd[1]: hanryx-grafana-kiosk.service: Failed with result 'signal'.
+May 07 23:46:57 hanryxvault systemd[1]: Stopped hanryx-grafana-kiosk.service - HanryxVault Main Pi 7" Grafana Diagnostic Kiosk (labwc on tty1).
+
+> 
+>
