@@ -582,7 +582,21 @@ cat > "$LABWC_RC" << RCEOF
 </labwc_config>
 RCEOF
 log "labwc rc.xml written → Admin→${WL_ADMIN:-default}  Kiosk→${WL_KIOSK:-default}"
-labwcctl --reconfigure 2>/dev/null || killall -USR1 labwc 2>/dev/null || true
+# labwc reload: there is no `labwcctl` binary, and the reload signal is SIGHUP
+# (NOT SIGUSR1). The canonical CLI is `labwc --reconfigure`, which itself just
+# sends SIGHUP to the running instance. We try the CLI first, fall back to a
+# direct signal, and LOG the outcome instead of silencing it — silent failure
+# was the bug that left the new rc.xml unread for two full launch cycles.
+if labwc --reconfigure 2>>"$LOG_FILE"; then
+    log "labwc reloaded via --reconfigure"
+elif pkill -HUP -x labwc 2>>"$LOG_FILE"; then
+    log "labwc reloaded via SIGHUP"
+else
+    log "WARN: failed to trigger labwc reload — window rules may not apply until next session"
+fi
+# Give labwc a beat to re-parse rc.xml before we spawn chromium, otherwise the
+# windows can map before the new rules are in memory and skip MoveToOutput.
+sleep 1
 
 # ── Hide mouse cursor ───────────────────────────────────────────────────────
 unclutter --timeout 3 2>/dev/null &
