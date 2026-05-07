@@ -1,0 +1,112 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ set +e
+cd ~/Hanryx-Vault-POS && git pull --ff-only
+
+echo === STEP 1: stop service + kill EVERYTHING (incl. labwc, watchdog) ===
+sudo systemctl stop hanryx-kiosk.service
+sudo pkill -9 -f 'hanryx-dual-monitor' 2>/dev/null 
+sudo pkill -9 -f '/usr/lib/chromium/chromium' 2>/dev/null
+sudo pkill -9 -f 'unclutter' 2>/dev/null
+sleep 3
+sudo rm -f /tmp/hanryx-kiosk-launcher.lock
+sudo rm -f /home/ngansen/.hanryx/admin-profile/Singleton* /home/ngansen/.hanryx/kiosk-profile/Singleton*
+LEFT=$(pgrep -af 'hanryx-dual-monitor|/usr/lib/chromium/chromium' | grep -v grep)
+[ -z "$LEFT" ] && echo " all clear" || echo "$LEFTecho "👉 Screens NOW?  10.1\":   5\":"g ===user/10
+remote: Enumerating objects: 9, done.
+remote: Counting objects: 100% (9/9), done.
+remote: Compressing objects: 100% (5/5), done.
+remote: Total 5 (delta 4), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (5/5), 2.19 KiB | 373.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   7750182..718fb0f  main       -> origin/main
+Updating 7750182..718fb0f
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 39 ++++++----
+ replit.md                        |  4 +-
+ 2 files changed, 24 insertions(+), 19 deletions(-)
+-bash: syntax error near unexpected token `('
+[sudo] password for ngansen: 
+Killed
+Killed
+Killed
+ all clear
+-bash: syntax error near unexpected token `('
+ launcher: 482 lines, version banner:
+# HanryxVault — Satellite Dual-Monitor Kiosk Launcher  (v6.3 wayland-native)
+ COMMON_FLAGS sanity (must NOT contain --no-sandbox/--disable-gpu/--use-gl):
+COMMON_FLAGS=(
+    --kiosk
+    --no-first-run
+    --noerrdialogs
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --disable-translate
+    --disable-features=Translate,TranslateUI
+    --check-for-update-interval=31536000
+    --autoplay-policy=no-user-gesture-required
+    --disable-background-networking
+    --disable-default-apps
+    --disable-extensions
+    --disable-sync
+    --disable-breakpad
+    --disable-component-update
+    --no-process-singleton
+    --ozone-platform=wayland
+    # NOTE: chromium only honours the LAST --enable-features=, so we MUST merge
+    # all features into a single flag. Splitting them silently drops earlier values.
+    # This exact combination was confirmed working April 2026 with both monitors
+    # rendering correctly (commit 17b8636). DO NOT add --no-sandbox, --disable-gpu,
+    # or --use-gl=swiftshader to defaults — chromium 147 rejects those combos
+    # silently (exit code 1 in <1s with no useful stderr) when added on top of
+    # this set. If GPU misbehaves, the launch loop drops to FALLBACK_FLAGS below
+    # which adds --disable-gpu --use-gl=swiftshader after 2 quick crashes.
+    --enable-features=UseOzonePlatform,VaapiVideoDecoder
+    --disable-dev-shm-usage
+    --allow-file-access-from-files
+    --disable-web-security
+    # Skip the GNOME keyring "Choose password for new keyring" dialog that
+    # blocks chromium on first run when no logind session created the keyring.
+    --password-store=basic
+    --use-mock-keychain
+)
+=== STEP 3: start service fresh ===
+ sleeping 30s for labwc + launcher + chromium startup…
+=== STEP 4: chromium survival ===
+  admin: PID= etime=
+  kiosk: PID= etime=
+=== STEP 5: wlrctl toplevels ===
+ live socket: wayland-0
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+-bash: syntax error near unexpected token `('
+[16:51:48] Both windows launched — Tailscale tunnel active
+[16:51:48] Both windows launched — Tailscale tunnel active
+[16:51:48] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[16:51:48] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[16:51:48] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[16:51:48] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[16:51:48] Heartbeat loop started (PID 323447)
+[16:51:48] Heartbeat loop started (PID 323447)
+[16:51:49] [Kiosk] crashed in 0s (count=1, mode=default(GPU+VAAPI))
+[16:51:49] [Kiosk] crashed in 0s (count=1, mode=default(GPU+VAAPI))
+[16:51:55] [Admin] → http://hanryxvault:8080/admin  (default(GPU+VAAPI))  backoff=10s
+[16:51:55] [Admin] → http://hanryxvault:8080/admin  (default(GPU+VAAPI))  backoff=10s
+[16:51:56] [Admin] crashed in 0s (count=2, mode=default(GPU+VAAPI))
+[16:51:56] [Admin] crashed in 0s (count=2, mode=default(GPU+VAAPI))
+[16:51:56] [Admin] ANGLE unstable — switching to --disable-gpu fallback
+[16:51:56] [Admin] ANGLE unstable — switching to --disable-gpu fallback
+[16:51:59] [Kiosk] → http://hanryxvault:8080/kiosk  (default(GPU+VAAPI))  backoff=10s
+[16:51:59] [Kiosk] → http://hanryxvault:8080/kiosk  (default(GPU+VAAPI))  backoff=10s
+[16:52:01] [Kiosk] crashed in 1s (count=2, mode=default(GPU+VAAPI))
+[16:52:01] [Kiosk] crashed in 1s (count=2, mode=default(GPU+VAAPI))
+[16:52:01] [Kiosk] ANGLE unstable — switching to --disable-gpu fallback
+[16:52:01] [Kiosk] ANGLE unstable — switching to --disable-gpu fallback
+[16:52:01] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=5s
+[16:52:01] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=5s
+[16:52:03] [Admin] crashed in 1s (count=1, mode=fallback(--disable-gpu))
+[16:52:03] [Admin] crashed in 1s (count=1, mode=fallback(--disable-gpu))
+[16:52:06] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=5s
+[16:52:06] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=5s
+[16:52:07] [Kiosk] crashed in 0s (count=1, mode=fallback(--disable-gpu))
+[16:52:07] [Kiosk] crashed in 0s (count=1, mode=fallback(--disable-gpu))
+
+👉 Screens NOW?  10.1":   5":
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
