@@ -642,6 +642,29 @@ log "Chromium binary: $CHROMIUM_BIN"
 export DISPLAY="${DISPLAY:-:0}"
 log "DISPLAY=$DISPLAY  (XWayland via labwc)"
 
+# ── Wait for XWayland to actually accept connections on $DISPLAY ────────────
+# labwc spawns Xwayland LAZILY (on first X-client demand). If chromium fires
+# before Xwayland has bound its socket, connect() returns ECONNREFUSED and
+# chromium dies with "Missing X server or $DISPLAY". Block here until the
+# X socket is real (up to 30s), so the launch loop only ever sees a live X.
+X_SOCK="/tmp/.X11-unix/X${DISPLAY#:}"
+X_SOCK="${X_SOCK%%.*}"   # strip ".0" from ":0.0" style
+log "Waiting for XWayland to accept connections on $X_SOCK …"
+x_ready=0
+for i in $(seq 1 60); do
+    if python3 -c 'import socket,sys
+s=socket.socket(socket.AF_UNIX); s.settimeout(1)
+s.connect(sys.argv[1]); s.close()' "$X_SOCK" 2>/dev/null; then
+        x_ready=1
+        log "XWayland socket ready on $X_SOCK after $((i*5))00ms"
+        break
+    fi
+    sleep 0.5
+done
+if [ "$x_ready" -ne 1 ]; then
+    log "WARN: XWayland socket $X_SOCK never accepted in 30s — chromium will likely fail; proceeding anyway"
+fi
+
 # ── Common Chromium flags (XWayland — Pi OS supported path) ─────────────────
 COMMON_FLAGS=(
     --kiosk
