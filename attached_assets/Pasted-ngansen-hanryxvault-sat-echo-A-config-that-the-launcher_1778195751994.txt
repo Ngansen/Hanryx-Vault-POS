@@ -1,0 +1,32 @@
+ngansen@hanryxvault-sat:~ $ echo "=== A. config that the launcher loads ==="
+sudo cat /etc/hanryx-kiosk/config 2>/dev/null
+echo "---"
+sudo cat /etc/hanryx-kiosk/satellite-kiosk.env 2>/dev/null
+echo "---"
+sudo grep -rEn "ADMIN_URL|KIOSK_URL|HEALTH_URL|MAIN_PI_TS_HOST" /etc/hanryx-kiosk /etc/systemd/system/hanryx-kiosk.service 2>/dev/null
+
+echo
+echo "=== B. what URL is the LIVE admin chromium actually loaded with ==="
+ps -ef | grep -- 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | grep -v grep | tr ' ' '\n' | grep -E '^(http|file)' | head -3
+echo
+echo "=== C. and the live splash file content ==="echo "=== C. and the live splash file content ===" && echo "  ⚠️ localhost:8080 reachable (shouldn'tot reachable (correct on satellite)"alhost:8080 n
+=== A. config that the launcher loads ===
+---
+---
+
+=== B. what URL is the LIVE admin chromium actually loaded with ===
+file:///tmp/hvault-splash-admin.html
+
+=== C. and the live splash file content ===
+var TARGET="http://hanryxvault:8080/admin",HEALTH="http://hanryxvault:8080/health",attempts=0;
+var TARGET="http://hanryxvault:8080/kiosk",HEALTH="http://hanryxvault:8080/health",attempts=0;
+
+=== D. resolve hanryxvault hostname FROM THE SATELLITE ===
+100.125.5.34    hanryxvault.tailcfc0a3.ts.net
+PING hanryxvault.tailcfc0a3.ts.net (100.125.5.34) 56(84) bytes of data.
+64 bytes from hanryxvault.tailcfc0a3.ts.net (100.125.5.34): icmp_seq=1 ttl=64 time=7.11 ms
+{"db_size_mb":212.08,"inventory":63,"local_sales":9,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1778195731103,"total_sales":9,"uptime_s":77882,"version":"2.0","wal_size_mb":0.0}
+  ✅ hanryxvault:8080 reachable
+{"db_size_mb":212.08,"inventory":63,"local_sales":9,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1778195731103,"total_sales":9,"uptime_s":77882,"version":"2.0","wal_size_mb":0.0}
+  ⚠️ localhost:8080 reachable (shouldn't be — main pi only)
+ngansen@hanryxvault-sat:~ $
