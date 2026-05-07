@@ -1,0 +1,48 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== URLs in live launcher ==="
+grep -nE 'KIOSK_URL=|ADMIN_URL=|launch_window|hanryxvault|localhost' /home/ngansen/.hanryx-dual-monitor.sh | grep -v '^[[:space:]]*#'
+
+echo
+echo "=== current chromium cmdlines (look at the URL at the end) ==="
+for prof in admin kiosk; do
+  PID=$(pgrep -f -- "user-data-dir=/home/ngansen/.hanryx/${prof}-profile" | head -1)
+  echo "--- $prof (PID=$PID, etime=$(ps -p $PID -o etime= 2>/dev/null | tr -d ' ')) ---"
+  if [ -n "$PID" ]; then
+    sudo tr '\0' ' ' < /proc/$PID/cmdline | tr ' ' '\n' | grep -E '^http|^file' | head -3
+  fi
+sudo tail -15 /var/log/hanryx-kiosk.log="hanryxvau
+=== URLs in live launcher ===
+90:MAIN_PI_TS_HOST="${MAIN_PI_TS_HOST:-hanryxvault}"
+91:ADMIN_URL="${ADMIN_URL:-http://${MAIN_PI_TS_HOST}:8080/admin}"
+92:KIOSK_URL="${KIOSK_URL:-http://${MAIN_PI_TS_HOST}:8080/kiosk}"
+367:launch_window() {
+457:launch_window "Admin" "$ADMIN_URL" "$SPLASH_ADMIN" "$PROFILE_ADMIN" "hvault-admin" &
+459:launch_window "Kiosk" "$KIOSK_URL" "$SPLASH_KIOSK" "$PROFILE_KIOSK" "hvault-kiosk" &
+
+=== current chromium cmdlines (look at the URL at the end) ===
+--- admin (PID=327857, etime=01:58) ---
+file:///tmp/hvault-splash-admin.html
+--- kiosk (PID=327993, etime=01:54) ---
+file:///tmp/hvault-splash-kiosk.html
+
+=== can satellite reach the main Pi? ===
+100.125.5.34    hanryxvault.tailcfc0a3.ts.net
+  main Pi /admin → HTTP 302  (0.022721s)
+  main Pi /kiosk → HTTP 200  (0.071264s)
+
+=== last 15 launcher log lines ===
+[17:01:47] [Admin] → file:///tmp/hvault-splash-admin.html  (default(GPU+VAAPI))  backoff=5s
+[17:01:47] [Admin] → file:///tmp/hvault-splash-admin.html  (default(GPU+VAAPI))  backoff=5s
+[327857:327891:0507/170151.594819:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[17:01:51] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[17:01:51] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[17:01:51] Both windows launched — Tailscale tunnel active
+[17:01:51] Both windows launched — Tailscale tunnel active
+[17:01:51] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[17:01:51] [Kiosk] → file:///tmp/hvault-splash-kiosk.html  (default(GPU+VAAPI))  backoff=5s
+[17:01:51] Heartbeat loop started (PID 328003)
+[17:01:51] Heartbeat loop started (PID 328003)
+[327857:327891:0507/170214.429269:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[327993:328066:0507/170253.439420:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[327857:327891:0507/170306.654380:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[327993:328066:0507/170322.544311:ERROR:google_apis/gcm/engine/registration_request.cc:275] Registration URL fetching failed.
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
