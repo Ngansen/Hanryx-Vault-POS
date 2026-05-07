@@ -1,0 +1,74 @@
+ngansen@hanryxvault-sat:~ $ # Wayland env (no sudo needed — wayland sockets are user-owned)
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+echo "=== wlr-randr (what labwc thinks of outputs) ==="
+wlr-randr
+
+echo
+echo "=== window positions via wlrctl (Wayland-native, no X needed) ==="
+wlrctl toplevel list 2>&1
+
+# X env for xdotool — steal from a chromium child (sudo bypasses PR_SET_DUMPABLE)
+CHROME_PID=$(pgrep -f 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | head -1)
+ENV_X=$(sudo cat /proc/$CHROME_PID/environ | tr '\0' '\n' | grep -E '^(DISPLAY|XAUTHORITY)=' | xargs now?  Did the 5\" change?"at does the 10.1\" show
+=== wlr-randr (what labwc thinks of outputs) ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 1024,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1280x1024 px, 60.020000 Hz
+    1280x960 px, 60.000000 Hz
+    1152x864 px, 59.966999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1024x768 px, 60.004002 Hz
+    1440x480 px, 60.000000 Hz
+    1440x480 px, 59.939999 Hz
+    1024x640 px, 59.987999 Hz
+    800x600 px, 60.317001 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 59.939999 Hz
+    720x480 px, 59.939999 Hz
+    640x480 px, 60.000000 Hz
+    640x480 px, 59.939999 Hz
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+
+=== window positions via wlrctl (Wayland-native, no X needed) ===
+chromium-browser (/home/ngansen/.hanryx/kiosk-profile): HanryxVault - Chromium
+chromium-browser (/home/ngansen/.hanryx/admin-profile): HanryxVault POS — Dashboard - Chromium
+
+X env: 
+
+=== xdotool: WM_CLASS + geometry of every chromium toplevel ===
+
+=== prove kiosk exists by raising it above admin ===
+kiosk wid=
+env: ‘xdotool’: No such file or directory
+env: ‘xdotool’: No such file or directory
+👉 After raising — what does the 10.1" show now?  Did the 5" change?
+ngansen@hanryxvault-sat:~ $
