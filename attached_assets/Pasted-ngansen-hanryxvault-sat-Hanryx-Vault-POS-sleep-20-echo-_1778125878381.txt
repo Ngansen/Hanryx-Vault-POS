@@ -1,0 +1,171 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ sleep 20
+echo "=== both chromiums NOW ==="
+for prof in admin kiosk; do
+  PID=$(pgrep -f -- "user-data-dir=/home/ngansen/.hanryx/${prof}-profile" | head -1)
+  echo "--- $prof (PID=$PID etime=$(ps -p $PID -o etime= 2>/dev/null)) ---"
+  if [ -n "$PID" ]; then
+    tr '\0' '\n' < /proc/$PID/cmdline | grep -E 'ozone-platform|app-id|class=|user-data-dir'
+  else
+    echo "  NOT RUNNING"
+  fi
+done
+echo
+echo "=== wlrctl toplevels (
+
+
+=== both chromiums NOW ===
+--- admin (PID= etime=) ---
+  NOT RUNNING
+--- kiosk (PID= etime=) ---
+  NOT RUNNING
+
+> 
+> 
+> ^C
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ sudo systemctl status hanryx-kiosk.service --no-pager -l | head -40; echo ---LOG---; sudo tail -80 /var/log/hanryx-kiosk.log; echo ---JOURNAL---; sudo journalctl -u hanryx-kiosk.service -n 50 --no-pager
+● hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)
+     Loaded: loaded (/etc/systemd/system/hanryx-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Wed 2026-05-06 22:41:10 CDT; 8min ago
+ Invocation: 873ad770043c4f61b690d44507b2e227
+       Docs: https://github.com/Ngansen/Hanryx-Vault-POS
+   Main PID: 18609 (labwc)
+      Tasks: 0 (limit: 4749)
+        CPU: 11ms
+     CGroup: /system.slice/hanryx-kiosk.service
+             ‣ 18609 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+May 06 22:41:10 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:41:10 hanryxvault-sat (k-launch)[18609]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+---LOG---
+[22:42:09] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=20s
+[22:42:09] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=20s
+[22:42:10] [Admin] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[22:42:10] [Admin] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[22:42:13] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=20s
+[22:42:13] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=20s
+[22:42:14] [Kiosk] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[22:42:14] [Kiosk] crashed in 0s (count=3, mode=fallback(--disable-gpu))
+[22:42:50] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=40s
+[22:42:50] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=40s
+[22:42:52] [Admin] crashed in 1s (count=4, mode=fallback(--disable-gpu))
+[22:42:52] [Admin] crashed in 1s (count=4, mode=fallback(--disable-gpu))
+[22:42:54] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=40s
+[22:42:54] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=40s
+[22:42:56] [Kiosk] crashed in 1s (count=4, mode=fallback(--disable-gpu))
+[22:42:56] [Kiosk] crashed in 1s (count=4, mode=fallback(--disable-gpu))
+[22:43:52] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:43:52] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:43:53] [Admin] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[22:43:53] [Admin] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[22:43:53] [Admin] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[22:43:53] [Admin] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[22:43:56] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:43:56] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:43:57] [Kiosk] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[22:43:57] [Kiosk] crashed in 0s (count=5, mode=fallback(--disable-gpu))
+[22:43:57] [Kiosk] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[22:43:57] [Kiosk] WARN: fallback mode also crashing repeatedly (5 total). Check display, GPU, or chromium install.
+[22:44:53] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:44:53] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:44:55] [Admin] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[22:44:55] [Admin] crashed in 1s (count=6, mode=fallback(--disable-gpu))
+[22:44:57] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:44:57] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:44:58] [Kiosk] crashed in 0s (count=6, mode=fallback(--disable-gpu))
+[22:44:58] [Kiosk] crashed in 0s (count=6, mode=fallback(--disable-gpu))
+[22:45:55] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:45:55] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:45:56] [Admin] crashed in 0s (count=7, mode=fallback(--disable-gpu))
+[22:45:56] [Admin] crashed in 0s (count=7, mode=fallback(--disable-gpu))
+[22:45:58] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:45:58] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:46:00] [Kiosk] crashed in 1s (count=7, mode=fallback(--disable-gpu))
+[22:46:00] [Kiosk] crashed in 1s (count=7, mode=fallback(--disable-gpu))
+[22:46:56] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:46:56] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:46:58] [Admin] crashed in 1s (count=8, mode=fallback(--disable-gpu))
+[22:46:58] [Admin] crashed in 1s (count=8, mode=fallback(--disable-gpu))
+[22:47:00] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:47:00] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:47:01] [Kiosk] crashed in 0s (count=8, mode=fallback(--disable-gpu))
+[22:47:01] [Kiosk] crashed in 0s (count=8, mode=fallback(--disable-gpu))
+[22:47:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:47:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:47:59] [Admin] crashed in 0s (count=9, mode=fallback(--disable-gpu))
+[22:47:59] [Admin] crashed in 0s (count=9, mode=fallback(--disable-gpu))
+[22:48:01] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:48:01] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:48:03] [Kiosk] crashed in 1s (count=9, mode=fallback(--disable-gpu))
+[22:48:03] [Kiosk] crashed in 1s (count=9, mode=fallback(--disable-gpu))
+[22:48:59] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:48:59] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:49:00] [Admin] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[22:49:00] [Admin] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[22:49:00] [Admin] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+[22:49:00] [Admin] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+[22:49:03] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:49:03] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:49:04] [Kiosk] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[22:49:04] [Kiosk] crashed in 0s (count=10, mode=fallback(--disable-gpu))
+[22:49:04] [Kiosk] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+[22:49:04] [Kiosk] WARN: fallback mode also crashing repeatedly (10 total). Check display, GPU, or chromium install.
+[22:50:00] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:50:00] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[22:50:02] [Admin] crashed in 1s (count=11, mode=fallback(--disable-gpu))
+[22:50:02] [Admin] crashed in 1s (count=11, mode=fallback(--disable-gpu))
+[22:50:04] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:50:04] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[22:50:06] [Kiosk] crashed in 1s (count=11, mode=fallback(--disable-gpu))
+[22:50:06] [Kiosk] crashed in 1s (count=11, mode=fallback(--disable-gpu))
+---JOURNAL---
+May 06 21:34:21 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 21:34:21 hanryxvault-sat (k-launch)[7961]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 21:40:58 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 21:40:58 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 21:40:58 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 21:40:58 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 21:41:02 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 21:41:02 hanryxvault-sat (k-launch)[9477]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 21:58:09 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 21:58:09 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 21:58:09 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 21:58:09 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 21:58:09 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 21:58:09 hanryxvault-sat (k-launch)[11672]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:01:11 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:01:12 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:01:12 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:01:12 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:01:12 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:01:12 hanryxvault-sat (k-launch)[12414]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:03:49 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:03:49 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:03:49 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:03:49 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:03:49 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:03:49 hanryxvault-sat (k-launch)[13182]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:13:57 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:13:57 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:13:57 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:13:57 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:14:02 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:14:02 hanryxvault-sat (k-launch)[14761]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:38:31 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:38:31 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:38:31 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:38:31 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:38:31 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:38:31 hanryxvault-sat (k-launch)[17745]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:41:02 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:41:02 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:41:02 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:41:02 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:41:02 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:41:02 hanryxvault-sat (k-launch)[18356]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 06 22:41:10 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 06 22:41:10 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 06 22:41:10 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 06 22:41:10 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:41:10 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 06 22:41:10 hanryxvault-sat (k-launch)[18609]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
