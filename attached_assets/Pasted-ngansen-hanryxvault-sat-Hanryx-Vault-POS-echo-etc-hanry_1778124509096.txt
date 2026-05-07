@@ -1,0 +1,283 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== /etc/hanryx-kiosk/labwc/autostart ==="
+sudo cat /etc/hanryx-kiosk/labwc/autostart
+echo
+echo "=== /usr/local/bin/hanryx-kiosk-launch ==="
+sudo cat /usr/local/bin/hanryx-kiosk-launch
+echo
+echo "=== confirm the launcher file we 'installed' actually has wayland ==="
+grep -n -- '--ozone-platform' /home/ngansen/.hanryx-dual-monitor.sh
+echo
+echo "=== md5 compare: live launcher vs repo launcher ==="
+md5sum /home/ngansen/.hanryx-dual-monitor.sh ~/Hanryx-Vault-POS/pi-setup/setup-satellite-kiosk-boot.sh
+echo
+echo "=== ALL files anywhere on system that contain literal --ozone-platform=x11 (not in comments) =doneD=$ppidID=$PID  cmd=$cmd"$PID -o ppid=,cmd= 2>
+=== /etc/hanryx-kiosk/labwc/autostart ===
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts.
+# Must export DISPLAY/XAUTHORITY because chromium uses --ozone-platform=x11
+# (XWayland), and setsid+nohup detaches from labwc's env.
+(
+    sleep 5
+    export DISPLAY=:0
+    export XAUTHORITY=/home/ngansen/.Xauthority
+    export WAYLAND_DISPLAY=wayland-0
+    export XDG_RUNTIME_DIR=/run/user/1000
+    export XDG_SESSION_TYPE=wayland
+    export MOZ_ENABLE_WAYLAND=1
+    setsid nohup /bin/bash /home/ngansen/.hanryx-dual-monitor.sh \
+        >> /var/log/hanryx-kiosk.log 2>&1 < /dev/null &
+) &
+
+=== /usr/local/bin/hanryx-kiosk-launch ===
+#!/bin/sh
+# Launched by hanryx-kiosk.service as ngansen. Sets the runtime env labwc
+# needs when started outside a logind session (no greeter).
+set -e
+
+export HOME="/home/ngansen"
+export USER="ngansen"
+export LOGNAME="ngansen"
+export SHELL="/bin/bash"
+
+# logind/seatd-friendly runtime dir (XDG_RUNTIME_DIR must exist + be 0700)
+export XDG_RUNTIME_DIR="/run/user/1000"
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chown "ngansen:ngansen" "$XDG_RUNTIME_DIR"
+    chmod 0700 "$XDG_RUNTIME_DIR"
+fi
+
+# Kiosk-session env (also re-applied by /etc/hanryx-kiosk/labwc/environment)
+export XDG_CURRENT_DESKTOP=labwc:wlroots
+export XDG_SESSION_DESKTOP=hanryx-kiosk
+export XDG_SESSION_TYPE=wayland
+export MOZ_ENABLE_WAYLAND=1
+
+cd "$HOME"
+exec /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+=== confirm the launcher file we 'installed' actually has wayland ===
+395:#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
+707:#   • Under XWayland (--ozone-platform=x11) ALL chromium windows share one
+731:    --ozone-platform=wayland
+
+=== md5 compare: live launcher vs repo launcher ===
+0294e03790be943513594e0dd31618cb  /home/ngansen/.hanryx-dual-monitor.sh
+0294e03790be943513594e0dd31618cb  /home/ngansen/Hanryx-Vault-POS/pi-setup/setup-satellite-kiosk-boot.sh
+
+=== ALL files anywhere on system that contain literal --ozone-platform=x11 (not in comments) ===
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --no-first-run --noerrdialogs --disable-infobars     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     --window-size=400,300     "data:text/html,<body style=background:red><h1>STAGE1</h1>"     >/tmp/chrome1.log 2>&1 &
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --kiosk --no-first-run --noerrdialogs --disable-infobars     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     "data:text/html,<body style=background:lime><h1>STAGE2 KIOSK</h1>"     >/tmp/chrome2.log 2>&1 &
+/home/ngansen/.bash_history:env $ENV_VARS chromium     --kiosk --no-first-run --noerrdialogs     --ozone-platform=x11     --user-data-dir=/tmp/chrome-test     --class=test-window     "data:text/html,<body style=background:blue><h1 style=color:white>STAGE3</h1>"     >/tmp/chrome3.log 2>&1 &
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-40-var-log-hanryx-kiosk-log-ec_1776517621931.txt:2725 /usr/lib/chromium/chromium --js-flags=--no-decommit-pooled-pages --force-renderer-accessibility --enable-remote-extensions --show-component-extension-options --enable-gpu-rasterization --no-default-browser-check --disable-pings --media-router=0 --disable-dev-shm-usage --enable-remote-extensions --load-extension --use-angle=gles --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk --app-id=hvault-kiosk http://192.168.86.36:8080/kiosk
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3871 210672 /usr/lib/chromium/chromium --type=gpu-process --disable-gpu-sandbox --disable-dev-shm-usage --enable-gpu-rasterization --enable-low-end-device-mode --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/left --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,16901224356694899215,7730574352691355913,262144 --field-trial-handle=3,i,1903093330645518925,5407113539686885704,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16283037622257091941,12387580342487376372,4 --trace-process-track-uuid=3190708988185955192
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3993 180256 /usr/lib/chromium/chromium --type=gpu-process --disable-gpu-sandbox --disable-dev-shm-usage --enable-gpu-rasterization --enable-low-end-device-mode --ozone-platform=x11 --use-angle=gles --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/right --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,15933794565929182368,6145749744827548865,262144 --field-trial-handle=3,i,10198441723225613958,1316528541886112321,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16059913524610509417,18312610585956751546,4 --trace-process-track-uuid=3190708988185955192
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-1-Is-the-watchdog-process-running-p_1776605158982.txt:   3900 175408 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=,built on Debian GNU/Linux 13 (trixie) --noerrdialogs --user-data-dir=/home/ngansen/.config/hanryxvault-chromium/left --change-stack-guard-on-fork=enable --disable-dev-shm-usage --autoplay-policy=no-user-gesture-required --js-flags=--max-old-space-size=128 --enable-low-end-device-mode --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1776600526019882 --launch-time-ticks=957595325 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12072790061047105457,11221309756515780589,2097152 --field-trial-handle=3,i,1903093330645518925,5407113539686885704,262144 --disable-features=CalculateNativeWinOcclusion,Notifications,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,16283037622257091941,12387580342487376372,4 --trace-process-track-uuid=3190708990997080739
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-sudo-apt-update-qq-sudo-apt-install_1776518263215.txt:inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-sudo-apt-update-qq-sudo-apt-install_1776518263215.txt:inject='''# ── Ensure Xwayland is running so chromium --ozone-platform=x11 can connect ─
+/home/ngansen/Hanryx-Vault-POS/pi-setup/SATELLITE_AUDIT.md:**Fix**: pick one and stick to it. For Pi OS Bookworm Chromium I recommend XWayland (more reliable hardware-decode on Pi 5) with explicit `--ozone-platform=x11`, and use `WM_CLASS` matching in the rules.
+
+=== what process is the parent of chromium 14787? trace the chain back to systemd ===
+  PID=14787  cmd=/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+  PID=1736  cmd=/bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+  PID=1500  cmd=/bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== is /usr/lib/chromium/chromium a binary or a wrapper script? ==="
+file /usr/lib/chromium/chromium
+ls -la /usr/lib/chromium/chromium /usr/bin/chromium /usr/bin/chromium-browser 2>/dev/null
+echo
+echo "=== if wrapper, head it (look for ozone-platform/CHROMIUM_FLAGS injection) ==="
+head -60 /usr/lib/chromium/chromium 2>/dev/null
+echo
+echo "=== contents of every /etc/chromium.d/* (these get sourced by the wrapper) ==="
+for f in /etc/chromium.d/*; do echo "----- $f -----"; cat "$f"; done
+echo
+echo "=== /etc/chromium-browser/customizations or similar? ==="
+ls -la /etc/chromium* 2>/dev/null
+=== is /usr/lib/chromium/chromium a binary or a wrapper script? ===
+/usr/lib/chromium/chromium: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, for GNU/Linux 3.7.0, BuildID[sha1]=9c44ee960061551f284c0f1587fc33c54e6f3c8a, stripped
+-rwxr-xr-x 1 root root      6160 Apr 17 12:40 /usr/bin/chromium
+-rwxr-xr-x 1 root root 277678928 Apr 17 12:40 /usr/lib/chromium/chromium
+
+=== if wrapper, head it (look for ozone-platform/CHROMIUM_FLAGS injection) ===
+ELF?s@??@8
+??????????w??{?vyy1H??????????? ?(s?(u?(u?R?td??????????w??{?P?td??l??l??lܻܻQ?td???dd/lib/ld-linux-aarch64.so.1GNU INFOCrashpadt?~GNU?D??aU(L??3?No<?(G V r ?"?�????????      8?MT`jpu?????????&,9GKPW]jq?????????
+ 3<COV^ft{???????? ? ?? &.6<DKSY_fnx????????????*6IXdnw??????????????$)18@GNRYl???????????
+?       *       J       ^       v       ?       ??
+
+ 
+'
+-
+5
+N
+_
+q
+
+?
+?
+?
+?
+?
+
+
+'
+ @
+  Z
+   h
+    v
+     ?
+      ?
+       ?
+        ?
+         ?
+          ?
+           ?
+            ?
+             ?
+
+
+
+              7
+               M
+                j
+                 ?
+                  ?
+                   ?
+                    ?
+,L^┤????????
+            +@Tn????A]?????2\????       %I─???? ,G␌£??????,AQ┌?????(=Z⎻??????'DS°⎼??????&7S┌?????%4F]"┤??????#0>[␋??????/9EW␉└≥?????8AHN␍≤????????
+$+/6>GN◆°┴????????0>FL␊┐⎼?????? #5CKV±├????????
+                                                ,?S␌├???????? 4 ] ? ? ? ? !,!U!─!?!?!?!?!?!?!""%"<"M"\"┌"≠"?"?"?"?"?"?"?"?"?"?"?" #(#2#:#A#I#[#▒#±#┤#£#?#?#?#?#?#?#?#?#?#$$$2$F$^$┼$?$?$?$?$?$?$?$%% %1%@%R%⎺%?%?%?%?%?%?%?%?%?&&4&E&S&°&┤&?&?&?&?&?&?&'''<'T'┘'≠'?'?'?'?'?'?'((*(=(O(␤(?(?(?(?(?()
+                                         )")/)G)[)┼)?)?)?)?)?)?)?)
+                * *5*B*O*]*├*£*?*?*?*?*?*?*?*?*?*++2+9+L+R+Y+q++?+�+?+2,?,?,--#-1-:-B-K-a-{-?-?-?-?-?-?-.).>.O.`.r.?.?.?.?.?.?.?.?.?.?.?.?.        //#///9/?/F/X/b/m/u/}/?/?/?/?/?/0020G0!2 62 J2 b2i22?2?2?2?2?2?2?2?2?2     3343J3a3t3?3?3?3?3?3?3?3?3?34%444L4^4t4?4?4?4?4?4?4
+55/5D5U5p5?5?5?5?5?5?5?56!636E6]6q66?6?6?6?6?6?677/7G7_7}7?7?7?7?788-898P8m8?8?8?8?8?8?8
+9!9-9<9U9l9?9?9?9?9?9?::5:J:`:p:?:?:?:?:?:?:?:?:;;;.;6;=; V;`;g;n;u;?;?;?;?;?;?;?;
+                                <<:<J<Z<p<?<?<?<?<?<?<?<?<=1=C=P=d=s=?=?=?=?=?=?=>
+                                >#>6>L>_>n>?>?>?>?>?>?>??/?@?M?a?x????????????????@@:@R@`@w@?@?@?@?@?@?@?@AA.A:AAATAnA}A?A?A?A?A?AB@BgB?B?B?B?BC0CHC_CwC?C?C?C?C?C?C?C        DD D0D6DBDQD_DrD?D?D?D?D?D?D?D    EE.E>ENEnEE?E?E?E?E?EF4FJF^FsF?F?F?F?F?F?FG!G(G.GHGeGzG?G?G?G?G?GHH-HQHwH?H?H?HII1IIIiI~I?I?I?I?I  J/JVJzJ?J?J?J?J?J?JK)K@KUKgK}K?K?K?K?K?K?KL2LJLeLzL?L?L?L?L?LM4MEMdM{M?M?M?MN N7NVNxN?N?N?N?N?O O=O[OkO{O?O?O?O?O?O?O
+                         P9P_P~P?P?P?P?PQ)QFQXQ{Q?Q?Q?Q?Q?QR-R]RqR?R?R?R?R?R?R?RS#S)S7SMSmS?S?S?S?S?S?S?STT
+       TTTTT"T&T*T/T5T<TIT_TjTvT?T?T?T?T?T?T?TUU$U9UDUNU[U─UU?U?U?U?U?U?U?UV!V)V=VFVQV┘V?V?V?V?V?V?X)X;XSX␌X├X?X?X?X?X?X?XY+Y@YVY┬Y?Y?Y?Y?Y?Y?Y?YZCZV[T[�[?[?[?[?[   \\\-\D\◆\┬\?\?\?\?\?\?\
+                                       ] ]7]J]␉]⎺]?]?]?]?]?]?]
+            ^^^8^T^␌^^?^?^?^?^?^  ; M ␊ £ ? ? ? ?␉'␉6␉B␉T␉⎼␉?␉?␉?␉?␉?␉?␉␌␌8␌U␌└␌│␌?␌?␌?␌?␌?␌␍>␍R␍␊␍␍?␍?␍?␍?␍?␍␊#␊G␊␋␊?␊?␊?␊?␊?␊°f.fOfkf?f?f?f?f?fgg6gRgbgyg?g?g?g?ghh5hQhmh?h?h?h?h?h
+                                 i'iFiii?i?i?i?ijj2jMjkj?j?j?j?j?jk-kAk]ksk?k?k?k?k?kl8lSlnl?l?l?l?l?l?lm!m=mWmjm?m?m?m?m?mn+nFnantn?n?n?n?n?n?n?n?n?n?n?n?n?n?n?n?n?noo o1oAoJo^ovo?o?o?o?o?o?o?o
+                                            pp2pDpMpVp`plpvp?p?p?p?p?pq0qIq^qwq?q?q?q?q?q
+r(r9rJrdr?r?r?r?r?r?r
+                     s#s;scs?s?s?s?s?s?s#tDtgt?t?t?t?t?t
+      u$u:uMuru?u?u?u?u?u       v&v:vOv`v?v?v?v?v?v?v?ww$w2w@wTw`wjwww?w?w?w?w?w?w"?w?w?wxx"x3xExTxexvx?x?x?x?x?x?x?x?x?x?x≤,≤:≤H≤U≤␌≤─≤?≤?≤"?≤"?≤"?≤?≤?≤≥≥%≥3≥C≥X≥␤≥┬≥?≥?≥?≥?≥?≥?≥?≥?≥?≥"?≥π{%{?{S{v{?{?{?{|'|?|]|||?|?|?|?|?|?|}"}>}X}x}?}?}?}?}?}~~8~C~Y~l~x~?~?~?~?~?~?~+BXdr???????3?I?Q?Y?a?s???????ŀՀ?????.?B?M?␤?⎺????????????ȁρԁځ????????????
+       ????%?*?/?F?]?┌?≥?????ʂ????????-???O?"Y?" ?┴?????????????????Ƀσփ???????
+                            ?? ?+?2?I?\?⎻?≤?????????2?^X│ ┌?+? ␍0?Z1?Z??"?-1L␉?2??
+                                 ?1?^??◆?<1?␍⎽4≠?Z?
+???␌??◆?O0?Z?1?␌??1?^2????
+?
+
+,▒??",??V1?Z2?;:≤?Z$D ?0?  ≤
+                            ◆?⎽*◆ ?0│ ┌1?Z41?␉??[??
+??│ ┌!?▒??1L␉??1?^π?^X?#? ≤0│ ┌␉1?◆???#1??      ◆ R?␍??#@??␌???0? ?0? H1◆?─1,▒???Z?1?^? ?1?␉?D $1???1?▒??[├?
+?       
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+ !"
+
+
+$$$$$$$$$$$$$$$$$$$$%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+
+
+
+
+
+
+
+=== contents of every /etc/chromium.d/* (these get sourced by the wrapper) ===
+----- /etc/chromium.d/00-rpi-vars -----
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-renderer-accessibility --enable-remote-extensions"
+
+----- /etc/chromium.d/apikeys -----
+# API keys assigned to Debian by Google for access to their services like sync and gmail.
+
+export GOOGLE_API_KEY="AIzaSyCkfPOPZXDKNn8hhgu3JrA62wIgC93d44k"
+export GOOGLE_DEFAULT_CLIENT_ID="811574891467.apps.googleusercontent.com"
+export GOOGLE_DEFAULT_CLIENT_SECRET="kdloedMFGdGla2P1zacGjAQh"
+----- /etc/chromium.d/default-flags -----
+# A set of command line flags that we want to set by default.
+
+# Do not hide any extensions in the about:extensions dialog
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --show-component-extension-options"
+
+# Enable GPU rasterization.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-gpu-rasterization"
+
+# Don't display any warnings about not being the default browser
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-default-browser-check"
+
+# Disable pinging
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-pings"
+
+# Disable the builtin media router (bug #833477)
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --media-router=0"
+----- /etc/chromium.d/dev-shm -----
+# Chromium normally creates shared memory regions in /dev/shm/ (tmpfs).
+# If that location is low on available space, the browser will crash due
+# to insufficient shared memory (even when main memory is plentiful) in
+# functions like gpu::ClientSharedImageInterface::CreateSharedImage().
+# For more details, see https://bugs.debian.org/1072299#78
+
+shm_avail=$(findmnt -bnr -o avail -T /dev/shm)
+
+if [ $shm_avail -lt 4080218931 ]  # 3.8 GB
+then
+        # Use $TMPDIR or /tmp instead
+        export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-dev-shm-usage"
+fi
+----- /etc/chromium.d/extensions -----
+# remote extensions on by default
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"
+
+# load all of the extensions installed to /usr/share/chromium/extensions
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --load-extension=`ls -dm /usr/share/chromium/extensions/* 2>/dev/null | tr -d '\n'`"
+----- /etc/chromium.d/README -----
+Any files placed in this directory will be sourced prior to executing chromium.
+
+=== /etc/chromium-browser/customizations or similar? ===
+/etc/chromium:
+total 32
+drwxr-xr-x   2 root root  4096 Apr 20 19:17 .
+drwxr-xr-x 134 root root 12288 May  6 22:00 ..
+-rw-r--r--   1 root root  5277 Feb 11 00:56 bookmarks.html
+-rw-r--r--   1 root root  1627 Feb 11 00:59 initial_preferences
+-rw-r--r--   1 root root  1679 Apr 20 19:17 master_preferences
+
+/etc/chromium.d:
+total 40
+drwxr-xr-x   2 root root  4096 Apr 20 19:10 .
+drwxr-xr-x 134 root root 12288 May  6 22:00 ..
+-rw-r--r--   1 root root    99 Jan 28 04:48 00-rpi-vars
+-rw-r--r--   1 root root   292 Sep 12  2024 apikeys
+-rw-r--r--   1 root root   609 Sep 12  2024 default-flags
+-rw-r--r--   1 root root   543 Mar 25  2025 dev-shm
+-rw-r--r--   1 root root   299 Sep 12  2024 extensions
+-rw-r--r--   1 root root    80 Sep 12  2024 README
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
