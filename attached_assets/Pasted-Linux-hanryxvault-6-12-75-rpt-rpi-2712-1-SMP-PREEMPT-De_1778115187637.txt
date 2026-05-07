@@ -1,0 +1,93 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu May  7 00:42:59 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS && git pull --ff-only && cd pi-setup
+
+# Healthcheck changes don't need rebuild — recreate is enough
+docker compose up -d --no-build --force-recreate assistant storefront 2>&1 | tail -10
+
+echo "=== waiting 75s for both start_periods + first probes ==="
+sleep 75
+
+echo "=== final state ==="
+docker compose ps assistant storefront
+
+echo "=== assistant last 3 healthcheck results ==="
+docker inspect pi-setup-assistant-1 --format '{{json .State.Health}}' | python3 -m json.tool | head  -20.State.Health}}' | python3 -m json.tool | head
+remote: Enumerating objects: 12, done.
+remote: Counting objects: 100% (12/12), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 8 (delta 6), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (8/8), 3.51 KiB | 599.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   e06357e..42d92ee  main       -> origin/main
+Updating e06357e..42d92ee
+Fast-forward
+ pi-setup/docker-compose.yml      | 98 ++++++++--
+ ...setup-satellite-kiosk-boot.sh |  5 +-
+ 2 files changed, 88 insertions(+), 15 deletions(-)
+ storefront Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container pi-setup-storefront-1 Recreated 
+ Container pi-setup-assistant-1 Starting 
+ Container pi-setup-db-1 Starting 
+ Container pi-setup-db-1 Started 
+ Container pi-setup-db-1 Waiting 
+ Container pi-setup-assistant-1 Started 
+ Container pi-setup-db-1 Healthy 
+ Container pi-setup-storefront-1 Starting 
+ Container pi-setup-storefront-1 Started 
+=== waiting 75s for both start_periods + first probes ===
+=== final state ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+NAME                    IMAGE                 COMMAND                  SERVICE      CREATED              STATUS                        PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7   "/bin/ollama serve"      assistant    About a minute ago   Up About a minute (healthy)   11434/tcp
+pi-setup-storefront-1   pi-setup-storefront   "docker-entrypoint.sh"   storefront   About a minute ago   Up About a minute (healthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+=== assistant last 3 healthcheck results ===
+{
+    "Status": "healthy",
+    "FailingStreak": 0,
+    "Log": [
+        {
+            "Start": "2026-05-07T00:49:44.709621721Z",
+            "End": "2026-05-07T00:49:44.786821194Z",
+            "ExitCode": 0,
+            "Output": ""
+        },
+        {
+            "Start": "2026-05-07T00:50:14.788465088Z",
+            "End": "2026-05-07T00:50:14.861993537Z",
+            "ExitCode": 0,
+            "Output": ""
+        },
+        {
+            "Start": "2026-05-07T00:50:44.863117381Z",
+            "End": "2026-05-07T00:50:44.91175586Z",
+            "ExitCode": 0,
+=== storefront last 3 healthcheck results ===
+{
+    "Status": "healthy",
+    "FailingStreak": 0,
+    "Log": [
+        {
+            "Start": "2026-05-07T00:49:55.476393795Z",
+            "End": "2026-05-07T00:49:55.55170724Z",
+            "ExitCode": 0,
+            "Output": ""
+        },
+        {
+            "Start": "2026-05-07T00:50:10.553288291Z",
+            "End": "2026-05-07T00:50:10.630872896Z",
+            "ExitCode": 0,
+            "Output": ""
+        },
+        {
+            "Start": "2026-05-07T00:50:25.631660391Z",
+            "End": "2026-05-07T00:50:25.703278798Z",
+            "ExitCode": 0,
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  

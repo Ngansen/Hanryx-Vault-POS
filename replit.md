@@ -79,6 +79,9 @@ _Populate as you build_
 *   **Docker Volumes**: `/data/` within containers is ephemeral; bind-mount important data to `/mnt/cards` (or similar) to persist across `docker compose down` operations.
 *   **Python Dependencies**: After modifying `pi-setup/requirements.in`, regenerate `requirements.txt` with `./scripts/lock-python-deps.sh pi-setup`.
 *   **Floating Docker Tags**: CI will fail if Dockerfiles or compose files use non-full-point-release tags (e.g., `python:3.11-slim`). Use content hashes or explicitly allow-list.
+*   **Healthchecks must use image-native tools**: `ollama/ollama` and the storefront's `node` base image do **not** ship `curl` or `wget`. Use `ollama list` (with a `/dev/tcp` fallback) for the assistant and `node -e "require('http').get(...)"` for the storefront. Any new service: verify the binary exists in the image before adding a `healthcheck.test`.
+*   **labwc lazy-spawns Xwayland**: the kiosk launcher must wait for `/tmp/.X11-unix/X${DISPLAY#:}` to exist before spawning chromium, otherwise `connect()` returns ECONNREFUSED ("Missing X server"). When stripping the screen suffix, strip from `$DISPLAY` (e.g. `:0.0` → `0`), **not** from the socket path — `${path%%.*}` greedily matches the dot in the directory name `.X11-unix` and turns the path into `/tmp/`.
+*   **Healthcheck-only compose changes still need `--force-recreate`**: a plain `docker compose up -d` won't pick up a modified `healthcheck.test`; the container keeps its old probe until recreated.
 
 ## Pointers
 
