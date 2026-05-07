@@ -1,0 +1,140 @@
+ngansen@hanryxvault-sat:~ $ # Wayland env (no sudo needed — wayland sockets are user-owned)
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+echo "=== wlr-randr (what labwc thinks of outputs) ==="
+wlr-randr
+
+echo
+echo "=== window positions via wlrctl (Wayland-native, no X needed) ==="
+wlrctl toplevel list 2>&1
+
+# X env for xdotool — steal from a chromium child (sudo bypasses PR_SET_DUMPABLE)
+CHROME_PID=$(pgrep -f 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | head -1)
+ENV_X=$(sudo cat /proc/$CHROME_PID/environ | tr '\0' '\n' | grep -E '^(DISPLAY|XAUTHORITY)=' | xargs now?  Did the 5\" change?"at does the 10.1\" show
+=== wlr-randr (what labwc thinks of outputs) ===
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 1024,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1280x1024 px, 60.020000 Hz
+    1280x960 px, 60.000000 Hz
+    1152x864 px, 59.966999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1024x768 px, 60.004002 Hz
+    1440x480 px, 60.000000 Hz
+    1440x480 px, 59.939999 Hz
+    1024x640 px, 59.987999 Hz
+    800x600 px, 60.317001 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 59.939999 Hz
+    720x480 px, 59.939999 Hz
+    640x480 px, 60.000000 Hz
+    640x480 px, 59.939999 Hz
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+
+=== window positions via wlrctl (Wayland-native, no X needed) ===
+chromium-browser (/home/ngansen/.hanryx/kiosk-profile): HanryxVault - Chromium
+chromium-browser (/home/ngansen/.hanryx/admin-profile): HanryxVault POS — Dashboard - Chromium
+
+X env: 
+
+=== xdotool: WM_CLASS + geometry of every chromium toplevel ===
+
+=== prove kiosk exists by raising it above admin ===
+kiosk wid=
+env: ‘xdotool’: No such file or directory
+env: ‘xdotool’: No such file or directory
+👉 After raising — what does the 10.1" show now?  Did the 5" change?
+ngansen@hanryxvault-sat:~ $ sudo apt-get install -y xdotool 2>&1 | tail -2
+
+export DISPLAY=:0
+export XDG_RUNTIME_DIR=/run/user/1000
+# labwc's Xwayland is rootless and auth-less — DISPLAY=:0 alone is enough as ngansen
+unset XAUTHORITY
+
+echo "=== window geometry ==="
+for wid in $(xdotool search --classname chromium 2>/dev/null); do
+  cls=$(xprop -id $wid WM_CLASS 2>/dev/null | head -1)
+  st=$(xprop -id $wid _NET_WM_STATE 2>/dev/null | head -1)
+  geom=$(xdotool getwindowgeometry $wid 2>/dev/null | tr '\n' ' ')
+  echo "wid=$wid $cls | $st | $geom"
+on 5\", MoveToOutput to HDMI-A-2 is broken." blue 
+Processing triggers for man-db (2.13.1-1) ...
+Processing triggers for libc-bin (2.41-12+rpt1+deb13u2) ...
+=== window geometry ===
+wid=4194308  |  | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=12582916  |  | Window 12582916   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=6291457  |  | Window 6291457   Position: 10,10 (screen: 0)   Geometry: 10x10 
+wid=14680065  |  | Window 14680065   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+=== TEST: swap rule — send hvault-kiosk to HDMI-A-1 instead ===
+00:00:00.000 [../src/main.c:112] LABWC_PID not set
+=== window geometry AFTER swap ===
+wid=6291460  | Window 6291460   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=4194308  | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+wid=8388609  | Window 8388609   Position: 10,10 (screen: 0)   Geometry: 10x10 
+wid=10485761  | Window 10485761   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+👉 LOOK AT THE SCREENS:
+   - 10.1" should now show the KIOSK splash (yellow HanryxVault on black)
+   - 5" should now show the ADMIN login screen
+   If both are still admin on 10.1" + blue on 5", MoveToOutput to HDMI-A-2 is broken.
+ngansen@hanryxvault-sat:~ $ export DISPLAY=:0
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/1000
+
+# 1. Confirm admin's current X position (should be 1024 if rule put it on HDMI-A-2)
+echo "=== current geometry (admin should be at X=1024) ==="
+for wid in $(xdotool search --classname chromium 2>/dev/null); do
+  cls=$(xprop -id $wid WM_CLASS 2>/dev/null | head -1)
+  geom=$(xdotool getwindowgeometry $wid 2>/dev/null | tr '\n' ' ')
+  echo "$cls | $geom"
+done
+
+# 2. Restore correct mapping + force re-fullscreen on target output
+ 10.1\" and kiosk shop on 5\""— should be admin on
+=== current geometry (admin should be at X=1024) ===
+ | Window 6291460   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 8388609   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 10485761   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+=== writing corrected rc.xml (admin→HDMI-A-1, kiosk→HDMI-A-2 with re-fullscreen) ===
+00:00:00.000 [../src/main.c:112] LABWC_PID not set
+
+
+=== geometry AFTER fix (admin should be 1024x600 @ 0,0; kiosk 800x480 @ 1024,0) ===
+ | Window 6291460   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 4194308   Position: 0,0 (screen: 0)   Geometry: 1024x600 
+ | Window 8388609   Position: 10,10 (screen: 0)   Geometry: 10x10 
+ | Window 10485761   Position: 10,10 (screen: 0)   Geometry: 10x10 
+
+👉 Look at both screens — should be admin on 10.1" and kiosk shop on 5"
+ngansen@hanryxvault-sat:~ $ 
+ngansen@hanryxvault-sat:~ $
