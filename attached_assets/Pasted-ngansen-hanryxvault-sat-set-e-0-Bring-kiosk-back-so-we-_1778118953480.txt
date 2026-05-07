@@ -1,0 +1,55 @@
+ngansen@hanryxvault-sat:~ $ set +e
+
+# ── 0. Bring kiosk back so we have a chromium to steal env from ─────────────
+echo "=== STAGE 0: ensure session + chromium are alive ==="
+sudo systemctl restart hanryx-kiosk.service
+echo "Waiting 18s for chromium to launch..."
+sleep 18
+
+echo "What's running:"
+ps -u ngansen -o pid,comm,args | grep -E 'labwc|Xwayland|chromium|hanryx' | grep -v grep | head -20
+echo "Wayland sockets:" ; ls /run/user/1000/wayland-* 2>/dev/null
+echo "X sockets:"      ; ls /tmp/.X11-unix/ 2>/dev/null
+
+# ── 1. Steal env from a chromium child via sudo (echo "STAGE 3 BLUE  → 5\" / 10.1\" / neither?"====
+=== STAGE 0: ensure session + chromium are alive ===
+Waiting 18s for chromium to launch...
+What's running:
+   4077 bash            /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+   4318 bash            /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+   4456 bash            /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+   4482 bash            /bin/bash /home/ngansen/.hanryx-dual-monitor.sh
+   4649 bash            /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+   5466 labwc           /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+   5493 chromium        /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+   5495 chrome_crashpad /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+   5497 chrome_crashpad /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=4 --shared-client-connection
+   5501 chromium        /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+   5502 chromium        /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+   5505 chromium        /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+   5518 Xwayland        Xwayland :0 -rootless -core -terminate 10 -listenfd 29 -listenfd 30 -displayfd 60 -wm 57
+   5542 chromium        /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,7396248666089572161,16357098926752550947,524288 --field-trial-handle=3,i,13280171950616675883,8787327564241185323,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,12364049359987990135,791263253770269783,4 --trace-process-track-uuid=3190708989122997041
+   5550 chromium        /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,10134726420488478045,4374044767188853246,524288 --field-trial-handle=3,i,13280171950616675883,8787327564241185323,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,12364049359987990135,791263253770269783,4 --trace-process-track-uuid=3190708990060038890
+   5578 chromium        /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778117802089192 --launch-time-ticks=1083246657 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12544950060490796460,3497757348026396885,2097152 --field-trial-handle=3,i,13280171950616675883,8787327564241185323,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,12364049359987990135,791263253770269783,4 --trace-process-track-uuid=3190708991934122588
+   5619 chromium        /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,13934785232732706518,9260857383831461864,262144 --field-trial-handle=3,i,13280171950616675883,8787327564241185323,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,12364049359987990135,791263253770269783,4 --trace-process-track-uuid=3190708994745248135
+   5622 chromium        /usr/lib/chromium/chromium --type=broker
+   5634 chromium        /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+   5636 chrome_crashpad /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.101 --initial-client-fd=5 --shared-client-connection
+Wayland sockets:
+/run/user/1000/wayland-0
+/run/user/1000/wayland-0.lock
+X sockets:
+X0
+CHROME_PID=5634
+-bash: /proc/5634/environ: Permission denied
+Captured env: 
+FATAL: still no DISPLAY. Aborting.
+logout
+Connection to hanryxvault-sat closed.
+The authenticity of host '100.121.45.69 (100.121.45.69)' can't be established.
+ED25519 key fingerprint is SHA256:Nqs630PtXIKR2/HGD8evGuPmZjYGeqH5NjVetLSmdjs.
+This host key is known by the following other names/addresses:
+    ~/.ssh/known_hosts:10: [hashed name]
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '100.121.45.69' (ED25519) to the list of known hosts.
+ngansen@hanryxvault-sat:~ $
