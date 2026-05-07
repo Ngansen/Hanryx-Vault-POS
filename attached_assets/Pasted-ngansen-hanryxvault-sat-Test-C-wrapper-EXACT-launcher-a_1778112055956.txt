@@ -1,0 +1,38 @@
+ngansen@hanryxvault-sat:~ $ # Test C: wrapper + EXACT launcher argv (including .hanryx profile path) from sshd shell
+sudo pkill -9 -f chromium 2>/dev/null
+sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null
+sleep 2
+sudo rm -rf /home/ngansen/.hanryx/admin-profile
+sudo -u ngansen /usr/local/bin/hvault-chromium-wrapper \
+    --kiosk --no-first-run --noerrdialogs --disable-infobars \
+    --no-sandbox --ozone-platform=x11 --no-process-singleton \
+    --disable-dev-shm-usage --password-store=basic --use-mock-keychain \
+    --user-data-dir=/home/ngansen/.hanryx/admin-profile \
+    --class=hvault-admin \
+    file:///tmp/hvault-splash-admin.html \
+ad -10connect(' "$STRACE_LOG" | grep -v '= 0' | he
+Killed
+Killed
+[1] 27358
+Test C: chromium for .hanryx/admin-profile alive: 11
+[1]+  Killed                  sudo -u ngansen /usr/local/bin/hvault-chromium-wrapper --kiosk --no-first-run --noerrdialogs --disable-infobars --no-sandbox --ozone-platform=x11 --no-process-singleton --disable-dev-shm-usage --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin file:///tmp/hvault-splash-admin.html > /tmp/test-C.log 2>&1
+Killed
+=== strace logs ===
+-rw-rw-r-- 1 ngansen ngansen 52224 May  6 19:00 /tmp/hvault-strace-28136-1778112026.log
+=== connects to X11/wayland in strace ===
+28140 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11.so.6", O_RDONLY|O_CLOEXEC) = 3
+28140 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11-xcb.so.1", O_RDONLY|O_CLOEXEC) = 3
+28147 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11.so.6", O_RDONLY|O_CLOEXEC) = 5
+28148 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11.so.6", O_RDONLY|O_CLOEXEC) = 5
+28148 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11-xcb.so.1", O_RDONLY|O_CLOEXEC) = 5
+28147 openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libX11-xcb.so.1", O_RDONLY|O_CLOEXEC) = 5
+28140 connect(29, {sa_family=AF_UNIX, sun_path=@"/tmp/.X11-unix/X0"}, 20) = -1 ECONNREFUSED (Connection refused)
+28140 connect(29, {sa_family=AF_UNIX, sun_path="/tmp/.X11-unix/X0"}, 110) = -1 ECONNREFUSED (Connection refused)
+=== first 5 failed connect()s ===
+28140 connect(29, {sa_family=AF_UNIX, sun_path=@"/tmp/.X11-unix/X0"}, 20) = -1 ECONNREFUSED (Connection refused)
+28140 connect(29, {sa_family=AF_UNIX, sun_path="/tmp/.X11-unix/X0"}, 110) = -1 ECONNREFUSED (Connection refused)
+28140 connect(29, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+28140 connect(29, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+28140 connect(29, {sa_family=AF_INET6, sin6_port=htons(6000), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::1", &sin6_addr), sin6_scope_id=0}, 28) = -1 ECONNREFUSED (Connection refused)
+28140 connect(29, {sa_family=AF_INET, sin_port=htons(6000), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 ECONNREFUSED (Connection refused)
+ngansen@hanryxvault-sat:~ $
