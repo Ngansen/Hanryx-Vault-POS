@@ -1,0 +1,61 @@
+ngansen@hanryxvault-sat:~ $ echo "=== A. service status ==="
+systemctl is-active hanryx-kiosk.service
+sudo systemctl status hanryx-kiosk.service --no-pager -n 8
+
+echo
+echo "=== B. nuke any half-dead processes + start fresh ==="
+sudo pkill -9 -f 'hanryx-dual-monitor' 2>/dev/null 
+sudo pkill -9 -f '/usr/lib/chromium/chromium' 2>/dev/null
+sleep 2
+sudo rm -f /tmp/hanryx-kiosk-launcher.lock
+sudo rm -f /home/ngansen/.hanryx/admin-profile/Singleton* /home/ngansen/.hanryx/kiosk-profile/Singleton*
+
+echo "👉 Screens NOW?  10.1\":   5\":"g ==="un/use
+=== A. service status ===
+active
+● hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)
+     Loaded: loaded (/etc/systemd/system/hanryx-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Thu 2026-05-07 17:57:36 CDT; 9min ago
+ Invocation: 6216f516ca28481fb9cf996678139f57
+       Docs: https://github.com/Ngansen/Hanryx-Vault-POS
+   Main PID: 335430 (labwc)
+      Tasks: 0 (limit: 4749)
+        CPU: 11ms
+     CGroup: /system.slice/hanryx-kiosk.service
+             ‣ 335430 /usr/bin/labwc -C /etc/hanr…
+
+May 07 17:57:36 hanryxvault-sat systemd[1]: Start…
+May 07 17:57:36 hanryxvault-sat (k-launch)[335430]: ...
+Hint: Some lines were ellipsized, use -l to show in full.
+
+=== B. nuke any half-dead processes + start fresh ===
+Killed
+Killed
+ sleeping 25s for chromium…
+
+=== C. survival ===
+  admin: PID= etime=
+  kiosk: PID= etime=
+
+=== D. toplevels ===
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+
+=== E. last 15 launcher log lines ===
+[330105:330177:0507/171246.309953:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[329972:329993:0507/171520.394162:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[330105:330177:0507/171626.062442:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[329972:329993:0507/172046.310183:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[330105:330177:0507/172258.277619:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+Gdk-Message: 17:57:34.426: Error reading events from display: Broken pipe
+Gdk-Message: 17:57:34.430: Error reading events from display: Broken pipe
+[17:57:40] Another launcher instance is already running — exiting (PID 335444)
+[17:57:40] Another launcher instance is already running — exiting (PID 335444)
+
+👉 Screens NOW?  10.1":   5":
+ngansen@hanryxvault-sat:~ $
