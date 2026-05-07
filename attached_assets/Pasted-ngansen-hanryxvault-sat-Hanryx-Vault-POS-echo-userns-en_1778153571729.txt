@@ -1,0 +1,108 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo === userns enabled? ===
+sysctl kernel.unprivileged_userns_clone 2>&1
+cat /proc/sys/user/max_user_namespaces 2>&1
+echo
+echo === test 1: WITH --no-sandbox + --kiosk + --app-id + merged enable-features ===
+pkill -f 'user-data-dir=/tmp/cr-test' 2>/dev/null; sleep 1
+rm -rf /tmp/cr-test; mkdir -p /tmp/cr-test
+unset DISPLAY XAUTHORITY
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland MOZ_ENABLE_WAYLAND=1 \
+  /usr/lib/chromium/chromium \
+  --ozone-platform=wayland \
+  --enable-features=UseOzonePlatform,VaapiVideoDecoder \
+  --no-sandbox \
+pkill -f 'user-data-dir=/tmp/cr-test' 2>/dev/nulle
+=== userns enabled? ===
+sysctl: cannot stat /proc/sys/kernel/unprivileged_userns_clone: No such file or directory
+15830
+
+=== test 1: WITH --no-sandbox + --kiosk + --app-id + merged enable-features ===
+[1] 25258
+[1]+  Done                    WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland MOZ_ENABLE_WAYLAND=1 /usr/lib/chromium/chromium --ozone-platform=wayland --enable-features=UseOzonePlatform,VaapiVideoDecoder --no-sandbox --kiosk --no-first-run --noerrdialogs --user-data-dir=/tmp/cr-test --class=hvault-test --app-id=hvault-test about:blank > /tmp/cr3.log 2>&1
+alive? NO
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+=== last 15 lines of cr3.log ===
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ pkill -f 'user-data-dir=/tmp/cr-test' 2>/dev/null; sleep 1
+rm -rf /tmp/cr-test; mkdir -p /tmp/cr-test
+unset DISPLAY XAUTHORITY
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland MOZ_ENABLE_WAYLAND=1 \
+  /usr/lib/chromium/chromium \
+  --ozone-platform=wayland \
+  --enable-features=UseOzonePlatform,VaapiVideoDecoder \
+  --enable-logging=stderr --v=1 \
+  --no-sandbox \
+  --kiosk --no-first-run --noerrdialogs \
+  --user-data-dir=/tmp/cr-test \
+  --class=hvault-test --app-id=hvault-test \
+  about:blank > /tmp/cr4.log 2>&1 &
+CRPID=$!
+pkill -f 'user-data-dir=/tmp/cr-test' 2>/dev/nullc
+[1] 151051
+[1]+  Done                    WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland MOZ_ENABLE_WAYLAND=1 /usr/lib/chromium/chromium --ozone-platform=wayland --enable-features=UseOzonePlatform,VaapiVideoDecoder --enable-logging=stderr --v=1 --no-sandbox --kiosk --no-first-run --noerrdialogs --user-data-dir=/tmp/cr-test --class=hvault-test --app-id=hvault-test about:blank > /tmp/cr4.log 2>&1
+alive? NO
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+=== log size ===
+7174 /tmp/cr4.log
+=== LAST 40 lines of cr4.log ===
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.DidFinishNavigation recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.DidStartLoading recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.DidStartNavigation recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.DidStartNavigation.MainFrame recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.DidUpdateNavigationHandleTiming recorded 3 samples, mean = 0.0 (flags = 0x41)
+0  ---O                                                                      (3 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.LoadProgressChanged recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.RenderFrameCreated recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.RenderFrameDeleted recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: WebContentsObserver.RenderViewReady recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+
+=== any FATAL/ERROR/abort in log ===
+[151051:151051:0507/063159.264343:VERBOSE1:chrome/app/chrome_crash_reporter_client.cc:199] GetCollectStatsConsent(): is_official_chrome_build is false so returning false
+[151051:151051:0507/063159.266944:VERBOSE1:chrome/app/chrome_crash_reporter_client.cc:199] GetCollectStatsConsent(): is_official_chrome_build is false so returning false
+[151051:151051:0507/063159.541334:VERBOSE1:components/enterprise/browser/controller/chrome_browser_cloud_management_controller.cc:203] Cloud management controller initialization aborted as CBCM is not enabled. Please use the `--enable-chrome-browser-cloud-management` command line flag to enable it if you are not using the official Google Chrome build.
+[151051:151068:0507/063159.599051:VERBOSE1:components/component_updater/component_installer.cc:477] StartRegistration for Certificate Error Assistant
+[151051:151051:0507/063159.624337:VERBOSE1:components/component_updater/component_installer.cc:556] FinishRegistration for Certificate Error Assistant
+[151051:151051:0507/063159.696291:VERBOSE1:components/signin/core/browser/account_reconcilor.cc:671] AccountReconcilor::AbortReconcile: try again later
+[151051:151051:0507/063159.696297:VERBOSE1:components/signin/core/browser/account_reconcilor.cc:783] AccountReconcilor::CalculateIfMultiloginReconcileIsDone: Error was 
+Histogram: HttpCache.NoVarySearch.SnapshotLoadError recorded 1 samples, mean = 4.0 (flags = 0x41)
+Histogram: Net.DNS.DnsTask.SvcbHttpsTransactionError recorded 2 samples, mean = 0.0 (flags = 0x41)
+Histogram: Net.DNS.HTTPSSVC.RecordHttps.Insecure.ExpectNoerror.DnsRcode recorded 2 samples, mean = 3.0 (flags = 0x41)
+Histogram: Net.DNS.HTTPSSVC.RecordHttps.Insecure.ExpectNoerror.ResolveTimeAddress recorded 4 samples, mean = 29.0 (flags = 0x41)
+Histogram: Net.DNS.HTTPSSVC.RecordHttps.Insecure.ExpectNoerror.ResolveTimeExperimental recorded 2 samples, mean = 27.0 (flags = 0x41)
+Histogram: Net.DNS.HTTPSSVC.RecordHttps.Insecure.ExpectNoerror.ResolveTimeRatio recorded 2 samples, mean = 8.5 (flags = 0x41)
+Histogram: Net.NetworkTransaction.StreamRequestErrorCode3 recorded 2 samples (flags = 0x41)
+Histogram: Net.QuicSession.CloseAllSessionsError recorded 3 samples (flags = 0x41)
+Histogram: Net.SharedDictionaryStore.DeleteExpiredDictionaries.Error recorded 1 samples, mean = 0.0 (flags = 0x41)
+Histogram: Net.SharedDictionaryStore.GetDictionaries.Error recorded 1 samples, mean = 0.0 (flags = 0x41)
+Histogram: Net.TcpConnectAttempt.Latency.Error recorded 2 samples, mean = 54.5 (flags = 0x41)
+Histogram: SimpleCache.Http.SyncOpenPlatformFileError recorded 1 samples, mean = 4.0 (flags = 0x40)
+Histogram: GPU.GPUProcessTerminationStatus2 recorded 1 samples, mean = 4.0 (flags = 0x41)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ 
