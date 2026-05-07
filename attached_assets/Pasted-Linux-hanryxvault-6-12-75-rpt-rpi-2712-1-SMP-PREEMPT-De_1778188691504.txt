@@ -1,0 +1,110 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu May  7 02:55:19 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ ssh ngansen@hanryxvault-sat
+# or by IP if MagicDNS isn't resolving:
+ssh ngansen@100.121.45.69
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/ld3bb69d39997f
+
+# Authentication checked with Tailscale SSH.
+# Time since last authentication: 0s
+
+ngansen@hanryxvault-sat:~ $ set +e
+cd ~/Hanryx-Vault-POS && git pull --ff-only
+
+echo === PRECHECK 1: main Pi /health reachable? ===
+curl -sf --max-time 3 http://hanryxvault:8080/health && echo " OK" || echo " WARN: main Pi unreachable — watchdog may kill chromium when it recovers"
+
+echo === PRECHECK 2: wayland socket alive? ===
+ls -la /run/user/1000/wayland-* 2>/dev/null
+
+echo === STEP 1: kill stale launcher loops + chromium ===
+sudo pkill -9 -f 'hanryx-dual-monitor.sh'
+sudo pkill -9 -f '/usr/lib/chromium/chromium'
+sleep 2
+pgrep -af 'hanryx-dual-monitor.sh|/usr/lib/chromiuecho "   5\":"":"on each screen NOW?"og lines ===e
+remote: Enumerating objects: 9, done.
+remote: Counting objects: 100% (9/9), done.
+remote: Compressing objects: 100% (5/5), done.
+remote: Total 5 (delta 4), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (5/5), 2.65 KiB | 542.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   d1f87ca..7750182  main       -> origin/main
+Updating d1f87ca..7750182
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 24 ++++++----
+ replit.md                        |  5 ++
+ 2 files changed, 20 insertions(+), 9 deletions(-)
+=== PRECHECK 1: main Pi /health reachable? ===
+{"db_size_mb":212.08,"inventory":63,"local_sales":9,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1778188421832,"total_sales":9,"uptime_s":70573,"version":"2.0","wal_size_mb":0.0}
+ OK
+=== PRECHECK 2: wayland socket alive? ===
+srwxrwxr-x 1 ngansen ngansen 0 May  6 22:41 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May  6 21:03 /run/user/1000/wayland-0.lock
+=== STEP 1: kill stale launcher loops + chromium ===
+[sudo] password for ngansen: 
+Killed
+Killed
+ all clear
+=== STEP 2: rewrite the autostart to drop setsid nohup ===
+ new autostart:
+#!/bin/sh
+# HanryxVault kiosk autostart — runs once when labwc starts, as ngansen.
+# NO setsid/nohup: keep launcher inside systemd cgroup so service stop kills it.
+sleep 3 && /home/ngansen/.hanryx-dual-monitor.sh >> /var/log/hanryx-kiosk.log 2>&1 &
+=== STEP 3: re-extract launcher heredoc with new flags ===
+ launcher size: 477 lines
+ new flags present:
+342:    --ozone-platform=wayland
+351:    --no-sandbox
+352:    --disable-gpu
+353:    --use-gl=swiftshader
+373:    # COMMON_FLAGS already uses --disable-gpu --use-gl=swiftshader (the only
+389:            mode="fallback(--disable-gpu)"
+425:                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+=== STEP 4: restart service ===
+
+=== RESULT 1: chromium survival ===
+  admin: PID= etime=
+  kiosk: PID= etime=
+=== RESULT 2: wlrctl toplevels ===
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+=== RESULT 3: last 25 launcher log lines ===
+
+[16:10:57] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[16:10:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:10:58] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:10:59] [Kiosk] crashed in 1s (count=1027, mode=fallback(--disable-gpu))
+[16:10:59] [Kiosk] crashed in 1s (count=1027, mode=fallback(--disable-gpu))
+[16:10:59] [Admin] crashed in 0s (count=1027, mode=fallback(--disable-gpu))
+[16:10:59] [Admin] crashed in 0s (count=1027, mode=fallback(--disable-gpu))
+[16:11:59] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[16:11:59] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[16:11:59] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:11:59] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:12:00] [Kiosk] crashed in 0s (count=1028, mode=fallback(--disable-gpu))
+[16:12:00] [Kiosk] crashed in 0s (count=1028, mode=fallback(--disable-gpu))
+[16:12:01] [Admin] crashed in 1s (count=1028, mode=fallback(--disable-gpu))
+[16:12:01] [Admin] crashed in 1s (count=1028, mode=fallback(--disable-gpu))
+[16:13:00] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[16:13:00] [Kiosk] → http://hanryxvault:8080/kiosk  (fallback(--disable-gpu))  backoff=60s
+[16:13:01] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:13:01] [Admin] → http://hanryxvault:8080/admin  (fallback(--disable-gpu))  backoff=60s
+[16:13:02] [Kiosk] crashed in 1s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Kiosk] crashed in 1s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Admin] crashed in 0s (count=1029, mode=fallback(--disable-gpu))
+[16:13:02] [Admin] crashed in 0s (count=1029, mode=fallback(--disable-gpu))
+[16:13:56] Another launcher instance is already running — exiting (PID 312757)
+[16:13:56] Another launcher instance is already running — exiting (PID 312757)
+
+👉 What is on each screen NOW?
+   10.1":
+   5":
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ 
