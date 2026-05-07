@@ -1,0 +1,40 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== /etc/chromium.d/* contents (Debian flag-injection dir) ==="
+ls -la /etc/chromium.d/ 2>/dev/null
+grep -rH 'ozone-platform\|x11\|wayland' /etc/chromium.d/ 2>/dev/null
+
+echo
+echo "=== anywhere else 'ozone-platform=x11' is set on the system ==="
+sudo grep -rsHE 'ozone-platform=x11|ozone-platform"=*"x11' \
+  /etc /home/ngansen/.config /home/ngansen/.hanryx-dual-monitor.sh 2>/dev/null \
+  | grep -v '^Binary' | head -20
+
+echo
+echo "=== full admin chromium cmdline (untruncated) ==="
+ADM=$(pgrep -f -- 'user-data-dir=/home/ngansen/.haansen/.hanryx-dual-monitor.sh | head -10' /home/ng
+=== /etc/chromium.d/* contents (Debian flag-injection dir) ===
+total 40
+drwxr-xr-x   2 root root  4096 Apr 20 19:10 .
+drwxr-xr-x 134 root root 12288 May  6 22:00 ..
+-rw-r--r--   1 root root    99 Jan 28 04:48 00-rpi-vars
+-rw-r--r--   1 root root   292 Sep 12  2024 apikeys
+-rw-r--r--   1 root root   609 Sep 12  2024 default-flags
+-rw-r--r--   1 root root   543 Mar 25  2025 dev-shm
+-rw-r--r--   1 root root   299 Sep 12  2024 extensions
+-rw-r--r--   1 root root    80 Sep 12  2024 README
+
+=== anywhere else 'ozone-platform=x11' is set on the system ===
+/etc/hanryx-kiosk/labwc/autostart:# Must export DISPLAY/XAUTHORITY because chromium uses --ozone-platform=x11
+/home/ngansen/.hanryx-dual-monitor.sh:#   • Uses XWayland (--ozone-platform=x11) — survives labwc/greeter session swaps
+/home/ngansen/.hanryx-dual-monitor.sh:#   • Under XWayland (--ozone-platform=x11) ALL chromium windows share one
+
+=== full admin chromium cmdline (untruncated) ===
+     1  /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+
+=== are we even invoking /usr/lib/chromium/chromium directly, or going through a wrapper? ===
+661:if   [ -x /usr/lib/chromium/chromium ];          then CHROMIUM_BIN=/usr/lib/chromium/chromium
+662:elif [ -x /usr/lib/chromium-browser/chromium-browser ]; then CHROMIUM_BIN=/usr/lib/chromium-browser/chromium-browser
+663:elif [ -x /usr/bin/chromium-browser ];           then CHROMIUM_BIN=/usr/bin/chromium-browser
+664:elif [ -x /usr/bin/chromium ];                   then CHROMIUM_BIN=/usr/bin/chromium
+665:else                                                  CHROMIUM_BIN=chromium
+780:        "$CHROMIUM_BIN" \
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS
