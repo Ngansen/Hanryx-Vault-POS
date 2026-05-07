@@ -1,0 +1,65 @@
+ngansen@hanryxvault-sat:~ $ cd ~/Hanryx-Vault-POS && git pull
+sudo systemctl restart hanryx-kiosk.service
+sleep 25
+
+# Verify chromium is running with native wayland flags
+ps -ef | grep -E 'chromium.*--ozone-platform' | grep -v grep | head -2
+echo
+# And verify both windows registered as wlr toplevels with their app_ids
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 wlrctl toplevel list 2>&1
+echo
+echo "👉 What's on each screen?"
+echo "   10.1\":"
+echo "   5\":"
+remote: Enumerating objects: 9, done.
+remote: Counting objects: 100% (6/6), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 9 (delta 2), reused 2 (delta 2), pack-reused 3 (from 1)
+Unpacking objects: 100% (9/9), 39.04 KiB | 563.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   f52dadc..d1f87ca  main       -> origin/main
+Updating f52dadc..d1f87ca
+Fast-forward
+ ...setup-satellite-kiosk-boot.sh | 32 ++++++++--
+ replit.md                        |  5 ++
+ 2 files changed, 31 insertions(+), 6 deletions(-)
+[sudo] password for ngansen: 
+
+ngansen    11790   11724  0 21:58 ?        00:00:00 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778119380245745 --launch-time-ticks=3314689650 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,10689784630326523865,13491789451635954593,2097152 --field-trial-handle=3,i,9359511435477071174,7464825840120863282,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2216565409440648096,2772831766527299852,4 --trace-process-track-uuid=3190708991934122588
+ngansen    11837   11720  0 21:58 ?        00:00:00 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,2775491369658303127,8185096327003473275,262144 --field-trial-handle=3,i,9359511435477071174,7464825840120863282,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2216565409440648096,2772831766527299852,4 --trace-process-track-uuid=3190708994745248135
+
+chromium-browser (/home/ngansen/.hanryx/kiosk-profile): HanryxVault - Chromium
+chromium-browser (/home/ngansen/.hanryx/admin-profile): HanryxVault POS — Dashboard - Chromium
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+
+👉 What's on each screen?
+   10.1":
+   5":
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ 
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ # 1. Confirm admin/kiosk chromium ARE using --ozone-platform=wayland
+echo "=== admin chromium full command line ==="
+ADM=$(pgrep -f -- 'user-data-dir=/home/ngansen/.hanryx/admin-profile' | head -1)
+cat /proc/$ADM/cmdline 2>/dev/null | tr '\0' ' '; echo
+echo
+echo "=== kiosk chromium full command line ==="
+KSK=$(pgrep -f -- 'user-data-dir=/home/ngansen/.hanryx/kiosk-profile' | head -1)
+cat /proc/$KSK/cmdline 2>/dev/null | tr '\0' ' '; echo
+echo
+# 2. Test title-based labwc rule (more reliable than app_id which chromium fixes to "chromium-browser")
+sudo tee /etc/hanryx-kiosk/labwc/rc.xml > /dev/nulecho "   5\":"":"n each screen NOW?"E_DIR=/run/use
+=== admin chromium full command line ===
+/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin 
+
+=== kiosk chromium full command line ===
+/usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --disable-gpu --use-gl=swiftshader --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk 
+
+
+=== restarting kiosk so labwc reloads + chromium re-maps ===
+chromium-browser (/home/ngansen/.hanryx/kiosk-profile): HanryxVault - Chromium
+chromium-browser (/home/ngansen/.hanryx/admin-profile): HanryxVault POS — Dashboard - Chromium
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+
+👉 What's on each screen NOW?
+   10.1":
+   5":
+ngansen@hanryxvault-sat:~/Hanryx-
