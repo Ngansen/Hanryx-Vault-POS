@@ -1,0 +1,89 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ set +e
+
+echo === STEP 1: stop service so it stops re-spawning ===
+sudo systemctl stop hanryx-kiosk.service
+sleep 2
+
+echo === STEP 2: forensics — what is still alive ===
+ps -ef | grep -E 'hanryx-dual-monitor|chromium|unclutter' | grep -v grep
+
+echo === STEP 3: brutal kill of EVERYTHING related ===
+sudo pkill -9 -f 'hanryx-dual-monitor' 2>/dev/null 
+sudo pkill -9 -f 'chromium'            2>/dev/null 
+sudo pkill -9 -f 'unclutter'           2>/dev/null -1)""labwc version: $(labwc --version 2>&1 | head
+=== STEP 1: stop service so it stops re-spawning ===
+=== STEP 2: forensics — what is still alive ===
+ngansen    19374       1  0 May06 ?        00:00:01 /bin/bash -c    LOG="/var/log/hanryx-kiosk.log";    CONF="/home/ngansen/.hanryx/satellite.conf";    FAIL=0;    while true; do      source "$CONF" 2>/dev/null || true;      HURL="${HEALTH_URL:-http://hanryxvault:8080/health}";      if curl -sf --max-time 3 "$HURL" > /dev/null 2>&1; then        if [ "$FAIL" -ge 3 ]; then          echo "[watchdog] Server back online — killing Chromium so launcher restart loop reconnects" | tee -a "$LOG";          pkill -f chromium 2>/dev/null;        fi;        FAIL=0;      else        FAIL=$((FAIL+1));        echo "[watchdog] Health check failed #$FAIL" | tee -a "$LOG";        if [ "$FAIL" -eq 3 ]; then          echo "[watchdog] 3 consecutive failures — Chromium will reload on recovery" | tee -a "$LOG";        fi;      fi;      sleep 30;    done
+=== STEP 3: brutal kill of EVERYTHING related ===
+Killed
+Killed
+Killed
+=== STEP 4: confirm clean ===
+ all clear
+=== STEP 5: confirm the live launcher file has our new flags ===
+342:    --ozone-platform=wayland
+343:    # NOTE: chromium only honours the LAST --enable-features=, so we MUST merge
+345:    --enable-features=UseOzonePlatform
+351:    --no-sandbox
+352:    --disable-gpu
+353:    --use-gl=swiftshader
+373:    # COMMON_FLAGS already uses --disable-gpu --use-gl=swiftshader (the only
+389:            mode="fallback(--disable-gpu)"
+425:                    log "[$name] ANGLE unstable — switching to --disable-gpu fallback"
+=== STEP 6: MANUAL chromium test with full logging — capture WHY it crashes ===
+[1] 314108
+ launched chromium PID=314108 — watching for 8s…
+[1]+  Exit 1                  /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --ozone-platform=wayland --enable-features=UseOzonePlatform --no-sandbox --disable-gpu --use-gl=swiftshader --disable-dev-shm-usage --password-store=basic --use-mock-keychain --user-data-dir=/tmp/cr-test --class=hvault-test --app-id=hvault-test --enable-logging=stderr --v=1 about:blank > /tmp/cr-test.log 2>&1
+=== RESULT: alive? ===
+ ❌ DEAD — chromium exited within 8s. Investigating crash cause:
+
+=== FATAL/ERROR/CRASH lines ===
+[314108:314108:0507/162605.444346:VERBOSE1:chrome/app/chrome_crash_reporter_client.cc:199] GetCollectStatsConsent(): is_official_chrome_build is false so returning false
+[314108:314108:0507/162605.446542:VERBOSE1:chrome/app/chrome_crash_reporter_client.cc:199] GetCollectStatsConsent(): is_official_chrome_build is false so returning false
+[314108:314108:0507/162605.526412:WARNING:ui/ozone/platform/wayland/common/drm_render_node_path_finder.cc:111] Preferred drm_render_node not found, picking v3d
+[314108:314108:0507/162605.529215:ERROR:ui/ozone/platform/wayland/host/wayland_connection.cc:202] Failed to connect to Wayland display: Connection refused (111)
+[314108:314108:0507/162605.529230:ERROR:ui/ozone/platform/wayland/ozone_platform_wayland.cc:270] Failed to initialize Wayland platform
+[314108:314108:0507/162605.529240:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+Histogram: Linux.SandboxStatus recorded 1 samples (flags = 0x41)
+Histogram: Security.Sandbox.LandlockState recorded 1 samples, mean = 2.0 (flags = 0x41)
+Histogram: Variations.ExtendedSafeMode.BeaconFileDeserializationError recorded 1 samples (flags = 0x41)
+Histogram: Variations.SafeMode.Streak.Crashes recorded 1 samples (flags = 0x41)
+
+=== LAST 30 LINES OF FULL LOG ===
+1  ... 
+
+Histogram: Variations.LoadPermanentConsistencyCountryResult recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: Variations.PolicyRestriction recorded 1 samples, mean = 0.0 (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+1  ... 
+
+Histogram: Variations.SafeMode.Streak.Crashes recorded 1 samples (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+
+Histogram: Variations.SafeMode.Streak.FetchFailures recorded 1 samples (flags = 0x41)
+0  -O                                                                        (1 = 100.0%)
+
+Histogram: Variations.SeedLoadResult recorded 1 samples, mean = 1.0 (flags = 0x41)
+0  O                                                                         (0 = 0.0%)
+1  -O                                                                        (1 = 100.0%) {0.0%}
+2  ... 
+
+Histogram: Variations.SeedUsage recorded 1 samples, mean = 2.0 (flags = 0x41)
+0  ... 
+2  -O                                                                        (1 = 100.0%) {0.0%}
+3  ... 
+
+Histogram: Variations.UserChannel recorded 1 samples (flags = 0x41)
+-1 -O                                                                        (1 = 100.0%)
+
+
+
+=== STEP 7: also dump chromium version + GL info ===
+Chromium 147.0.7727.101 
+srwxrwxr-x 1 ngansen ngansen 0 May  7 16:13 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May  6 21:03 /run/user/1000/wayland-0.lock
+labwc version: labwc 0.9.2 (+xwayland +nls +rsvg +libsfdo)
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $
