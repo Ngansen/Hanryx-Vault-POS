@@ -729,8 +729,17 @@ COMMON_FLAGS=(
     --disable-component-update
     --no-process-singleton
     --ozone-platform=wayland
+    # NOTE: chromium only honours the LAST --enable-features=, so we MUST merge
+    # all features into a single flag. Splitting them silently drops earlier values.
     --enable-features=UseOzonePlatform
-    --enable-features=VaapiVideoDecoder
+    # Pi 5 V3D GPU process crashes under wayland (TerminationStatus=4) within
+    # seconds of startup, taking the browser down with it. Software rendering
+    # via swiftshader is rock-solid for two small kiosk pages and is the only
+    # reliable choice for trade-show use. VAAPI is deliberately NOT enabled
+    # because it requires the GPU process we just disabled.
+    --no-sandbox
+    --disable-gpu
+    --use-gl=swiftshader
     --disable-dev-shm-usage
     --allow-file-access-from-files
     --disable-web-security
@@ -750,14 +759,11 @@ launch_window() {
     local name="$1" url="$2" splash="$3" profile="$4" app_id="$5"
     local first_run=1 quick_crashes=0 using_fallback=0
     local backoff=5 max_backoff=60
-    local FALLBACK_FLAGS=()
-    for f in "${COMMON_FLAGS[@]}"; do
-        case "$f" in
-            --enable-features=VaapiVideoDecoder) FALLBACK_FLAGS+=() ;;
-            *) FALLBACK_FLAGS+=("$f") ;;
-        esac
-    done
-    FALLBACK_FLAGS+=(--disable-gpu --use-gl=swiftshader)
+    # COMMON_FLAGS already uses --disable-gpu --use-gl=swiftshader (the only
+    # reliable mode on Pi 5 V3D + wayland). Fallback is identical for now;
+    # kept as a separate array so we can add further degradations later
+    # (e.g. --disable-features=Vulkan) without touching the launch loop.
+    local FALLBACK_FLAGS=("${COMMON_FLAGS[@]}")
 
     log "[$name] launch loop starting (app_id=$app_id, profile=$profile)"
     while true; do
