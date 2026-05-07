@@ -556,15 +556,27 @@ fi
 # ── Write labwc rc.xml window rules so each app_id lands on right output ────
 LABWC_RC="$HOME/.config/labwc/rc.xml"
 mkdir -p "$HOME/.config/labwc"
+#
+# labwc 0.9.x schema notes (verified against labwc 0.9.2):
+#   • <action name="MoveToOutput"> takes the target as an *attribute*
+#     (output="HDMI-A-1"), NOT as a child element <output>...</output>.
+#     The child-element form parses without error but the action runs as a
+#     no-op, leaving every window on the default output.
+#   • There is no `matchType` attribute. Identifier matching is glob-based;
+#     a literal string with no glob chars is matched exactly.
+#   • `identifier` matches the wlr-foreign-toplevel app_id (Wayland) or the
+#     class component of WM_CLASS (XWayland). Chromium with --class=foo sets
+#     the class component to "Foo" (capitalised first letter), so we match
+#     case-insensitively by globbing the first character.
 cat > "$LABWC_RC" << RCEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <labwc_config>
   <windowRules>
-    <windowRule identifier="hvault-admin" matchType="exact">
-      <action name="MoveToOutput"><output>${WL_ADMIN}</output></action>
+    <windowRule identifier="[Hh]vault-admin">
+      <action name="MoveToOutput" output="${WL_ADMIN}"/>
     </windowRule>
-    <windowRule identifier="hvault-kiosk" matchType="exact">
-      <action name="MoveToOutput"><output>${WL_KIOSK}</output></action>
+    <windowRule identifier="[Hh]vault-kiosk">
+      <action name="MoveToOutput" output="${WL_KIOSK}"/>
     </windowRule>
   </windowRules>
 </labwc_config>

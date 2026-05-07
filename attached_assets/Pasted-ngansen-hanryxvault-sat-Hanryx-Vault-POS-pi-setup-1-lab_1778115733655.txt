@@ -1,0 +1,36 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $ # 1. labwc version (window-rule schema differs across versions)
+labwc --version 2>&1 | head -2
+
+# 2. Actual WM_CLASS chromium set on each window
+sudo -u ngansen \
+    XDG_RUNTIME_DIR=/run/user/$(id -u ngansen) \
+    XAUTHORITY=$(ls /run/user/$(id -u ngansen)/.mutter-Xwaylandauth.* 2>/dev/null | head -1) \
+    DISPLAY=:0 \
+    sh -c '
+        for wid in $(xdotool search --classname chromium 2>/dev/null); do
+            echo "=== wid=$wid ==="
+            xprop -id "$wid" WM_CLASS WM_NAME _NET_WM_NAME 2>/dev/null
+        done
+    '   donep Positiontwindowgeometry "$wid" 2>/de
+labwc 0.9.2 (+xwayland +nls +rsvg +libsfdo)
+May 06 19:41:42 hanryxvault-sat hanryx-kiosk-launch[1787]: 00:24:55.085 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 582, value 6291460
+May 06 19:41:42 hanryxvault-sat hanryx-kiosk-launch[1787]: 00:24:55.085 [ERROR] [xwayland/xwm.c:1920] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 583, value 6291460
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.984 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 376, value 4194308
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.985 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 378, value 4194308
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.985 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 381, value 4194308
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.985 [ERROR] [xwayland/xwm.c:1920] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 382, value 4194308
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.996 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 388, value 12582916
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.996 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 391, value 12582916
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.996 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 393, value 12582916
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.996 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 396, value 12582916
+May 06 19:48:11 hanryxvault-sat hanryx-kiosk-launch[5037]: 00:06:15.996 [ERROR] [xwayland/xwm.c:1920] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 397, value 12582916
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.781 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 370, value 4194308
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.785 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 372, value 4194308
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.785 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 375, value 4194308
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.785 [ERROR] [xwayland/xwm.c:1920] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 376, value 4194308
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.786 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 380, value 12582916
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.787 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 383, value 12582916
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.787 [ERROR] [xwayland/xwm.c:1920] xcb error: op ConfigureWindow (no minor), code Window (no extension), sequence 385, value 12582916
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.787 [ERROR] [xwayland/xwm.c:1920] xcb error: op ChangeProperty (no minor), code Window (no extension), sequence 391, value 12582916
+May 06 19:55:19 hanryxvault-sat hanryx-kiosk-launch[6616]: 00:06:54.787 [ERROR] [xwayland/xwm.c:1920] xcb error: op DeleteProperty (no minor), code Window (no extension), sequence 392, value 12582916
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $ 
