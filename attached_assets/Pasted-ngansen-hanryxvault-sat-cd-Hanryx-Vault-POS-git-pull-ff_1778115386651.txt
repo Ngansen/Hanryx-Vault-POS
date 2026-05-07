@@ -1,0 +1,49 @@
+ngansen@hanryxvault-sat:~ $ cd ~/Hanryx-Vault-POS && git pull --ff-only && cd pi-setup
+
+awk "/^cat > \"\\\$LAUNCH_SCRIPT\" << 'LAUNCH'\$/{p=1; next} /^LAUNCH\$/{p=0} p" \
+    setup-satellite-kiosk-boot.sh > /tmp/new-launcher.sh
+echo "X_SOCK line should mention .X11-unix:"
+grep 'X_SOCK=' /tmp/new-launcher.sh
+
+sudo install -o ngansen -g ngansen -m 755 /tmp/new-launcher.sh /home/ngansen/.hanryx-dual-monitor.sh 
+
+sudo pkill -9 -f chromium 2>/dev/null; sudo pkill -9 -f hanryx-dual-monitor 2>/dev/null
+sudo rm -f /tmp/hanryx-kiosk-launcher.lock
+sudo rm -rf /home/ngansen/.hanryx/admin-profile /home/ngansen/.hanryx/kiosk-profile
+grep -v -- '--type='-dir=/home/ngansen/.hanryx' | 
+remote: Enumerating objects: 5, done.
+remote: Counting objects: 100% (5/5), done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 3 (delta 1), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (3/3), 4.00 KiB | 4.00 MiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   42d92ee..31d8fd4  main       -> origin/main
+Updating 42d92ee..31d8fd4
+Fast-forward
+ replit.md | 624 +++++---------------------------
+ 1 file changed, 96 insertions(+), 528 deletions(-)
+X_SOCK line should mention .X11-unix:
+X_SOCK="/tmp/.X11-unix/X${DISP_NUM}"
+Killed
+Killed
+=== launcher log ===
+[19:55:27] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[19:55:27] HanryxVault satellite kiosk v6.2 starting (XWayland mode)
+[19:55:27] Admin URL : http://hanryxvault:8080/admin
+[19:55:27] Admin URL : http://hanryxvault:8080/admin
+[19:55:27] Kiosk URL : http://hanryxvault:8080/kiosk
+[19:55:27] Kiosk URL : http://hanryxvault:8080/kiosk
+[19:55:27] DISPLAY=:0  (XWayland via labwc)
+[19:55:27] DISPLAY=:0  (XWayland via labwc)
+[19:55:27] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[19:55:27] Waiting for XWayland to accept connections on /tmp/.X11-unix/X0 …
+[19:55:32] XWayland socket ready on /tmp/.X11-unix/X0 after 5500ms
+[19:55:32] XWayland socket ready on /tmp/.X11-unix/X0 after 5500ms
+[19:55:33] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[19:55:33] [Admin] launch loop starting (app_id=hvault-admin, profile=/home/ngansen/.hanryx/admin-profile)
+[19:55:37] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[19:55:37] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+=== chromium main processes (expect 2: admin + kiosk) ===
+8177 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin file:///tmp/hvault-splash-admin.html
+8348 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=x11 --enable-features=VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk file:///tmp/hvault-splash-kiosk.html
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS/pi-setup $
