@@ -1,0 +1,40 @@
+ngansen@hanryxvault-sat:~ $ echo "=== 1. ALL chromium PIDs + their URL ==="
+for pid in $(pgrep -f /usr/lib/chromium/chromium); do
+  CMD=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)
+  PROF=$(echo "$CMD" | grep -oE 'user-data-dir=[^ ]+' | head -1)
+  URL=$(echo "$CMD" | grep -oE 'https?://[^ ]+|file://[^ ]+' | head -1)
+  TYPE=$(echo "$CMD" | grep -oE -- '--type=[^ ]+' | head -1)
+  [ -z "$TYPE" ] && echo "  PID=$pid  $PROF  URL=$URL"
+done
+
+echo
+echo "=== 2. toplevels (windows actually visible) ==="
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/use'watchdog|launch|crashed|killed|exit'og | grep -E 
+=== 1. ALL chromium PIDs + their URL ===
+  PID=337329  user-data-dir=/home/ngansen/.hanryx/admin-profile  URL=file:///tmp/hvault-splash-admin.html
+  PID=337454  user-data-dir=/home/ngansen/.hanryx/kiosk-profile  URL=file:///tmp/hvault-splash-kiosk.html
+  PID=338948  user-data-dir=/tmp/chromium-grafana  URL=http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+
+=== 2. toplevels (windows actually visible) ===
+chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+hvault-kiosk: HanryxVault - Chromium
+hvault-admin: HanryxVault POS — Dashboard - Chromium
+
+=== 3. grafana service + autostart files ===
+inactive
+/home/ngansen/.config/chromium/Crash Reports/pending/7aad147f-ece4-4550-a6b7-d85ee11ba6f2.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/273bd7a8-9988-4f93-ad53-a9b511115333.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/f980d011-da0d-4c97-bd32-5046dfe3c444.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/1a43ee11-985a-462e-8fae-909e08787a71.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/74417557-4cb3-4504-9834-6da8d037d0ac.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/85426d20-efe5-4a8a-984d-93fc308a65e6.dmp
+/home/ngansen/.config/chromium/Crash Reports/pending/bcfe495e-c3bc-4442-90d0-440a41ff29bc.dmp
+
+=== 4. watchdog log — has it killed chromium recently? ===
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] [Kiosk] launch loop starting (app_id=hvault-kiosk, profile=/home/ngansen/.hanryx/kiosk-profile)
+[18:10:08] Both windows launched — Tailscale tunnel active
+[18:10:08] Both windows launched — Tailscale tunnel active
+[watchdog] Health check failed #1
+[watchdog] Health check failed #1
+ngansen@hanryxvault-sat:~ $
