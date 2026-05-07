@@ -1,0 +1,42 @@
+ngansen@hanryxvault-sat:~/Hanryx-Vault-POS $ echo "=== G. manual launch with launcher's FULL COMMON_FLAGS ==="
+sudo -u ngansen WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+  bash -c '
+  rm -f /home/ngansen/.hanryx/admin-profile/Singleton* 2>/dev/null
+  /usr/lib/chromium/chromium \
+    --user-data-dir=/home/ngansen/.hanryx/admin-profile \
+    --class=hvault-admin \
+    --kiosk --no-first-run --noerrdialogs \
+    --disable-infobars --disable-session-crashed-bubble \
+    --disable-translate --disable-features=Translate,TranslateUI \
+    --check-for-update-interval=31536000 \
+    --autoplay-policy=no-user-gesture-required \
+    --disable-background-networking --disable-defa | head -30' /home/ngansen/.hanryx-dual-monitor.sh
+=== G. manual launch with launcher's FULL COMMON_FLAGS ===
+PID=326366
+  STILL ALIVE after 10s — NOT the flags, must be launcher bash/env
+
+=== H. last 40 lines stderr ===
+[326366:326366:0507/165833.290457:WARNING:ui/ozone/platform/wayland/common/drm_render_node_path_finder.cc:111] Preferred drm_render_node not found, picking v3d
+[326366:326366:0507/165833.293806:WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to wl_shm version 1 but version 2 is available.
+[326366:326366:0507/165833.293886:WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to zwp_pointer_gestures_v1 version 1 but version 3 is available.
+[326366:326386:0507/165833.432049:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326366:0507/165833.476994:WARNING:chrome/browser/signin/account_consistency_mode_manager.cc:74] Desktop Identity Consistency cannot be enabled as no OAuth client ID and client secret have been configured.
+[326366:326386:0507/165833.482019:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326386:0507/165833.519888:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326386:0507/165833.519914:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326412:326412:0507/165833.541792:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[326366:326366:0507/165833.545325:WARNING:ui/ozone/platform/wayland/host/wayland_surface.cc:170] Server doesn't support zcr_alpha_compositing_v1.
+[326366:326366:0507/165833.545341:WARNING:ui/ozone/platform/wayland/host/wayland_surface.cc:185] Server doesn't support overlay_prioritizer.
+[326366:326366:0507/165833.545346:WARNING:ui/ozone/platform/wayland/host/wayland_surface.cc:200] Server doesn't support wp_content_type_v1
+[326366:326366:0507/165833.545351:WARNING:ui/ozone/platform/wayland/host/wayland_surface.cc:214] Server doesn't support wp_color_management_surface_v1.
+[326366:326366:0507/165833.646660:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326386:0507/165833.646739:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326366:0507/165833.651290:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326366:0507/165833.655135:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326366:0507/165833.655198:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326366:0507/165833.655210:WARNING:ui/ozone/platform/wayland/host/org_gnome_mutter_idle_monitor.cc:87] org.gnome.Mutter.IdleMonitor D-Bus service does not exist
+[326366:326386:0507/165833.657196:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326366:0507/165833.691934:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326366:0507/165833.694749:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[326366:326386:0507/165833.694835:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[326366:326366:0507/165833

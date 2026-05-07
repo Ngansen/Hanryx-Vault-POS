@@ -788,11 +788,18 @@ launch_window() {
         log "[$name] → $START_URL  ($mode)  backoff=${backoff}s"
         rm -f "$profile"/Singleton* 2>/dev/null
         START=$(date +%s)
+        # NEVER add --app-id here. --app-id=ID tells chromium to launch the
+        # *installed Chrome App* with extension ID `ID` and EXIT IMMEDIATELY
+        # if that app isn't installed. Since we use synthetic identifiers
+        # ("hvault-admin", "hvault-kiosk") only for labwc window matching,
+        # --app-id always misses and chromium exits 0 in <1s with no stderr.
+        # Window placement uses --class (which sets WM_CLASS under XWayland
+        # AND the wlr-foreign-toplevel app_id under wayland-native), which
+        # is all labwc rc.xml's `identifier` attribute matches against.
         "$CHROMIUM_BIN" \
             "${FLAGS[@]}" \
             --user-data-dir="$profile" \
             --class="$app_id" \
-            --app-id="$app_id" \
             "$START_URL" >> "$LOG_FILE" 2>&1
         EXIT=$?
         ELAPSED=$(( $(date +%s) - START ))
