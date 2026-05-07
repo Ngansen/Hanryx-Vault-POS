@@ -1,0 +1,57 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu May  7 21:12:38 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ ssh ngansen@hanryxvault-sat
+# or via Tailscale IP if hostname doesn't resolve from where you are:
+ssh ngansen@100.121.45.69
+ngansen@hanryxvault-sat:~ $ echo "=== make sure NO chromium-grafana process is running on the satellite ==="
+ps -ef | grep -i 'chromium-grafana' | grep -v grep 
+echo "  (if anything appears above, that's the localhost-refused window)"
+
+echo
+echo "=== nuke any stray + clean kiosk profile + restart ==="
+sudo pkill -9 -f 'chromium-grafana' 2>/dev/null
+sudo systemctl stop hanryx-kiosk.service
+sudo pkill -9 -f 'hanryx-dual-monitor' 2>/dev/null 
+sudo pkill -9 -f '/usr/lib/chromium/chromium' 2>/dev/null
+sleep 2
+for prof in admin kiosk; do
+done   /'wlrctl toplevel list 2>/dev/null | sed 's
+=== make sure NO chromium-grafana process is running on the satellite ===
+ngansen   330124    6101  0 17:09 ?        00:00:01 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen   330146  330124  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen   330147  330124  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen   330155  330147  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen   330198  330124  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,14013020246365992704,12215935642085876890,524288 --field-trial-handle=3,i,15284339135757652107,2772944989545691065,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2237387488976417100,11299578012601429450,4 --trace-process-track-uuid=3190708989122997041
+ngansen   330204  330155  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,2383267871654001702,1232184627016219873,524288 --field-trial-handle=3,i,15284339135757652107,2772944989545691065,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2237387488976417100,11299578012601429450,4 --trace-process-track-uuid=3190708990060038890
+ngansen   330258  330155  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=6 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=72360951292 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,14552226006774677225,13896515190112849520,2097152 --field-trial-handle=3,i,15284339135757652107,2772944989545691065,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2237387488976417100,11299578012601429450,4 --trace-process-track-uuid=3190708991934122588
+ngansen   330330  330146  0 17:09 ?        00:00:00 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --use-gl=disabled --shared-files --metrics-shmem-handle=4,i,8602422804996888420,16635486298609238541,262144 --field-trial-handle=3,i,15284339135757652107,2772944989545691065,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2237387488976417100,11299578012601429450,4 --trace-process-track-uuid=3190708994745248135
+ngansen   335090  330155  0 17:55 ?        00:00:00 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=x11 --disable-gpu-compositing --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=16 --time-ticks-at-unix-epoch=-1778119380245744 --launch-time-ticks=75157347041 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,15122754381802130463,12381685400341609743,2097152 --field-trial-handle=3,i,15284339135757652107,2772944989545691065,262144 --disable-features=TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,2237387488976417100,11299578012601429450,4 --trace-process-track-uuid=3190709001304541078
+  (if anything appears above, that's the localhost-refused window)
+
+=== nuke any stray + clean kiosk profile + restart ===
+[sudo] password for ngansen: 
+Killed
+Killed
+Killed
+  
+=== titles every 5s for 30s (catches any drift to localhost) ===
+  T+10s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+  T+20s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+  T+30s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+  T+40s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+  T+50s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+  T+60s:
+    chromium-browser (/tmp/chromium-grafana): localhost - Chromium
+ngansen@hanryxvault-sat:~ $ n
