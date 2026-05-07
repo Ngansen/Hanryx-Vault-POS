@@ -1,0 +1,156 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu May  7 00:36:58 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== assistant (Ollama) state ==="
+docker inspect pi-setup-assistant-1 --format '{{json .State.Health}}' 2>&1 | python3 -m json.tool 2>/dev/null | head -30
+
+echo "=== assistant logs ==="
+docker compose logs --tail=40 assistant 2>&1 | tail -45
+
+echo "=== storefront state ==="
+docker inspect pi-setup-storefront-1 --format '{{json .State.Health}}' 2>&1 | python3 -m json.tool 2>/dev/null | head -30
+
+echo "=== storefront logs ==="
+docker compose logs --tail=40 storefront 2>&1 | ta | head -30ries:|test:/{if(svc) print svc" | "$0}'
+=== assistant (Ollama) state ===
+{
+    "Status": "unhealthy",
+    "FailingStreak": 321,
+    "Log": [
+        {
+            "Start": "2026-05-07T00:12:54.573033283Z",
+            "End": "2026-05-07T00:12:54.612387945Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:13:24.613102098Z",
+            "End": "2026-05-07T00:13:24.65777826Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:13:54.659470708Z",
+            "End": "2026-05-07T00:13:54.729820912Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:14:24.731306972Z",
+            "End": "2026-05-07T00:14:24.803113412Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:14:54.80530758Z",
+=== assistant logs ===
+time="2026-05-07T00:43:05Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+assistant-1  | 2026/05/06 20:54:49 routes.go:1197: INFO server config env="map[CUDA_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: NO_PROXY: OLLAMA_DEBUG:false OLLAMA_FLASH_ATTENTION:false OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://0.0.0.0:11434 OLLAMA_INTEL_GPU:false OLLAMA_KEEP_ALIVE:30m0s OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MODELS:/root/.ollama/models OLLAMA_MULTIUSER_CACHE:false OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://*] OLLAMA_SCHED_SPREAD:false OLLAMA_TMPDIR: ROCR_VISIBLE_DEVICES: http_proxy: https_proxy: no_proxy:]"
+assistant-1  | time=2026-05-06T20:54:49.360Z level=INFO source=images.go:753 msg="total blobs: 5"
+assistant-1  | time=2026-05-06T20:54:49.360Z level=INFO source=images.go:760 msg="total unused blobs removed: 0"
+assistant-1  | time=2026-05-06T20:54:49.360Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.7)"
+assistant-1  | time=2026-05-06T20:54:49.361Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cuda_jetpack5 cuda_jetpack6 cuda_v11 cuda_v12 cpu]"
+assistant-1  | time=2026-05-06T20:54:49.361Z level=INFO source=gpu.go:221 msg="looking for compatible GPUs"
+assistant-1  | time=2026-05-06T20:54:49.370Z level=INFO source=gpu.go:386 msg="no compatible GPUs were discovered"
+assistant-1  | time=2026-05-06T20:54:49.370Z level=INFO source=types.go:123 msg="inference compute" id=0 library=cpu variant="no vector extensions" compute="" driver=0.0 name="" total="7.9 GiB" available="1.9 GiB"
+assistant-1  | 2026/05/06 20:58:49 routes.go:1197: INFO server config env="map[CUDA_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: NO_PROXY: OLLAMA_DEBUG:false OLLAMA_FLASH_ATTENTION:false OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://0.0.0.0:11434 OLLAMA_INTEL_GPU:false OLLAMA_KEEP_ALIVE:30m0s OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MODELS:/root/.ollama/models OLLAMA_MULTIUSER_CACHE:false OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://*] OLLAMA_SCHED_SPREAD:false OLLAMA_TMPDIR: ROCR_VISIBLE_DEVICES: http_proxy: https_proxy: no_proxy:]"
+assistant-1  | time=2026-05-06T20:58:49.213Z level=INFO source=images.go:753 msg="total blobs: 5"
+assistant-1  | time=2026-05-06T20:58:49.214Z level=INFO source=images.go:760 msg="total unused blobs removed: 0"
+assistant-1  | time=2026-05-06T20:58:49.214Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.7)"
+assistant-1  | time=2026-05-06T20:58:49.217Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cuda_jetpack5 cuda_jetpack6 cuda_v11 cuda_v12]"
+assistant-1  | time=2026-05-06T20:58:49.218Z level=INFO source=gpu.go:221 msg="looking for compatible GPUs"
+assistant-1  | time=2026-05-06T20:58:49.220Z level=INFO source=gpu.go:386 msg="no compatible GPUs were discovered"
+assistant-1  | time=2026-05-06T20:58:49.220Z level=INFO source=types.go:123 msg="inference compute" id=0 library=cpu variant="no vector extensions" compute="" driver=0.0 name="" total="7.9 GiB" available="2.0 GiB"
+assistant-1  | 2026/05/06 21:02:41 routes.go:1197: INFO server config env="map[CUDA_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: NO_PROXY: OLLAMA_DEBUG:false OLLAMA_FLASH_ATTENTION:false OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://0.0.0.0:11434 OLLAMA_INTEL_GPU:false OLLAMA_KEEP_ALIVE:30m0s OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MODELS:/root/.ollama/models OLLAMA_MULTIUSER_CACHE:false OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://*] OLLAMA_SCHED_SPREAD:false OLLAMA_TMPDIR: ROCR_VISIBLE_DEVICES: http_proxy: https_proxy: no_proxy:]"
+assistant-1  | time=2026-05-06T21:02:41.188Z level=INFO source=images.go:753 msg="total blobs: 5"
+assistant-1  | time=2026-05-06T21:02:41.189Z level=INFO source=images.go:760 msg="total unused blobs removed: 0"
+assistant-1  | time=2026-05-06T21:02:41.194Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.7)"
+assistant-1  | time=2026-05-06T21:02:41.194Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cuda_jetpack5 cuda_jetpack6 cuda_v11 cuda_v12]"
+assistant-1  | time=2026-05-06T21:02:41.194Z level=INFO source=gpu.go:221 msg="looking for compatible GPUs"
+assistant-1  | time=2026-05-06T21:02:41.204Z level=INFO source=gpu.go:386 msg="no compatible GPUs were discovered"
+assistant-1  | time=2026-05-06T21:02:41.205Z level=INFO source=types.go:123 msg="inference compute" id=0 library=cpu variant="no vector extensions" compute="" driver=0.0 name="" total="7.9 GiB" available="2.0 GiB"
+assistant-1  | 2026/05/06 21:05:53 routes.go:1197: INFO server config env="map[CUDA_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: NO_PROXY: OLLAMA_DEBUG:false OLLAMA_FLASH_ATTENTION:false OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://0.0.0.0:11434 OLLAMA_INTEL_GPU:false OLLAMA_KEEP_ALIVE:30m0s OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MODELS:/root/.ollama/models OLLAMA_MULTIUSER_CACHE:false OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://*] OLLAMA_SCHED_SPREAD:false OLLAMA_TMPDIR: ROCR_VISIBLE_DEVICES: http_proxy: https_proxy: no_proxy:]"
+assistant-1  | time=2026-05-06T21:05:53.235Z level=INFO source=images.go:753 msg="total blobs: 5"
+assistant-1  | time=2026-05-06T21:05:53.236Z level=INFO source=images.go:760 msg="total unused blobs removed: 0"
+assistant-1  | time=2026-05-06T21:05:53.236Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.7)"
+assistant-1  | time=2026-05-06T21:05:53.444Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cuda_jetpack5 cuda_jetpack6 cuda_v11 cuda_v12]"
+assistant-1  | time=2026-05-06T21:05:53.463Z level=INFO source=gpu.go:221 msg="looking for compatible GPUs"
+assistant-1  | time=2026-05-06T21:05:53.571Z level=INFO source=gpu.go:386 msg="no compatible GPUs were discovered"
+assistant-1  | time=2026-05-06T21:05:53.571Z level=INFO source=types.go:123 msg="inference compute" id=0 library=cpu variant="no vector extensions" compute="" driver=0.0 name="" total="7.9 GiB" available="7.2 GiB"
+assistant-1  | 2026/05/06 21:33:39 routes.go:1197: INFO server config env="map[CUDA_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: NO_PROXY: OLLAMA_DEBUG:false OLLAMA_FLASH_ATTENTION:false OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://0.0.0.0:11434 OLLAMA_INTEL_GPU:false OLLAMA_KEEP_ALIVE:30m0s OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MODELS:/root/.ollama/models OLLAMA_MULTIUSER_CACHE:false OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://*] OLLAMA_SCHED_SPREAD:false OLLAMA_TMPDIR: ROCR_VISIBLE_DEVICES: http_proxy: https_proxy: no_proxy:]"
+assistant-1  | time=2026-05-06T21:33:39.648Z level=INFO source=images.go:753 msg="total blobs: 5"
+assistant-1  | time=2026-05-06T21:33:39.648Z level=INFO source=images.go:760 msg="total unused blobs removed: 0"
+assistant-1  | time=2026-05-06T21:33:39.648Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.7)"
+assistant-1  | time=2026-05-06T21:33:39.940Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cuda_jetpack5 cuda_jetpack6 cuda_v11 cuda_v12]"
+assistant-1  | time=2026-05-06T21:33:39.946Z level=INFO source=gpu.go:221 msg="looking for compatible GPUs"
+assistant-1  | time=2026-05-06T21:33:40.102Z level=INFO source=gpu.go:386 msg="no compatible GPUs were discovered"
+assistant-1  | time=2026-05-06T21:33:40.104Z level=INFO source=types.go:123 msg="inference compute" id=0 library=cpu variant="no vector extensions" compute="" driver=0.0 name="" total="7.9 GiB" available="7.1 GiB"
+=== storefront state ===
+{
+    "Status": "unhealthy",
+    "FailingStreak": 107,
+    "Log": [
+        {
+            "Start": "2026-05-07T00:41:59.749474489Z",
+            "End": "2026-05-07T00:41:59.793919572Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:42:14.794813972Z",
+            "End": "2026-05-07T00:42:14.836234391Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:42:29.837338742Z",
+            "End": "2026-05-07T00:42:29.909790761Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:42:44.911073077Z",
+            "End": "2026-05-07T00:42:44.955659063Z",
+            "ExitCode": 1,
+            "Output": "/bin/sh: 1: curl: not found\n"
+        },
+        {
+            "Start": "2026-05-07T00:42:59.95727667Z",
+=== storefront logs ===
+time="2026-05-07T00:43:05Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+storefront-1  | [storefront] Running database migrations...
+storefront-1  | npm warn exec The following package was not found and will be installed: drizzle-kit@0.31.10
+storefront-1  | npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+storefront-1  | npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+storefront-1  | No config path provided, using default 'drizzle.config.json'
+storefront-1  | /app/drizzle.config.json file does not exist
+storefront-1  | [storefront] Migration warning (non-fatal, tables may already exist)
+storefront-1  | [storefront] Starting server on port 3000...
+storefront-1  | Database already has 16 products, skipping seed
+storefront-1  | 12:16:17 AM [express] serving on port 3000
+=== healthcheck commands as compose sees them ===
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+assistant: |     healthcheck:
+assistant: |       test:
+storefront: |     healthcheck:
+storefront: |       test:
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
