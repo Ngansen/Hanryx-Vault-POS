@@ -1,0 +1,32 @@
+imitation discarded. 0.0s
+=== individual scrapers ===
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T22:21:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+cardmarket-1st     q='Pikachu'    ->  1 hits in   1.5s
+  sample: Pikachu (McDonald's Collection 2018)                             5.87 EUR
+cardmarket-2nd     q='Pikachu'    ->  1 hits in   0.5s
+  sample: Pikachu (McDonald's Collection 2018)                             5.87 EUR
+cardmarket-Char    q='Charizard'  ->  4 hits in   0.5s
+  sample: Charizard (Arceus)                                              38.25 EUR
+tcgplayer-Pika     q='Pikachu'    ->  0 hits in   0.9s
+tcgplayer-Char     q='Charizard'  ->  0 hits in   0.9s
+naver-sanity       q='피카츄'        -> 20 hits in   1.1s
+  sample: 포켓몬 1세대 대형 피규어 세트 포켓몬스터 리자몽 고라파덕 피카츄 뮤 몬스터볼 장난감              24500.00 KRW
+
+=== full search_all (all sources) ===
+{"ts":"2026-05-08T22:21:39","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+{"ts":"2026-05-08T22:22:03","level":"INFO","logger":"price_scrapers","msg":"[snkrdunk] 'Pikachu' → 0 results (recommendation carousel returned, ignoring)"}
+{"ts":"2026-05-08T22:22:05","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] tcgplayer returned 0 results for canary 'Pikachu' 3 times in a row — selectors likely broken"}
+wall time: 28.1s
+  naver       : 3 hits
+  tcgkorea    : 0 hits
+  snkrdunk    : 0 hits
+  cardmarket  : 1 hits
+  tcgplayer   : 0 hits
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $

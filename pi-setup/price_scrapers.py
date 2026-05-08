@@ -14,17 +14,27 @@ Sources
                                                Pokémon-card section)
   - cardmarket  → api.tcgdex.net              (EU TCG marketplace EUR pricing
                                                via tcgdex.net, Pokemon-only)
+
+  Reachable but not populated (kept in code, not in active SCRAPERS):
   - tcgplayer   → api.tcgdex.net              (US TCG marketplace USD pricing
-                                               via tcgdex.net, Pokemon-only)
+                                               via tcgdex.net — wrapper exists
+                                               in `tcgdex_api.py` but tcgdex's
+                                               tcgplayer field is empirically
+                                               null on essentially every card,
+                                               so it's not in SCRAPERS to
+                                               avoid wasted detail fetches and
+                                               drift-canary noise. Re-enable
+                                               by re-adding to the dict if
+                                               tcgdex ever backfills.)
 
 Every scraper returns a UNIFORM list of dicts:
     {
         "title":     "<listing title>",
         "price":     <float in source currency>,
-        "currency":  "KRW" | "JPY" | "EUR" | "USD",
+        "currency":  "KRW" | "JPY" | "EUR",
         "url":       "https://...",
         "image":     "https://..." | "",
-        "source":    "naver" | "tcgkorea" | "snkrdunk" | "cardmarket" | "tcgplayer",
+        "source":    "naver" | "tcgkorea" | "snkrdunk" | "cardmarket",
     }
 
 …and never raises — failures return [].  Network is wrapped with a short
@@ -463,7 +473,14 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
 # same data we were trying to scrape, pre-aggregated, no auth, ~1s per
 # query. As a bonus we get TCGplayer (USD) which we couldn't reach before.
 # See `tcgdex_api.py` for the full rationale and JSON shape mapping.
-from tcgdex_api import cardmarket, tcgplayer  # noqa: E402
+#
+# tcgplayer is imported but NOT registered in SCRAPERS — see module docstring.
+# The wrapper works correctly (parses tcgdex's `pricing.tcgplayer` shape), but
+# tcgdex's actual tcgplayer coverage is empirically null on essentially every
+# card (probed 30+ Pikachu hits + 10+ Charizard hits + modern English-set
+# spot checks like swsh3-3 Darkness Ablaze: 0% had tcgplayer populated, 60-90%
+# had cardmarket). Registering it would cost ~1s/query for guaranteed [].
+from tcgdex_api import cardmarket, tcgplayer  # noqa: E402,F401
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -472,7 +489,6 @@ SCRAPERS: dict[str, Callable[..., list[dict]]] = {
     "tcgkorea":   tcgkorea,
     "snkrdunk":   snkrdunk,
     "cardmarket": cardmarket,
-    "tcgplayer":  tcgplayer,
 }
 
 
