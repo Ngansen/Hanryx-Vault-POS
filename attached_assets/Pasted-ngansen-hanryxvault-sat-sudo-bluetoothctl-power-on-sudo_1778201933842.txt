@@ -1,0 +1,50 @@
+ngansen@hanryxvault-sat:~ $ sudo bluetoothctl power on
+sudo bluetoothctl pairable on
+sudo bluetoothctl discoverable on
+sudo bluetoothctl --timeout 60 scan on
+Changing power on succeeded
+hci0 new_settings: powered bondable ssp br/edr le secure-conn 
+Changing pairable on succeeded
+[CHG] Controller 88:A2:9E:40:13:AB Pairable: yes
+hci0 new_settings: powered connectable bondable ssp br/edr le secure-conn 
+[CHG] Controller 88:A2:9E:40:13:AB Connectable: yes
+hci0 new_settings: powered connectable discoverable bondable ssp br/edr le secure-conn 
+Changing discoverable on succeeded
+SetDiscoveryFilter success
+hci0 type 7 discovering on
+Discovery started
+[CHG] Controller 88:A2:9E:40:13:AB Discovering: yes
+[NEW] Device F5:58:BF:FF:FB:FF 761
+[NEW] Device 72:E9:4B:D8:F8:27 72-E9-4B-D8-F8-27
+[NEW] Device D9:59:B7:CE:2C:77 Pebble K380s
+[NEW] Device 42:FD:C0:40:FE:79 NMA85
+[NEW] Device C5:89:A6:A9:19:D0 C5-89-A6-A9-19-D0
+[NEW] Device 5F:17:3A:BA:0E:C6 NJ2Q9
+[NEW] Device EE:D2:00:B8:BD:B0 EE-D2-00-B8-BD-B0
+[NEW] Device F7:86:41:C6:E9:1E F7-86-41-C6-E9-1E
+hci0 type 7 discovering off
+hci0 type 7 discovering on
+[CHG] Device 72:E9:4B:D8:F8:27 ManufacturerData.Key: 0x004c (76)
+[CHG] Device 72:E9:4B:D8:F8:27 ManufacturerData.Value:
+  10 07 73 1f 8a a9 b3 66 68                       ..s....fh       
+hci0 type 7 discovering off
+hci0 type 7 discovering on
+[CHG] Device 42:FD:C0:40:FE:79 ServiceData.0000feaf-0000-1000-8000-00805f9b34fb:
+  10 01 00 02 00 e1 0f 00 e3 96 53 5d bc 4e 97 eb  ..........S].N..
+  01                                               .               
+[CHG] Device 5F:17:3A:BA:0E:C6 RSSI: 0xffffffad (-83)
+hci0 type 7 discovering off
+hci0 type 7 discovering on
+[DEL] Device EE:D2:00:B8:BD:B0 EE-D2-00-B8-BD-B0
+[CHG] Device 5F:17:3A:BA:0E:C6 RSSI: 0xffffffb6 (-74)
+[DEL] Device F7:86:41:C6:E9:1E F7-86-41-C6-E9-1E
+[NEW] Device F7:86:41:C6:E9:1E F7-86-41-C6-E9-1E
+hci0 type 7 discovering off
+ngansen@hanryxvault-sat:~ $ sudo bluetoothctl devices
+ngansen@hanryxvault-sat:~ $ sudo bluetoothctl
+Agent registered
+[bluetoothctl]> sudo bluetoothctl pair "$D9:59:B7:CE:2C:77"
+sudo bluetoothctl trust "$D9:59:B7:CE:2C:77"
+sudo bluetoothctl connect "$D9:59:B7:CE:2C:77"
+sudo bluetoothctl info "$D9:59:B7:CE:2C:77" | grep -E 'Connected|Trusted|Paired'
+[bluetoothctl]>
