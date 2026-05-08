@@ -42,6 +42,7 @@ DRIFT_CANARIES = {
     "tcgkorea":   ("피카츄", "리자몽"),
     "snkrdunk":   ("pikachu", "ピカチュウ"),
     "cardmarket": ("Charizard", "Pikachu"),
+    "tcgplayer":  ("Charizard", "Pikachu"),
 }
 
 _inproc: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
