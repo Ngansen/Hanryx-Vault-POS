@@ -143,14 +143,21 @@ def _money(s: str) -> float | None:
 
 def _fetch_html_smart(url: str, *, params: dict | None = None,
                       referer: str | None = None,
-                      locale: str = "en-US") -> str | None:
+                      locale: str = "en-US",
+                      wait_selector: str | None = None,
+                      stealth: bool = False) -> str | None:
     """Try Playwright first, fall back to the requests-based path.
 
     Playwright is the only reliable fetcher for sites that TLS-fingerprint
-    (naver, cardmarket) or client-render (snkrdunk). When it's disabled,
-    not installed, or has crashed, `is_available()` returns False and we
-    use the legacy requests path — which still works for the small set of
-    cooperative endpoints and at least won't crash on the others.
+    (cardmarket via Cloudflare) or load results via XHR/$.ajax (tcgkorea
+    Cafe24, snkrdunk SPA). When it's disabled, not installed, or has
+    crashed, we silently fall back to the requests path — which today
+    returns nothing useful for the four blocked sites but at least won't
+    crash on cooperative endpoints.
+
+    Optional `wait_selector` and `stealth` are forwarded to the Playwright
+    fetch — see `playwright_scraper.fetch_html` for semantics. Both are
+    silently ignored on the requests fallback.
     """
     # IMPORTANT: do NOT pre-gate on `_pw.is_available()` here — that flag
     # is only set True INSIDE fetch_html() via lazy init, so a pre-check
@@ -166,7 +173,17 @@ def _fetch_html_smart(url: str, *, params: dict | None = None,
             from urllib.parse import urlencode
             sep = "&" if ("?" in url) else "?"
             full_url = f"{url}{sep}{urlencode(params)}"
-        html = _pw.fetch_html(full_url, locale=locale)
+        # Defensive kwargs forwarding: if the deployed playwright_scraper.py
+        # is older than this price_scrapers.py (e.g. mid-deploy state),
+        # `wait_selector` / `stealth` won't exist as parameters → TypeError.
+        # Retry without them so we don't strand callers on the requests
+        # path during a partial deploy.
+        try:
+            html = _pw.fetch_html(full_url, locale=locale,
+                                  wait_selector=wait_selector,
+                                  stealth=stealth)
+        except TypeError:
+            html = _pw.fetch_html(full_url, locale=locale)
         if html:
             return html
         # Empty result: either Playwright is disabled/uninstalled (cheap
@@ -261,14 +278,28 @@ def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
         return []
     # tcgkorea uses Cafe24's standard search route
     url = f"https://www.tcgkorea.com/product/search.html?keyword={quote_plus(query)}"
-    html = _fetch_html_smart(url, referer="https://www.tcgkorea.com/",
-                             locale="ko-KR")
+    # Cafe24's `/product/search.html` route returns the homepage shell with
+    # the keyword echoed into the search bar, then loads results via $.ajax
+    # into one of several xans-product-* containers AFTER `domcontentloaded`.
+    # Without `wait_selector` the snapshot fires before the AJAX response and
+    # we see a "no results" page even when there ARE matches. The selector
+    # union covers Cafe24's three common result-container conventions.
+    html = _fetch_html_smart(
+        url,
+        referer="https://www.tcgkorea.com/",
+        locale="ko-KR",
+        wait_selector=("li[id^='anchorBoxId_'], "
+                       ".xans-product-listmain li, "
+                       ".xans-product-normalpackage li, "
+                       ".ec-base-product .item"),
+    )
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
     out: list[dict] = []
     # Cafe24 product cards live in <li> inside .xans-product-listmain* etc.
-    for li in soup.select("li[id^='anchorBoxId_'], .xans-product-normalpackage li"):
+    for li in soup.select("li[id^='anchorBoxId_'], .xans-product-normalpackage li, "
+                          ".xans-product-listmain li, .ec-base-product .item"):
         if len(out) >= limit:
             break
         a = li.select_one("a[href*='/product/']")
@@ -299,35 +330,57 @@ def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 # SnkrDunk — snkrdunk.com (Japanese marketplace, large Pokémon-card section)
 # ──────────────────────────────────────────────────────────────────────────────
+_SNKR_LABEL_RE = re.compile(r"^(.+?)\s*-\s*¥\s*([\d,]+)\s*$")
+
+
 @cached("snkrdunk")
 def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
+    """SnkrDunk JP — uses the root /search route, NOT /en/search.
+
+    Empirically (2026-05): /en/search?keyword=... silently redirects to
+    the homepage when the keyword doesn't match an English product slug
+    (which is true for ~all Pokemon card names). The root /search route
+    with `ja-JP` locale handles both katakana (e.g. "メガニウム") and
+    English transliterations, returning a server-rendered productGrid.
+
+    Caller responsibility: best results require the Japanese (katakana)
+    Pokemon name. The ja-JP→Pokemon name map lives in
+    `pokeapi_canonical.py` upstream; this scraper just runs whatever
+    keyword it receives. English names return zero matches on most cards.
+
+    Product tile selector: each result is `<a href="/apparels/<id>"
+    aria-label="<name> - ¥<price>" class="...productTile">`. The wrapper
+    class hash (currently `jAqS3W`) is build-time-generated and rotates
+    on every Snkrdunk deploy; href + aria-label format are stable.
+    """
     if not query:
         return []
-    # English product search route
-    url = f"https://snkrdunk.com/en/search?keyword={quote_plus(query)}"
-    html = _fetch_html_smart(url, referer="https://snkrdunk.com/en/",
-                             locale="ja-JP")
+    url = f"https://snkrdunk.com/search?keyword={quote_plus(query)}"
+    html = _fetch_html_smart(
+        url,
+        referer="https://snkrdunk.com/",
+        locale="ja-JP",
+        # Wait for at least one product tile to attach — snkrdunk's
+        # productGrid hydrates from a JSON island in <head>, usually <1s.
+        wait_selector="a[href*='/apparels/'][aria-label]",
+    )
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
     out: list[dict] = []
-    for a in soup.select("a[href*='/products/']"):
+    for a in soup.select("a[href*='/apparels/'][aria-label]"):
         if len(out) >= limit:
             break
-        title = (a.get("aria-label") or a.get_text(" ", strip=True) or "").strip()
-        if len(title) < 3:
+        label = (a.get("aria-label") or "").strip()
+        m = _SNKR_LABEL_RE.match(label)
+        if not m:
+            # Sold-out tiles have aria-label without "- ¥<price>" suffix;
+            # skip them because we have no price.
             continue
-        # SnkrDunk shows price as "¥12,800" or "$83"
-        price_el = a.find(string=re.compile(r"[¥$€]\s*\d"))
-        if not price_el:
-            scope = a.find_parent() or a
-            price_el = scope.find(string=re.compile(r"[¥$€]\s*\d"))
-        if not price_el:
-            continue
-        currency = "JPY" if "¥" in price_el else ("USD" if "$" in price_el
-                                                   else "EUR")
-        price = _money(price_el)
-        if not price:
+        title = m.group(1).strip()
+        try:
+            price = float(m.group(2).replace(",", ""))
+        except ValueError:
             continue
         href = a["href"]
         if href.startswith("/"):
@@ -337,7 +390,7 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
         if img_el:
             img = img_el.get("src") or img_el.get("data-src") or ""
         out.append({
-            "title": title, "price": price, "currency": currency,
+            "title": title, "price": price, "currency": "JPY",
             "url": href, "image": img, "source": "snkrdunk",
         })
     return out
@@ -365,8 +418,20 @@ def cardmarket(query: str, *, game: str = "Pokemon", limit: int = 20) -> list[di
     }.get(game.lower().strip(), game)
     url = (f"https://www.cardmarket.com/en/{slug}/Products/Search"
            f"?searchString={quote_plus(query)}")
-    html = _fetch_html_smart(url, referer=f"https://www.cardmarket.com/en/{slug}",
-                             locale="en-GB")
+    # Cardmarket runs Cloudflare bot-fight: vanilla headless chromium gets
+    # a "Just a moment..." challenge page that never solves (chromium's
+    # automation fingerprint is detected). `playwright-stealth` patches the
+    # navigator/webdriver/permissions overrides Cloudflare checks.
+    # `wait_selector` covers both the table layout (default) and the
+    # row layout (A/B variant) that Cardmarket has been rotating between.
+    html = _fetch_html_smart(
+        url,
+        referer=f"https://www.cardmarket.com/en/{slug}",
+        locale="en-GB",
+        wait_selector="div.row.no-gutters[role='row'], "
+                      "table.table-striped tr",
+        stealth=True,
+    )
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")

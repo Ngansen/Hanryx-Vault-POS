@@ -120,3 +120,9 @@ PyYAML>=6.0.1
 # much for the deployment (POS will fall back to requests-based scrapers,
 # which today return 0 listings for the four blocked sites).
 playwright>=1.45,<2
+
+# `playwright-stealth` patches navigator/webdriver/permissions overrides
+# that Cloudflare's bot-fight mode uses to detect headless chromium. Only
+# enabled for sites that actually need it (cardmarket); the per-page setup
+# cost is ~200ms so we don't apply it globally. Pure-python, ~30KB.
+playwright-stealth>=2.0,<3
