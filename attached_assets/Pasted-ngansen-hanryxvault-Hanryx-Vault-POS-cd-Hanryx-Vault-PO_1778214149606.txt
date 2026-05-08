@@ -1,0 +1,78 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS
+
+# See what your local change actually is, just to confirm it's the env-var edit
+git diff pi-setup/docker-compose.yml
+
+# If it matches what's already in commit 82cc9ec (env-var rename + comment update),
+# discard the local copy and pull cleanly:
+git checkout -- pi-setup/docker-compose.yml
+git pull --ff-only
+git log --oneline -4   # should show 82cc9ec, 9e67af6, 7297eec, 769d9bf
+
+# If your local diff has OTHER edits you want to keep, stash instead:
+#   git stash push -m "local compose tweaks" pi-setup/docker-compose.yml
+r.median,s:.kr.sources_used,c:.kr.count}}'ame,m:.k
+diff --git a/pi-setup/docker-compose.yml b/pi-setup/docker-compose.yml
+index 3bb9623..ad93cda 100644
+--- a/pi-setup/docker-compose.yml
++++ b/pi-setup/docker-compose.yml
+@@ -185,6 +185,7 @@ services:
+       # tcgplayer_proxy.py). Optional — works without one, but a key bumps
+       # the rate limit from 1k/day to 20k/day. Get one free at dev.pokemontcg.io.
+       POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
++      PTCG_API_KEY:      ${PTCG_API_KEY:-}
+ 
+       # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
+       # The Flask server prefers this URL and only falls back to pokeapi.co
+Updating 769d9bf..82cc9ec
+Fast-forward
+ pi-setup/build_cards_master.py |  28 ++-
+ pi-setup/docker-compose.yml    |   4 +-
+ pi-setup/price_scrapers.py     | 101 ++++++++++-
+ pi-setup/server.py             |   4 +-
+ pi-setup/setup.sh              |   2 +-
+ replit.md                      |   2 +-
+ 6 files changed, 124 insertions(+), 17 deletions(-)
+82cc9ec (HEAD -> main, origin/main, origin/HEAD) env: unify on POKEMONTCG_API_KEY (matches dev.pokemontcg.io)
+9e67af6 scrapers: per-domain Session + warmup + Chrome client-hint headers
+7297eec consolidator: lstrip leading zeros from digit-only spine keys (Bug B)
+769d9bf fix(sync): catch TimeoutError/OSError so transient blips don't abort the run
+Successfully copied 48.1kB to pi-setup-pos-1:/app/build_cards_master.py
+Successfully copied 18.4kB to pi-setup-pos-1:/app/price_scrapers.py
+Successfully copied 1.26MB to pi-setup-pos-1:/app/server.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+2026-05-08 04:21:31,586 INFO build_cards_master: [consolidator] spine has 63777 canonical (set_id, card_number) keys (collapsed from 88185 source rows; 24408 duplicates merged)
+  "with_en": 28414,
+  "with_kr": 14898,
+  "with_jp": 5734,
+('A4', '10', 'Meganium', '')
+('col1', '27', 'Meganium', '')
+('dp2', '13', 'Meganium', '')
+('ecard1', '18', 'Meganium', '')
+('ecard1', '53', 'Meganium', '')
+('ecard1', '54', 'Meganium', '')
+('ex10', '9', 'Meganium', '')
+('hgss1', '109', 'Meganium', '')
+('hgss1', '26', 'Meganium', '')
+('hgssp', 'HGSS08', 'Meganium', '')
+('hsp', 'HGSS08', 'Meganium', '')
+('me01', '10', 'Meganium', '')
+('me1', '10', 'Meganium', '')
+('mep', '1', 'Meganium', '')
+('neo1', '10', 'Meganium', '')
+('neo1', '11', 'Meganium', '')
+('sm8', '8', 'Meganium', '통통코')
+('xy9', '3', 'Meganium', '메가니움')
+TOTAL: 18
+{
+  "en": 20.8,
+  "kr": {
+    "n": "메가니움",
+    "m": null,
+    "s": [],
+    "c": 0
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
