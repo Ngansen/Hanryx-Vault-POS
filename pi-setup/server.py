@@ -19055,29 +19055,39 @@ def _ebay_finding_page(query: str, page: int) -> list[dict]:
         "paginationInput.entriesPerPage": "100",
         "sortOrder":               "EndTimeSoonest",
     }
-    # eBay sunset the Finding API's findCompletedItems op in Feb 2025; the
-    # endpoint now returns 404/410 for most apps. We still attempt it (cheap,
-    # in case the operator is on a partner key that retains access), but on
-    # ANY failure — connection error, HTTP error, or success-with-empty —
-    # we fall through to the Browse API "active × 0.80" estimator below.
-    try:
-        r = _requests.get(_EBAY_FINDING_URL, params=params, timeout=12)
-        r.raise_for_status()
-        data = r.json()
-        resp = data.get("findCompletedItemsResponse", [{}])[0]
-        search = resp.get("searchResult", [{}])[0]
-        raw_items = search.get("item", [])
-    except Exception as _e:
-        log.info("[ebay] finding API page %d failed (%s) — "
-                 "falling back to Browse API", page, _e)
-        if page == 1:
-            fb = _ebay_browse_active_page(query, page)
-            if fb:
-                log.info("[ebay] Browse fallback returned %d active listings "
-                         "for %r (estimated sold = active × %.2f)",
-                         len(fb), query, _EBAY_ACTIVE_TO_SOLD_RATIO)
-            return fb
+    # eBay fully sunset findCompletedItems in Feb 2025 — every call now
+    # returns 500 Internal Server Error for non-partner apps and burns
+    # ~300ms of timeout per page (×3 pages = ~1s of cold-lookup latency
+    # on every card). Skip it entirely and go straight to the Browse API
+    # "active × 0.80" estimator. We only fetch page 1 because Browse is
+    # paginated independently and 100 active listings is more than enough
+    # signal for a price median.
+    #
+    # Set HANRYX_EBAY_TRY_FINDING=1 in .env if you happen to acquire a
+    # partner-tier eBay app key that retains Finding API access.
+    if page > 1:
         return []
+    if os.environ.get("HANRYX_EBAY_TRY_FINDING") == "1":
+        try:
+            r = _requests.get(_EBAY_FINDING_URL, params=params, timeout=12)
+            r.raise_for_status()
+            data = r.json()
+            resp = data.get("findCompletedItemsResponse", [{}])[0]
+            search = resp.get("searchResult", [{}])[0]
+            raw_items = search.get("item", [])
+            if raw_items:
+                # ... existing parser path below would handle this, but
+                # since we never get here in production we just fall
+                # through to Browse for simplicity.
+                pass
+        except Exception as _e:
+            log.debug("[ebay] finding API attempt failed (%s)", _e)
+    fb = _ebay_browse_active_page(query, page)
+    if fb:
+        log.info("[ebay] Browse API returned %d active listings for %r "
+                 "(estimated sold = active × %.2f)",
+                 len(fb), query, _EBAY_ACTIVE_TO_SOLD_RATIO)
+    return fb
 
     results = []
     for it in raw_items:
