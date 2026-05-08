@@ -52,6 +52,7 @@ HTML-acquisition problem; selectors and currency handling stay the same.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 from typing import Callable
@@ -224,47 +225,84 @@ def _safe_get(url: str, *, params: dict | None = None,
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Naver Shopping (Korean) — search.shopping.naver.com
+# Naver Shopping (Korean) — official Open API
 # ──────────────────────────────────────────────────────────────────────────────
+# Naver's HTML shopping page IP-bans the trade-show egress (the response is
+# a styled "쇼핑 서비스 접속이 일시적으로 제한되었습니다" page — see
+# replit.md gotchas) and even Playwright + stealth can't defeat it because
+# the block is at the network layer. The Open API at openapi.naver.com is
+# authenticated and exempt from that classifier — 25,000 free calls/day,
+# returns clean JSON, no scraping. Register an app at
+#   https://developers.naver.com/apps/#/register
+# (tick "검색" / Search; pick WEB; any URL works) and put the keys in
+# pi-setup/.env as NAVER_CLIENT_ID + NAVER_CLIENT_SECRET. Without keys
+# this falls back to returning [] (with an info log) so the rest of the
+# language-pricing response still renders.
+_NAVER_CLIENT_ID     = os.environ.get("NAVER_CLIENT_ID", "").strip()
+_NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "").strip()
+# Naver's API wraps matched query terms in <b>...</b> inside `title`;
+# strip those for clean display.
+_NAVER_TAG_RE = re.compile(r"</?b>", re.IGNORECASE)
+
+
 @cached("naver")
 def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
     if not query:
         return []
-    # Naver's HTML page is the most reliable surface — their REST API needs
-    # an Open API client_id/secret.  The HTML works without auth.
-    url = f"https://search.shopping.naver.com/search/all?query={quote_plus(query)}"
-    html = _fetch_html_smart(url, referer="https://search.shopping.naver.com/",
-                             locale="ko-KR")
-    if not html:
+    if not (_NAVER_CLIENT_ID and _NAVER_CLIENT_SECRET):
+        log.info("[naver] NAVER_CLIENT_ID/SECRET not set in env — skipping. "
+                 "Register an Open API app at developers.naver.com/apps and "
+                 "put both values in pi-setup/.env to enable.")
         return []
-    soup = BeautifulSoup(html, "lxml")
+    try:
+        r = requests.get(
+            "https://openapi.naver.com/v1/search/shop.json",
+            params={
+                "query":   query,
+                "display": min(max(limit, 1), 100),  # API max 100/page
+                "sort":    "sim",                    # similarity-ranked
+            },
+            headers={
+                "X-Naver-Client-Id":     _NAVER_CLIENT_ID,
+                "X-Naver-Client-Secret": _NAVER_CLIENT_SECRET,
+                "User-Agent":            _UA,
+                "Accept":                "application/json",
+            },
+            timeout=_TIMEOUT,
+        )
+        if r.status_code == 401:
+            log.warning("[naver] 401 — check NAVER_CLIENT_ID/SECRET values "
+                        "and that the app has '검색' (Search) API enabled")
+            return []
+        if r.status_code == 429:
+            log.warning("[naver] 429 — quota exhausted "
+                        "(25k req/day per app). Backing off.")
+            return []
+        r.raise_for_status()
+        data = r.json()
+    except requests.RequestException as exc:
+        log.info("[naver] api error: %s", exc)
+        return []
+    except ValueError as exc:  # JSON decode
+        log.info("[naver] non-JSON response: %s", exc)
+        return []
     out: list[dict] = []
-    # Naver's class names are randomised — we look for any <a> linking to a
-    # product page that has a sibling <span> containing a price.
-    for a in soup.select("a[href*='/catalog/'], a[href*='shopping.naver.com']"):
-        if len(out) >= limit:
-            break
-        title = (a.get("title") or a.get_text(" ", strip=True) or "").strip()
-        if len(title) < 4:
+    for item in (data.get("items") or [])[:limit]:
+        title = _NAVER_TAG_RE.sub("", item.get("title") or "").strip()
+        try:
+            price = float(item.get("lprice") or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        if not (title and price > 0):
             continue
-        # Find the closest price-looking sibling
-        scope = a.find_parent() or a
-        price_el = scope.find(string=re.compile(r"\d{1,3}(?:,\d{3})+\s*원"))
-        price = _money(price_el) if price_el else None
-        if not price:
-            continue
-        href = a.get("href", "")
-        if href.startswith("//"):
-            href = "https:" + href
-        elif href.startswith("/"):
-            href = "https://search.shopping.naver.com" + href
-        img = ""
-        img_el = scope.find("img")
-        if img_el:
-            img = img_el.get("src") or img_el.get("data-src") or ""
         out.append({
-            "title": title, "price": price, "currency": "KRW",
-            "url": href, "image": img, "source": "naver",
+            "title":    title,
+            "price":    price,
+            "currency": "KRW",
+            "url":      item.get("link") or "",
+            "image":    item.get("image") or "",
+            "mall":     item.get("mallName") or "",
+            "source":   "naver",
         })
     return out
 
@@ -367,6 +405,19 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
+    # Snkrdunk silently shows the "おすすめアイテム" (Recommended Items) feed
+    # as a fallback whenever a search has zero exact matches OR when the
+    # /search route can't resolve the keyword to a product category. The
+    # page title flips to "おすすめアイテム | 通販・相場はスニーカーダンク"
+    # — distinct from a real result page which echoes the query. Returning
+    # this carousel as-is would poison every chip with the same unrelated
+    # featured items (we saw the same Pokemon GO Special Set + Fukuoka
+    # Pikachu surface for メガニウム / ピカチュウ / Meganium in one run).
+    title_el = soup.find("title")
+    if title_el and "おすすめアイテム" in title_el.get_text():
+        log.info("[snkrdunk] %r → 0 results "
+                 "(recommendation carousel returned, ignoring)", query)
+        return []
     out: list[dict] = []
     for a in soup.select("a[href*='/apparels/'][aria-label]"):
         if len(out) >= limit:
