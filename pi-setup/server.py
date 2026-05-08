@@ -19159,6 +19159,181 @@ _LANG_QUERY_SUFFIXES: dict[str, str] = {
 }
 
 
+# ── Option B: native-market language pricing ─────────────────────────────────
+# eBay's category 183050 (Pokémon Individual Cards) under-indexes foreign-
+# language listings, and `_filter_and_score_lang` is too strict for raw eBay
+# JP/KR titles. So for each language chip we cross-reference cards_master to
+# get the *native* card name (e.g. EN "Charizard" → KR "리자몽" / JP "リザード"),
+# then fan out to language-appropriate pricing sources that DO understand
+# native names: tcgkorea + naver for KR, snkrdunk + cardmarket for JP, etc.
+# Falls back to eBay-with-native-name as a safety net so we never go fully
+# empty when a chip has at least *some* signal.
+
+_LANG_NAME_COL: dict[str, str] = {
+    "jp": "name_jp",
+    "kr": "name_kr",
+    "cn": "name_chs",
+    "tw": "name_cht",
+}
+
+
+def _lookup_native_name(card: dict, lang: str) -> str | None:
+    """
+    Cross-reference cards_master to find the native-language name for a card.
+    Tries the precise (name_en + card_number) match first, then loosens to
+    name_en alone. Returns None if no row has a non-empty native name.
+    """
+    col = _LANG_NAME_COL.get(lang)
+    if not col:
+        return None
+    name_en = (card.get("name") or "").strip()
+    number  = (card.get("number") or "").strip()
+    if not name_en:
+        return None
+    try:
+        db = _direct_db()
+        row = None
+        if number:
+            r = db.execute(
+                f"SELECT {col} AS native FROM cards_master "
+                f"WHERE LOWER(name_en) = LOWER(%s) "
+                f"  AND card_number = %s "
+                f"  AND {col} <> '' "
+                f"LIMIT 1",
+                (name_en, number),
+            ).fetchone()
+            if r:
+                row = r
+        if not row:
+            r = db.execute(
+                f"SELECT {col} AS native FROM cards_master "
+                f"WHERE LOWER(name_en) = LOWER(%s) AND {col} <> '' "
+                f"LIMIT 1",
+                (name_en,),
+            ).fetchone()
+            if r:
+                row = r
+        db.close()
+        if row:
+            v = row["native"] if isinstance(row, dict) else row[0]
+            return (v or "").strip() or None
+    except Exception as _e:
+        log.debug("[lang-native] lookup failed for %s/%s: %s", name_en, lang, _e)
+    return None
+
+
+def _fetch_native_lang_price(card: dict, lang: str) -> dict:
+    """
+    Fetch native-market price for a card in the requested language.
+
+    Pipeline:
+      1. Cross-reference cards_master to get the native-language card name.
+      2. Build a query using the NATIVE name + card number (number
+         disambiguates reprints across sets).
+      3. Fan out to language-appropriate scrapers in parallel-ish (HTTP-bound,
+         all sub-second so sequential is fine for this 4-language fan-out).
+      4. Append eBay-with-native-name as a safety net.
+      5. Normalise every listing to USD via fx_rates.
+      6. Trimmed median (drop 10% tails when ≥5 listings).
+
+    Returns:
+      {market, sample_size, sources_used, native_name, native_query}
+      market is None when no listings found anywhere.
+    """
+    native = _lookup_native_name(card, lang)
+    name   = native or (card.get("name") or "").strip()
+    number = (card.get("number") or "").strip()
+
+    query = " ".join(p for p in [name, number] if p).strip()
+    if not query:
+        return {"market": None, "sample_size": 0, "sources_used": [],
+                "native_name": native, "native_query": ""}
+
+    listings: list[dict] = []
+    used:     list[str]  = []
+
+    try:
+        from price_scrapers import naver_shopping, tcgkorea, snkrdunk, cardmarket
+    except Exception as _e:
+        log.info("[lang-native:%s] price_scrapers unavailable: %s", lang, _e)
+        naver_shopping = tcgkorea = snkrdunk = cardmarket = None  # type: ignore
+
+    def _try(src_name: str, fn, *args, **kwargs):
+        if fn is None:
+            return
+        try:
+            rows = fn(*args, **kwargs) or []
+            if rows:
+                listings.extend(rows)
+                used.append(src_name)
+        except Exception as _e:
+            log.debug("[lang-native:%s] %s failed: %s", lang, src_name, _e)
+
+    if lang == "kr":
+        _try("tcgkorea", tcgkorea, query, limit=20)
+        _try("naver",    naver_shopping, query, limit=20)
+    elif lang == "jp":
+        _try("snkrdunk",      snkrdunk, query, limit=20)
+        _try("cardmarket_jp", cardmarket, query, limit=20, game="Pokemon")
+    elif lang == "cn":
+        _try("cardmarket_cn", cardmarket, query, limit=20, game="Pokemon")
+    elif lang == "tw":
+        _try("cardmarket_tw", cardmarket, query, limit=20, game="Pokemon")
+
+    # eBay-with-native-name safety net — Browse API returns USD prices
+    # directly so we apply the active→sold ratio inline to make them
+    # comparable with the native sources' market prices.
+    suffix_for_ebay = _LANG_QUERY_SUFFIXES.get(lang, "")
+    ebay_query = " ".join(p for p in [name, suffix_for_ebay, number, "pokemon"] if p)
+    try:
+        ebay_rows = _ebay_browse_active_page(ebay_query, 1)
+        if ebay_rows:
+            for r in ebay_rows:
+                listings.append({
+                    "title":    r.get("title", ""),
+                    "price":    float(r.get("price") or 0),
+                    "currency": "USD",
+                    "source":   f"ebay_{lang}",
+                })
+            used.append(f"ebay_{lang}")
+    except Exception as _e:
+        log.debug("[lang-native:%s] ebay safety net failed: %s", lang, _e)
+
+    if not listings:
+        return {"market": None, "sample_size": 0, "sources_used": used,
+                "native_name": native, "native_query": query}
+
+    # Normalise every listing to USD (KRW/JPY/EUR → USD via daily-cached fx)
+    try:
+        from fx_rates import normalize_listings
+        listings_usd = normalize_listings(listings)
+    except Exception as _e:
+        log.info("[lang-native:%s] fx unavailable: %s", lang, _e)
+        listings_usd = listings
+
+    vals = sorted(float(r["price_usd"]) for r in listings_usd
+                  if r.get("price_usd") and r["price_usd"] > 0)
+    if not vals:
+        return {"market": None, "sample_size": 0, "sources_used": used,
+                "native_name": native, "native_query": query}
+
+    # Trim 10% tails when we have enough samples to make trimming meaningful
+    if len(vals) >= 5:
+        lo = max(1, len(vals) // 10)
+        if lo * 2 < len(vals):
+            vals = vals[lo:-lo]
+
+    n = len(vals)
+    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+    return {
+        "market":       round(median, 2),
+        "sample_size":  len(listings_usd),
+        "sources_used": used,
+        "native_name":  native,
+        "native_query": query,
+    }
+
+
 def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
     """
     Fetch eBay sold listings for a card with a language keyword appended to
@@ -19659,7 +19834,8 @@ def _prewarm_lang_all_bg() -> None:
 
             with _TPE(max_workers=5) as pool:
                 fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
-                fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+                fut_langs = [pool.submit(_fetch_native_lang_price, card, c)
+                             for c in lang_codes]
                 en_model  = fut_en.result()
                 lang_models = [f.result() for f in fut_langs]
 
@@ -19676,11 +19852,13 @@ def _prewarm_lang_all_bg() -> None:
                 "en":   {"median": en_model.get("market"),
                          "count":  en_model.get("sample_size", 0)},
             }
-            for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+            for code, model in zip(lang_codes, lang_models):
                 result[code] = {
-                    "median":  model.get("market"),
-                    "count":   model.get("sample_size", 0),
-                    "pct_off": _pct_off_pw(model),
+                    "median":       model.get("market"),
+                    "count":        model.get("sample_size", 0),
+                    "pct_off":      _pct_off_pw(model),
+                    "sources_used": model.get("sources_used", []),
+                    "native_name":  model.get("native_name"),
                 }
 
             _rcache_set(rkey, result, ttl=600)
@@ -20447,13 +20625,15 @@ def api_pricing_language():
         if cached:
             return jsonify({**cached, "data_source": "cached"})
 
-    # EN + 4 language eBay scrapes — all in parallel
+    # EN via eBay sold + 4 language chips via NATIVE-market sources
+    # (cards_master cross-ref → tcgkorea/snkrdunk/cardmarket/naver, then
+    # eBay-with-native-name as a safety net) — all in parallel.
     lang_codes = list(_LANG_QUERY_SUFFIXES.keys())   # jp, kr, cn, tw
-    suffixes   = list(_LANG_QUERY_SUFFIXES.values())
 
     with _TPE(max_workers=5) as pool:
         fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
-        fut_langs = [pool.submit(_fetch_ebay_lang_price, card, s) for s in suffixes]
+        fut_langs = [pool.submit(_fetch_native_lang_price, card, c)
+                     for c in lang_codes]
         en_model  = fut_en.result()
         lang_models = [f.result() for f in fut_langs]
 
@@ -20478,15 +20658,14 @@ def api_pricing_language():
         },
     }
 
-    for code, suffix, model in zip(lang_codes, suffixes, lang_models):
+    for code, model in zip(lang_codes, lang_models):
         result[code] = {
-            "median":  model.get("market"),
-            "count":   model.get("sample_size", 0),
-            "pct_off": _pct_off(model),
-            "query":   " ".join(filter(None, [
-                card.get("name"), suffix,
-                card.get("number"), card.get("set"), "pokemon",
-            ])),
+            "median":       model.get("market"),
+            "count":        model.get("sample_size", 0),
+            "pct_off":      _pct_off(model),
+            "query":        model.get("native_query", ""),
+            "sources_used": model.get("sources_used", []),
+            "native_name":  model.get("native_name"),
         }
 
     _rcache_set(rkey, result, ttl=600)
