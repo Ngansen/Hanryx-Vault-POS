@@ -482,6 +482,34 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
 # had cardmarket). Registering it would cost ~1s/query for guaranteed [].
 from tcgdex_api import cardmarket, tcgplayer  # noqa: E402,F401
 
+# Multilingual species-name lookup. Used by search_all() to translate English
+# card-name queries into the native language each marketplace indexes in.
+# Import is wrapped so a missing/broken species_names.py degrades to the
+# pre-translation behaviour (queries are passed through verbatim) instead of
+# 500-ing the entire /card/price endpoint.
+try:
+    from species_names import translate as _species_translate  # type: ignore
+except Exception as _e:  # pragma: no cover
+    log.warning("[price_scrapers] species_names unavailable: %s "
+                "(snkrdunk/tcgkorea will use raw English queries)", _e)
+    def _species_translate(query: str, target_lang: str):  # type: ignore[no-redef]
+        return None
+
+# Per-source translation policy: which target language to translate the
+# user's query into before handing it to that scraper. Sources not listed
+# here receive the original query unchanged.
+#   snkrdunk → katakana    (snkrdunk's product titles are Japanese-only;
+#                          English transliterations return ~0 hits)
+#   tcgkorea → hangul      (Cafe24-based store, search index is Korean-only)
+#   naver    → no rewrite  (Naver's Open Search API handles English+Korean
+#                          fine, and translating loses brand-name matches
+#                          like 'Pokemon Center' that work in either lang)
+#   cardmarket → no rewrite (tcgdex.net REST API is English-keyed)
+_TRANSLATE_LANG: dict[str, str] = {
+    "snkrdunk": "ja_kana",
+    "tcgkorea": "ko",
+}
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 SCRAPERS: dict[str, Callable[..., list[dict]]] = {
@@ -496,23 +524,57 @@ def search_all(query: str, *, sources: list[str] | None = None,
                limit_per_source: int = 10, game: str = "Pokemon") -> dict:
     """
     Fan-out search across every scraper sequentially (HTTP-bound, fine on
-    a single thread for low-volume POS use).  Returns:
-        {"results": {source: [..]}, "errors": {source: "msg"}, "query": ...}
+    a single thread for low-volume POS use).
+
+    Each source receives the language it indexes in: snkrdunk gets the
+    katakana form of the species name (e.g. 'Charizard' → 'リザードン'),
+    tcgkorea gets hangul ('Charizard' → '리자몽'). Translation is done
+    via species_names.translate(); when the query isn't a recognised
+    Pokémon species, the original (English) query is passed through.
+
+    Returns:
+        {
+          "results":    {source: [..]},
+          "errors":     {source: "msg"},
+          "query":      <original user query>,
+          "query_used": {source: <actual string sent to that scraper>}
+            ↑ debugging aid: shows whether translation fired per source.
+              Same as `query` for sources without a translation policy.
+        }
     """
-    out: dict = {"results": {}, "errors": {}, "query": query}
+    out: dict = {
+        "results":    {},
+        "errors":     {},
+        "query":      query,
+        "query_used": {},
+    }
     for name in (sources or list(SCRAPERS)):
         fn = SCRAPERS.get(name)
         if not fn:
             out["errors"][name] = "unknown source"
             continue
+
+        # ── per-source query translation ────────────────────────────────
+        target_lang = _TRANSLATE_LANG.get(name)
+        if target_lang:
+            translated = _species_translate(query, target_lang)
+            q_for_source = translated if translated else query
+            if translated and translated != query:
+                log.info("[scrape:%s] query translated %r → %r (%s)",
+                         name, query, translated, target_lang)
+        else:
+            q_for_source = query
+        out["query_used"][name] = q_for_source
+
         try:
             if name == "cardmarket":
                 # cardmarket() accepts game= for backward compat; tcgdex
                 # only covers Pokemon, but other games used to be valid
                 # against the prior scrape implementation.
-                out["results"][name] = fn(query, limit=limit_per_source, game=game)
+                out["results"][name] = fn(q_for_source,
+                                          limit=limit_per_source, game=game)
             else:
-                out["results"][name] = fn(query, limit=limit_per_source)
+                out["results"][name] = fn(q_for_source, limit=limit_per_source)
         except Exception as exc:  # belt-and-suspenders; scrapers swallow most
             log.warning("[scrape:%s] %s", name, exc)
             out["errors"][name] = str(exc)
