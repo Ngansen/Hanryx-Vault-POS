@@ -1,0 +1,76 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+docker cp pi-setup/server.py pi-setup-pos-1:/app/server.py
+docker compose -f pi-setup/docker-compose.yml restart pos
+sleep 6
+
+# Test 1 — Charizard 4/102 (Base Set, 1999, NO Korean release)
+# Expected: native_name=null for KR (correct! no KR Charizard '4'), JP/KR rely on eBay safety net
+echo "=== Charizard 4/102 (Base Set, no KR release) ==="
+curl -s "http://localhost:8080/api/v1/pricing/language?name=Charizard&number=4/102&refresh=1" \
+  | jq '{en:.en.median, jp:{m:.jp.median,n:.jp.native_name,s:.jp.sources_used,c:.jp.count},
+                       kr:{m:.kr.median,n:.kr.nati"or r in cur.fetchall(): print(r)h KR + JP names -
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.86 KiB | 57.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   4fcf131..b3e5b12  main       -> origin/main
+Updating 4fcf131..b3e5b12
+Fast-forward
+ pi-setup/server.py | 37 +++++++++++++++++-------
+ 1 file changed, 26 insertions(+), 11 deletions(-)
+Successfully copied 1.26MB to pi-setup-pos-1:/app/server.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+=== Charizard 4/102 (Base Set, no KR release) ===
+{
+  "en": 500.0,
+  "jp": {
+    "m": 511.2,
+    "n": null,
+    "s": [
+      "ebay_jp"
+    ],
+    "c": 3
+  },
+  "kr": {
+    "m": 240.0,
+    "n": null,
+    "s": [
+      "ebay_kr"
+    ],
+    "c": 3
+  }
+}
+=== Charizard ex 199 (modern, has KR/JP releases) ===
+{
+  "en": 479.16,
+  "jp": {
+    "m": null,
+    "n": null,
+    "s": [],
+    "c": 0
+  },
+  "kr": {
+    "m": 240.0,
+    "n": null,
+    "s": [
+      "ebay_kr"
+    ],
+    "c": 3
+  },
+  "cn": {
+    "m": 69.26,
+    "n": null,
+    "s": [
+      "ebay_cn"
+    ],
+    "c": 1
+  }
+}
+--- Pikachu cards with both KR + JP names ---
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ docker exec pi-setup-pos-1 sh -c '[ -n "$PTCG_API_KEY" ] && echo "PTCG_API_KEY: SET (len=${#PTCG_API_KEY})" || echo "PTCG_API_KEY: NOT SET (using anonymous rate limit)"'
+PTCG_API_KEY: NOT SET (using anonymous rate limit)
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
