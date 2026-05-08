@@ -1,0 +1,60 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+docker cp pi-setup/mirror_tcg_to_pg.py pi-setup-pos-1:/app/mirror_tcg_to_pg.py
+
+# Now rerun the bridge + rebuild + smoke test
+docker exec -it pi-setup-pos-1 python3 /app/mirror_tcg_to_pg.py
+docker exec -it pi-setup-pos-1 python3 /app/build_cards_master.py
+curl -s "http://localhost:8080/api/v1/pricing/language?name=Meganium&number=3&refresh=1" \
+  | jq '{en:.en.median,
+         jp:{m:.jp.median,n:.jp.native_name,s:.jp.sources_used,c:.jp.count},
+         kr:{n:.kr.native_name,m:.kr.median,s:.kr.sources_used,c:.kr.count}}'
+Already up to date.
+Successfully copied 8.7kB to pi-setup-pos-1:/app/mirror_tcg_to_pg.py
+2026-05-08 04:04:45,527 INFO mirror_tcg_to_pg: [mirror] reading from SQLite: /mnt/cards/pokedex_local.db
+2026-05-08 04:04:45,528 INFO mirror_tcg_to_pg: [mirror] source rows: 20237
+2026-05-08 04:04:45,528 INFO mirror_tcg_to_pg: [mirror] connecting to Postgres
+2026-05-08 04:04:45,537 INFO mirror_tcg_to_pg: [mirror] ensuring schema
+2026-05-08 04:04:45,563 INFO mirror_tcg_to_pg: [mirror] truncating target
+2026-05-08 04:04:47,990 INFO mirror_tcg_to_pg: [mirror] done: wrote 20237 rows across 172 sets
+{"sqlite_rows": 20237, "pg_rows_written": 20237, "pg_rows_final": 20237, "distinct_sets": 172}
+2026-05-08 04:04:48,397 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-08 04:04:48,397 INFO build_cards_master: [consolidator] reading source tables…
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] tcgdex: 33888 rows
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] tcg_api: 20233 rows
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] kr_official: 14898 rows
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] jp_pokell: 0 rows
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] chs_official: 16125 rows
+2026-05-08 04:04:50,875 INFO build_cards_master: [consolidator] pocket_off: 3041 rows
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] pocket_lt: 0 rows
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] eng_xlsx: 0 rows
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] jp_xlsx: 0 rows
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] jp_pcc: 0 rows
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] jp_cards_json: 0 keys, set_alias_map: 0 codes, canon_map: 0 codes
+2026-05-08 04:04:50,876 INFO build_cards_master: [consolidator] eng_ex: 0, jp_ex: 0, ref_dex: 1025, ref_promo: 0, promo_classes: 0 codes
+2026-05-08 04:04:51,158 INFO build_cards_master: [consolidator] spine has 70164 canonical (set_id, card_number) keys (collapsed from 88185 source rows; 18021 duplicates merged)
+{
+  "total": 70164,
+  "rows_written": 70164,
+  "with_en": 30702,
+  "with_kr": 18997,
+  "with_jp": 7844,
+  "with_chs": 17053,
+  "with_codes": 0,
+  "with_promo": 0
+}
+{
+  "en": 20.8,
+  "jp": {
+    "m": null,
+    "n": null,
+    "s": null,
+    "c": 0
+  },
+  "kr": {
+    "n": null,
+    "m": null,
+    "s": null,
+    "c": 0
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
