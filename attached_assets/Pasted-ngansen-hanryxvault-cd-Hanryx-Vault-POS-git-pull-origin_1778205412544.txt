@@ -1,0 +1,53 @@
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS
+git pull origin main
+docker compose -f pi-setup/docker-compose.yml up -d --build pos
+# Wait ~20s for the container to come up healthy, then:
+docker exec -e PYTHONPATH=/app pi-setup-pos-1 python3 /tmp/ebay_test.py
+remote: Enumerating objects: 28, done.
+remote: Counting objects: 100% (28/28), done.
+remote: Compressing objects: 100% (20/20), done.
+remote: Total 20 (delta 13), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (20/20), 13.26 KiB | 156.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   fffbb74..a75338b  main       -> origin/main
+Updating fffbb74..a75338b
+Fast-forward
+ pi-setup/.env.example            |  12 +-
+ pi-setup/docker-compose.yml      |  16 +-
+ .../docs/PRODUCTION_READINESS.md | 174 +++++++++
+ .../docker-compose.yml           |  21 +-
+ .../proxy/docker-compose.yml     |   9 +-
+ pi-setup/server.py               |  15 +-
+ 6 files changed, 229 insertions(+), 18 deletions(-)
+ create mode 100644 pi-setup/docs/PRODUCTION_READINESS.md
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+error while interpolating services.storefront.environment.SESSION_SECRET: required variable SESSION_SECRET is missing a value: SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)
+
+=== 1. Finding API (legacy, ~5/day cap) ===
+INFO hanryxvault: [redis] Connected to redis://redis:6379/0
+INFO hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO hanryxvault: [pokeapi] canonical name index ready: 1025 species
+INFO hanryxvault: [bg] price-refresh scheduler disabled via env
+INFO hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+INFO hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO hanryxvault: [blueprint] cards_master search wired → /tcg/search-master
+INFO hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+Finding API page 1: 0 items
+ raw response type: list, value head: []
+
+=== 2. Browse API OAuth token ===
+INFO hanryxvault: [ebay] OAuth token refreshed, expires in 7200s
+ token: present (len=1936)
+
+=== 3. Browse API active-listings search ===
+ Browse API page 1: 40 items
+  Charizard 223/197 PSA 9 -> $ 120.0
+  Mega Charizard X Card Pokemon TCG Pocket - Printed Sharp! | Mega Shine -> $ 10.34
+  Pokemon Card JP Charizard V SAR 211/172 S12a VSTAR Universe NM - US Se -> $ 34.39
+
+=== 4. Full _fetch_ebay_sales pipeline ===
+INFO hanryxvault: [ebay] strict 'Charizard 4/102 Base Set pokemon' → 0 items, broadening to 'Charizard pokemon'
+INFO hanryxvault: [ebay] broader query added 0 items (total now 0)
+ raw sales: 0, after filter+score: 0
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
