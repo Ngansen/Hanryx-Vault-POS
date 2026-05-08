@@ -1,0 +1,30 @@
+Limitation discarded. 0.0s
+
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T22:08:03","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-08T22:08:04","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+{"ts":"2026-05-08T22:08:21","level":"INFO","logger":"playwright_scraper","msg":"[playwright] cloudflare IUAM challenge detected on www.cardmarket.com — waiting up to 15000ms for it to clear"}
+{"ts":"2026-05-08T22:08:34","level":"INFO","logger":"playwright_scraper","msg":"[playwright] fetch https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Pikachu failed: "}
+{"ts":"2026-05-08T22:08:35","level":"INFO","logger":"price_scrapers","msg":"[scrape] https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Pikachu → HTTP 403"}
+{"ts":"2026-05-08T22:08:35","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] cardmarket returned 0 results for canary 'Pikachu' 3 times in a row — selectors likely broken"}
+cardmarket-1st     q='Pikachu'    →  0 hits in  32.3s
+{"ts":"2026-05-08T22:08:36","level":"INFO","logger":"playwright_scraper","msg":"[playwright] cloudflare challenge did NOT clear on www.cardmarket.com within 15000ms (Page.wait_for_function: Timeout 15000ms exceeded.) — returning challenge page as-is, caller will see [] and fall back"}
+{"ts":"2026-05-08T22:08:51","level":"INFO","logger":"playwright_scraper","msg":"[playwright] cloudflare IUAM challenge detected on www.cardmarket.com — waiting up to 15000ms for it to clear"}
+{"ts":"2026-05-08T22:09:05","level":"INFO","logger":"playwright_scraper","msg":"[playwright] fetch https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Pikachu failed: "}
+{"ts":"2026-05-08T22:09:05","level":"INFO","logger":"price_scrapers","msg":"[scrape] https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Pikachu → HTTP 403"}
+{"ts":"2026-05-08T22:09:05","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] cardmarket returned 0 results for canary 'Pikachu' 4 times in a row — selectors likely broken"}
+cardmarket-2nd     q='Pikachu'    →  0 hits in  30.4s
+{"ts":"2026-05-08T22:09:06","level":"INFO","logger":"playwright_scraper","msg":"[playwright] cloudflare challenge did NOT clear on www.cardmarket.com within 15000ms (Page.wait_for_function: Timeout 15000ms exceeded.) — returning challenge page as-is, caller will see [] and fall back"}
+tcgkorea-EN        q='Pikachu'    →  0 hits in  18.9s
+{"ts":"2026-05-08T22:09:43","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] tcgkorea returned 0 results for canary '피카츄' 3 times in a row — selectors likely broken"}
+tcgkorea-KR        q='피카츄'        →  0 hits in  18.5s
+naver-sanity       q='피카츄'        → 20 hits in   1.2s
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ e
+mbb
