@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cat > /tmp/ebay_test.py <<'PY'
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+
+print('\n=== Full _fetch_ebay_sales pipeline (the one that matters) ===')
+from server import _fetch_ebay_sales, _filter_and_score
+card = {'name':'Charizard','number':'4/102','set':'Base Set'}
+sales = _fetch_ebay_sales(card)
+matched = _filter_and_score(sales, card)
+print(f' raw sales: {len(sales)}, after filter+score: {len(matched)}')
+for m in matched[:5]:
+    print(' ', (m.get('title') or '')[:70], '-> $', m.get('price'), 'score', m.get('score'))
+on3 /tmp/ebay_test.pyPATH=/app pi-setup-pos-1 pyth
+Successfully copied 2.56kB to pi-setup-pos-1:/tmp/ebay_test.py
+
+=== Full _fetch_ebay_sales pipeline (the one that matters) ===
+INFO hanryxvault: [redis] Connected to redis://redis:6379/0
+INFO hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO hanryxvault: [pokeapi] canonical name index ready: 1025 species
+INFO hanryxvault: [bg] price-refresh scheduler disabled via env
+INFO hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+INFO hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO hanryxvault: [blueprint] cards_master search wired → /tcg/search-master
+INFO hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+INFO hanryxvault: [ebay] finding API page 3 failed (500 Server Error: Internal Server Error for url: https://svcs.ebay.com/services/search/FindingService/v1?OPERATION-NAME=findCompletedItems&SERVICE-VERSION=1.0.0&SECURITY-APPNAME=HanRYXva-HanRYXva-PRD-54c54106b-9f98db95&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD=&keywords=Charizard+4%2F102+Base+Set+pokemon&categoryId=183050&itemFilter%280%29.name=SoldItemsOnly&itemFilter%280%29.value=true&itemFilter%281%29.name=ListingType&itemFilter%281%29.value%280%29=FixedPrice&itemFilter%281%29.value%281%29=Auction&itemFilter%281%29.value%282%29=AuctionWithBIN&paginationInput.pageNumber=3&paginationInput.entriesPerPage=100&sortOrder=EndTimeSoonest) — falling back to Browse API
+INFO hanryxvault: [ebay] finding API page 1 failed (500 Server Error: Internal Server Error for url: https://svcs.ebay.com/services/search/FindingService/v1?OPERATION-NAME=findCompletedItems&SERVICE-VERSION=1.0.0&SECURITY-APPNAME=HanRYXva-HanRYXva-PRD-54c54106b-9f98db95&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD=&keywords=Charizard+4%2F102+Base+Set+pokemon&categoryId=183050&itemFilter%280%29.name=SoldItemsOnly&itemFilter%280%29.value=true&itemFilter%281%29.name=ListingType&itemFilter%281%29.value%280%29=FixedPrice&itemFilter%281%29.value%281%29=Auction&itemFilter%281%29.value%282%29=AuctionWithBIN&paginationInput.pageNumber=1&paginationInput.entriesPerPage=100&sortOrder=EndTimeSoonest) — falling back to Browse API
+INFO hanryxvault: [ebay] finding API page 2 failed (500 Server Error: Internal Server Error for url: https://svcs.ebay.com/services/search/FindingService/v1?OPERATION-NAME=findCompletedItems&SERVICE-VERSION=1.0.0&SECURITY-APPNAME=HanRYXva-HanRYXva-PRD-54c54106b-9f98db95&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD=&keywords=Charizard+4%2F102+Base+Set+pokemon&categoryId=183050&itemFilter%280%29.name=SoldItemsOnly&itemFilter%280%29.value=true&itemFilter%281%29.name=ListingType&itemFilter%281%29.value%280%29=FixedPrice&itemFilter%281%29.value%281%29=Auction&itemFilter%281%29.value%282%29=AuctionWithBIN&paginationInput.pageNumber=2&paginationInput.entriesPerPage=100&sortOrder=EndTimeSoonest) — falling back to Browse API
+INFO hanryxvault: [ebay] OAuth token refreshed, expires in 7200s
+INFO hanryxvault: [ebay] Browse fallback returned 42 active listings for 'Charizard 4/102 Base Set pokemon' (estimated sold = active × 0.80)
+ raw sales: 42, after filter+score: 35
+  RARE   1999 Pokemon CHARIZARD #4/102 Base Set Holo Rare English   PERF -> $ 9422.39 score 14
+  Pokémon Charizard Base Set Unlimited Holo #4/102 Beckett Graded 8.5 En -> $ 1312.0 score 14
+  Charizard 1999 Holo Rare 4/102 Base Set Pokémon TCG  HP Heavy Played -> $ 210.66 score 14
+  2021 POKÉMON CELEBRATIONS - CLASSIC COLL. BASE SET HOLO #4/102 CHARIZA -> $ 239.99 score 14
+  Charizard Base Set Unlimited  | 4/102 | Rare Holo | 1999 Pokemon Card  -> $ 1600.0 score 14
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
