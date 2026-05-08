@@ -1,0 +1,48 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ echo "=== 1. raw curl test (bypasses our code AND cache) ===" && \
+docker exec pi-setup-pos-1 sh -c '
+  curl -sS -o /tmp/n.json -w "HTTP %{http_code}\n" \
+    -H "X-Naver-Client-Id: $NAVER_CLIENT_ID" \
+    -H "X-Naver-Client-Secret: $NAVER_CLIENT_SECRET" \
+    "https://openapi.naver.com/v1/search/shop.json?query=test&display=1"
+  echo "--- Naver response body ---"
+  cat /tmp/n.json
+  echo ""
+' && \
+echo "=== 2. env var presence inside container (should not be empty) ===" && \
+docker exec pi-setup-pos-1 sh -c 'echo "ID len: ${#NAVER_CLIENT_ID}"; echo "SECRET len: ${#NAVER_CLIup-pos-1 redis-cli -h redis DELcker exec -i pi-set
+=== 1. raw curl test (bypasses our code AND cache) ===
+HTTP 200
+--- Naver response body ---
+{
+        "lastBuildDate":"Sat, 09 May 2026 06:46:58 +0900",
+        "total":33161,
+        "start":1,
+        "display":1,
+        "items":[
+                {
+                        "title":"WAK-Ag 은 간이 수질검사 팩 Pack <b>Test<\/b>",
+                        "link":"https:\/\/search.shopping.naver.com\/catalog\/48197246290",
+                        "image":"https:\/\/shopping-phinf.pstatic.net\/main_4819724\/48197246290.20250709064937.jpg",
+                        "lprice":"44000",
+                        "hprice":"",
+                        "mallName":"네이버",
+                        "productId":"48197246290",
+                        "productType":"1",
+                        "brand":"",
+                        "maker":"",
+                        "category1":"생활\/건강",
+                        "category2":"공구",
+                        "category3":"측정공구",
+                        "category4":"기타측정기"
+                }
+        ]
+}
+=== 2. env var presence inside container (should not be empty) ===
+ID len: 20
+SECRET len: 10
+=== 3. .env hidden-character check ===
+NAVER_CLIENT_ID=nrQAy8CfOj2bJdh6NL2B$
+NAVER_CLIENT_SECRET= S8sTK11QUC$
+=== 4. invalidate naver cache so next call goes fresh ===
+OCI runtime exec failed: exec failed: unable to start container process: exec: "redis-cli": executable file not found in $PATH
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
