@@ -1,0 +1,75 @@
+ngansen@hanryxvault-sat:~ $ echo '=== which URL is each chromium loading ==='
+pgrep -af chromium | grep -v 'zygote\|crashpad\|gpu-process\|utility\|renderer\|--type=' | while read pid rest; do
+  url=$(echo "$rest" | grep -oE 'https?://[^ ]+' | head -1)
+  cls=$(echo "$rest" | grep -oE -- '--class=[^ ]+' | head -1)
+  uddir=$(echo "$rest" | grep -oE -- '--user-data-dir=[^ ]+' | head -1)
+  echo "PID $pid  $cls  $uddir"
+  echo "    URL: $url"
+done
+
+echo
+echo '=== wlr-randr: which physical outputs are connected ==='
+WAYLAND_DISPLAY=$(ls /run/user/1000/wayland-* 2>/d | tail -5umpctl list labwc --no-pager 2>/dev/null
+=== which URL is each chromium loading ===
+PID 346725  --class=hvault-kiosk  --user-data-dir=/home/ngansen/.hanryx/kiosk-profile
+    URL: http://hanryxvault:8080/kiosk
+PID 346731  --class=hvault-admin  --user-data-dir=/home/ngansen/.hanryx/admin-profile
+    URL: http://hanryxvault:8080/admin
+
+=== wlr-randr: which physical outputs are connected ===
+HDMI-A-1 "DZX Z3 0000000000000 (HDMI-A-1)"
+  Make: DZX
+  Model: Z3
+  Serial: 0000000000000
+  Physical size: 150x90 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.004002 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 60.000000 Hz
+    1920x1080 px, 59.939999 Hz
+    1280x1024 px, 60.020000 Hz
+    1280x960 px, 60.000000 Hz
+    1152x864 px, 59.966999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1024x768 px, 60.004002 Hz
+    1440x480 px, 60.000000 Hz
+    1440x480 px, 59.939999 Hz
+    1024x640 px, 59.987999 Hz
+    800x600 px, 60.317001 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 59.939999 Hz
+    720x480 px, 59.939999 Hz
+    640x480 px, 60.000000 Hz
+    640x480 px, 59.939999 Hz
+  Position: 800,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+HDMI-A-2 "Mediatrix Peripherals Inc MPI5008 0x00000001 (HDMI-A-2)"
+  Make: Mediatrix Peripherals Inc
+  Model: MPI5008
+  Serial: 0x00000001
+  Physical size: 150x100 mm
+  Enabled: yes
+  Modes:
+    800x480 px, 59.995998 Hz (preferred, current)
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+
+=== labwc rc.xml window-rules (what should go where) ===
+    <windowRule identifier="[Hh]vault-admin">
+      <action name="MoveToOutput" output="HDMI-A-1"/>
+    </windowRule>
+    <windowRule identifier="[Hh]vault-kiosk">
+      <action name="MoveToOutput" output="HDMI-A-2"/>
+    </windowRule>
+  </windowRules>
+
+=== last labwc crash dump (if any) ===
+ngansen@hanryxvault-sat:~ $ 
