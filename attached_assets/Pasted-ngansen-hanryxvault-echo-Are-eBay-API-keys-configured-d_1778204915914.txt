@@ -1,0 +1,37 @@
+ngansen@hanryxvault:~ $ echo '=== Are eBay API keys configured? ==='
+docker exec pi-setup-pos-1 sh -c 'echo EBAY_APP_ID=${EBAY_APP_ID:-NOT_SET}; echo EBAY_CERT_ID=${EBAY_CERT_ID:-NOT_SET}'
+echo
+echo '=== What does the keyless scraper actually return? ==='
+docker exec pi-setup-pos-1 python3 -c "
+import logging; logging.basicConfig(level=logging.INFO)
+from ebay_sold import ebay_sold
+rows = ebay_sold('Charizard 4/102 base set pokemon', limit=10, pages=1)
+print(f'rows returned: {len(rows)}')
+for r in rows[:3]:
+    print(r)
+"
+echo
+echo '=== Does eBay return HTML or a CAPTCHA page "rint(f'final URL: {r.url}')ry}')')text.lower() or
+=== Are eBay API keys configured? ===
+EBAY_APP_ID=HanRYXva-HanRYXva-PRD-54c54106b-9f98db95
+EBAY_CERT_ID=PRD-4c54106bc343-295b-4cd4-ac42-d35a
+
+=== What does the keyless scraper actually return? ===
+INFO:hanryxvault:[redis] Connected to redis://redis:6379/0
+INFO:hanryxvault:[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO:hanryxvault:[pokeapi] canonical name index ready: 1025 species
+INFO:hanryxvault:[bg] price-refresh scheduler disabled via env
+INFO:hanryxvault:[blueprint] tcg_lookup registered → /tcg/*
+INFO:hanryxvault:[blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO:hanryxvault:[blueprint] cards_master search wired → /tcg/search-master
+INFO:hanryxvault:[blueprint] cards.ai_assistant registered → /ai/*
+INFO:ebay_sold:[ebay_sold] https://www.ebay.com/sch/i.html?_nkw=Charizard+4%2F102+base+set+pokemon+-lot+-lots+-playset+-bundle+-sealed+-complete+set+-booster+box+-booster+pack+-etb+-elite+trainer+box+-case+-x2+-x3+-x4+-x5+-x6+-x10+-x20+-x50+-x100+-factory+sealed+-wholesale+-repack+-mystery+box+-graded+lot+-collection+-binder&LH_Sold=1&LH_Complete=1&_ipg=120&_sop=13&_pgn=1 → HTTP 403
+rows returned: 0
+
+=== Does eBay return HTML or a CAPTCHA page when WE hit it? ===
+status: 403, length: 389
+has li.s-item HTML: False
+has CAPTCHA/challenge: False
+redirected: []
+final URL: https://www.ebay.com/sch/i.html?_nkw=charizard+pokemon&LH_Sold=1&LH_Complete=1&_ipg=120&_sop=13&_pgn=1
+ngansen@hanryxvault:~ $
