@@ -1,0 +1,67 @@
+===ngansen@hanryxvault:~ $ echo "=== lightdm logs ==="udo tail -50 /var/log/lightdm/lightdm.log 2>&1 | sudo tail -50 /var/log/lightdm/lightdm.log 2>&1 | grep -iE 'auto.?login|seat|session|greeter|fail|error' | tail -30
+echo "=== ALL config files lightdm reads (later ovecho "=== ALL config files lightdm reads (later overrides earlier) ==="ightdm.conf /etc/lightdm/lighls -la /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.d/ 2>&1
+echo "=== effective autologin keys (last one wins)echo "=== effective autologin keys (last one wins) ==="grep -RH -E 'autologin-user|autologin-sessionsudo grep -RH -E 'autologin-user|autologin-session|user-session' /etc/lightdm/ 2>&1
+echo "=== is ngansen in the autologin group? (someecho "=== is ngansen in the autologin group? (some distros gate it) ===" nopasswdlogin 2>&1
+getent group autologin nopasswdlogin 2>&1
+groups ngansen
+=== lightdm logs ===
+[+0.00s] DEBUG: Loading configuration from /etc/lightdm/lightdm.conf.d/60-hanryx-autologin.conf
+[+0.00s] DEBUG: Registered seat module local
+[+0.00s] DEBUG: Registered seat module xremote
+[+0.01s] DEBUG: Monitoring logind for seats
+[+0.01s] DEBUG: New seat added from logind: seat0
+[+0.01s] DEBUG: Seat seat0: Loading properties from config section Seat:*
+[+0.01s] DEBUG: Seat seat0 has property CanMultiSession=no
+[+0.01s] DEBUG: Seat seat0: Starting
+[+0.01s] DEBUG: Seat seat0: Creating user session
+[+0.32s] DEBUG: Seat seat0: Failed to find session configuration rpd-labwc
+[+0.32s] DEBUG: Seat seat0: Can't find session 'rpd-labwc'
+[+0.32s] DEBUG: Seat seat0: Creating greeter session
+[+0.33s] DEBUG: Seat seat0: Creating display server of type wayland
+[+0.33s] DEBUG: Seat seat0: Plymouth is running on VT 1, but this is less than the configured minimum of 7 so not replacing it
+[+0.42s] DEBUG: Seat seat0: Exit status of /usr/share/dispsetup.sh: 0
+[+0.42s] DEBUG: Seat seat0: Display server ready, starting session authentication
+[+0.42s] DEBUG: Session pid=1061: Started with service 'lightdm-greeter', username 'lightdm'
+[+0.42s] DEBUG: Registering seat with bus path /org/freedesktop/DisplayManager/Seat0
+[+0.44s] DEBUG: Session pid=1061: Authentication complete with return value 0: Success
+[+0.44s] DEBUG: Seat seat0: Session authenticated, running command
+[+0.44s] DEBUG: Session pid=1061: Running command /usr/bin/labwc -C /etc/xdg/labwc-greeter/
+[+0.44s] DEBUG: Session pid=1061: Logging to /var/log/lightdm/seat0-greeter.log
+[+0.97s] DEBUG: Activating login1 session c1
+[+0.97s] DEBUG: Seat seat0 changes active session to c1
+[+0.97s] DEBUG: Session c1 is already active
+[+4.55s] DEBUG: Greeter connected version=1.32.0 api=1 resettable=false
+[+4.69s] DEBUG: Greeter start authentication for ngansen
+[+4.69s] DEBUG: Session pid=1274: Started with service 'lightdm', username 'ngansen'
+[+4.75s] DEBUG: Session pid=1274: Got 1 message(s) from PAM
+[+4.75s] DEBUG: Prompt greeter with 1 message(s)
+
+=== ALL config files lightdm reads (later overrides earlier) ===
+-rw-r--r-- 1 root root 6668 May  8 00:13 /etc/lightdm/lightdm.conf
+
+/etc/lightdm/lightdm.conf.d/:
+total 12
+drwxr-xr-x 2 root root 4096 May  8 00:13 .
+drwxr-xr-x 3 root root 4096 May  8 00:13 ..
+-rw-r--r-- 1 root root  100 May  8 00:13 60-hanryx-autologin.conf
+
+=== effective autologin keys (last one wins) ===
+/etc/lightdm/lightdm.conf.d/60-hanryx-autologin.conf:autologin-user=ngansen
+/etc/lightdm/lightdm.conf.d/60-hanryx-autologin.conf:autologin-user-timeout=0
+/etc/lightdm/lightdm.conf.d/60-hanryx-autologin.conf:autologin-session=labwc
+/etc/lightdm/lightdm.conf.d/60-hanryx-autologin.conf:user-session=labwc
+/etc/lightdm/lightdm.conf:# user-session = Session to load for users
+/etc/lightdm/lightdm.conf:# guest-session = Session to load for guests (overrides user-session)
+/etc/lightdm/lightdm.conf:# autologin-user = User to log in with by default (overrides autologin-guest)
+/etc/lightdm/lightdm.conf:# autologin-user-timeout = Number of seconds to wait before loading default user
+/etc/lightdm/lightdm.conf:# autologin-session = Session to load for automatic login (overrides user-session)
+/etc/lightdm/lightdm.conf:user-session=rpd-labwc
+/etc/lightdm/lightdm.conf:autologin-user=ngansen
+/etc/lightdm/lightdm.conf:#autologin-user-timeout=0
+/etc/lightdm/lightdm.conf:autologin-session=rpd-labwc
+
+=== is ngansen in the autologin group? (some distros gate it) ===
+autologin:x:983:ngansen
+nopasswdlogin:x:982:ngansen
+ngansen : ngansen adm dialout cdrom sudo audio video plugdev games users input render netdev spi i2c gpio docker autologin nopasswdlogin
+ngansen@hanryxvault:~ $
