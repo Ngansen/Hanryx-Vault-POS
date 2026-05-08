@@ -1,0 +1,67 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ docker exec -it pi-setup-pos-1 python3 -c "
+import sys, os, re, time
+sys.path.insert(0,'/app')
+import playwright_scraper as pw
+from urllib.parse import quote_plus
+
+os.makedirs('/tmp/probe', exist_ok=True)
+
+# Term variants to probe
+PROBES = [
+  # (label, url, locale, expected_currency)
+  # ── snkrdunk: try EN + JP routes, EN keyword + JP katakana keyword
+  ('snk-en-eng',  f'https://snkrdunk.com/en/search?keyword=Meganium',     'en-US', '¥'),
+  ('snk-en-kana', f'https://snkrdunk.com/en/search?keyword={quote_plus(\"メガニウム\")}', 'ja-JP', '¥'),
+  ('snk-jp-kana', f'https://snkrdunk.com/search?keyword={quote_plus(\"メガニウム\")}',    'ja-JP', 'ls -la probe/setup-pos-1:/tmp/probe ./probeec pi-s
+label                 size  sym  #prod-anchors  title
+----------------------------------------------------------------------------------------------------
+snk-en-eng           76667  False             0  'SNKRDUNK | Buy &amp; Sell Authentic Sneakers and Appare'  (6.5s)
+snk-en-kana          77214  False             0  'SNKRDUNK | Buy &amp; Sell Authentic Sneakers and Appare'  (5.7s)
+snk-jp-kana         195112  True            28  'おすすめアイテム | 通販・相場はスニーカーダンク'  (5.0s)
+snk-jp-pkmn         195470  True            28  'おすすめアイテム | 通販・相場はスニーカーダンク'  (4.6s)
+tcg-search-html      64431  True            15  'TCGKOREA.COM - 부산 더락 입니다. - 즐거운 온라인 쇼핑공간에 오신 것을 환영합니다!'  (6.5s)
+tcg-search-q         64468  True            15  'TCGKOREA.COM - 부산 더락 입니다. - 즐거운 온라인 쇼핑공간에 오신 것을 환영합니다!'  (5.4s)
+tcg-front-search        39  False             0  ''  (4.5s)
+tcg-pikachu          64456  True            15  'TCGKOREA.COM - 부산 더락 입니다. - 즐거운 온라인 쇼핑공간에 오신 것을 환영합니다!'  (6.0s)
+
+--- snkrdunk JS source URLs (looking for /api/ patterns) ---
+--- snkrdunk script-src URLs ---
+   https://www.googletagmanager.com/gtag/js?id=G-3722WCREQR&amp;cx=c&amp;gtm=4e6562
+   https://analytics.tiktok.com/i18n/pixel/static/identify_5cff1caf.js
+   https://www.googletagmanager.com/gtag/destination?id=AW-653174486&amp;cx=c&amp;gtm=4e6562
+   https://analytics.tiktok.com/i18n/pixel/static/main.MWE0ZWQ3ZWQwMQ.js
+   https://s.pinimg.com/ct/lib/main.8bbbbe54.js
+   https://fb44363438ca.cdn4.forter.com/sn/fb44363438ca/sha256-sHSyMKgzdd66A0ZhIBhJF3Hf85MGImt%2BvPKsiVc5dH0%3D/script.js
+   https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=CEM1KGBC77U8BHMFF6SG&amp;lib=ttq
+   https://tags.creativecdn.com/giiPSdBQGJPpOwbcVKHu.js
+   https://static.ads-twitter.com/uwt.js
+   https://d.line-scdn.net/n/line_tag/public/release/v1/lt.js
+   https://h.accesstrade.net/js/froglink/froglink_min.js
+   https://s.pinimg.com/ct/core.js
+   https://www.google-analytics.com/analytics.js
+   https://www.googletagmanager.com/gtag/js?id=G-WLFPCJHLHL&amp;cx=c&amp;gtm=4e6562
+   https://www.googletagmanager.com/gtag/js?id=G-T9G4FWRKGP&amp;cx=c&amp;gtm=4e6562
+total 776
+drwxr-xr-x 2 root root   4096 May  8 11:12 .
+drwxrwxrwt 1 root root   4096 May  8 11:12 ..
+-rw-r--r-- 1 root root  76696 May  8 11:12 snk-en-eng.html
+-rw-r--r-- 1 root root  77243 May  8 11:12 snk-en-kana.html
+-rw-r--r-- 1 root root 204940 May  8 11:12 snk-jp-kana.html
+-rw-r--r-- 1 root root 205298 May  8 11:12 snk-jp-pkmn.html
+-rw-r--r-- 1 root root     39 May  8 11:12 tcg-front-search.html
+-rw-r--r-- 1 root root  67437 May  8 11:12 tcg-pikachu.html
+-rw-r--r-- 1 root root  67414 May  8 11:12 tcg-search-html.html
+-rw-r--r-- 1 root root  67443 May  8 11:12 tcg-search-q.html
+Successfully copied 774kB to /home/ngansen/Hanryx-Vault-POS/probe
+total 776
+drwxr-xr-x  2 ngansen ngansen   4096 May  8 11:12 .
+drwxrwxr-x 11 ngansen ngansen   4096 May  8 11:13 ..
+-rw-r--r--  1 ngansen ngansen  76696 May  8 11:12 snk-en-eng.html
+-rw-r--r--  1 ngansen ngansen  77243 May  8 11:12 snk-en-kana.html
+-rw-r--r--  1 ngansen ngansen 204940 May  8 11:12 snk-jp-kana.html
+-rw-r--r--  1 ngansen ngansen 205298 May  8 11:12 snk-jp-pkmn.html
+-rw-r--r--  1 ngansen ngansen     39 May  8 11:12 tcg-front-search.html
+-rw-r--r--  1 ngansen ngansen  67437 May  8 11:12 tcg-pikachu.html
+-rw-r--r--  1 ngansen ngansen  67414 May  8 11:12 tcg-search-html.html
+-rw-r--r--  1 ngansen ngansen  67443 May  8 11:12 tcg-search-q.html
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
