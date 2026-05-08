@@ -28,7 +28,9 @@
 
 services:
   npm:
-    image: jc21/nginx-proxy-manager:latest
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure.
+    image: jc21/nginx-proxy-manager:2.14.0@sha256:2aa69b382a384b676c0d4f1d6f2eac40ecd478fcf7af1cfb3f9f1d3cd0c81e12
     container_name: npm
     restart: unless-stopped
     # Bind to the Tailscale IP only — never 0.0.0.0.
@@ -60,7 +62,10 @@ services:
   #   networks: [hanryx_net]
 
   adminer:
-    image: adminer:latest
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure. The `-standalone` variant runs a built-in PHP
+    # web server on :8080 (no separate fastcgi/nginx needed).
+    image: adminer:5.4.2-standalone@sha256:1c2c6052a0a07d02749d590765ebe5591b8d2b7f337c9b727c9ccf31f7f3597d
     container_name: adminer
     restart: unless-stopped
     ports:

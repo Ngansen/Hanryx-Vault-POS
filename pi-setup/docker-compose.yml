@@ -20,7 +20,7 @@ services:
     environment:
       POSTGRES_DB:       vaultpos
       POSTGRES_USER:     vaultpos
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-vaultpos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}
     volumes:
       # Postgres data dir lives on the UGreen USB drive at
       # /mnt/cards/postgres-data by default — same drive as
@@ -95,7 +95,7 @@ services:
     image: edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c
     restart: unless-stopped
     environment:
-      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       POOL_MODE:         transaction
       MAX_CLIENT_CONN:   200
       DEFAULT_POOL_SIZE: 20
@@ -135,13 +135,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       REDIS_URL:        redis://redis:6379/0
       FLASK_ENV:        production
       PYTHONUNBUFFERED: "1"
 
-      SESSION_SECRET:   ${SESSION_SECRET:-change-me-on-the-pi}
-      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-hanryxvault}
+      SESSION_SECRET:   ${SESSION_SECRET:?SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)}
+      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in pi-setup/.env)}
 
       # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
       GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
@@ -377,7 +377,7 @@ services:
     restart: unless-stopped
     command: ["python3", "/app/sync_orchestrator.py"]
     environment:
-      DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/vaultpos
+      DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       REDIS_URL:       redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
       HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
@@ -509,11 +509,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:-vaultpos}@db:5432/storefront
+      DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/storefront
       PORT:         "3000"
       NODE_ENV:     production
 
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)}
 
       HANRYX_POS_PUSH_URL: http://pos:8080/push/inventory
 

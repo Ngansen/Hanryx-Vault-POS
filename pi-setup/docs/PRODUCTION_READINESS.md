@@ -40,31 +40,19 @@ _Reviewed against `main` @ `fffbb74`._
 
 ## 2. Issues to resolve **before** the show
 
-### 🔴 Critical (security exposure)
+### ✅ Resolved in the hardening commit (2026-05-08)
 
-1. **Default fallback passwords in `pi-setup/docker-compose.yml`**
-   - `POSTGRES_PASSWORD: ${DB_PASSWORD:-vaultpos}` (line 23)
-   - `ADMIN_PASSWORD: ${ADMIN_PASSWORD:-hanryxvault}` (line 144)
-   - `SESSION_SECRET: ${SESSION_SECRET:-change-me-on-the-pi}` (lines 143, 516)
+1. ✅ **Default fallback passwords removed.** `pi-setup/docker-compose.yml` now uses `${DB_PASSWORD:?...}`, `${SESSION_SECRET:?...}`, `${ADMIN_PASSWORD:?...}` — compose refuses to start if any is missing instead of silently booting with `vaultpos` / `hanryxvault` / `change-me-on-the-pi`. Verified by `docker compose config` failing with a clear error when a var is unset.
+2. ✅ **Grafana admin password now declarative.** `GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?...}` added to `monitoring/docker-compose.yml`. `.env.example` updated with the new required key. No more `admin/admin` on first boot.
+3. ✅ **All 5 floating `:latest` tags pinned to digests.** `prom/prometheus:v3.11.3`, `grafana/grafana:13.1.0-25469333600-ubuntu`, `prom/node-exporter:v1.11.1`, `jc21/nginx-proxy-manager:2.14.0`, `adminer:5.4.2-standalone` — each with a multi-arch `@sha256:...` digest. CI guard (`check-no-floating-tags.py`) was already scanning all of `pi-setup/` and is now passing (was previously failing on `main`).
 
-   If the live `.env` is ever missing or partially merged, the stack silently boots with publicly-known credentials. **Action**: drop the fallbacks — `${DB_PASSWORD:?DB_PASSWORD is required}` — so compose refuses to start instead of using a default. Verify on each Pi that `.env` actually defines all three.
-
-2. **Grafana admin password left at `admin/admin`** (`pi-setup/monitoring/docker-compose.yml:62` comment confirms intent).
-
-   Grafana on the main Pi exposes anonymous read for the kiosk dashboard but `admin/admin` lets anyone on the Tailnet rewrite dashboards or add data sources. **Action**: set `GF_SECURITY_ADMIN_PASSWORD` from `.env` and rotate.
-
-### 🟠 High (stability under stress)
-
-3. **Floating `:latest` tags in monitoring + proxy stacks**
-   - `prom/prometheus:latest`, `grafana/grafana:latest`, `prom/node-exporter:latest`, `jc21/nginx-proxy-manager:latest`, `adminer:latest`.
-   - Violates the project's stated reproducible-build policy (and CI guard for the **main** compose only catches the main file).
-   - **Action**: pin to digests, like the main compose already does. Extend `pi-setup-security.yml` to also lint `monitoring/docker-compose.yml` and `proxy/docker-compose.yml`.
+### 🟠 Remaining — High (stability under stress)
 
 4. **Hardcoded Tailscale IP `100.125.5.34`** in `pi-setup/proxy/docker-compose.yml` (lines 39–41, 68) and DNS hostnames in `pi-setup/nginx/hanryxvault.conf` (lines 46, 123).
    - Survives normal operation, but a Tailscale account migration or DDNS rename silently breaks routing.
    - **Action**: pull these from `.env` (`TAILSCALE_HOST_IP`, `PUBLIC_HOSTNAME`) and template via `envsubst` at boot, OR document the swap procedure in `MOVE_PLAYBOOK.md`.
 
-5. **Ollama model volume on SD card** (`ollama-data` named volume, not bind-mounted to `/mnt/cards`).
+5. **Ollama model volume on SD card** _(intentional — see comment in `docker-compose.yml:543`: keeps assistant up if USB drive unplugged)_ (`ollama-data` named volume, not bind-mounted to `/mnt/cards`).
    - A `docker compose down -v` wipes the model, forcing a multi-GB re-download on slow venue Wi-Fi.
    - **Action**: bind-mount to `/mnt/cards/ollama-data` like every other stateful service.
 
@@ -146,19 +134,36 @@ curl -fsS http://localhost:8080/healthz && echo "✅ POS up"
 
 ---
 
-## 4. Recommended changes I can make next (in priority order)
+## 4. Hardening commit applied + remaining backlog
+
+**Done in this commit (A + B + C; F was already covered by the existing scanner):**
+
+- ✅ A — Fail-fast secret interpolation in `docker-compose.yml`
+- ✅ B — `GRAFANA_ADMIN_PASSWORD` required, no more `admin/admin`
+- ✅ C — All 5 `:latest` tags in `monitoring/` + `proxy/` pinned to multi-arch digests
+- ✅ F — Verified `check-no-floating-tags.py` already scans the whole `pi-setup/` tree (no CI extension needed; the rule was already there, the offending tags just predated it being enforced)
+
+**Operator action required after pulling this commit:**
+
+1. SSH to the main Pi, `cd ~/Hanryx-Vault-POS && git pull`
+2. Edit `pi-setup/.env` — add a line `GRAFANA_ADMIN_PASSWORD=<choose a strong password>`. Verify `DB_PASSWORD`, `SESSION_SECRET`, `ADMIN_PASSWORD` are also set to non-default values.
+3. Re-up the affected stacks:
+   ```bash
+   cd pi-setup && docker compose up -d              # validates secrets, no-op if unchanged
+   cd monitoring && docker compose up -d --force-recreate grafana   # picks up new admin password
+   cd ../proxy && docker compose pull && docker compose up -d        # pulls pinned NPM/adminer
+   cd ../monitoring && docker compose pull && docker compose up -d   # pulls pinned prom/grafana/node-exp
+   ```
+4. Verify Grafana login at the new password; old `admin/admin` should fail.
+
+**Backlog (safe to defer past the show):**
 
 | # | Change | Risk | Est. effort |
 |---|---|---|---|
-| A | Drop `${VAR:-default}` fallbacks for the three secrets, fail-fast instead | low | 5 min |
-| B | Set Grafana `GF_SECURITY_ADMIN_PASSWORD` env, document rotation | low | 10 min |
-| C | Pin `:latest` tags to digests in `monitoring/` + `proxy/` compose files | low | 20 min |
-| D | Bind-mount `ollama-data` to `/mnt/cards/ollama-data` (one-time copy needed) | medium — needs `docker compose down ollama` | 15 min |
+| D | Templatize hardcoded Tailscale IP via `envsubst` at boot | medium | 30 min |
 | E | Add healthchecks to Prometheus / Grafana / node-exporter / NPM / Adminer | low | 20 min |
-| F | Extend `.github/workflows/pi-setup-security.yml` to lint `monitoring/` + `proxy/` compose for floating tags | low | 10 min |
-| G | Add a Prometheus blackbox probe for `hanryx-watchdog.service` liveness on satellite | medium | 30 min |
-
-Any combination is safe to do now (everything's in git, no in-flight feature work). I'd recommend **A + B + C + F** as a single hardening commit before the show — they're all config-only and reversible.
+| G | Add a Prometheus blackbox probe for `hanryx-watchdog.service` liveness | medium | 30 min |
+| H | Replace disabled `frontail` with `gotty` or `logdy` (ARM64 log viewer) | low | 1 h |
 
 ---
 
