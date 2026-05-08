@@ -17,7 +17,9 @@
 
 services:
   prometheus:
-    image: prom/prometheus:latest
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure (mirrors the digest-pin policy of the main compose).
+    image: prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
     container_name: prometheus
     restart: unless-stopped
     ports:
@@ -39,7 +41,9 @@ services:
     networks: [hanryx_net]
 
   grafana:
-    image: grafana/grafana:latest
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure.
+    image: grafana/grafana:13.1.0-25469333600-ubuntu@sha256:602d4df46b5ccc6d3cbd779f7094abdb256fcd21d855d30d8d98d984fe9bf6bb
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -59,13 +63,20 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-      # Default admin password stays at 'admin' on first login (operator
-      # changes it interactively, per Q3 of the install conversation).
+      # Admin password is set declaratively from pi-setup/.env so a fresh
+      # install is never reachable with the well-known admin/admin combo.
+      # Required: anyone on the tailnet can read dashboards (anonymous Viewer
+      # above), but only the holder of GRAFANA_ADMIN_PASSWORD can edit them
+      # or add data sources. Rotate by editing the .env value and running
+      # `docker compose up -d --force-recreate grafana`.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (set in pi-setup/.env)}
     networks: [hanryx_net]
     depends_on: [prometheus]
 
   node-exporter:
-    image: prom/node-exporter:latest
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure.
+    image: prom/node-exporter:v1.11.1@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205
     container_name: node-exporter
     restart: unless-stopped
     # Host networking so node_exporter sees the real /proc and /sys
