@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS
+
+echo '════════════════════════ snkrdunk JP — anchors near ¥ prices ════════════════════════'
+# Product anchor patterns
+grep -oE '<a[^>]+href="[^"]+"[^>]*>' probe/snk-jp-kana.html | grep -iE 'product|item|/p/' | head -8
+echo '--- href patterns (sorted unique) ---'
+grep -oE 'href="(/[^"]+)"' probe/snk-jp-kana.html | sed 's/.*href="//;s/"$//' | grep -E '^/[a-z]+/' | sed 's|/[0-9][0-9]*.*|/<id>|' | sort -u | head -20
+echo '--- class names containing product-ish words (Japanese sites use Tailwind/Vue conventions) ---'
+grep -oE 'class="[^"]*"' probe/snk-jp-kana.html | sort -u | grep -iE 'item|prod|card|goods|recommend|search-result|list-item|list__item' | head -25
+echo '--- 200-char windows around the first 3 ¥ syu.html probe/tcg-search-q.htmltml probe/tcg-pikach
+════════════════════════ snkrdunk JP — anchors near ¥ prices ════════════════════════
+<a href="https://line.me/R/ti/p/%40gya6708a" target="_blank" rel="noopener noreferrer" class="styles-module-scss-module__Z7zfZG__snsIcon">
+<a href="https://snkrdunk.com/apparels/77198" class="styles-module-scss-module__jAqS3W__productTile " aria-label="ポケモンカードゲーム ソード&amp;シールド ポケモン GO スペシャルセット - ¥25,870">
+<a href="https://snkrdunk.com/apparels/618447" class="styles-module-scss-module__jAqS3W__productTile " aria-label="フクオカのピカチュウ P [SV-P 289](スペシャルBOX「ポケモンセンターフクオカ」) - ¥18,000">
+<a href="https://snkrdunk.com/apparels/724998" class="styles-module-scss-module__jAqS3W__productTile " aria-label="ポケモンカードゲームMEGA スタートデッキ100「バトルコレクション」 - ¥4,395">
+<a href="https://snkrdunk.com/apparels/722239" class="styles-module-scss-module__jAqS3W__productTile " aria-label="メガリザードンXex MA [M2a 223/193](ハイクラスパック「MEGAドリームex」) - ¥6,000">
+<a href="https://snkrdunk.com/apparels/783024/primary?navigation=jsShowAndHideAppBar" class="styles-module-scss-module__jAqS3W__productTile " aria-label="Arcade REX by ChroNoiR \ Chross Heart Necklace &quot;NICKEL&quot; - ¥5,500">
+<a href="https://snkrdunk.com/apparels/671486" class="styles-module-scss-module__jAqS3W__productTile " aria-label="ピカチュウ P [M-P 020](プロモカードパック「マクドナルド ハッピーセット2025」) - ¥2,990">
+<a href="https://snkrdunk.com/apparels/783020/primary?navigation=jsShowAndHideAppBar" class="styles-module-scss-module__jAqS3W__productTile " aria-label="Arcade REX by ChroNoiR \ Vampire Heart by Kuzuha S/S T-shirt &quot;BLACK&quot; - ¥6,600">
+--- href patterns (sorted unique) ---
+/accounts/login?nextUrl=%2Fsearch%3Fkeyword%3D%25E3%2583%25A1%25E3%2582%25AC%25E3%2583%258B%25E3%2582%25A6%25E3%2583%25A0
+/accounts/signup/
+/articles/<id>
+/brands/adidas
+/brands/air-jordan
+/brands/chrome-hearts
+/brands/newbalance
+/brands/nike
+/brands/pokemon
+/brands/pop-mart
+/brands/supreme
+/calendars/
+/categories/<id>
+/guide/authentic/
+/guide/community
+/guide/order/
+/guide/rank/
+/guide/snkrdunk-base
+/information/
+/information/<id>
+--- class names containing product-ish words (Japanese sites use Tailwind/Vue conventions) ---
+class="styles-module-scss-module__1rp3GW__productGrid"
+class="styles-module-scss-module__hGYZVW__pageItem"
+class="styles-module-scss-module__jAqS3W__productInfo"
+class="styles-module-scss-module__jAqS3W__productName  "
+class="styles-module-scss-module__jAqS3W__productName styles-module-scss-module__jAqS3W__japanese "
+class="styles-module-scss-module__jAqS3W__productPrice "
+class="styles-module-scss-module__jAqS3W__productPrice styles-module-scss-module__jAqS3W__discountPrice "
+class="styles-module-scss-module__jAqS3W__productTile "
+class="styles-module-scss-module__jAqS3W__productTile styles-module-scss-module__jAqS3W__resultProductTile"
+class="styles-module-scss-module__v_7OzW__linkItem"
+class="styles-module-scss-module__v_7OzW__siteMap"
+--- 200-char windows around the first 3 ¥ symbols ---
+'dule-scss-module__LqnJBW__scrollContainer"><a href="https://snkrdunk.com/apparels/77198" class="styles-module-scss-module__jAqS3W__productTile " aria-label="ポケモンカードゲーム ソード&amp;シールド ポケモン GO スペシャルセット - ¥25,870"><div class="styles-module-scss-module__jAqS3W__r'
+---
+'ice ">25,870</span></div></div></a><a href="https://snkrdunk.com/apparels/618447" class="styles-module-scss-module__jAqS3W__productTile " aria-label="フクオカのピカチュウ P [SV-P 289](スペシャルBOX「ポケモンセンターフクオカ」) - ¥18,000"><div class="styles-module-scss-module__jAqS3W__r'
+---
+'__productPrice ">18,000</span></div></div></a><a href="https://snkrdunk.com/apparels/724998" class="styles-module-scss-module__jAqS3W__productTile " aria-label="ポケモンカードゲームMEGA スタートデッキ100「バトルコレクション」 - ¥4,395"><div class="styles-module-scss-module__jAqS3W__r'
+---
+
+════════════════════════ tcgkorea — is the search JS-driven? ════════════════════════
+$.ajax
+EC_FRONT
+window.location
+--- forms with method=post or search action ---
+<form id="searchBarForm" name="" action="/product/search.html" method="get" target="_self" enctype="multipart/form-data">
+<form id="member_form_7837751882" name="" action="/exec/front/Member/login/" method="post" target="_self" enctype="multipart/form-data">
+<form id="searchBarForm" name="" action="/product/search.html" method="get" target="_self" enctype="multipart/form-data">
+<form id="searchForm" name="" action="/product/search.html" method="get" target="_self" enctype="multipart/form-data">
+--- script src URLs (Cafe24 search widget?) ---
+<script type="text/javascript" async="" src="//cfa-js.cafe24.com/cfa.html?uid=tamiya80&amp;sno=1&amp;stype=e&amp;type=conn&amp;CUK45=&amp;CID=CFAE_CID.tamiya80_1.FD0MQK0.1778238760842&amp;LC=&amp;oLC1=&amp;oLC2=CFAE_LC.tamiya80_1.9999999.1778238760842&amp;CUK1Y=CFAE_CUK1Y.tamiya80_1.FD0MQK0.1778238760842&amp;_bc1y=&amp;_ac1y=&amp;_bL1y=&amp;_aL1y=&amp;CVID=CVID.4553595d415408096c01.1778238759471&amp;CVID_Y=CVID_Y.4553595d415408096c01.1778238759471&amp;CVID_AD=&amp;CVID_E=&amp;new_visit=T&amp;path_role=PRODUCT_SEARCH&amp;mem_id=&amp;h_member_id=&amp;udim=1366*800&amp;t=1778238760842&amp;uref=&amp;url=https%3A%2F%2Fwww.tcgkorea.com%2Fproduct%2Fsearch.html%3Fkeyword%3D%25EB%25A9%2594%25EA%25B0%2580%25EB%258B%2588%25EC%259B%2580&amp;ttp=&amp;mkt_click_type=&amp;mkt_click_id=&amp;ls_tf=&amp;ck1ylog=&amp;ck_tf=T&amp;cfa_fp=59eb352fe707f3bc543b04a8fd9abda9"
+<script async="" src="//cfa-js.cafe24.com/cfa.js?v=1778238759955"
+<script async="" crossorigin="anonymous" src="//optimizer.poxo.com/ca2/analytics.js?v=20260508"
+<script async="" src="//assets.poxo.com/jet/jet.js"
+<script type="text/javascript" src="/ec-js/common.js"
+<script type="text/javascript" src="https://login2.cafe24ssl.com/crypt/AuthSSLManager.js"
+<script type="text/javascript" src="https://login2.cafe24ssl.com/crypt/AuthSSLManager.plugin.js"
+<script type="text/javascript" src="/app/Eclog/js/cid.generate.js?vs=eff81aa38418504866890a29cc560d1a&amp;u=tamiya80.1"
+<script type="text/javascript" src="/ind-script/i18n.php?v=2604291480&amp;lang=ko_KR&amp;domain=front&amp;type="
+<script src="/ind-script/optimizer.php?filename=vVjbUuNGEH0HveY7BJVNKq9gioTCrnVhyD63Ri150Gh6MheM9uvTkg2LL7I1YpOiyhaac7pHPacvVmGhxhXZKrXoKFiB6bNL5eUfOnl2vxT7q0EaEFX6_E9A22y-fk1-Ty4G4fHVo9Wg3OZGIogqieO4waqITSYokkJHEjQJ0oWSwkcQL5Mv_BfhiFc92S4KxlLJrK3TyMGjlzWmNdWofYpi1l18k375-P0GPCS11CfZSmaMxUe-7sM6Y6X2Ra8pEqF1fEu2npD2lpRC24eeq-CujLm2Mi97PQYvVd9aYal72jNHinGkzzyZMyU1nmWgdb_nNVFQXZM-jnkFzWrXLCxj0Z-y2KE91kZxHD9CwZh0RplUmD58YK13sPeMPeia8sC33EqaIcaLoEUblJRxeWCB1jsSGsrbc8hCSZ_WOv1IVPC9UQT5AGgdPLQ-vmYO7ct2WHsohlRTSHVCDDkWEJRvH83VYP31uw7iy0dWyo70_xeunFNQO46PG8dHcFKX47g1esjbkrGjlMWSzNaB3HYBv4cKKK3az7l8RbWfzUfIk07_Twfk30O4wSyUA7EPWKBFLXASbPvdzK0UQ3fmEKxYDpClh6Jo3srryWgbFUrJNeIFlOQgk32L-vuNhC_AjTTWHqbO3b5RtmBYTfiz7S5RGfyP9rwEnauBuRthlquN5BP7yVa5MvlPBkKRAC7FFfVVuB_eTstywqZ0Djb9kvyWXKQFNyQjRRVFVZcXemc7RzJm0WVMu8AVvSvub4aGFgPumSXZZiqd_9S8dyh2wjbG09mz252EuiaIdYZ2a0vgGi3Sulu4aq8X8IJ3-QDmmjOlcpCfD-h7RDOY8Xen4nX3HkxarPvJIOwD-mD1U39Er4JfLhbTXYPXBDbfDqUxSdbe3YW-C20XLXqEMwMN5fawssJMUTlE1ZsmkDpW37nZbQWDWGLz33nB8y34cV4_Rz42Di99zXHz0kt0fZhJlwf32AyI7ToHus9I9FpCkaSvNkcrtI-kXYOr0I_lmUMzwSDmfDMdx3EnFLgRx-92xnkOZexOb9CQk7G-vkm3fCvCkTRBIfrRLAqMJj10pAobbhD5KO4jeVCTEfvtdBorGdRYyHESnUIT7e9PC3msWLigExcmKToyN-lVrEb5h5eckwkmNimCY9doOaVeZHxwZzwyVLjJxzEnumVghPI7Rfwl23c0zWhFbfiPkH2CfeexHvsAN_zDT6o7XVDs8SmQNWQKo70b8EtLCs8PjrYDXE93Xjf0UMzgWr3uXOfq4Pi2D3erdlg58o7LUvB4K195_V8&amp;type=js&amp;k=e691003255ddca7a69f00addba1e62130a4f7a19&amp;t=1776150960"
+--- look for the search keyword in the HTML — does the page even know we searched? ---
+1
+rd" fw-filter="" fw-label="상품명/제조사" fw-msg="" class="inputTypeText" placeholder="" size="15" value="메가니움" type="text">            </div>
+--- compare to body of tcg-pikachu — same hash means search input is ignored ---
+ec75f980400c24480678dc94ce634f64  probe/tcg-search-html.html
+3633d344f3a9f53c0b7d05219c07b63d  probe/tcg-pikachu.html
+45b7a8c9c6fa529c80f46d2f9646e1b5  probe/tcg-search-q.html
+ngansen@hanryxvault:~/Hanryx-Vault-POS $

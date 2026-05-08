@@ -114,12 +114,26 @@ _FATAL_ERROR_HINTS = (
 
 
 def fetch_html(url: str, *, locale: str = "en-US",
-               ua: str = _DEFAULT_UA, timeout: float = 30.0) -> str:
+               ua: str = _DEFAULT_UA, timeout: float = 30.0,
+               wait_selector: str | None = None,
+               stealth: bool = False) -> str:
     """Synchronously fetch `url` with chromium and return the rendered HTML.
 
     Returns "" on any failure (disabled, not installed, browser crashed,
     navigation timeout). Callers should treat "" as "fall back to the
     requests-based path".
+
+    Optional kwargs (added to defeat 2026-era SPA + bot-WAF scrapes):
+      * `wait_selector` — CSS selector to wait for AFTER `domcontentloaded`
+        but BEFORE `page.content()`. Use this when the site loads results
+        via XHR/$.ajax into a known container (e.g. Cafe24 stores). On
+        timeout we still return whatever HTML rendered, so a "no results"
+        page doesn't crash the call — the parser just finds zero rows.
+      * `stealth` — apply `playwright-stealth` overrides to the page to
+        defeat Cloudflare's chromium-fingerprint check. Adds ~200ms per
+        page; only enable for sites that actually need it (cardmarket).
+        Silently no-ops if the `playwright-stealth` package isn't
+        installed, so first deploy before the lockfile regen still runs.
 
     Self-healing: on any fatal browser/loop error this function flips
     `_available` to False so future calls short-circuit to "" without
@@ -133,7 +147,9 @@ def fetch_html(url: str, *, locale: str = "en-US",
     if not _available or _loop is None:
         return ""
     try:
-        coro = _fetch_html_async(url, locale=locale, ua=ua)
+        coro = _fetch_html_async(url, locale=locale, ua=ua,
+                                 wait_selector=wait_selector,
+                                 stealth=stealth)
         fut = asyncio.run_coroutine_threadsafe(coro, _loop)
         return fut.result(timeout=timeout) or ""
     except Exception as exc:
@@ -281,7 +297,9 @@ async def _get_context(domain: str, locale: str, ua: str) -> Any:
         return ctx
 
 
-async def _fetch_html_async(url: str, *, locale: str, ua: str) -> str:
+async def _fetch_html_async(url: str, *, locale: str, ua: str,
+                            wait_selector: str | None = None,
+                            stealth: bool = False) -> str:
     """Open a fresh page in the per-domain context, navigate, return HTML."""
     if not _available or _browser is None:
         return ""
@@ -290,8 +308,33 @@ async def _fetch_html_async(url: str, *, locale: str, ua: str) -> str:
     ctx = await _get_context(domain, locale, ua)
     page = await ctx.new_page()
     try:
+        if stealth:
+            # Per-page stealth — we don't bake it into the cached context
+            # because most domains don't need it (and it adds setup cost).
+            # Soft-fails so a missing `playwright-stealth` install (e.g.
+            # first deploy before lockfile regen) doesn't break the fetch;
+            # the page just gets the vanilla chromium fingerprint and
+            # Cloudflare-fronted sites return their challenge page → ""
+            # → fallback to requests, exactly as before.
+            try:
+                from playwright_stealth import Stealth  # type: ignore
+                await Stealth().apply_stealth_async(page)
+            except Exception as exc:  # ImportError or API drift
+                log.debug("[playwright] stealth unavailable (%s) — "
+                          "continuing without it", exc)
         await page.goto(url, timeout=_NAV_TIMEOUT_MS,
                         wait_until="domcontentloaded")
+        if wait_selector:
+            # XHR/$.ajax-loaded results: wait for the actual results
+            # container. Timeout is non-fatal — we still return the
+            # current HTML so the parser can confirm "no results".
+            try:
+                await page.wait_for_selector(wait_selector,
+                                             timeout=_NAV_TIMEOUT_MS,
+                                             state="attached")
+            except Exception as exc:
+                log.debug("[playwright] wait_for_selector(%r) on %s "
+                          "timed out: %s", wait_selector, domain, exc)
         # Settle: give SPAs a moment to fetch their JSON and hydrate.
         await page.wait_for_timeout(_SETTLE_MS)
         return await page.content()
