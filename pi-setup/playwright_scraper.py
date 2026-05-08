@@ -68,6 +68,14 @@ _ENABLED = os.environ.get("ENABLE_PLAYWRIGHT_SCRAPER", "1").strip() not in ("0",
 _NAV_TIMEOUT_MS = int(os.environ.get("PLAYWRIGHT_NAV_TIMEOUT_MS", "12000"))
 _SETTLE_MS      = int(os.environ.get("PLAYWRIGHT_SETTLE_MS", "1500"))
 _INIT_TIMEOUT_S = float(os.environ.get("PLAYWRIGHT_INIT_TIMEOUT_S", "30"))
+# Extra time we'll wait when Cloudflare's "Just a moment..." IUAM challenge
+# is detected on the first content snapshot. The challenge JS typically
+# auto-solves within 5-10s if our chromium fingerprint passes (i.e. stealth
+# is applied AND the egress IP isn't already flagged). Bailing at the
+# normal 1.5s settle (which is correct for everything else) means we never
+# give CF a chance to clear; 15s is the smallest budget that consistently
+# lets it pass on a clean residential/Tailscale egress.
+_CLOUDFLARE_WAIT_MS = int(os.environ.get("PLAYWRIGHT_CLOUDFLARE_WAIT_MS", "15000"))
 
 # Default UA — recent Chrome on macOS. Per-call overrides allowed.
 _DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 "
@@ -337,7 +345,44 @@ async def _fetch_html_async(url: str, *, locale: str, ua: str,
                           "timed out: %s", wait_selector, domain, exc)
         # Settle: give SPAs a moment to fetch their JSON and hydrate.
         await page.wait_for_timeout(_SETTLE_MS)
-        return await page.content()
+        html = await page.content()
+        # Cloudflare IUAM ("Just a moment...") challenge detection.
+        # CF serves an interstitial that runs a JS challenge in-page;
+        # if our fingerprint passes it auto-redirects/replaces content
+        # within 5-10s. We were bailing at the normal _SETTLE_MS (1.5s)
+        # — never giving CF a chance to clear. When we detect the
+        # challenge title in the head AND stealth was requested
+        # (callers that don't ask for stealth aren't expecting CF), we
+        # wait up to _CLOUDFLARE_WAIT_MS for the challenge to disappear.
+        # Both signals MUST match — naive title-only check would
+        # mis-trigger on legit pages that mention "Just a moment" in
+        # body content; we constrain to the first 2KB which is just <head>.
+        if stealth and ("Just a moment" in html[:2048]
+                        or "cf-challenge" in html[:4096]
+                        or "challenge-platform" in html[:4096]):
+            log.info("[playwright] cloudflare IUAM challenge detected on "
+                     "%s — waiting up to %dms for it to clear",
+                     domain, _CLOUDFLARE_WAIT_MS)
+            try:
+                # Wait until the document title no longer matches the
+                # challenge string. wait_for_function polls every ~100ms,
+                # so this returns quickly once CF redirects.
+                await page.wait_for_function(
+                    "() => !document.title.includes('Just a moment')",
+                    timeout=_CLOUDFLARE_WAIT_MS,
+                )
+                # CF just navigated us; give the destination page its
+                # own settle window before snapshotting.
+                await page.wait_for_timeout(_SETTLE_MS)
+                html = await page.content()
+                log.info("[playwright] cloudflare challenge cleared on %s",
+                         domain)
+            except Exception as exc:
+                log.info("[playwright] cloudflare challenge did NOT clear "
+                         "on %s within %dms (%s) — returning challenge "
+                         "page as-is, caller will see [] and fall back",
+                         domain, _CLOUDFLARE_WAIT_MS, exc)
+        return html
     finally:
         try:
             await page.close()
