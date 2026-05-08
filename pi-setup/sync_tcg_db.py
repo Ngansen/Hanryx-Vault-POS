@@ -246,8 +246,14 @@ def run_sync(full: bool = False):
             total_cards += len(cards)
             # Small delay to be polite to the API (free tier: 1000 req/day)
             time.sleep(0.5)
-        except RuntimeError as e:
-            log(f"    ✗ ERROR: {e}")
+        except (RuntimeError, TimeoutError, OSError) as e:
+            # Includes urllib socket TimeoutError + ConnectionError + DNS
+            # failures. Without this, a single transient blip on trade-show
+            # WiFi aborts the whole sync mid-run; with it, the per-set error
+            # is logged and the loop moves on. Each successful set has
+            # already been committed (line above), so the next run resumes
+            # from the failed set via sets_needing_sync().
+            log(f"    ✗ ERROR ({type(e).__name__}): {e}")
             errors += 1
             time.sleep(2)  # back off a bit on errors
 
