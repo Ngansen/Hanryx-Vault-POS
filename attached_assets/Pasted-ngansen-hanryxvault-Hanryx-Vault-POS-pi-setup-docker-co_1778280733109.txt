@@ -1,0 +1,102 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose logs --tail=80 pos | grep -iE 'scrape|snkrdunk|tcgkorea|translat'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pos-1  | {"ts":"2026-05-08T22:46:57","level":"INFO","logger":"price_scrapers","msg":"[scrape:snkrdunk] query translated 'Charizard ex' → 'リザードン' (ja_kana)","request_id":"761817081c46","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:46:58","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)","request_id":"761817081c46","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:04","level":"INFO","logger":"price_scrapers","msg":"[snkrdunk] 'リザードン' → 0 results (recommendation carousel returned, ignoring)","request_id":"761817081c46","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:04","level":"INFO","logger":"price_scrapers","msg":"[scrape:tcgkorea] query translated 'Charizard ex' → '리자몽' (ko)","request_id":"761817081c46","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:23","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] tcgkorea returned 0 results for canary '리자몽' 4 times in a row — selectors likely broken","request_id":"761817081c46","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | 172.18.0.1 - - [08/May/2026:22:47:23 +0000] "GET /card/price?q=Charizard%20ex&sources=snkrdunk,tcgkorea&limit=5 HTTP/1.1" 200 172 "-" "curl/8.14.1"
+pos-1  | {"ts":"2026-05-08T22:47:29","level":"INFO","logger":"price_scrapers","msg":"[scrape:snkrdunk] query translated 'Charizard ex' → 'リザードン' (ja_kana)","request_id":"d4da7fae8290","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:34","level":"INFO","logger":"price_scrapers","msg":"[snkrdunk] 'リザードン' → 0 results (recommendation carousel returned, ignoring)","request_id":"d4da7fae8290","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:34","level":"INFO","logger":"price_scrapers","msg":"[scrape:tcgkorea] query translated 'Charizard ex' → '리자몽' (ko)","request_id":"d4da7fae8290","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | {"ts":"2026-05-08T22:47:53","level":"WARNING","logger":"scrape_cache","msg":"[scrape-drift] tcgkorea returned 0 results for canary '리자몽' 5 times in a row — selectors likely broken","request_id":"d4da7fae8290","method":"GET","path":"/card/price","ip":"172.18.0.1"}
+pos-1  | 172.18.0.1 - - [08/May/2026:22:47:53 +0000] "GET /card/price?q=Charizard%20ex&sources=snkrdunk,tcgkorea&limit=5 HTTP/1.1" 200 172 "-" "curl/8.14.1"
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "
+import price_scrapers as ps
+import logging; logging.basicConfig(level=logging.INFO)
+print('--- snkrdunk リザードン ---')
+print(ps.snkrdunk('リザードン', limit=5))
+print('--- tcgkorea 리자몽 ---')
+print(ps.tcgkorea('리자몽', limit=5))
+print('--- snkrdunk ピカチュウ (sanity) ---')
+print(ps.snkrdunk('ピカチュウ', limit=5))
+"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+--- snkrdunk リザードン ---
+INFO:hanryxvault:[redis] Connected to redis://redis:6379/0
+INFO:hanryxvault:[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO:hanryxvault:[pokeapi] canonical name index ready: 1025 species
+INFO:hanryxvault:[bg] price-refresh scheduler disabled via env
+INFO:hanryxvault:[blueprint] tcg_lookup registered → /tcg/*
+INFO:hanryxvault:[blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO:hanryxvault:[blueprint] cards_master search wired → /tcg/search-master
+INFO:hanryxvault:[blueprint] cards.ai_assistant registered → /ai/*
+INFO:playwright_scraper:[playwright] chromium ready (headless, JS on, image/font/css blocked)
+INFO:price_scrapers:[snkrdunk] 'リザードン' → 0 results (recommendation carousel returned, ignoring)
+[]
+--- tcgkorea 리자몽 ---
+^CTraceback (most recent call last):
+  File "<string>", line 7, in <module>
+  File "/app/scrape_cache.py", line 89, in wrapped
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/price_scrapers.py", line 338, in tcgkorea
+    html = _fetch_html_smart(
+           ^^^^^^^^^^^^^^^^^^
+  File "/app/price_scrapers.py", line 196, in _fetch_html_smart
+    html = _pw.fetch_html(full_url, locale=locale,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/playwright_scraper.py", line 162, in fetch_html
+    return fut.result(timeout=timeout) or ""
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/concurrent/futures/_base.py", line 451, in result
+    self._condition.wait(timeout)
+  File "/usr/local/lib/python3.11/threading.py", line 331, in wait
+    gotit = waiter.acquire(True, timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec pos python3 -c "
+import price_scrapers as ps
+import logging; logging.basicConfig(level=logging.INFO)
+print('--- snkrdunk リザードン ---')
+print(ps.snkrdunk('リザードン', limit=5))
+print('--- tcgkorea 리자몽 ---')
+print(ps.tcgkorea('리자몽', limit=5))
+print('--- snkrdunk ピカチュウ (sanity) ---')
+print(ps.snkrdunk('ピカチュウ', limit=5))
+"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+--- snkrdunk リザードン ---
+INFO:hanryxvault:[redis] Connected to redis://redis:6379/0
+INFO:hanryxvault:[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO:hanryxvault:[pokeapi] canonical name index ready: 1025 species
+INFO:hanryxvault:[bg] price-refresh scheduler disabled via env
+INFO:hanryxvault:[blueprint] tcg_lookup registered → /tcg/*
+INFO:hanryxvault:[blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO:hanryxvault:[blueprint] cards_master search wired → /tcg/search-master
+INFO:hanryxvault:[blueprint] cards.ai_assistant registered → /ai/*
+INFO:playwright_scraper:[playwright] chromium ready (headless, JS on, image/font/css blocked)
+INFO:price_scrapers:[snkrdunk] 'リザードン' → 0 results (recommendation carousel returned, ignoring)
+[]
+--- tcgkorea 리자몽 ---
+^CTraceback (most recent call last):
+  File "<string>", line 7, in <module>
+  File "/app/scrape_cache.py", line 89, in wrapped
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/price_scrapers.py", line 338, in tcgkorea
+    html = _fetch_html_smart(
+           ^^^^^^^^^^^^^^^^^^
+  File "/app/price_scrapers.py", line 196, in _fetch_html_smart
+    html = _pw.fetch_html(full_url, locale=locale,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/playwright_scraper.py", line 162, in fetch_html
+    return fut.result(timeout=timeout) or ""
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/concurrent/futures/_base.py", line 451, in result
+    self._condition.wait(timeout)
+  File "/usr/local/lib/python3.11/threading.py", line 331, in wait
+    gotit = waiter.acquire(True, timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
