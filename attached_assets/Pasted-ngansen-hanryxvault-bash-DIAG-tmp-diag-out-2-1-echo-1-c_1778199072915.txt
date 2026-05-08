@@ -1,0 +1,68 @@
+ngansen@hanryxvault:~ $ bash <<'DIAG' > /tmp/diag.out 2>&1
+echo "=== 1. compositor running? ==="
+ps -ef | grep -E 'wayfire|labwc|Xwayland|chromium' | grep -v grep
+echo
+echo "=== 2. wayfire installed? ==="
+dpkg -l | grep -E '^ii\s+(wayfire|raspberrypi-ui-mods|labwc)\s'
+which wayfire
+echo
+echo "=== 3. autologin configured? ==="
+ls -la /etc/systemd/system/getty@tty1.service.d/ 2>&1
+sudo cat /etc/systemd/system/getty@tty1.service.d/autologin.conf 2>&1
+echo
+echo "=== 4. autostart file ==="
+ls -la /home/ngansen/.config/autostart/ 2>&1
+cat /home/ngansen/.config/autostart/hanryx-grafanacat /tmp/diag.out  nothing relevant in journal"gin
+=== 1. compositor running? ===
+
+=== 2. wayfire installed? ===
+ii  labwc                                0.9.2-1+rpt4                         arm64        window-stacking Wayland compositor
+/usr/bin/wayfire
+
+=== 3. autologin configured? ===
+total 12
+drwxr-xr-x  2 root root 4096 May  7 23:55 .
+drwxr-xr-x 21 root root 4096 May  7 23:55 ..
+-rw-r--r--  1 root root   84 May  7 23:57 autologin.conf
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin ngansen --noclear %I $TERM
+
+=== 4. autostart file ===
+total 20
+drwxr-xr-x  2 ngansen ngansen 4096 May  3 17:58 .
+drwx------ 17 ngansen ngansen 4096 May  6 21:12 ..
+-rw-rw-r--  1 ngansen ngansen  246 May  7 23:57 hanryx-grafana-kiosk.desktop
+-rw-r--r--  1 ngansen ngansen  381 Apr 15 00:14 hanryx-kiosk.desktop.disabled
+-rw-rw-r--  1 ngansen ngansen  285 May  3 13:58 hanryx-monitor.desktop.disabled
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Grafana Diagnostic Kiosk
+Exec=/bin/bash -c 'sleep 8 && /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >> /home/ngansen/grafana-kiosk.log 2>&1'
+X-GNOME-Autostart-enabled=true
+
+=== 5. kiosk log ===
+ls: cannot access '/home/ngansen/grafana-kiosk.log': No such file or directory
+ls: cannot access '/tmp/grafana-kiosk.log': No such file or directory
+tail: cannot open '/home/ngansen/grafana-kiosk.log' for reading: No such file or directory
+
+=== 6. boot target + sessions ===
+graphical.target
+SESSION  UID USER    SEAT LEADER CLASS   TTY IDLE SINCE
+      1 1000 ngansen -    1024   manager -   no   -
+      2 1000 ngansen -    1184   user    -   no   -
+
+2 sessions listed.
+
+=== 7. is anything bound to the framebuffer? ===
+total 0
+drwxr-xr-x  3 root root        120 May  7 23:58 .
+drwxr-xr-x 18 root root       4380 May  7 23:59 ..
+drwxr-xr-x  2 root root        100 May  7 23:58 by-path
+crw-rw----  1 root video  226,   0 May  7 23:58 card0
+crw-rw----  1 root video  226,   1 May  7 23:58 card1
+crw-rw----  1 root render 226, 128 May  7 23:58 renderD128
+
+=== 8. journal: did anything try to launch? ===
+May 08 00:10:17 hanryxvault sudo[17088]:  ngansen : TTY=pts/0 ; PWD=/home/ngansen ; USER=root ; COMMAND=/usr/bin/cat /etc/systemd/system/getty@tty1.service.d/autologin.conf
+ngansen@hanryxvault:~ $
