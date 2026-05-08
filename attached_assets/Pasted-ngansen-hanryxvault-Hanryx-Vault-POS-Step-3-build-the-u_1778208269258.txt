@@ -1,0 +1,76 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ # Step 3 — build the unified table
+docker exec -it pi-setup-pos-1 python3 /app/build_cards_master.py
+
+# Step 4 — verify multilingual coverage
+docker exec -it pi-setup-pos-1 python3 -c "
+import psycopg2, os
+c = psycopg2.connect(os.environ['DATABASE_URL']); cur = c.cursor()
+cur.execute('SELECT COUNT(*) FROM cards_master'); print('master rows:', cur.fetchone()[0])
+cur.execute(\"SELECT COUNT(*) FROM cards_master WHERE name_jp <> ''\"); print('  with JP name:', cur.fetchone()[0])
+cur.execute(\"SELECT COUNT(*) FROM cards_master WHERE name_kr <> ''\"); print('  with KR name:', cur.fetchone()[0])
+cur.execute(\"SELECT COUNT(*) FROM cards_master WHERE name_chs <> ''\"); print('  with CHS name:', cw.sources_used, c:.tw.count}}'tw.native_name, s:.t
+2026-05-08 02:43:18,357 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-08 02:43:18,357 INFO build_cards_master: [consolidator] reading source tables…
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] tcgdex: 33888 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] tcg_api: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] kr_official: 14898 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] jp_pokell: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] chs_official: 16125 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] pocket_off: 3041 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] pocket_lt: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] eng_xlsx: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] jp_xlsx: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] jp_pcc: 0 rows
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] jp_cards_json: 0 keys, set_alias_map: 0 codes, canon_map: 0 codes
+2026-05-08 02:43:19,900 INFO build_cards_master: [consolidator] eng_ex: 0, jp_ex: 0, ref_dex: 1025, ref_promo: 0, promo_classes: 0 codes
+2026-05-08 02:43:20,021 INFO build_cards_master: [consolidator] spine has 64300 canonical (set_id, card_number) keys (collapsed from 67952 source rows; 3652 duplicates merged)
+{
+  "total": 64300,
+  "rows_written": 64300,
+  "with_en": 24529,
+  "with_kr": 18997,
+  "with_jp": 7844,
+  "with_chs": 17053,
+  "with_codes": 0,
+  "with_promo": 0
+}
+master rows: 64300
+  with JP name: 7844
+  with KR name: 18997
+  with CHS name: 17053
+  with CHT name: 11292
+--- Charizard rows with native names ---
+('11', 'Charizard EX', '', '리자몽 EX', '', '')
+('12', 'Charizard EX', '', '포니타', '', '')
+('14', 'Charizard', '', '식스테일', '', '')
+('20', 'Charizard', '', '마나피', '', '')
+{
+  "en": 1200.0,
+  "jp": {
+    "m": 511.2,
+    "n": null,
+    "s": [
+      "ebay_jp"
+    ],
+    "c": 3
+  },
+  "kr": {
+    "m": null,
+    "n": "식스테일",
+    "s": [],
+    "c": 0
+  },
+  "cn": {
+    "m": null,
+    "n": null,
+    "s": [],
+    "c": 0
+  },
+  "tw": {
+    "m": null,
+    "n": null,
+    "s": [],
+    "c": 0
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS $

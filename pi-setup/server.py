@@ -19180,8 +19180,21 @@ _LANG_NAME_COL: dict[str, str] = {
 def _lookup_native_name(card: dict, lang: str) -> str | None:
     """
     Cross-reference cards_master to find the native-language name for a card.
-    Tries the precise (name_en + card_number) match first, then loosens to
-    name_en alone. Returns None if no row has a non-empty native name.
+
+    Match strategy (strict — never falls back to name-only because EN names
+    are not unique across reprints, and a wrong-card name passed to a native
+    scraper produces silently misleading results):
+
+      1. Normalise card_number to its localId form ("4/102" → "4"), since
+         cards_master stores only the localId from TCGdex, not the "/total".
+      2. Match on (LOWER(name_en) = ?, card_number = ?) with non-empty
+         native column.
+      3. If no number was supplied, accept ANY exact name_en match — the
+         caller has explicitly opted out of disambiguation.
+
+    Returns None when no confident match exists, which is the correct
+    behaviour for cards that genuinely don't trade in that language
+    (e.g. Base Set 1999 has no Korean release).
     """
     col = _LANG_NAME_COL.get(lang)
     if not col:
@@ -19190,29 +19203,31 @@ def _lookup_native_name(card: dict, lang: str) -> str | None:
     number  = (card.get("number") or "").strip()
     if not name_en:
         return None
+
+    # cards_master stores card_number as bare localId (TCGdex convention).
+    # Strip any "/total" suffix the UI / pricing route might pass through.
+    number_local = number.split("/", 1)[0].strip() if number else ""
+
     try:
         db = _direct_db()
         row = None
-        if number:
-            r = db.execute(
+        if number_local:
+            row = db.execute(
                 f"SELECT {col} AS native FROM cards_master "
                 f"WHERE LOWER(name_en) = LOWER(%s) "
                 f"  AND card_number = %s "
                 f"  AND {col} <> '' "
                 f"LIMIT 1",
-                (name_en, number),
+                (name_en, number_local),
             ).fetchone()
-            if r:
-                row = r
-        if not row:
-            r = db.execute(
+        else:
+            # Caller didn't supply a number — accept any exact-name match.
+            row = db.execute(
                 f"SELECT {col} AS native FROM cards_master "
                 f"WHERE LOWER(name_en) = LOWER(%s) AND {col} <> '' "
                 f"LIMIT 1",
                 (name_en,),
             ).fetchone()
-            if r:
-                row = r
         db.close()
         if row:
             v = row["native"] if isinstance(row, dict) else row[0]
