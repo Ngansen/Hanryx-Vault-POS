@@ -407,11 +407,24 @@ def bunjang(query: str, *, limit: int = 20) -> list[dict]:
 # their JSON API requires DPoP token auth.
 #
 # Hareruya2 (晴れる屋2) is a Pokémon-singles specialist with a Shopify
-# storefront — clean SSR HTML, ~50 products per search, exact 1:1 anchor
-# ↔ price mapping, no anti-bot. URL pattern: /?act=Sch&card_name=<kw>
-# (legacy storefront shim, not /search). Best with a katakana query;
-# translation handled upstream via species_names.translate(_, 'ja_kana').
-_HARERUYA_PRICE_RE = re.compile(r"[¥￥]\s*([\d,]+)")
+# storefront — clean SSR HTML, no anti-bot, real keyword filtering.
+#
+# Search URL: /search?q=<kw> (Shopify standard). Probed 2026-05:
+# `?q=リザードン` returns "検索: 「リザードン」の検索結果573件" with 375
+# product anchors; empty query returns prods=1 — confirms real filtering.
+#
+# DO NOT use /?act=Sch&card_name= — that legacy URL parameter is
+# silently ignored by the modern Shopify theme and returns the homepage
+# (with featured-products carousels) for every query, regardless of
+# keyword. We shipped that bug in C10 and got メガゲッコウガex back when
+# searching for Charizard. The fix is the standard Shopify /search route.
+#
+# Each product anchor's text content has a stable structured format:
+#     "<NAME> 販売価格: ¥<PRICE> 単価 / あたり 在庫<N>"
+# Splitting on the literal "販売価格:" cleanly separates the card name
+# (which can contain unicode brackets like 〈114/083〉 and curly braces
+# like {水}, all of which we want to keep) from the price and stock text.
+_HARERUYA_SPLIT_RE = re.compile(r"\s*販売価格[:：]\s*[¥￥]\s*([\d,]+)")
 
 
 @cached("hareruya2")
@@ -419,66 +432,48 @@ def hareruya2(query: str, *, limit: int = 20) -> list[dict]:
     """Hareruya2 JP — Shopify-based Pokémon singles specialist."""
     if not query:
         return []
-    url = (f"https://www.hareruya2.com/?act=Sch"
-           f"&card_name={quote_plus(query)}")
+    url = f"https://www.hareruya2.com/search?q={quote_plus(query)}"
     # Pure SSR — no playwright needed, regular requests works fine.
     html = _safe_get(url, referer="https://www.hareruya2.com/")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
     out: list[dict] = []
-    # Each product card is a <div class="card-wrapper product-card-wrapper ...">.
-    # Inside: an anchor to /products/<id>, a title (in `.card__heading` or the
-    # anchor text), and a price (in `.price-item--regular` or `.price__regular`,
-    # but also reliably extractable via the ¥-prefix regex on the card text).
-    for card in soup.select("div.card-wrapper, div.product-card-wrapper, "
-                            "li.product-card-wrapper, "
-                            "div.CustomCardProduct"):
+    seen_hrefs: set[str] = set()
+    # Each product card is a <div class="card-wrapper">. The anchor's
+    # full text holds "<NAME> 販売価格: ¥<PRICE> 単価 / あたり 在庫<N>".
+    for card in soup.select("div.card-wrapper"):
         if len(out) >= limit:
             break
-        a = card.select_one("a[href*='/products/']")
+        a = card.select_one("a[href*='/products/'].full-unstyled-link, "
+                            "a[href*='/products/']")
         if not a:
             continue
-        # Title preference: explicit heading > anchor aria-label > anchor text
-        title_el = card.select_one(".card__heading, .product-card__title, "
-                                   ".card-information__text")
-        title = ""
-        if title_el:
-            title = title_el.get_text(" ", strip=True)
-        if not title:
-            title = (a.get("aria-label") or a.get_text(" ", strip=True) or "").strip()
-        if not title:
-            continue
-        # Price: try Shopify standard selectors first, then fall back to regex
-        # on the whole card text. Hareruya2 sometimes wraps prices in nested
-        # spans with no stable class, so the regex fallback is the workhorse.
-        price = None
-        price_el = card.select_one(".price-item--regular, .price__regular, "
-                                   ".price-item--sale, .price__sale")
-        if price_el:
-            m = _HARERUYA_PRICE_RE.search(price_el.get_text(" ", strip=True))
-            if m:
-                try:
-                    price = float(m.group(1).replace(",", ""))
-                except ValueError:
-                    price = None
-        if price is None:
-            m = _HARERUYA_PRICE_RE.search(card.get_text(" ", strip=True))
-            if m:
-                try:
-                    price = float(m.group(1).replace(",", ""))
-                except ValueError:
-                    price = None
-        if not price or price <= 0:
-            continue
         href = a["href"]
+        if href in seen_hrefs:        # search page repeats anchors (img+text)
+            continue
+        seen_hrefs.add(href)
+        text = a.get_text(" ", strip=True)
+        m = _HARERUYA_SPLIT_RE.search(text)
+        if not m:
+            # Out-of-stock / pre-order tiles render without "販売価格:"
+            # (they show "入荷待ち" instead). Skip — no price means no chip.
+            continue
+        title = text[: m.start()].strip()
+        if not title:
+            continue
+        try:
+            price = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        if price <= 0:
+            continue
         if href.startswith("/"):
             href = "https://www.hareruya2.com" + href
         img_el = card.find("img")
         img = ""
         if img_el:
-            img = (img_el.get("src") or img_el.get("data-src")
-                   or img_el.get("data-srcset", "").split()[0] if img_el.get("data-srcset") else "")
+            img = img_el.get("src") or img_el.get("data-src") or ""
             if img.startswith("//"):
                 img = "https:" + img
         out.append({
