@@ -1847,7 +1847,9 @@ _pokeapi_refresh_thread.start()
 # Pokémon TCG API — config + in-memory cache
 # ---------------------------------------------------------------------------
 _TCG_API_BASE   = "https://api.pokemontcg.io/v2"
-_PTCG_API_KEY   = os.environ.get("PTCG_API_KEY", "")  # optional; free tier = 1k/day, with key = 20k/day
+_PTCG_API_KEY   = (os.environ.get("POKEMONTCG_API_KEY")
+                   or os.environ.get("PTCG_API_KEY")
+                   or "").strip()  # optional; free tier = 1k/day, with key = 20k/day. Accepts the legacy PTCG_API_KEY name as a fallback for one release.
 _tcg_cache_lock = threading.Lock()
 
 # OpenAI — card photo identification via GPT-4o Vision

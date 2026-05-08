@@ -167,7 +167,7 @@ if [[ "${SKIP_CONFIG:-0}" != "1" ]]; then
     sed -i "s|ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PASS}|"         "$ENV_FILE"
     sed -i "s|ZETTLE_CLIENT_ID=.*|ZETTLE_CLIENT_ID=${ZETTLE_ID}|"     "$ENV_FILE"
     sed -i "s|ZETTLE_CLIENT_SECRET=.*|ZETTLE_CLIENT_SECRET=${ZETTLE_SEC}|" "$ENV_FILE"
-    sed -i "s|PTCG_API_KEY=.*|PTCG_API_KEY=${PTCG_KEY}|"              "$ENV_FILE"
+    sed -i "s|POKEMONTCG_API_KEY=.*|POKEMONTCG_API_KEY=${PTCG_KEY}|"  "$ENV_FILE"
     sed -i "s|SMTP_USER=.*|SMTP_USER=${SMTP_USER}|"                    "$ENV_FILE"
     sed -i "s|SMTP_APP_PASSWORD=.*|SMTP_APP_PASSWORD=${SMTP_PASS}|"    "$ENV_FILE"
     sed -i "s|OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_KEY}|"         "$ENV_FILE"

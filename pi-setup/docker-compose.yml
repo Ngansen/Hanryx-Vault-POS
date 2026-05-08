@@ -233,7 +233,7 @@ services:
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
       # ZETTLE_CLIENT_SECRET: your-client-secret
-      # PTCG_API_KEY: your-api-key
+      # POKEMONTCG_API_KEY: your-api-key  (optional; raises pokemontcg.io rate limit from 1k/day to 20k/day)
       # OPENAI_API_KEY: sk-...
       # SMTP_USER:         you@gmail.com
       # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
@@ -519,7 +519,7 @@ services:
 
       # PAYPAL_CLIENT_ID:     your-paypal-client-id
       # PAYPAL_CLIENT_SECRET: your-paypal-client-secret
-      # PTCG_API_KEY: your-api-key
+      # POKEMONTCG_API_KEY: your-api-key
     depends_on:
       db:
         condition: service_healthy
