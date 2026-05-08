@@ -192,6 +192,15 @@ services:
       # the rate limit from 1k/day to 20k/day. Get one free at dev.pokemontcg.io.
       POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
 
+      # Naver Open API (Korean shopping pricing). The HTML shopping site
+      # IP-bans the trade-show egress (see replit.md gotcha) — the Open API
+      # is the only working surface. Register at developers.naver.com/apps
+      # (tick "검색"/Search), set both values in pi-setup/.env. Without
+      # them, naver_shopping() returns [] and the chip stays empty (the
+      # rest of the language-pricing response renders fine).
+      NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+
       # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
       # The Flask server prefers this URL and only falls back to pokeapi.co
       # if the local mirror is unreachable.

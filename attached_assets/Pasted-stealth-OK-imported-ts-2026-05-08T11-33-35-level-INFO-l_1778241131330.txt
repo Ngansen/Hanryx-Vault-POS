@@ -1,0 +1,42 @@
+stealth OK imported
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T11:33:35","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-08T11:33:36","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+snkrdunk 'メガニウム': 5 hits
+  ¥   25870  ポケモンカードゲーム ソード&シールド ポケモン GO スペシャルセット
+  ¥   18000  フクオカのピカチュウ P [SV-P 289](スペシャルBOX「ポケモンセンターフクオカ」)
+snkrdunk 'ピカチュウ': 5 hits
+  ¥   25870  ポケモンカードゲーム ソード&シールド ポケモン GO スペシャルセット
+  ¥   18000  フクオカのピカチュウ P [SV-P 289](スペシャルBOX「ポケモンセンターフクオカ」)
+snkrdunk 'Meganium': 5 hits
+  ¥   25870  ポケモンカードゲーム ソード&シールド ポケモン GO スペシャルセット
+  ¥   18000  フクオカのピカチュウ P [SV-P 289](スペシャルBOX「ポケモンセンターフクオカ」)
+{"ts":"2026-05-08T11:33:52","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T11:33:52","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-08T11:33:53","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+tcgkorea '피카츄': 0 hits
+tcgkorea '메가니움': 0 hits
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-08T11:34:32","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+cardmarket "Pikachu": 0 hits
+── full pricing endpoint ──
+>
