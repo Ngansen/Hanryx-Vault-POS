@@ -38,12 +38,16 @@ fresh visitor. Headers mimic a recent Chrome on macOS including
 client-hint headers (`sec-ch-ua*`) and fetch-mode hints (`sec-fetch-*`)
 that anti-bot WAFs use to distinguish browsers from scripts.
 
-Cardmarket sits behind Cloudflare's bot-fight mode and may STILL return
-403 for non-browser TLS fingerprints — that needs a Playwright-based
-fetcher (out of scope here).
-
-This file is intentionally dependency-light: only `requests` + `bs4` are
-required, and both are already in the POS image.
+Playwright fallback
+-------------------
+For sites that block requests-based access entirely (naver returns HTTP
+418, cardmarket Cloudflare-403, snkrdunk client-rendered SPA), each
+scraper FIRST tries `playwright_scraper.fetch_html()` — a real chromium
+browser kept warm in a background thread. If Playwright is disabled
+(`ENABLE_PLAYWRIGHT_SCRAPER=0`), not installed, or fails to launch, we
+silently fall back to the requests-based `_safe_get` path. The parsing
+below is identical for both fetch backends — Playwright only solves the
+HTML-acquisition problem; selectors and currency handling stay the same.
 """
 from __future__ import annotations
 
@@ -62,6 +66,11 @@ except Exception:  # pragma: no cover — bare-script execution fallback
     def cached(_source, **_):  # type: ignore[no-redef]
         def deco(fn): return fn
         return deco
+
+try:
+    import playwright_scraper as _pw  # real-browser fallback for blocked sites
+except Exception:  # pragma: no cover — module not present at all
+    _pw = None  # type: ignore[assignment]
 
 log = logging.getLogger("price_scrapers")
 
@@ -132,6 +141,32 @@ def _money(s: str) -> float | None:
     return float(m.group(1)) if m else None
 
 
+def _fetch_html_smart(url: str, *, params: dict | None = None,
+                      referer: str | None = None,
+                      locale: str = "en-US") -> str | None:
+    """Try Playwright first, fall back to the requests-based path.
+
+    Playwright is the only reliable fetcher for sites that TLS-fingerprint
+    (naver, cardmarket) or client-render (snkrdunk). When it's disabled,
+    not installed, or has crashed, `is_available()` returns False and we
+    use the legacy requests path — which still works for the small set of
+    cooperative endpoints and at least won't crash on the others.
+    """
+    if _pw is not None and _pw.is_available():
+        # Playwright doesn't take query params separately — bake them into
+        # the URL for the browser fetch (the requests path uses `params=`).
+        full_url = url
+        if params:
+            from urllib.parse import urlencode
+            sep = "&" if ("?" in url) else "?"
+            full_url = f"{url}{sep}{urlencode(params)}"
+        html = _pw.fetch_html(full_url, locale=locale)
+        if html:
+            return html
+        log.info("[scrape:pw] %s returned empty — falling back to requests", url)
+    return _safe_get(url, params=params, referer=referer)
+
+
 def _safe_get(url: str, *, params: dict | None = None,
               referer: str | None = None) -> str | None:
     """GET with per-domain Session, warmup, and Chrome-like headers.
@@ -172,7 +207,8 @@ def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
     # Naver's HTML page is the most reliable surface — their REST API needs
     # an Open API client_id/secret.  The HTML works without auth.
     url = f"https://search.shopping.naver.com/search/all?query={quote_plus(query)}"
-    html = _safe_get(url, referer="https://search.shopping.naver.com/")
+    html = _fetch_html_smart(url, referer="https://search.shopping.naver.com/",
+                             locale="ko-KR")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -216,7 +252,8 @@ def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
         return []
     # tcgkorea uses Cafe24's standard search route
     url = f"https://www.tcgkorea.com/product/search.html?keyword={quote_plus(query)}"
-    html = _safe_get(url, referer="https://www.tcgkorea.com/")
+    html = _fetch_html_smart(url, referer="https://www.tcgkorea.com/",
+                             locale="ko-KR")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -259,7 +296,8 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
         return []
     # English product search route
     url = f"https://snkrdunk.com/en/search?keyword={quote_plus(query)}"
-    html = _safe_get(url, referer="https://snkrdunk.com/en/")
+    html = _fetch_html_smart(url, referer="https://snkrdunk.com/en/",
+                             locale="ja-JP")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -318,7 +356,8 @@ def cardmarket(query: str, *, game: str = "Pokemon", limit: int = 20) -> list[di
     }.get(game.lower().strip(), game)
     url = (f"https://www.cardmarket.com/en/{slug}/Products/Search"
            f"?searchString={quote_plus(query)}")
-    html = _safe_get(url, referer=f"https://www.cardmarket.com/en/{slug}")
+    html = _fetch_html_smart(url, referer=f"https://www.cardmarket.com/en/{slug}",
+                             locale="en-GB")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")

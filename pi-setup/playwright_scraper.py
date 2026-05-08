@@ -1,0 +1,296 @@
+"""
+Playwright-backed HTML fetcher for sites that block requests-based scrapers.
+============================================================================
+
+Why this exists
+---------------
+By 2026, every major TCG marketplace we scrape has moved behind one of:
+
+  * naver.com       → returns HTTP 418 to non-browser TLS fingerprints
+  * cardmarket.com  → Cloudflare bot-fight mode, HTTP 403
+  * snkrdunk.com    → entirely client-rendered SPA (HTML shell has no prices)
+  * tcgkorea.com    → mostly server-rendered but increasingly JS-hydrated
+
+Header spoofing alone (Chrome client-hints + warmup + per-domain Sessions —
+see `price_scrapers.py`) gets us past the EASIEST WAFs but cannot defeat
+TLS fingerprinting (JA3/JA4) or JavaScript challenges. A real browser is
+the only reliable answer.
+
+Architecture
+------------
+ONE chromium process for the whole POS lifetime, kept warm in a dedicated
+asyncio loop running in a background thread. Each domain gets ONE persistent
+`BrowserContext` that survives between calls — Cloudflare clearance cookies,
+locale prefs, and consent banners are paid for ONCE per domain rather than
+once per query. Each fetch creates a short-lived `Page` inside that context.
+
+We block heavy resources (images / fonts / CSS / media) at the routing
+layer because we only ever need the resulting HTML — JavaScript is left
+on so SPAs hydrate and Cloudflare's challenge can complete.
+
+Lifecycle
+---------
+* Module import does NOTHING expensive — `playwright` itself is imported
+  lazily on first `fetch_html()` call. Importing this module does not require
+  playwright to be installed (`is_available()` returns False instead).
+* The browser is launched on first use and reused thereafter.
+* On any catastrophic failure (browser crash, init error, missing
+  chromium binary), `is_available()` flips to False and all callers fall
+  back to `requests`-based fetches with no further attempts.
+
+Trade-show kill switch
+----------------------
+Set `ENABLE_PLAYWRIGHT_SCRAPER=0` in the environment to disable Playwright
+entirely — useful when running the POS on a battery-constrained Pi where
+the ~150 MB chromium RAM cost is unacceptable. With Playwright disabled,
+all callers fall back to the requests-based scrapers (which today return
+empty results for the four blocked sites, but at least won't crash).
+
+Public API
+----------
+    is_available() -> bool
+    fetch_html(url, *, locale="en-US", ua=..., timeout=30.0) -> str
+    shutdown() -> None      # idempotent; called from server.py atexit
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import threading
+from typing import Any
+from urllib.parse import urlsplit
+
+log = logging.getLogger("playwright_scraper")
+
+# ── Configuration ────────────────────────────────────────────────────────────
+_ENABLED = os.environ.get("ENABLE_PLAYWRIGHT_SCRAPER", "1").strip() not in ("0", "", "false", "False")
+_NAV_TIMEOUT_MS = int(os.environ.get("PLAYWRIGHT_NAV_TIMEOUT_MS", "12000"))
+_SETTLE_MS      = int(os.environ.get("PLAYWRIGHT_SETTLE_MS", "1500"))
+_INIT_TIMEOUT_S = float(os.environ.get("PLAYWRIGHT_INIT_TIMEOUT_S", "30"))
+
+# Default UA — recent Chrome on macOS. Per-call overrides allowed.
+_DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+# Resource types we DROP at the network layer — we only need the final HTML.
+# Keeping JS enabled is non-negotiable: Cloudflare challenges and SPAs both
+# require JS execution to render anything useful.
+_BLOCKED_RESOURCES = {"image", "font", "media", "stylesheet"}
+
+# ── Module state (guarded by _init_lock) ─────────────────────────────────────
+_init_lock      = threading.Lock()
+_init_attempted = False
+_available      = False
+_loop: asyncio.AbstractEventLoop | None = None
+_thread:  threading.Thread | None = None
+_browser: Any = None       # playwright.async_api.Browser
+_pw:      Any = None       # playwright.async_api.Playwright (for shutdown)
+_contexts: dict[tuple[str, str], Any] = {}    # (domain, locale) -> BrowserContext
+_contexts_lock_async: asyncio.Lock | None = None  # created inside the loop
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
+def is_available() -> bool:
+    """True iff Playwright is enabled, installed, and the browser is alive."""
+    return _ENABLED and _available
+
+
+def fetch_html(url: str, *, locale: str = "en-US",
+               ua: str = _DEFAULT_UA, timeout: float = 30.0) -> str:
+    """Synchronously fetch `url` with chromium and return the rendered HTML.
+
+    Returns "" on any failure (disabled, not installed, browser crashed,
+    navigation timeout). Callers should treat "" as "fall back to the
+    requests-based path".
+    """
+    if not _ENABLED:
+        return ""
+    _ensure_started()
+    if not _available or _loop is None:
+        return ""
+    try:
+        coro = _fetch_html_async(url, locale=locale, ua=ua)
+        fut = asyncio.run_coroutine_threadsafe(coro, _loop)
+        return fut.result(timeout=timeout) or ""
+    except Exception as exc:
+        log.info("[playwright] fetch %s failed: %s", url, exc)
+        return ""
+
+
+def shutdown() -> None:
+    """Stop the background loop + close chromium. Idempotent. Safe to call
+    multiple times — used at process exit so chromium doesn't linger."""
+    global _available
+    _available = False
+    loop = _loop
+    if loop is None:
+        return
+    try:
+        fut = asyncio.run_coroutine_threadsafe(_shutdown_async(), loop)
+        fut.result(timeout=10)
+    except Exception as exc:
+        log.debug("[playwright] shutdown error (non-fatal): %s", exc)
+    try:
+        loop.call_soon_threadsafe(loop.stop)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internals
+# ─────────────────────────────────────────────────────────────────────────────
+def _ensure_started() -> None:
+    """Lazily start the background loop + launch chromium. Idempotent."""
+    global _init_attempted, _available, _loop, _thread, _browser, _pw
+    if _init_attempted:
+        return
+    with _init_lock:
+        if _init_attempted:
+            return
+        _init_attempted = True
+
+        # Try to import playwright lazily — module import works without it.
+        try:
+            from playwright.async_api import async_playwright  # noqa: F401
+        except ImportError as exc:
+            log.warning("[playwright] python package not installed (%s) — "
+                        "falling back to requests scrapers", exc)
+            return
+
+        ready = threading.Event()
+        startup_err: list[BaseException] = []
+
+        def _runner() -> None:
+            global _loop, _browser, _pw, _available, _contexts_lock_async
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                _loop = loop
+                _contexts_lock_async = asyncio.Lock()
+
+                async def _launch() -> None:
+                    global _browser, _pw
+                    from playwright.async_api import async_playwright
+                    _pw = await async_playwright().start()
+                    # --no-sandbox + --disable-dev-shm-usage are required
+                    # for chromium under Docker on the Pi (no kernel sandbox
+                    # available, and /dev/shm is small).
+                    _browser = await _pw.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-gpu",
+                        ],
+                    )
+
+                loop.run_until_complete(_launch())
+                _available = True
+                ready.set()
+                loop.run_forever()
+            except BaseException as exc:  # pragma: no cover — startup failure
+                startup_err.append(exc)
+                ready.set()
+
+        _thread = threading.Thread(target=_runner, daemon=True,
+                                    name="playwright-loop")
+        _thread.start()
+
+        if not ready.wait(timeout=_INIT_TIMEOUT_S):
+            log.error("[playwright] init timed out after %ss — disabling",
+                      _INIT_TIMEOUT_S)
+            return
+        if startup_err:
+            log.error("[playwright] launch failed: %r — disabling",
+                      startup_err[0])
+            return
+        log.info("[playwright] chromium ready (headless, JS on, "
+                 "image/font/css blocked)")
+
+
+async def _block_heavy(route: Any) -> None:
+    """Network route handler: drop images/fonts/css/media, pass everything else."""
+    try:
+        if route.request.resource_type in _BLOCKED_RESOURCES:
+            await route.abort()
+        else:
+            await route.continue_()
+    except Exception:
+        # Page may have closed mid-request; nothing to recover.
+        pass
+
+
+async def _get_context(domain: str, locale: str, ua: str) -> Any:
+    """Get-or-create a persistent BrowserContext keyed on (domain, locale).
+
+    Reusing the context across calls means cookies (Cloudflare clearance,
+    locale, consent banners) survive — we pay the challenge cost ONCE per
+    domain rather than once per query. The context lives until process exit
+    or `shutdown()`.
+    """
+    assert _contexts_lock_async is not None
+    key = (domain, locale)
+    async with _contexts_lock_async:
+        ctx = _contexts.get(key)
+        if ctx is not None:
+            return ctx
+        if _browser is None:
+            raise RuntimeError("browser not initialised")
+        ctx = await _browser.new_context(
+            user_agent=ua,
+            locale=locale,
+            viewport={"width": 1366, "height": 800},
+            java_script_enabled=True,
+            ignore_https_errors=False,
+        )
+        await ctx.route("**/*", _block_heavy)
+        _contexts[key] = ctx
+        return ctx
+
+
+async def _fetch_html_async(url: str, *, locale: str, ua: str) -> str:
+    """Open a fresh page in the per-domain context, navigate, return HTML."""
+    if not _available or _browser is None:
+        return ""
+    parts = urlsplit(url)
+    domain = parts.netloc
+    ctx = await _get_context(domain, locale, ua)
+    page = await ctx.new_page()
+    try:
+        await page.goto(url, timeout=_NAV_TIMEOUT_MS,
+                        wait_until="domcontentloaded")
+        # Settle: give SPAs a moment to fetch their JSON and hydrate.
+        await page.wait_for_timeout(_SETTLE_MS)
+        return await page.content()
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
+async def _shutdown_async() -> None:
+    """Close all contexts + the browser, gracefully."""
+    global _browser, _pw
+    for ctx in list(_contexts.values()):
+        try:
+            await ctx.close()
+        except Exception:
+            pass
+    _contexts.clear()
+    if _browser is not None:
+        try:
+            await _browser.close()
+        except Exception:
+            pass
+        _browser = None
+    if _pw is not None:
+        try:
+            await _pw.stop()
+        except Exception:
+            pass
+        _pw = None
