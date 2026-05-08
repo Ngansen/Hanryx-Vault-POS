@@ -1,0 +1,39 @@
+ngansen@hanryxvault:~ $ sudo ln -sf /usr/share/wayland-sessions/labwc.desktop /usr/share/wayland-sessions/rpd-labwc.desktop
+ls -la /usr/share/wayland-sessions/
+
+echo
+echo "=== restart lightdm to pick up the new session (no full reboot needed) ==="
+sudo systemctl restart lightdm
+sleep 15
+
+echo
+echo "=== check ==="
+pgrep -af 'labwc|chromium-grafana|diagnostics-grafana' | grep -v grep
+ls -la /home/ngansen/grafana-kiosk.log 2>&1
+tail -30 /home/ngansen/grafana-kiosk.log 2>&1
+total 24
+drwxr-xr-x   2 root root  4096 May  8 00:20 .
+drwxr-xr-x 236 root root 12288 May  7 23:57 ..
+-rw-r--r--   1 root root   131 Oct 21  2025 labwc.desktop
+lrwxrwxrwx   1 root root    41 May  8 00:20 rpd-labwc.desktop -> /usr/share/wayland-sessions/labwc.desktop
+-rw-r--r--   1 root root   110 Aug 24  2024 wayfire.desktop
+
+=== restart lightdm to pick up the new session (no full reboot needed) ===
+
+=== check ===
+6763 labwc
+6826 /usr/bin/ssh-agent labwc
+6839 /bin/bash -c sleep 8 && /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >> /home/ngansen/grafana-kiosk.log 2>&1
+6993 bash /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh
+7020 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+7031 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+7032 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+7035 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+7131 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=wayland --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,1974769707476993513,6292115710536413154,262144 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708988185955192
+7137 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,4808136670500582087,10022865317754690689,524288 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708989122997041
+7149 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12699477420414789609,16557365570126034245,524288 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708990060038890
+7187 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=wayland --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1778199445093274 --launch-time-ticks=209479949 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,6857929013222260433,13614519353644091459,2097152 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708990997080739
+7201 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=wayland --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=7 --time-ticks-at-unix-epoch=-1778199445093274 --launch-time-ticks=209638732 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16473570773423696310,3512968220943999874,2097152 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708992871164437
+7207 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --extension-process --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=wayland --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=8 --time-ticks-at-unix-epoch=-1778199445093274 --launch-time-ticks=209645953 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,15846835299324698583,17382788399050567511,2097152 --field-trial-handle=3,i,15012830974180146746,16189959676822487976,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,13541383876025124154,7151745398949529714,4 --trace-process-track-uuid=3190708993808206286
+-rw-rw-r-- 1 ngansen ngansen 0 May  8 00:20 /home/ngansen/grafana-kiosk.log
+ngansen@hanryxvault:~ $
