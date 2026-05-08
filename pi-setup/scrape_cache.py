@@ -52,7 +52,28 @@ _INPROC_MAX = 256
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 def cached(source: str, *, ttl: int = DEFAULT_TTL):
-    """Decorator: wrap a scraper so identical calls hit Redis instead of HTTP."""
+    """Decorator: wrap a scraper so identical calls hit Redis instead of HTTP.
+
+    Empty-result poisoning guard
+    ----------------------------
+    Empty list/dict results are NOT cached. Reasons:
+
+      * Transient upstream failures (Cloudflare challenge timeout, naver 401
+        from a momentarily-misconfigured key, snkrdunk hiccup) all return
+        []. Caching those for the TTL window meant a one-off failure
+        silently blocked retries for the next 10 minutes — making config
+        fixes appear not to work and forcing manual `redis-cli DEL` after
+        every probe (we burnt an hour on this during the C5 rollout).
+      * Cost is small: legitimate "no listings for this query" misses
+        re-fetch on every call, but the upstream itself is fast (<1s for
+        an HTTP 200 with no rows) and the drift counter still fires.
+      * Drift detection still works — `_track_drift` is called on every
+        result, cached or not, so canary-query empties still increment
+        the warning counter as before.
+
+    Truthy results (any non-empty list/dict, or any non-collection value)
+    are cached normally for the full TTL.
+    """
     def deco(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapped(*args, **kwargs):
@@ -62,7 +83,15 @@ def cached(source: str, *, ttl: int = DEFAULT_TTL):
                 log.debug("[scrape-cache] HIT %s", key)
                 return hit
             result = fn(*args, **kwargs)
-            _set(key, result, ttl)
+            # Skip caching empty collections — see docstring rationale.
+            # `len()` would TypeError on non-collections, so guard with
+            # isinstance first; non-collection return types still cache.
+            should_cache = not (isinstance(result, (list, dict, tuple, set))
+                                and len(result) == 0)
+            if should_cache:
+                _set(key, result, ttl)
+            else:
+                log.debug("[scrape-cache] SKIP empty result for %s", key)
             _track_drift(source, args, kwargs, result)
             return result
         wrapped.__cached_source__ = source  # type: ignore[attr-defined]
