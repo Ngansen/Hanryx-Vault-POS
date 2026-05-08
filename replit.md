@@ -18,7 +18,7 @@ A point-of-sale (POS) system for managing inventory, sales, and customer interac
     *   `SMTP_USER`, `SMTP_APP_PASSWORD`: For email notifications
     *   `NOTIFY_EMAIL`: Email recipient for notifications
     *   `OPENAI_API_KEY`: For AI features like GPT-4o Vision and embeddings
-    *   `PTCG_API_KEY`: Optional, for increased TCG API rate limits
+    *   `POKEMONTCG_API_KEY`: Optional, for increased TCG API rate limits (legacy `PTCG_API_KEY` still honoured as fallback)
     *   `HANRYX_DEBUG_INSECURE_GIT=1`: Allows insecure Git operations for debugging (logs warning)
 
 ## Stack

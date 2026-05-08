@@ -64,12 +64,31 @@ def _safe_str(v) -> str:
 
 def _normalise_card_number(n: str) -> str:
     """Drop the '/total' suffix so '025/106' matches '025' and '25'.
-    Also strips leading zeros for a secondary match key."""
+    Preserves leading zeros and original casing — used as a stable
+    source-dict key. Use _canonical_number() instead when collapsing
+    spine rows where '010' and '10' should be ONE card."""
     if not n: return ""
     s = str(n).strip()
     if "/" in s:
         s = s.split("/", 1)[0]
     return s.strip()
+
+
+def _canonical_number(n: str) -> str:
+    """Spine-collapse form: drop '/total' AND strip leading zeros for
+    all-digit numbers, so '010' and '10' produce the same canonical key.
+    Alphanumeric promo codes ('HGSS08', 'TG01', 'SWSH001') are preserved
+    as-is — stripping their zeros would break uniqueness across promo
+    series. This is the form used to build candidates_by_canon spine
+    keys; the original (un-stripped) form is retained inside the
+    candidates list so _lookup_one can still find rows in source dicts
+    keyed by the original number."""
+    s = _normalise_card_number(n)
+    if not s:
+        return ""
+    if s.isdigit():
+        return s.lstrip("0") or "0"
+    return s
 
 
 def _alt_keys_for_number(n: str) -> set[str]:
@@ -897,7 +916,12 @@ def build_cards_master(db_conn) -> dict:
     for src_dict in sources.values():
         for orig_key in src_dict.keys():
             orig_sid, orig_num = orig_key
-            canon_key = (canonicalise(orig_sid), orig_num)
+            # Spine collapse: canonicalise BOTH set_id AND card_number so
+            # '010' and '10' (and 'A4' vs 'a4') produce one canonical key.
+            # The original key stays in the candidates list so per-card
+            # source lookups (_lookup_one / _lookup_multi) still resolve
+            # against source dicts keyed by the original padding.
+            canon_key = (canonicalise(orig_sid), _canonical_number(orig_num))
             candidates_by_canon[canon_key].append(orig_key)
     # Also expose jp_cards_json's (edition, numero) keys to the canonical
     # spine — but jp_cards_json is dex-id-keyed, not card_number-keyed,
