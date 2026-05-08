@@ -152,7 +152,13 @@ def _fetch_html_smart(url: str, *, params: dict | None = None,
     use the legacy requests path — which still works for the small set of
     cooperative endpoints and at least won't crash on the others.
     """
-    if _pw is not None and _pw.is_available():
+    # IMPORTANT: do NOT pre-gate on `_pw.is_available()` here — that flag
+    # is only set True INSIDE fetch_html() via lazy init, so a pre-check
+    # would mean the browser is never started in the first place
+    # (chicken-and-egg). Just call fetch_html() unconditionally; it
+    # handles disabled/not-installed/launch-failed internally and
+    # returns "" cheaply when Playwright isn't usable.
+    if _pw is not None:
         # Playwright doesn't take query params separately — bake them into
         # the URL for the browser fetch (the requests path uses `params=`).
         full_url = url
@@ -163,7 +169,10 @@ def _fetch_html_smart(url: str, *, params: dict | None = None,
         html = _pw.fetch_html(full_url, locale=locale)
         if html:
             return html
-        log.info("[scrape:pw] %s returned empty — falling back to requests", url)
+        # Empty result: either Playwright is disabled/uninstalled (cheap
+        # no-op after first call), or the fetch genuinely failed. Either
+        # way, fall through to the requests path so cooperative endpoints
+        # still work and tests don't go silent.
     return _safe_get(url, params=params, referer=referer)
 
 

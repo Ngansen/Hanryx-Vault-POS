@@ -98,6 +98,21 @@ def is_available() -> bool:
     return _ENABLED and _available
 
 
+# Substrings in exception messages that mean "the browser/loop/context is
+# DEAD and won't recover" — when we see one of these we flip _available
+# False so subsequent calls skip Playwright and go straight to fallback,
+# instead of paying the timeout-and-retry cost on every single request.
+_FATAL_ERROR_HINTS = (
+    "browser has been closed",
+    "browser closed unexpectedly",
+    "target page, context or browser has been closed",
+    "target closed",
+    "connection closed",
+    "event loop is closed",
+    "browser not initialised",
+)
+
+
 def fetch_html(url: str, *, locale: str = "en-US",
                ua: str = _DEFAULT_UA, timeout: float = 30.0) -> str:
     """Synchronously fetch `url` with chromium and return the rendered HTML.
@@ -105,7 +120,13 @@ def fetch_html(url: str, *, locale: str = "en-US",
     Returns "" on any failure (disabled, not installed, browser crashed,
     navigation timeout). Callers should treat "" as "fall back to the
     requests-based path".
+
+    Self-healing: on any fatal browser/loop error this function flips
+    `_available` to False so future calls short-circuit to "" without
+    paying the per-request timeout (the requests-based fallback in
+    price_scrapers.py picks up immediately).
     """
+    global _available
     if not _ENABLED:
         return ""
     _ensure_started()
@@ -116,7 +137,15 @@ def fetch_html(url: str, *, locale: str = "en-US",
         fut = asyncio.run_coroutine_threadsafe(coro, _loop)
         return fut.result(timeout=timeout) or ""
     except Exception as exc:
+        msg = str(exc).lower()
         log.info("[playwright] fetch %s failed: %s", url, exc)
+        if any(hint in msg for hint in _FATAL_ERROR_HINTS):
+            log.warning("[playwright] browser appears dead — disabling "
+                        "Playwright path for the rest of this process "
+                        "(error was: %s)", exc)
+            _available = False
+            # Drop stale context references; they belong to the dead browser.
+            _contexts.clear()
         return ""
 
 
