@@ -1,0 +1,56 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ # Step 1 — Pokémon species names (1025 species × ~7 languages, ~30 sec)
+docker exec -it pi-setup-pos-1 python3 /app/import_pokeapi_species.py
+
+# Step 2 — TCGdex multilingual catalog (~15-25 min for ~15K cards × 9 languages)
+# Run with a logfile + nohup so a dropped SSH doesn't kill it
+docker exec -d pi-setup-pos-1 sh -c \
+  "python3 /app/import_tcgdex.py > /tmp/tcgdex_import.log 2>&1"
+
+# Watch progress
+docker exec -it pi-setup-pos-1 tail -f /tmp/tcgdex_import.log
+# (Ctrl-C the tail when you see "done" / "completeive_name, s:.tw.sources_used}}'w.median, n:.tw.nat
+2026-05-08 02:36:56,737 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-08 02:36:56,737 INFO import_pokeapi_species: [pokeapi] downloading https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species.csv
+2026-05-08 02:36:56,994 INFO import_pokeapi_species: [pokeapi] downloading https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv
+{
+  "inserted": 1025,
+  "species_rows": 1025,
+  "name_rows": 11260
+}
+2026-05-08 02:36:58,300 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-08 02:36:58,301 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/en/cards
+2026-05-08 02:36:59,210 INFO import_tcgdex: [tcgdex] en: 23160 cards in 0.9s
+2026-05-08 02:36:59,265 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/ko/cards
+2026-05-08 02:36:59,560 INFO import_tcgdex: [tcgdex] ko: 0 cards in 0.3s
+2026-05-08 02:36:59,564 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/ja/cards
+2026-05-08 02:37:00,115 INFO import_tcgdex: [tcgdex] ja: 6038 cards in 0.6s
+2026-05-08 02:37:00,126 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/zh-cn/cards
+2026-05-08 02:37:00,533 INFO import_tcgdex: [tcgdex] zh-cn: 829 cards in 0.4s
+2026-05-08 02:37:00,537 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/zh-tw/cards
+2026-05-08 02:37:01,151 INFO import_tcgdex: [tcgdex] zh-tw: 7436 cards in 0.6s
+2026-05-08 02:37:01,163 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/fr/cards
+2026-05-08 02:37:02,450 INFO import_tcgdex: [tcgdex] fr: 21271 cards in 1.3s
+2026-05-08 02:37:02,471 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/de/cards
+2026-05-08 02:37:03,404 INFO import_tcgdex: [tcgdex] de: 19408 cards in 0.9s
+2026-05-08 02:37:03,421 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/it/cards
+2026-05-08 02:37:04,316 INFO import_tcgdex: [tcgdex] it: 15055 cards in 0.9s
+2026-05-08 02:37:04,331 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/es/cards
+2026-05-08 02:37:05,272 INFO import_tcgdex: [tcgdex] es: 14993 cards in 0.9s
+2026-05-08 02:37:05,287 INFO import_tcgdex: [tcgdex] GET https://api.tcgdex.net/v2/pt/cards
+2026-05-08 02:37:06,158 INFO import_tcgdex: [tcgdex] pt: 13311 cards in 0.9s
+{
+  "inserted": 33888,
+  "languages": {
+    "en": 23160,
+    "ko": 0,
+    "ja": 6038,
+    "zh-cn": 829,
+    "zh-tw": 7436,
+    "fr": 21271,
+    "de": 19408,
+    "it": 15055,
+    "es": 14993,
+    "pt": 13311
+  },
+  "unique_cards": 33888
+}
