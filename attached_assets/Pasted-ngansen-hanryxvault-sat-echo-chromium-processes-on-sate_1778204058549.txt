@@ -1,0 +1,73 @@
+ngansen@hanryxvault-sat:~ $ echo '--- chromium processes on satellite ---'
+pgrep -fa chromium | grep -v zygote | grep -v crashpad | grep -v gpu-process | grep -v utility | grep -v renderer
+echo '--- kiosk launcher service ---'
+systemctl status hanryx-kiosk.service --no-pager -l | head -20
+echo '--- can satellite reach main pi /kiosk ---'
+curl -s -o /dev/null -w 'main-pi /kiosk → %{http_code}\n' http://hanryxvault:8080/kiosk
+curl -s -o /dev/null -w 'main-pi /kiosk/state → %{http_code}\n' http://hanryxvault:8080/kiosk/state
+echo '--- last 40 lines of kiosk launcher log ---' 
+sudo tail -40 /home/ngansen/.hanryx/kiosk.log 2>/dev/null || sudo journalctl -u hanryx-kiosk.service --no-pager -n 40
+--- chromium processes on satellite ---
+346725 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=wayland --enable-features=UseOzonePlatform,VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/kiosk-profile --class=hvault-kiosk http://hanryxvault:8080/kiosk
+346731 /usr/lib/chromium/chromium --kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate,TranslateUI --check-for-update-interval=31536000 --autoplay-policy=no-user-gesture-required --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-breakpad --disable-component-update --no-process-singleton --ozone-platform=wayland --enable-features=UseOzonePlatform,VaapiVideoDecoder --disable-dev-shm-usage --allow-file-access-from-files --disable-web-security --password-store=basic --use-mock-keychain --user-data-dir=/home/ngansen/.hanryx/admin-profile --class=hvault-admin http://hanryxvault:8080/admin
+--- kiosk launcher service ---
+● hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)
+     Loaded: loaded (/etc/systemd/system/hanryx-kiosk.service; enabled; preset: enabled)
+     Active: active (running) since Thu 2026-05-07 18:39:07 CDT; 1h 54min ago
+ Invocation: bae6b9e6baff45d0a88dd4ec91757a23
+       Docs: https://github.com/Ngansen/Hanryx-Vault-POS
+   Main PID: 342306 (labwc)
+      Tasks: 0 (limit: 4749)
+        CPU: 12ms
+     CGroup: /system.slice/hanryx-kiosk.service
+             ‣ 342306 /usr/bin/labwc -C /etc/hanryx-kiosk/labwc
+
+May 07 18:39:07 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 18:39:07 hanryxvault-sat (k-launch)[342306]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 18:40:15 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+--- can satellite reach main pi /kiosk ---
+main-pi /kiosk → 200
+main-pi /kiosk/state → 200
+--- last 40 lines of kiosk launcher log ---
+[sudo] password for ngansen: 
+May 07 16:27:59 hanryxvault-sat (k-launch)[315100]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 16:51:34 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 16:51:35 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 16:51:35 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 16:51:35 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 16:51:38 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 16:51:38 hanryxvault-sat (k-launch)[322928]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 17:01:38 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 17:01:38 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 17:01:38 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 17:01:38 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:01:42 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:01:42 hanryxvault-sat (k-launch)[327445]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 17:08:48 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 17:08:48 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 17:08:48 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 17:08:48 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:08:51 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:08:51 hanryxvault-sat (k-launch)[329512]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 17:57:34 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 17:57:34 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 17:57:34 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 17:57:34 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:57:36 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 17:57:36 hanryxvault-sat (k-launch)[335430]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 18:09:55 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 18:09:55 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 18:09:55 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 18:09:55 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 18:09:58 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 18:09:58 hanryxvault-sat (k-launch)[336922]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 18:17:56 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 07 18:39:06 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+May 07 18:39:07 hanryxvault-sat systemd[1]: Stopping hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1)...
+May 07 18:39:07 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Main process exited, code=killed, status=11/SEGV
+May 07 18:39:07 hanryxvault-sat systemd[1]: hanryx-kiosk.service: Failed with result 'signal'.
+May 07 18:39:07 hanryxvault-sat systemd[1]: Stopped hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 18:39:07 hanryxvault-sat systemd[1]: Started hanryx-kiosk.service - HanryxVault Satellite Kiosk (labwc on tty1).
+May 07 18:39:07 hanryxvault-sat (k-launch)[342306]: pam_unix(login:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 07 18:40:15 hanryxvault-sat systemd[1]: /etc/systemd/system/hanryx-kiosk.service:35: Unknown key 'StartLimitIntervalSec' in section [Service], ignoring.
+ngansen@hanryxvault-sat:~ $
