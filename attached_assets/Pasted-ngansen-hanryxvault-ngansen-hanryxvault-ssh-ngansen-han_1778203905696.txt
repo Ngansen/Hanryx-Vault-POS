@@ -1,0 +1,54 @@
+ngansen@hanryxvault:~ $ ngansen@hanryxvault:~ $ ssh ngansen@hanryxvault
+echo '--- /kiosk/cart traffic in the last hour ---'
+docker logs --since 1h pi-setup-pos-1 2>&1 | grep -E 'kiosk/cart|kiosk/reset|kiosk/payment|kiosk/stream' | tail -30
+echo '--- current cart state on the server ---'
+curl -s http://localhost:8080/kiosk/state | jq .
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTYngansen@hanryxvault:~ $ 1:27:48 2026 from 127.0.0.
+-bash: ngansen@hanryxvault:~: command not found
+--- /kiosk/cart traffic in the last hour ---
+100.121.45.69 - - [08/May/2026:00:34:56 +0000] "GET /kiosk/stream HTTP/1.1" 200 263 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+100.121.45.69 - - [08/May/2026:00:52:35 +0000] "GET /kiosk/stream HTTP/1.1" 200 272 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+100.121.45.69 - - [08/May/2026:01:09:14 +0000] "GET /kiosk/stream HTTP/1.1" 200 263 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+192.168.10.174 - - [08/May/2026:01:14:55 +0000] "POST /kiosk/cart HTTP/1.1" 200 12 "-" "okhttp/4.12.0"
+192.168.10.174 - - [08/May/2026:01:14:56 +0000] "POST /kiosk/cart HTTP/1.1" 200 12 "-" "okhttp/4.12.0"
+192.168.10.174 - - [08/May/2026:01:16:01 +0000] "POST /kiosk/cart HTTP/1.1" 200 12 "-" "okhttp/4.12.0"
+100.121.45.69 - - [08/May/2026:01:21:46 +0000] "GET /kiosk/stream HTTP/1.1" 200 1356 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+--- current cart state on the server ---
+{
+  "active": true,
+  "checkout": true,
+  "items": [
+    {
+      "buy_price": 0.0,
+      "condition": "NM",
+      "confidence": "low",
+      "market_price": 0.0,
+      "name": "Blaine's Growlithe",
+      "price": 0.25,
+      "qty": 1,
+      "trade_value": 0.0
+    }
+  ],
+  "mode": "cart",
+  "paid": false,
+  "payment_method": "",
+  "payment_processing": false,
+  "subtotal": 0.25,
+  "tax": 0.01399999976158142,
+  "total": 0.2639999997615814
+}
+-bash: Linux: command not found
+-bash: The: command not found
+-bash: the: command not found
+-bash: individual: command not found
+-bash: Debian: command not found
+-bash: permitted: command not found
+-bash: Last: command not found
+-bash: ngansen@hanryxvault:~: command not found
+ngansen@hanryxvault:~ $
