@@ -1,0 +1,65 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+
+# Update running container with all three changes (no full rebuild needed)
+docker cp pi-setup/build_cards_master.py  pi-setup-pos-1:/app/build_cards_master.py
+docker cp pi-setup/price_scrapers.py      pi-setup-pos-1:/app/price_scrapers.py
+docker cp pi-setup/server.py              pi-setup-pos-1:/app/server.py
+docker compose -f pi-setup/docker-compose.yml restart pos
+sleep 6
+
+# 1) Verify Bug B fix — rebuild and watch the duplicates_merged number
+docker exec -it pi-setup-pos-1 python3 /app/build_cards_master.py 2>&1 | grep -E "spine has|duplicatext steps" below.rapers are still blocked — see "N
+remote: Enumerating objects: 23, done.
+remote: Counting objects: 100% (23/23), done.
+remote: Compressing objects: 100% (15/15), done.
+remote: Total 15 (delta 12), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (15/15), 5.72 KiB | 133.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   769d9bf..82cc9ec  main       -> origin/main
+Updating 769d9bf..82cc9ec
+error: Your local changes to the following files would be overwritten by merge:
+        pi-setup/docker-compose.yml
+Please commit your changes or stash them before you merge.
+Aborting
+Successfully copied 47.1kB to pi-setup-pos-1:/app/build_cards_master.py
+Successfully copied 14.8kB to pi-setup-pos-1:/app/price_scrapers.py
+Successfully copied 1.26MB to pi-setup-pos-1:/app/server.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+2026-05-08 04:19:23,126 INFO build_cards_master: [consolidator] spine has 70164 canonical (set_id, card_number) keys (collapsed from 88185 source rows; 18021 duplicates merged)
+  "with_en": 30702,
+  "with_kr": 18997,
+  "with_jp": 7844,
+('A4', '010', 'Meganium', '')
+('A4', '10', 'Meganium', '')
+('col1', '27', 'Meganium', '')
+('dp2', '13', 'Meganium', '')
+('ecard1', '18', 'Meganium', '')
+('ecard1', '53', 'Meganium', '')
+('ecard1', '54', 'Meganium', '')
+('ex10', '9', 'Meganium', '')
+('hgss1', '109', 'Meganium', '')
+('hgss1', '26', 'Meganium', '')
+('hgssp', 'HGSS08', 'Meganium', '')
+('hsp', 'HGSS08', 'Meganium', '')
+('me01', '010', 'Meganium', '')
+('me1', '10', 'Meganium', '')
+('mep', '001', 'Meganium', '')
+('neo1', '010', 'Meganium', '')
+('neo1', '011', 'Meganium', '')
+('neo1', '10', 'Meganium', '')
+('neo1', '11', 'Meganium', '')
+('sm8', '8', 'Meganium', '통통코')
+('xy9', '3', 'Meganium', '메가니움')
+TOTAL: 21
+{
+  "en": 20.8,
+  "kr": {
+    "n": "메가니움",
+    "m": null,
+    "s": [],
+    "c": 0
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
