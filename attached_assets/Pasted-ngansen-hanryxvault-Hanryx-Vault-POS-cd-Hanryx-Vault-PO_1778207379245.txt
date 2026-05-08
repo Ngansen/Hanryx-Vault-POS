@@ -1,0 +1,76 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+
+# Hot-swap server.py into the running container (faster than rebuild)
+docker cp pi-setup/server.py pi-setup-pos-1:/app/server.py
+docker compose -f pi-setup/docker-compose.yml restart pos
+sleep 6
+
+# Smoke test — Charizard 4/102 Base Set, all 5 chips
+curl -s "http://localhost:8080/api/v1/pricing/language?name=Charizard&set=Base+Set&number=4/102&refresh=1" \
+  | jq '{en:.en, jp:.jp, kr:.kr, cn:.cn, tw:.tw, src:.data_source}'
+
+rdmarket|naver' | tail -30ter|tcgkorea|snkrdunk|ca
+remote: Enumerating objects: 11, done.
+remote: Counting objects: 100% (11/11), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 8 (delta 6), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (8/8), 5.28 KiB | 79.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   a75338b..4fcf131  main       -> origin/main
+Updating a75338b..4fcf131
+Fast-forward
+ pi-setup/server.py | 265 +++++++++++++++++++----
+ 1 file changed, 227 insertions(+), 38 deletions(-)
+Successfully copied 1.26MB to pi-setup-pos-1:/app/server.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠴ Container pi-setup-pos-1 Restarting        2.4s
+{
+  "en": {
+    "count": 31,
+    "median": 1200.0,
+    "query": "Charizard 4/102 Base Set pokemon"
+  },
+  "jp": {
+    "count": 3,
+    "median": 511.2,
+    "native_name": null,
+    "pct_off": 57,
+    "query": "Charizard 4/102",
+    "sources_used": [
+      "ebay_jp"
+    ]
+  },
+  "kr": {
+    "count": 3,
+    "median": 240.0,
+    "native_name": null,
+    "pct_off": 80,
+    "query": "Charizard 4/102",
+    "sources_used": [
+      "ebay_kr"
+    ]
+  },
+  "cn": {
+    "count": 0,
+    "median": null,
+    "native_name": null,
+    "pct_off": null,
+    "query": "Charizard 4/102",
+    "sources_used": []
+  },
+  "tw": {
+    "count": 0,
+    "median": null,
+    "native_name": null,
+    "pct_off": null,
+    "query": "Charizard 4/102",
+    "sources_used": []
+  },
+  "src": "live"
+}
+{"ts":"2026-05-08T02:29:02","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T02:29:07","level":"INFO","logger":"price_scrapers","msg":"[scrape] https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Charizard+4%2F102 → HTTP 403"}
+{"ts":"2026-05-08T02:29:07","level":"INFO","logger":"price_scrapers","msg":"[scrape] https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=Charizard+4%2F102 → HTTP 403"}
+{"ts":"2026-05-08T02:29:09","level":"INFO","logger":"price_scrapers","msg":"[scrape] https://search.shopping.naver.com/search/all?query=Charizard+4%2F102 → HTTP 418"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
