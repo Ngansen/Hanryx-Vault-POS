@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ # Verify SQLite — (A) done
+docker exec -it pi-setup-pos-1 python3 /app/sync_tcg_db.py --stats
+
+# Bridge SQLite → Postgres — (B) wired
+docker exec -it pi-setup-pos-1 python3 /app/mirror_tcg_to_pg.py
+
+# Rebuild consolidator with new tcg_api source live
+docker exec -it pi-setup-pos-1 python3 /app/build_cards_master.py
+
+# End-to-end Option B validation on a card with confirmed Korean coverage
+curl -s "http://localhost:8080/api/v1/pricing/language?name=Meganium&number=3&refresh=1" \
+  | jq '{en:.en.median,
+         jp:{m:.jp.median,n:.jp.native_name,s:.jp.sources_used,c:.kr.count}}'ame,m:.kr.median,s:.kr.
+
+── TCG Sync Database Stats ────────────────────────
+  Sets in DB      : 172
+  Sets synced     : 172 / 172
+  Cards in DB     : 20,237
+  Last sync       : 2026-05-08 04:00:37
+  Newest set      : Perfect Order (2026/03/27)
+  DB path         : /mnt/cards/pokedex_local.db
+
+python3: can't open file '/app/mirror_tcg_to_pg.py': [Errno 2] No such file or directory
+2026-05-08 04:03:44,965 INFO unified.schema: [unified.schema] init complete (31 tables, trgm=True)
+2026-05-08 04:03:44,965 INFO build_cards_master: [consolidator] reading source tables…
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] tcgdex: 33888 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] tcg_api: 0 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] kr_official: 14898 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] jp_pokell: 0 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] chs_official: 16125 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] pocket_off: 3041 rows
+2026-05-08 04:03:46,475 INFO build_cards_master: [consolidator] pocket_lt: 0 rows
+2026-05-08 04:03:46,476 INFO build_cards_master: [consolidator] eng_xlsx: 0 rows
+2026-05-08 04:03:46,476 INFO build_cards_master: [consolidator] jp_xlsx: 0 rows
+2026-05-08 04:03:46,476 INFO build_cards_master: [consolidator] jp_pcc: 0 rows
+2026-05-08 04:03:46,476 INFO build_cards_master: [consolidator] jp_cards_json: 0 keys, set_alias_map: 0 codes, canon_map: 0 codes
+2026-05-08 04:03:46,476 INFO build_cards_master: [consolidator] eng_ex: 0, jp_ex: 0, ref_dex: 1025, ref_promo: 0, promo_classes: 0 codes
+2026-05-08 04:03:46,595 INFO build_cards_master: [consolidator] spine has 64300 canonical (set_id, card_number) keys (collapsed from 67952 source rows; 3652 duplicates merged)
