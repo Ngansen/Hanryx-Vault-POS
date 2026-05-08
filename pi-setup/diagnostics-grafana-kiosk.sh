@@ -127,6 +127,8 @@ while true; do
         --disable-pinch \
         --no-first-run \
         --user-data-dir="$USER_DATA_DIR" \
+        --password-store=basic \
+        --use-mock-keychain \
         --autoplay-policy=no-user-gesture-required \
         "$URL"
     rc=$?
