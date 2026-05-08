@@ -369,17 +369,21 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
 
     # price_history_recent — last 90 days. Capped at 200k rows so a
     # single chatty source can't blow the SQLite mirror past USB capacity.
+    # C11: added currency + price_usd so the AI cashier can compare across
+    # naver(KRW) / bunjang(KRW) / hareruya2(JPY) / cardmarket(EUR) /
+    # tcgplayer(USD) without doing FX math at inference time.
     "price_history_recent": (
         """
         CREATE TABLE price_history_recent (
             id INTEGER PRIMARY KEY,
             card_id TEXT, source TEXT, grade TEXT,
-            price REAL, observed_at INTEGER,
+            price REAL, currency TEXT, price_usd REAL,
+            observed_at INTEGER,
             _mirror_at INTEGER
         )
         """,
         """
-        SELECT id, card_id, source, grade, price,
+        SELECT id, card_id, source, grade, price, currency, price_usd,
                EXTRACT(EPOCH FROM observed_at)::BIGINT
           FROM price_history
          WHERE observed_at >= NOW() - INTERVAL '90 days'
@@ -387,7 +391,7 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
          LIMIT 200000
         """,
         f"""
-        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 }

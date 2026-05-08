@@ -268,6 +268,19 @@ def _job_discovery_dispatch() -> None:
     _run_module_subprocess("/app/discovery_dispatch.py")
 
 
+def _job_market_refresh() -> None:
+    """C11: backfill multi-source market prices for top-N inventory.
+
+    Runs in-process (not subprocess) because it shares the same psycopg2
+    connection style as usb_mirror and benefits from the orchestrator's
+    own logging context. Top-N controlled by MARKET_REFRESH_TOP_N env
+    (default 200). Cheap thanks to scrape_cache's 10-min Redis TTL.
+    """
+    import refresh_market_prices  # local import — module pulls in psycopg2 + scrapers
+    summary = refresh_market_prices.refresh_once()
+    log.info("[market_refresh] complete: %s", summary)
+
+
 JOBS: list[Job] = [
     Job(name="mirror",          interval_sec=6 * 60,         fn=_job_mirror,            needs_network=False),
     Job(name="tcg_db",          interval_sec=60 * 60,        fn=_job_tcg_db,            needs_network=True),
@@ -302,6 +315,15 @@ JOBS: list[Job] = [
     # an hour rather than waiting for the next daily cycle.
     Job(name="discover_sets",     interval_sec=24 * 60 * 60, fn=_job_discover_sets,     needs_network=True),
     Job(name="discovery_dispatch", interval_sec=30 * 60,     fn=_job_discovery_dispatch, needs_network=True),
+
+    # ── C11: Market intel backfill for the AI cashier ─────────────────
+    # Pulls naver/bunjang/hareruya2/cardmarket prices for the top-N
+    # in-stock cards every hour and writes them into price_history with
+    # USD conversion. usb_mirror replicates to price_history_recent on
+    # its next 6-min tick, so the AI assistant's local lookup picks
+    # them up automatically without needing scraper access at inference
+    # time. Skipped automatically when the network is down.
+    Job(name="market_refresh",    interval_sec=60 * 60,      fn=_job_market_refresh,    needs_network=True),
 ]
 
 
