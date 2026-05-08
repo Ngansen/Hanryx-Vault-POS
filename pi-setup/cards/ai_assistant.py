@@ -85,8 +85,19 @@ Rules:
 
 _SUMMARY_SYSTEM_PROMPT = """You are HanryxVault's cashier assistant.
 You will receive a JSON object describing the cashier's question and the database result.
-Reply in 1-2 SHORT sentences (max 250 chars). Format any prices with both KRW and USD.
-If the result list is empty, say so plainly and suggest one refinement.
+Reply in 1-2 SHORT sentences (max 300 chars).
+
+Pricing format rules:
+- For lookup_price results, list 1 line PER SOURCE we have data for, in the
+  order: cardmarket, naver, bunjang, hareruya2, tcgplayer (skip any source
+  with no data). Format: "<source>: <native_price><cur_symbol> (~$<usd>)".
+  Currency symbols: KRW=₩, JPY=¥, EUR=€, USD=$.
+- If `price_usd` is present, ALWAYS include the parenthesised USD figure so
+  the cashier can compare across markets at a glance.
+- If observed_at is older than 7 days, append " (stale)" to that line.
+- If ALL sources are empty, say "no recent market data — try refreshing or
+  check the card name spelling".
+- For non-price intents, currency rules don't apply.
 """
 
 
@@ -128,32 +139,91 @@ def _exec_search_card(intent: dict) -> dict:
 
 
 def _exec_lookup_price(intent: dict) -> dict:
+    """C12: multi-source price lookup with USD conversion.
+
+    Returns up to 5 matched inventory cards, each with a `markets` dict
+    keyed by source containing the most-recent observation per source
+    (native price + USD-converted price + observed_at + staleness flag).
+
+    SQL strategy: window function ROW_NUMBER() OVER (PARTITION BY card,
+    source ORDER BY observed_at DESC) collapses the rolling log of
+    observations down to one row per (card, source). We then filter to
+    rn=1 and pivot in Python (cheaper than a CTE per source). SQLite
+    >=3.25 ships window funcs; Pi 5 has 3.40+, safe.
+
+    Empty `markets` dict means no scraper has ever returned a hit for
+    this card — surfaces in the LLM summary as "no recent market data".
+    """
     name = (intent.get("name") or "").strip()
     grade = (intent.get("grade") or "raw").lower()
     if not name:
         return {"price": None, "note": "no name in query"}
     conn = sqlite_connect(local_db_path())
     try:
-        # Cross-reference inventory_snapshot to find the cards we actually
-        # stock, then look up most-recent price from price_history_recent.
         rows = conn.execute(
             """
-            SELECT i.qr_code, i.name, i.set_name, i.grade, i.condition,
-                   i.price, i.sale_price,
-                   p.price AS observed_price, p.source AS observed_source,
-                   p.observed_at
-              FROM inventory_snapshot i
-              LEFT JOIN price_history_recent p ON p.card_id = i.qr_code
-             WHERE LOWER(i.name) LIKE ?
-               AND (? = 'raw' OR LOWER(i.grade) = ?)
-             ORDER BY p.observed_at DESC NULLS LAST
-             LIMIT 5
+            WITH matched AS (
+              SELECT qr_code, name, set_name, grade, condition,
+                     price AS our_price, sale_price AS our_sale
+                FROM inventory_snapshot
+               WHERE LOWER(name) LIKE ?
+                 AND (? = 'raw' OR LOWER(grade) = ?)
+               LIMIT 5
+            ),
+            ranked AS (
+              SELECT m.qr_code, m.name, m.set_name, m.grade, m.condition,
+                     m.our_price, m.our_sale,
+                     p.source, p.price AS native_price,
+                     p.currency, p.price_usd, p.observed_at,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY m.qr_code, p.source
+                       ORDER BY p.observed_at DESC
+                     ) AS rn
+                FROM matched m
+                LEFT JOIN price_history_recent p ON p.card_id = m.qr_code
+            )
+            SELECT * FROM ranked
+             WHERE rn = 1 OR source IS NULL
+             ORDER BY qr_code, source
             """,
             (f"%{name.lower()}%", grade, grade),
         ).fetchall()
     finally:
         conn.close()
-    return {"matches": [dict(r) for r in rows]}
+
+    # Pivot rows → one entry per matched card with a markets dict
+    import time as _t
+    now_epoch = int(_t.time())
+    by_card: dict[str, dict] = {}
+    for r in rows:
+        d = dict(r)
+        qr = d["qr_code"]
+        if qr not in by_card:
+            by_card[qr] = {
+                "qr_code":    qr,
+                "name":       d["name"],
+                "set_name":   d["set_name"],
+                "grade":      d["grade"],
+                "condition":  d["condition"],
+                "our_price":  d["our_price"],
+                "our_sale":   d["our_sale"],
+                "markets":    {},  # filled below
+            }
+        src = d.get("source")
+        if not src:
+            continue  # LEFT JOIN miss — card has no scraper coverage yet
+        observed = d.get("observed_at") or 0
+        age_days = max(0, (now_epoch - int(observed)) // 86400) if observed else None
+        by_card[qr]["markets"][src] = {
+            "native_price": d.get("native_price"),
+            "currency":     d.get("currency") or "USD",
+            "price_usd":    d.get("price_usd"),
+            "observed_at":  observed,
+            "age_days":     age_days,
+            "stale":        bool(age_days is not None and age_days > 7),
+        }
+
+    return {"matches": list(by_card.values())}
 
 
 def _exec_inventory_count(intent: dict) -> dict:
