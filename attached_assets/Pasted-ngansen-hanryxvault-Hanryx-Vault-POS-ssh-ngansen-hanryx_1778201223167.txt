@@ -1,0 +1,99 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ ssh ngansen@hanryxvault-sat
+sudo bluetoothctl
+ngansen@hanryxvault-sat:~ $ sudo bluetoothctl
+[sudo] password for ngansen: 
+Agent registered
+hci0 new_settings: powered bondable ssp br/edr le secure-conn 
+[CHG] Controller 88:A2:9E:40:13:AB Pairable: yes
+[bluetoothctl]> power on
+agent on
+default-agent
+scan on
+[bluetoothctl]> 
+[bluetoothctl]> 
+[bluetoothctl]> 
+[bluetoothctl]> exit
+ngansen@hanryxvault-sat:~ $ bluetoothctl devices Connected     # confirms it's live now
+bluetoothctl info XX:XX:XX:XX:XX:XX | grep -E 'Connected|Trusted|Paired'
+ngansen@hanryxvault-sat:~ $ sudo systemctl status bluetooth
+● bluetooth.service - Bluetooth service
+     Loaded: loaded (/usr/lib/systemd/system/blue>
+     Active: active (running) since Wed 2026-05-0>
+ Invocation: 4698a360e3ba4e52b7319ee0e6e63462
+       Docs: man:bluetoothd(8)
+   Main PID: 708 (bluetoothd)
+     Status: "Running"
+      Tasks: 1 (limit: 4749)
+        CPU: 1.137s
+     CGroup: /system.slice/bluetooth.service
+             └─708 /usr/libexec/bluetooth/bluetoo>
+
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+lines 5-22/22 (END)
+       Docs: man:bluetoothd(8)
+   Main PID: 708 (bluetoothd)
+     Status: "Running"
+      Tasks: 1 (limit: 4749)
+        CPU: 1.137s
+     CGroup: /system.slice/bluetooth.service
+             └─708 /usr/libexec/bluetooth/bluetoo>
+
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+lines 5-22/22 (END)
+       Docs: man:bluetoothd(8)
+   Main PID: 708 (bluetoothd)
+     Status: "Running"
+      Tasks: 1 (limit: 4749)
+        CPU: 1.137s
+     CGroup: /system.slice/bluetooth.service
+             └─708 /usr/libexec/bluetooth/bluetoo>
+
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+May 07 18:09:58 hanryxvault-sat bluetoothd[708]: >
+
+ngansen@hanryxvault-sat:~ $
