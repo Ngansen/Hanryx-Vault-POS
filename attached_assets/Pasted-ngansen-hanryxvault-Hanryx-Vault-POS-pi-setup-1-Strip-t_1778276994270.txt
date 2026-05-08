@@ -1,0 +1,34 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # 1. Strip the leading space from .env (docker handled it but let's be tidy)
+sed -i 's/^NAVER_CLIENT_SECRET= */NAVER_CLIENT_SECRET=/' ~/Hanryx-Vault-POS/pi-setup/.env && \
+echo "=== .env after fix ===" && \
+grep -E '^NAVER_' ~/Hanryx-Vault-POS/pi-setup/.env | cat -A && \
+echo "" && \
+# 2. Flush naver cache from the REDIS container, not pos
+echo "=== flushing naver cache ===" && \
+docker exec pi-setup-redis-1 sh -c "redis-cli KEYS 'scrape:naver:*' | xargs -r redis-cli DEL" && \
+echo "" && \
+# 3. Re-run validation — should now return real items
+echo "=== fresh naver call ===" && \
+docker exec pi-setup-pos-1 python -c "
+"lse))in r[:3]: print(json.dumps(i, ensure_ascii=F
+=== .env after fix ===
+NAVER_CLIENT_ID=nrQAy8CfOj2bJdh6NL2B$
+NAVER_CLIENT_SECRET=S8sTK11QUC$
+
+=== flushing naver cache ===
+1
+
+=== fresh naver call ===
+{"ts":"2026-05-08T21:49:11","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T21:49:11","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T21:49:12","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+got 5 items
+{"title":"포켓몬 1세대 대형 피규어 세트 포켓몬스터 리자몽 고라파덕 피카츄 뮤 몬스터볼 장난감","price":24500.0,"currency":"KRW","url":"https://smartstore.naver.com/main/products/11272589461","image":"https://shopping-phinf.pstatic.net/main_8881709/88817099792.jpg","mall":"조이보이몰","source":"naver"}
+{"title":"포켓몬스터 30주년 기념 봉제인형 반짝반짝 피카츄 인형 마스코트","price":59900.0,"currency":"KRW","url":"https://smartstore.naver.com/main/products/13238040232","image":"https://shopping-phinf.pstatic.net/main_9078255/90782550564.jpg","mall":"삿포로센터","source":"naver"}
+{"title":"포켓몬 피규어세트 케이크피규어 피카츄 몬스터볼 장난감","price":9900.0,"currency":"KRW","url":"https://smartstore.naver.com/main/products/7864997673","image":"https://shopping-phinf.pstatic.net/main_8540949/85409497996.3.jpg","mall":"토이앤북","source":"naver"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
