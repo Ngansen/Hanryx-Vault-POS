@@ -1,0 +1,30 @@
+ngansen@hanryxvault:~ $ echo '--- chromium kiosk processes ---'
+pgrep -fa chromium | head -10
+echo '--- pos container health ---'
+docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'pos|kiosk|nginx'
+echo '--- pos endpoints ---'
+curl -s -o /dev/null -w '/kiosk        → %{http_code}\n' http://localhost:8080/kiosk
+curl -s -o /dev/null -w '/kiosk/state  → %{http_code}\n' http://localhost:8080/kiosk/state
+curl -s -o /dev/null -w '/healthz      → %{http_code}\n' http://localhost:8080/healthz
+echo '--- last 30 lines of pos errors ---'
+docker logs --tail 200 pos 2>&1 | grep -iE 'error|exception|traceback|401|500|kiosk' | tail -30
+--- chromium kiosk processes ---
+11216 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+11218 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+11220 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=4 --shared-client-connection
+11224 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+11226 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+11228 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+11260 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=wayland --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,16856897604599218769,4902659803630013587,262144 --field-trial-handle=3,i,16840937852882452213,3987866247670735568,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,11212117501596335649,3727833487915784644,4 --trace-process-track-uuid=3190708988185955192
+11262 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,12223343630174066938,15470907742247905834,524288 --field-trial-handle=3,i,16840937852882452213,3987866247670735568,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,11212117501596335649,3727833487915784644,4 --trace-process-track-uuid=3190708989122997041
+11267 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,16950346555750952563,1378501190941489539,524288 --field-trial-handle=3,i,16840937852882452213,3987866247670735568,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,11212117501596335649,3727833487915784644,4 --trace-process-track-uuid=3190708990060038890
+11290 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --autoplay-policy=no-user-gesture-required --ozone-platform=wayland --lang=en-GB --num-raster-threads=2 --enable-main-frame-before-activation --renderer-client-id=5 --time-ticks-at-unix-epoch=-1778199445093274 --launch-time-ticks=404890053 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,18004996918469012359,887905416419803738,2097152 --field-trial-handle=3,i,16840937852882452213,3987866247670735568,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,11212117501596335649,3727833487915784644,4 --trace-process-track-uuid=3190708990997080739
+--- pos container health ---
+pi-setup-pos-1          Up About an hour (healthy)
+--- pos endpoints ---
+/kiosk        → 200
+/kiosk/state  → 200
+/healthz      → 404
+--- last 30 lines of pos errors ---
+Error response from daemon: No such container: pos
+ngansen@hanryxvault:~ $
