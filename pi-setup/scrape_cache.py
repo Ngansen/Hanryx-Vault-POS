@@ -42,7 +42,10 @@ DRIFT_CANARIES = {
     "tcgkorea":   ("피카츄", "리자몽"),
     "snkrdunk":   ("pikachu", "ピカチュウ"),
     "cardmarket": ("Charizard", "Pikachu"),
-    "tcgplayer":  ("Charizard", "Pikachu"),
+    # tcgplayer canary intentionally omitted — tcgdex's tcgplayer field is
+    # empirically null on essentially every card (see price_scrapers.py
+    # module docstring), so empty results aren't drift, they're expected.
+    # Re-add `"tcgplayer": ("Charizard", "Pikachu")` if tcgdex backfills.
 }
 
 _inproc: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
