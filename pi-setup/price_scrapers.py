@@ -28,6 +28,20 @@ Every scraper returns a UNIFORM list of dicts:
 timeout and a real-browser User-Agent because every one of these sites
 silently blocks default `python-requests` clients.
 
+Anti-bot strategy
+-----------------
+We maintain a per-domain `requests.Session()` so cookies (Cloudflare
+clearance, CSRF tokens, locale prefs) persist across requests. Before the
+first search hit on a domain we issue a ONE-TIME warmup GET against the
+homepage so the session collects whatever cookies the site issues to a
+fresh visitor. Headers mimic a recent Chrome on macOS including
+client-hint headers (`sec-ch-ua*`) and fetch-mode hints (`sec-fetch-*`)
+that anti-bot WAFs use to distinguish browsers from scripts.
+
+Cardmarket sits behind Cloudflare's bot-fight mode and may STILL return
+403 for non-browser TLS fingerprints — that needs a Playwright-based
+fetcher (out of scope here).
+
 This file is intentionally dependency-light: only `requests` + `bs4` are
 required, and both are already in the POS image.
 """
@@ -35,8 +49,9 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import Callable
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -51,13 +66,61 @@ except Exception:  # pragma: no cover — bare-script execution fallback
 log = logging.getLogger("price_scrapers")
 
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+# Headers that mimic Chrome 124 on macOS — including client hints
+# (sec-ch-ua*) and fetch metadata (sec-fetch-*) that anti-bot WAFs check.
 _HDR = {
     "User-Agent": _UA,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,ko;q=0.7,ja;q=0.6",
+    "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+               "image/avif,image/webp,image/apng,*/*;q=0.8,"
+               "application/signed-exchange;v=b3;q=0.7"),
+    "Accept-Language": "en-US,en;q=0.9,ko;q=0.8,ja;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "max-age=0",
+    "sec-ch-ua": '"Chromium";v="124", "Not-A.Brand";v="99", "Google Chrome";v="124"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+    "Connection": "keep-alive",
 }
 _TIMEOUT = 12
+
+# Per-domain Session + warmup tracker. Sessions persist Cloudflare and
+# locale cookies across requests; warmup ensures we hit the homepage
+# before any search endpoint so cookies are seeded properly.
+_sessions: dict[str, requests.Session] = {}
+_warmed:   set[str] = set()
+_session_lock = threading.Lock()
+
+
+def _domain_for(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _session_for(url: str) -> requests.Session:
+    domain = _domain_for(url)
+    with _session_lock:
+        sess = _sessions.get(domain)
+        if sess is None:
+            sess = requests.Session()
+            sess.headers.update(_HDR)
+            _sessions[domain] = sess
+        # First time we touch this domain: warmup with a homepage GET so
+        # the session collects Cloudflare clearance / locale / consent
+        # cookies before any search endpoint is hit.
+        if domain not in _warmed:
+            _warmed.add(domain)
+            try:
+                sess.get(domain + "/", timeout=_TIMEOUT, allow_redirects=True)
+            except requests.RequestException as exc:
+                log.info("[scrape:warmup] %s → %s", domain, exc)
+    return sess
 
 
 def _money(s: str) -> float | None:
@@ -69,9 +132,27 @@ def _money(s: str) -> float | None:
     return float(m.group(1)) if m else None
 
 
-def _safe_get(url: str, *, params: dict | None = None) -> str | None:
+def _safe_get(url: str, *, params: dict | None = None,
+              referer: str | None = None) -> str | None:
+    """GET with per-domain Session, warmup, and Chrome-like headers.
+
+    `referer` should be set to the page the search query would naturally
+    navigate from (usually the site's homepage) — anti-bot filters often
+    reject requests with no Referer or with a Referer from a different
+    origin than the request URL.
+    """
+    sess = _session_for(url)
+    headers: dict[str, str] = {}
+    if referer:
+        headers["Referer"] = referer
+        # Sec-Fetch-Site flips when navigating from same origin
+        if _domain_for(referer) == _domain_for(url):
+            headers["Sec-Fetch-Site"] = "same-origin"
+        else:
+            headers["Sec-Fetch-Site"] = "cross-site"
     try:
-        r = requests.get(url, headers=_HDR, params=params, timeout=_TIMEOUT)
+        r = sess.get(url, headers=headers, params=params, timeout=_TIMEOUT,
+                     allow_redirects=True)
         if r.status_code != 200:
             log.info("[scrape] %s → HTTP %s", url, r.status_code)
             return None
@@ -91,7 +172,7 @@ def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
     # Naver's HTML page is the most reliable surface — their REST API needs
     # an Open API client_id/secret.  The HTML works without auth.
     url = f"https://search.shopping.naver.com/search/all?query={quote_plus(query)}"
-    html = _safe_get(url)
+    html = _safe_get(url, referer="https://search.shopping.naver.com/")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -135,7 +216,7 @@ def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
         return []
     # tcgkorea uses Cafe24's standard search route
     url = f"https://www.tcgkorea.com/product/search.html?keyword={quote_plus(query)}"
-    html = _safe_get(url)
+    html = _safe_get(url, referer="https://www.tcgkorea.com/")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -178,7 +259,7 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
         return []
     # English product search route
     url = f"https://snkrdunk.com/en/search?keyword={quote_plus(query)}"
-    html = _safe_get(url)
+    html = _safe_get(url, referer="https://snkrdunk.com/en/")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
@@ -237,7 +318,7 @@ def cardmarket(query: str, *, game: str = "Pokemon", limit: int = 20) -> list[di
     }.get(game.lower().strip(), game)
     url = (f"https://www.cardmarket.com/en/{slug}/Products/Search"
            f"?searchString={quote_plus(query)}")
-    html = _safe_get(url)
+    html = _safe_get(url, referer=f"https://www.cardmarket.com/en/{slug}")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
