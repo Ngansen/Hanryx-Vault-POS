@@ -7,12 +7,15 @@ beyond eBay (which is handled separately in server.py).
 
 Sources
 -------
-  - naver       → search.shopping.naver.com   (Korean general marketplace)
+  - naver       → openapi.naver.com           (Korean general marketplace,
+                                               via Naver Open Search API)
   - tcgkorea    → tcgkorea.com                (Korean Pokémon-card store)
-  - snkrdunk    → snkrdunk.com/en             (Japanese card+sneakers
-                                               marketplace, popular for cards)
-  - cardmarket  → www.cardmarket.com          (EU TCG marketplace — Pokémon,
-                                               Magic, Lorcana, One Piece)
+  - snkrdunk    → snkrdunk.com                (Japanese marketplace, large
+                                               Pokémon-card section)
+  - cardmarket  → api.tcgdex.net              (EU TCG marketplace EUR pricing
+                                               via tcgdex.net, Pokemon-only)
+  - tcgplayer   → api.tcgdex.net              (US TCG marketplace USD pricing
+                                               via tcgdex.net, Pokemon-only)
 
 Every scraper returns a UNIFORM list of dicts:
     {
@@ -21,7 +24,7 @@ Every scraper returns a UNIFORM list of dicts:
         "currency":  "KRW" | "JPY" | "EUR" | "USD",
         "url":       "https://...",
         "image":     "https://..." | "",
-        "source":    "naver" | "tcgkorea" | "snkrdunk" | "cardmarket",
+        "source":    "naver" | "tcgkorea" | "snkrdunk" | "cardmarket" | "tcgplayer",
     }
 
 …and never raises — failures return [].  Network is wrapped with a short
@@ -448,80 +451,19 @@ def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Cardmarket — cardmarket.com (EU TCG marketplace, all four supported games)
+# Cardmarket + TCGplayer — both via tcgdex.net public API
 # ──────────────────────────────────────────────────────────────────────────────
-@cached("cardmarket")
-def cardmarket(query: str, *, game: str = "Pokemon", limit: int = 20) -> list[dict]:
-    """
-    game ∈ Pokemon | Magic | Lorcana | OnePiece | DragonBallSuperCG …
-    Cardmarket maps each game to a slug under /en/<Game>/Cards
-    """
-    if not query:
-        return []
-    slug = {
-        "pokemon":  "Pokemon",
-        "mtg":      "Magic",
-        "magic":    "Magic",
-        "lorcana":  "Lorcana",
-        "onepiece": "OnePiece",
-        "one-piece":"OnePiece",
-        "dbs":      "DragonBallSuperCG",
-    }.get(game.lower().strip(), game)
-    url = (f"https://www.cardmarket.com/en/{slug}/Products/Search"
-           f"?searchString={quote_plus(query)}")
-    # Cardmarket runs Cloudflare bot-fight: vanilla headless chromium gets
-    # a "Just a moment..." challenge page that never solves (chromium's
-    # automation fingerprint is detected). `playwright-stealth` patches the
-    # navigator/webdriver/permissions overrides Cloudflare checks.
-    # `wait_selector` covers both the table layout (default) and the
-    # row layout (A/B variant) that Cardmarket has been rotating between.
-    html = _fetch_html_smart(
-        url,
-        referer=f"https://www.cardmarket.com/en/{slug}",
-        locale="en-GB",
-        wait_selector="div.row.no-gutters[role='row'], "
-                      "table.table-striped tr",
-        stealth=True,
-    )
-    if not html:
-        return []
-    soup = BeautifulSoup(html, "lxml")
-    out: list[dict] = []
-    # Cardmarket lists products as table rows or link cards depending on filters
-    rows = soup.select("div.row.no-gutters[role='row']") or soup.select("table tr")
-    for row in rows:
-        if len(out) >= limit:
-            break
-        a = row.select_one("a[href*='/Products/']")
-        if not a:
-            continue
-        title = (a.get_text(" ", strip=True) or "").strip()
-        if not title:
-            continue
-        # Price formatted like "12,34 €" or "1.234,56 €"
-        price_el = row.find(string=re.compile(r"\d[\d.,]*\s*€"))
-        price_raw = (price_el or "").strip()
-        # Cardmarket uses "1.234,56" — convert to "1234.56"
-        m = re.search(r"(\d[\d.]*),(\d{1,2})\s*€", price_raw)
-        if m:
-            price = float(m.group(1).replace(".", "") + "." + m.group(2))
-        else:
-            price = _money(price_raw)
-        if not price:
-            continue
-        href = a["href"]
-        if href.startswith("/"):
-            href = "https://www.cardmarket.com" + href
-        img_el = row.find("img")
-        img = ""
-        if img_el:
-            img = img_el.get("src") or img_el.get("data-echo") or ""
-        out.append({
-            "title": title, "price": price, "currency": "EUR",
-            "url": href, "image": img, "source": "cardmarket",
-            "game": slug,
-        })
-    return out
+# We previously scraped cardmarket.com directly. By 2026-05 it sits behind
+# Cloudflare bot-fight from our trade-show egress IP — header-spoofed
+# requests get HTTP 403, playwright + stealth + 15s IUAM wait still gets
+# the challenge page, and each query cost 30s of timeouts before [].
+#
+# tcgdex.dev publishes a free public REST API that EMBEDS Cardmarket EUR
+# pricing AND TCGplayer USD pricing in every Pokemon card response — the
+# same data we were trying to scrape, pre-aggregated, no auth, ~1s per
+# query. As a bonus we get TCGplayer (USD) which we couldn't reach before.
+# See `tcgdex_api.py` for the full rationale and JSON shape mapping.
+from tcgdex_api import cardmarket, tcgplayer  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -530,6 +472,7 @@ SCRAPERS: dict[str, Callable[..., list[dict]]] = {
     "tcgkorea":   tcgkorea,
     "snkrdunk":   snkrdunk,
     "cardmarket": cardmarket,
+    "tcgplayer":  tcgplayer,
 }
 
 
@@ -548,6 +491,9 @@ def search_all(query: str, *, sources: list[str] | None = None,
             continue
         try:
             if name == "cardmarket":
+                # cardmarket() accepts game= for backward compat; tcgdex
+                # only covers Pokemon, but other games used to be valid
+                # against the prior scrape implementation.
                 out["results"][name] = fn(query, limit=limit_per_source, game=game)
             else:
                 out["results"][name] = fn(query, limit=limit_per_source)
