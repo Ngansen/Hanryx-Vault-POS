@@ -82,6 +82,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Playwright chromium (real-browser scraper) ───────────────────────────────
+# `playwright install --with-deps chromium` does TWO things:
+#   1. apt-installs every shared lib chromium needs (libnss3, libcups2,
+#      libdrm2, libgbm1, libasound2, libxkbcommon0, …) — about 50 packages,
+#      ~120MB on Debian Bookworm aarch64.
+#   2. Downloads the chromium binary from playwright.dev's CDN to
+#      $PLAYWRIGHT_BROWSERS_PATH (~170MB extracted).
+#
+# Pinning PLAYWRIGHT_BROWSERS_PATH at build time means the binary is BAKED
+# into the image (rather than re-downloaded into ~/.cache on every cold
+# container start) — important on a Pi where the SD card has limited
+# write endurance and the trade-show LTE backhaul is unpredictable.
+#
+# Trade-show kill switch: setting ENABLE_PLAYWRIGHT_SCRAPER=0 in .env
+# disables all chromium use at runtime. The binary still lives in the
+# image (~280MB unavoidable bloat); only the RAM cost (~150MB while
+# scraping) is reclaimed. Acceptable trade for one image vs two.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN /opt/venv/bin/playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.cache/ms-playwright-go
+
 # Create hanryx user, AND ensure the lp group (gid 7, owner of /dev/usb/lp0
 # on Raspberry Pi OS) exists inside the container with hanryx as a member.
 # Baking this at build time means gunicorn (which runs as hanryx via
@@ -93,8 +116,9 @@ RUN groupadd -r hanryx \
     && (getent group lp >/dev/null 2>&1 || groupadd -g 7 lp) \
     && useradd -r -g hanryx -G lp -d /app -s /sbin/nologin hanryx
 
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# (venv already copied above so `playwright install` could run; do NOT
+# re-copy here — that would silently overwrite the post-install state
+# of /opt/venv with the pre-install state and break browser launches.)
 
 COPY . .
 
