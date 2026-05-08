@@ -1,0 +1,56 @@
+ngansen@hanryxvault:~ $ docker exec -e PYTHONPATH=/app pi-setup-pos-1 python3 /tmp/ebay_test.py
+
+=== 1. Finding API (legacy, ~5/day cap) ===
+INFO hanryxvault: [redis] Connected to redis://redis:6379/0
+INFO hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO hanryxvault: [pokeapi] canonical name index ready: 1025 species
+INFO hanryxvault: [bg] price-refresh scheduler disabled via env
+INFO hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+INFO hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO hanryxvault: [blueprint] cards_master search wired → /tcg/search-master
+INFO hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+Traceback (most recent call last):
+  File "/tmp/ebay_test.py", line 5, in <module>
+    from server import _ebay_finding_page, _parse_ebay_page, _get_ebay_oauth_token, _ebay_browse_search
+ImportError: cannot import name '_get_ebay_oauth_token' from 'server' (/app/server.py)
+ngansen@hanryxvault:~ $ cat > /tmp/ebay_test.py <<'PY'
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+
+print('\n=== 1. Finding API (legacy, ~5/day cap) ===')
+from server import (_ebay_finding_page, _parse_ebay_page,
+                    _ebay_app_token, _ebay_browse_active_page,
+                    _fetch_ebay_sales, _filter_and_score)
+try:
+    page = _ebay_finding_page('charizard pokemon', 1)
+    items = _parse_ebay_page(page)
+    print(f'Finding API page 1: {len(items)} itemson3 /tmp/ebay_test.pyPATH=/app pi-setup-pos-1 pyth
+Successfully copied 3.58kB to pi-setup-pos-1:/tmp/ebay_test.py
+
+=== 1. Finding API (legacy, ~5/day cap) ===
+INFO hanryxvault: [redis] Connected to redis://redis:6379/0
+INFO hanryxvault: [session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO hanryxvault: [pokeapi] canonical name index ready: 1025 species
+INFO hanryxvault: [bg] price-refresh scheduler disabled via env
+INFO hanryxvault: [blueprint] tcg_lookup registered → /tcg/*
+INFO hanryxvault: [blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO hanryxvault: [blueprint] cards_master search wired → /tcg/search-master
+INFO hanryxvault: [blueprint] cards.ai_assistant registered → /ai/*
+Finding API page 1: 0 items
+ raw response type: list, value head: []
+
+=== 2. Browse API OAuth token ===
+INFO hanryxvault: [ebay] OAuth token refreshed, expires in 7200s
+ token: present (len=1928)
+
+=== 3. Browse API active-listings search ===
+ Browse API page 1: 40 items
+  Charizard 223/197 PSA 9 -> $ 120.0
+  Mega Charizard X Card Pokemon TCG Pocket - Printed Sharp! | Mega Shine -> $ 10.34
+  Pokemon Card JP Charizard V SAR 211/172 S12a VSTAR Universe NM - US Se -> $ 34.39
+
+=== 4. Full _fetch_ebay_sales pipeline ===
+INFO hanryxvault: [ebay] strict 'Charizard 4/102 Base Set pokemon' → 0 items, broadening to 'Charizard pokemon'
+ raw sales: 0, after filter+score: 0
+INFO hanryxvault: [ebay] broader query added 0 items (total now 0)
+ngansen@hanryxvault:~ $

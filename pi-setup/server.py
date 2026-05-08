@@ -19055,6 +19055,11 @@ def _ebay_finding_page(query: str, page: int) -> list[dict]:
         "paginationInput.entriesPerPage": "100",
         "sortOrder":               "EndTimeSoonest",
     }
+    # eBay sunset the Finding API's findCompletedItems op in Feb 2025; the
+    # endpoint now returns 404/410 for most apps. We still attempt it (cheap,
+    # in case the operator is on a partner key that retains access), but on
+    # ANY failure — connection error, HTTP error, or success-with-empty —
+    # we fall through to the Browse API "active × 0.80" estimator below.
     try:
         r = _requests.get(_EBAY_FINDING_URL, params=params, timeout=12)
         r.raise_for_status()
@@ -19063,7 +19068,15 @@ def _ebay_finding_page(query: str, page: int) -> list[dict]:
         search = resp.get("searchResult", [{}])[0]
         raw_items = search.get("item", [])
     except Exception as _e:
-        log.debug("[ebay] finding API page %d failed: %s", page, _e)
+        log.info("[ebay] finding API page %d failed (%s) — "
+                 "falling back to Browse API", page, _e)
+        if page == 1:
+            fb = _ebay_browse_active_page(query, page)
+            if fb:
+                log.info("[ebay] Browse fallback returned %d active listings "
+                         "for %r (estimated sold = active × %.2f)",
+                         len(fb), query, _EBAY_ACTIVE_TO_SOLD_RATIO)
+            return fb
         return []
 
     results = []
