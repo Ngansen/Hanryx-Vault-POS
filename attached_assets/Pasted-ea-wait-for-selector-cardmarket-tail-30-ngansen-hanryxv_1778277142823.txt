@@ -1,0 +1,29 @@
+ea|wait_for_selector|cardmarket' | tail -30
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ echo "=== flushing tcgkorea + cardmarket caches ===" && \
+docker exec pi-setup-redis-1 sh -c "redis-cli KEYS 'scrape:tcgkorea:*' 'scrape:cardmarket:*' | xargs -r redis-cli DEL" && \
+echo "" && \
+echo "=== firing fresh probes ===" && \
+docker exec pi-setup-pos-1 python -c "
+from price_scrapers import tcgkorea, cardmarket
+print('tcgkorea Pikachu:', len(tcgkorea('Pikachu')))
+print('tcgkorea 피카츄:', len(tcgkorea('피카츄'))) 
+print('cardmarket Pikachu:', len(cardmarket('Pikachu')))
+" && \
+echo "" && \
+echo "=== logs ===" && \
+docker logs pi-setup-pos-1 2>&1 | grep -iE 'tcgkorea|cardmarket|wait_for_selector|playwright|cloudflare|stealth' | tail -40
+=== flushing tcgkorea + cardmarket caches ===
+0
+
+=== firing fresh probes ===
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T21:51:37","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-08T21:51:38","level":"INFO","logger":"playwright_scraper","msg":"[playwright] chromium ready (headless, JS on, image/font/css blocked)"}
+
+tcgkorea Pikachu: 0
