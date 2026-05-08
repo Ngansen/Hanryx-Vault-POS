@@ -1,0 +1,62 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -sS -X POST localhost:8080/ai/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"price of charizard ex"}' | jq
+{
+  "answer": "I couldn't understand that. Try: 'search charizard', 'price of pikachu psa 10', or 'how many lugias do we have'.",
+  "intent": {
+    "intent": "unknown",
+    "reason": "model unreachable"
+  },
+  "result": null
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # What tables actually exist in the SQLite mirror? 
+docker compose exec -T pos python3 -c "
+import sqlite3
+c = sqlite3.connect('/mnt/cards/pokedex_local.db') 
+print([r[0] for r in c.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")])"
+
+# Is naver actually returning hits standalone?
+docker compose exec -T pos python3 -c "
+from price_scrapers import naver_shopping
+import json; print(json.dumps(naver_shopping('리자몽')[:3], ensure_ascii=False, indent=2))"
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+['inventory', 'sets', 'tcg_cards', 'sync_log']
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T23:53:04","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+[
+  {
+    "title": "메가리자몽 x 몬콜레 포켓몬 리자몽 메가진화 포켓몬스터 소드 실드 케이크 피규어 장난감",
+    "price": 16900.0,
+    "currency": "KRW",
+    "url": "https://smartstore.naver.com/main/products/9439201225",
+    "image": "https://shopping-phinf.pstatic.net/main_8698370/86983701548.1.jpg",
+    "mall": "조이보이몰",
+    "source": "naver"
+  },
+  {
+    "title": "포켓몬 1세대 대형 피규어 세트 포켓몬스터 리자몽 고라파덕 피카츄 뮤 몬스터볼 장난감",
+    "price": 24500.0,
+    "currency": "KRW",
+    "url": "https://smartstore.naver.com/main/products/11272589461",
+    "image": "https://shopping-phinf.pstatic.net/main_8881709/88817099792.jpg",
+    "mall": "조이보이몰",
+    "source": "naver"
+  },
+  {
+    "title": "[블로키] 포켓몬스터 CV-L 리자몽",
+    "price": 29000.0,
+    "currency": "KRW",
+    "url": "https://smartstore.naver.com/main/products/13161143797",
+    "image": "https://shopping-phinf.pstatic.net/main_9070565/90705654894.jpg",
+    "mall": "블로키코리아",
+    "source": "naver"
+  }
+]
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
