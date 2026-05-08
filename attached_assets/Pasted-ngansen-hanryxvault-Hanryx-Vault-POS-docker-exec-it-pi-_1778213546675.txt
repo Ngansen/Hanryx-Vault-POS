@@ -1,0 +1,125 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ docker exec -it pi-setup-pos-1 python3 -c "
+import psycopg2, os
+c = psycopg2.connect(os.environ['DATABASE_URL']); cur = c.cursor()
+print('--- ALL Meganium rows in cards_master ---') 
+cur.execute(\"SELECT set_id, card_number, name_en, name_kr, name_jp FROM cards_master WHERE LOWER(name_en)='meganium' ORDER BY set_id, card_number\")
+for r in cur.fetchall(): print(r)
+
+print()
+print('--- xy9 #3 specifically (was Meganium / 메 가니움 before PTCG mirror) ---')
+cur.execute(\"SELECT set_id, card_number, name_en, name_kr, name_jp FROM cards_master WHERE set_id='xy9' AND card_number='3'\")
+"or r in cur.fetchall(): print(r)Y set_id ORDER BY
+--- ALL Meganium rows in cards_master ---
+('A4', '010', 'Meganium', '', '')
+('A4', '10', 'Meganium', '', '')
+('col1', '27', 'Meganium', '', '')
+('dp2', '13', 'Meganium', '', '')
+('ecard1', '18', 'Meganium', '', '')
+('ecard1', '53', 'Meganium', '', '')
+('ecard1', '54', 'Meganium', '', '')
+('ex10', '9', 'Meganium', '', '')
+('hgss1', '109', 'Meganium', '', '')
+('hgss1', '26', 'Meganium', '', '')
+('hgssp', 'HGSS08', 'Meganium', '', '')
+('hsp', 'HGSS08', 'Meganium', '', '')
+('me01', '010', 'Meganium', '', '')
+('me1', '10', 'Meganium', '', '')
+('mep', '001', 'Meganium', '', '')
+('neo1', '010', 'Meganium', '', 'レディアン')
+('neo1', '011', 'Meganium', '', 'アリアドス')
+('neo1', '10', 'Meganium', '', '')
+('neo1', '11', 'Meganium', '', '')
+('sm8', '8', 'Meganium', '통통코', '')
+('xy9', '3', 'Meganium', '메가니움', '')
+
+--- xy9 #3 specifically (was Meganium / 메가니움 before PTCG mirror) ---
+('xy9', '3', 'Meganium', '메가니움', '')
+
+--- KR coverage by set after rebuild ---
+('SI', 513)
+('SV4a', 459)
+('S4a', 425)
+('S8b', 367)
+('S12a', 360)
+('SV2a', 309)
+('sm8b', 243)
+('SV3', 240)
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ docker exec -it pi-setup-pos-1 python3 -c "
+import sys; sys.path.insert(0, '/app')
+from server import _lookup_native_name, _translate_card_input, _normalize_to_canonical, _ensure_pokeapi_names
+
+# 1) Does the lookup work when called with raw inputs?
+print('--- raw lookup ---')
+for lang in ('kr','jp','chs','cht'):
+    print(f'  {lang}:', repr(_lookup_native_name({'name':'Meganium','number':'3'}, lang)))
+
+# 2) What does the route's preprocessing turn 'Meganium' into?
+print('--- after route preprocessing ---')
+card = _translate_card_input({'name':'Meganium','set':None,'number':'3','variant':None}, 'en')
+"rd, lang)))  {lang}:', repr(_lookup_native_name(c
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T04:09:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+ImportError: cannot import name '_lookup_native_name' from 'server' (/app/server.py)
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ docker cp pi-setup/server.py pi-setup-pos-1:/app/server.py
+docker compose -f pi-setup/docker-compose.yml restart pos
+sleep 6
+
+# Re-run the lookup probe
+docker exec -it pi-setup-pos-1 python3 -c "
+import sys; sys.path.insert(0, '/app')
+from server import _lookup_native_name, _translate_card_input, _normalize_to_canonical, _ensure_pokeapi_names
+
+print('--- raw lookup ---')
+for lang in ('kr','jp','chs','cht'):
+    print(f'  {lang}:', repr(_lookup_native_name({'name':'Meganium','number':'3'}, lang)))
+
+print('--- after route preprocessing ---')
+card = _translate_card_input({'name':'Meganium','ssources_used,c:.kr.count}}'ame,m:.kr.median,s:.kr.
+Successfully copied 1.26MB to pi-setup-pos-1:/app/server.py
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠴ Container pi-setup-pos-1 Restarting        2.5s
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-08T04:10:56","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+--- raw lookup ---
+  kr: '메가니움'
+  jp: None
+  chs: None
+  cht: None
+--- after route preprocessing ---
+  after _translate_card_input: {'name': 'Meganium', 'set': None, 'number': '3', 'variant': None}
+  _normalize_to_canonical result: {'canonical': 'Meganium', 'slug': 'meganium', 'pokedex_no': 154, 'score': 1.0, 'exact': True}
+  final card passed to _fetch_native_lang_price: {'name': 'Meganium', 'set': None, 'number': '3', 'variant': None}
+--- lookup with post-processed card ---
+  kr: '메가니움'
+  jp: None
+{
+  "en": 20.8,
+  "jp": {
+    "m": null,
+    "n": null,
+    "s": [],
+    "c": 0
+  },
+  "kr": {
+    "n": "메가니움",
+    "m": null,
+    "s": [],
+    "c": 0
+  }
+}
+ngansen@hanryxvault:~
