@@ -321,141 +321,173 @@ def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# TCGkorea — tcgkorea.com   (Korean Pokémon-card focused store)
+# Bunjang (번개장터) — Korean C2C marketplace, large Pokémon TCG community
 # ──────────────────────────────────────────────────────────────────────────────
-@cached("tcgkorea")
-def tcgkorea(query: str, *, limit: int = 20) -> list[dict]:
+# Replaces the previous `tcgkorea` scraper. tcgkorea.com (a Cafe24-based
+# wholesale shop) returned ~zero hits for individual Pokemon names — its
+# catalog is sealed product (booster boxes, ETBs) and Yu-Gi-Oh / MTG, not
+# Pokemon singles. Bunjang's mobile API at api.bunjang.co.kr is a clean
+# JSON endpoint with no auth, no anti-bot, and active Pokemon listings.
+#
+# Probed 2026-05: q='리자몽' returned listings starting with '이상해꽃 리자몽
+# 띠부씰북 삽니다 !' @ ₩80,000; q='피카츄' returned 'Pokemon Pikachu apron set'
+# @ ₩4,900. Real C2C inventory, served instantly.
+@cached("bunjang")
+def bunjang(query: str, *, limit: int = 20) -> list[dict]:
+    """Bunjang KR — JSON API at api.bunjang.co.kr/api/1/find_v2.json.
+
+    Returns Korean C2C marketplace listings. Best results with a hangul
+    query (e.g. '리자몽' for Charizard); English queries also work but
+    return fewer hits. Translation is handled upstream by
+    `species_names.translate(query, 'ko')` via search_all().
+
+    Response shape:
+        {"list": [{"pid": "12345", "name": "...", "price": 80000,
+                   "product_image": "https://...", "status": "0",
+                   "location": "서울 강남구", ...}]}
+    Items are sold-out when status != "0" (we keep them — historic
+    asking-price is still useful price signal at trade shows).
+    """
     if not query:
         return []
-    # tcgkorea uses Cafe24's standard search route
-    url = f"https://www.tcgkorea.com/product/search.html?keyword={quote_plus(query)}"
-    # Cafe24's `/product/search.html` route returns the homepage shell with
-    # the keyword echoed into the search bar, then loads results via $.ajax
-    # into one of several xans-product-* containers AFTER `domcontentloaded`.
-    # Without `wait_selector` the snapshot fires before the AJAX response and
-    # we see a "no results" page even when there ARE matches. The selector
-    # union covers Cafe24's three common result-container conventions.
-    html = _fetch_html_smart(
-        url,
-        referer="https://www.tcgkorea.com/",
-        locale="ko-KR",
-        wait_selector=("li[id^='anchorBoxId_'], "
-                       ".xans-product-listmain li, "
-                       ".xans-product-normalpackage li, "
-                       ".ec-base-product .item"),
-    )
-    if not html:
+    try:
+        r = requests.get(
+            "https://api.bunjang.co.kr/api/1/find_v2.json",
+            params={
+                "q":     query,
+                "order": "score",       # similarity-ranked (vs date)
+                "page":  0,
+                "n":     min(max(limit, 1), 100),
+            },
+            headers={
+                "User-Agent": _UA,
+                "Accept":     "application/json",
+                "Referer":    "https://m.bunjang.co.kr/",
+            },
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except requests.RequestException as exc:
+        log.info("[bunjang] api error: %s", exc)
         return []
-    soup = BeautifulSoup(html, "lxml")
+    except ValueError as exc:
+        log.info("[bunjang] non-JSON response: %s", exc)
+        return []
     out: list[dict] = []
-    # Cafe24 product cards live in <li> inside .xans-product-listmain* etc.
-    for li in soup.select("li[id^='anchorBoxId_'], .xans-product-normalpackage li, "
-                          ".xans-product-listmain li, .ec-base-product .item"):
-        if len(out) >= limit:
-            break
-        a = li.select_one("a[href*='/product/']")
-        if not a:
+    for item in (data.get("list") or [])[:limit]:
+        title = (item.get("name") or "").strip()
+        try:
+            price = float(item.get("price") or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        if not (title and price > 0):
             continue
-        title = (a.get("title") or a.get_text(" ", strip=True) or "").strip()
-        # Cafe24 wraps the price in <strong> with the currency suffix '원' or '$'
-        price_el = li.find(string=re.compile(r"\d[\d,]*\s*원"))
-        price = _money(price_el) if price_el else None
-        if not (title and price):
-            continue
-        href = a["href"]
-        if href.startswith("/"):
-            href = "https://www.tcgkorea.com" + href
-        img_el = li.find("img")
-        img = ""
-        if img_el:
-            img = img_el.get("src") or img_el.get("data-original") or ""
-            if img.startswith("//"):
-                img = "https:" + img
+        pid = item.get("pid") or ""
         out.append({
-            "title": title, "price": price, "currency": "KRW",
-            "url": href, "image": img, "source": "tcgkorea",
+            "title":    title,
+            "price":    price,
+            "currency": "KRW",
+            "url":      f"https://m.bunjang.co.kr/products/{pid}" if pid else "",
+            "image":    item.get("product_image") or "",
+            "location": item.get("location") or "",
+            "source":   "bunjang",
         })
     return out
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SnkrDunk — snkrdunk.com (Japanese marketplace, large Pokémon-card section)
+# Hareruya2 — Japan's largest Pokémon-card specialty online store
 # ──────────────────────────────────────────────────────────────────────────────
-_SNKR_LABEL_RE = re.compile(r"^(.+?)\s*-\s*¥\s*([\d,]+)\s*$")
+# Replaces the previous `snkrdunk` scraper. snkrdunk.com's main /search
+# index empirically does not contain Pokemon TCG (probed 2026-05: every
+# Pokemon query returns the おすすめアイテム recommendation carousel
+# regardless of language; /categories/pokemon-card/ 404s). Mercari was
+# the obvious next pick but their HTML is a SPA with no SSR data and
+# their JSON API requires DPoP token auth.
+#
+# Hareruya2 (晴れる屋2) is a Pokémon-singles specialist with a Shopify
+# storefront — clean SSR HTML, ~50 products per search, exact 1:1 anchor
+# ↔ price mapping, no anti-bot. URL pattern: /?act=Sch&card_name=<kw>
+# (legacy storefront shim, not /search). Best with a katakana query;
+# translation handled upstream via species_names.translate(_, 'ja_kana').
+_HARERUYA_PRICE_RE = re.compile(r"[¥￥]\s*([\d,]+)")
 
 
-@cached("snkrdunk")
-def snkrdunk(query: str, *, limit: int = 20) -> list[dict]:
-    """SnkrDunk JP — uses the root /search route, NOT /en/search.
-
-    Empirically (2026-05): /en/search?keyword=... silently redirects to
-    the homepage when the keyword doesn't match an English product slug
-    (which is true for ~all Pokemon card names). The root /search route
-    with `ja-JP` locale handles both katakana (e.g. "メガニウム") and
-    English transliterations, returning a server-rendered productGrid.
-
-    Caller responsibility: best results require the Japanese (katakana)
-    Pokemon name. The ja-JP→Pokemon name map lives in
-    `pokeapi_canonical.py` upstream; this scraper just runs whatever
-    keyword it receives. English names return zero matches on most cards.
-
-    Product tile selector: each result is `<a href="/apparels/<id>"
-    aria-label="<name> - ¥<price>" class="...productTile">`. The wrapper
-    class hash (currently `jAqS3W`) is build-time-generated and rotates
-    on every Snkrdunk deploy; href + aria-label format are stable.
-    """
+@cached("hareruya2")
+def hareruya2(query: str, *, limit: int = 20) -> list[dict]:
+    """Hareruya2 JP — Shopify-based Pokémon singles specialist."""
     if not query:
         return []
-    url = f"https://snkrdunk.com/search?keyword={quote_plus(query)}"
-    html = _fetch_html_smart(
-        url,
-        referer="https://snkrdunk.com/",
-        locale="ja-JP",
-        # Wait for at least one product tile to attach — snkrdunk's
-        # productGrid hydrates from a JSON island in <head>, usually <1s.
-        wait_selector="a[href*='/apparels/'][aria-label]",
-    )
+    url = (f"https://www.hareruya2.com/?act=Sch"
+           f"&card_name={quote_plus(query)}")
+    # Pure SSR — no playwright needed, regular requests works fine.
+    html = _safe_get(url, referer="https://www.hareruya2.com/")
     if not html:
         return []
     soup = BeautifulSoup(html, "lxml")
-    # Snkrdunk silently shows the "おすすめアイテム" (Recommended Items) feed
-    # as a fallback whenever a search has zero exact matches OR when the
-    # /search route can't resolve the keyword to a product category. The
-    # page title flips to "おすすめアイテム | 通販・相場はスニーカーダンク"
-    # — distinct from a real result page which echoes the query. Returning
-    # this carousel as-is would poison every chip with the same unrelated
-    # featured items (we saw the same Pokemon GO Special Set + Fukuoka
-    # Pikachu surface for メガニウム / ピカチュウ / Meganium in one run).
-    title_el = soup.find("title")
-    if title_el and "おすすめアイテム" in title_el.get_text():
-        log.info("[snkrdunk] %r → 0 results "
-                 "(recommendation carousel returned, ignoring)", query)
-        return []
     out: list[dict] = []
-    for a in soup.select("a[href*='/apparels/'][aria-label]"):
+    # Each product card is a <div class="card-wrapper product-card-wrapper ...">.
+    # Inside: an anchor to /products/<id>, a title (in `.card__heading` or the
+    # anchor text), and a price (in `.price-item--regular` or `.price__regular`,
+    # but also reliably extractable via the ¥-prefix regex on the card text).
+    for card in soup.select("div.card-wrapper, div.product-card-wrapper, "
+                            "li.product-card-wrapper, "
+                            "div.CustomCardProduct"):
         if len(out) >= limit:
             break
-        label = (a.get("aria-label") or "").strip()
-        m = _SNKR_LABEL_RE.match(label)
-        if not m:
-            # Sold-out tiles have aria-label without "- ¥<price>" suffix;
-            # skip them because we have no price.
+        a = card.select_one("a[href*='/products/']")
+        if not a:
             continue
-        title = m.group(1).strip()
-        try:
-            price = float(m.group(2).replace(",", ""))
-        except ValueError:
+        # Title preference: explicit heading > anchor aria-label > anchor text
+        title_el = card.select_one(".card__heading, .product-card__title, "
+                                   ".card-information__text")
+        title = ""
+        if title_el:
+            title = title_el.get_text(" ", strip=True)
+        if not title:
+            title = (a.get("aria-label") or a.get_text(" ", strip=True) or "").strip()
+        if not title:
+            continue
+        # Price: try Shopify standard selectors first, then fall back to regex
+        # on the whole card text. Hareruya2 sometimes wraps prices in nested
+        # spans with no stable class, so the regex fallback is the workhorse.
+        price = None
+        price_el = card.select_one(".price-item--regular, .price__regular, "
+                                   ".price-item--sale, .price__sale")
+        if price_el:
+            m = _HARERUYA_PRICE_RE.search(price_el.get_text(" ", strip=True))
+            if m:
+                try:
+                    price = float(m.group(1).replace(",", ""))
+                except ValueError:
+                    price = None
+        if price is None:
+            m = _HARERUYA_PRICE_RE.search(card.get_text(" ", strip=True))
+            if m:
+                try:
+                    price = float(m.group(1).replace(",", ""))
+                except ValueError:
+                    price = None
+        if not price or price <= 0:
             continue
         href = a["href"]
         if href.startswith("/"):
-            href = "https://snkrdunk.com" + href
-        img_el = a.find("img")
+            href = "https://www.hareruya2.com" + href
+        img_el = card.find("img")
         img = ""
         if img_el:
-            img = img_el.get("src") or img_el.get("data-src") or ""
+            img = (img_el.get("src") or img_el.get("data-src")
+                   or img_el.get("data-srcset", "").split()[0] if img_el.get("data-srcset") else "")
+            if img.startswith("//"):
+                img = "https:" + img
         out.append({
-            "title": title, "price": price, "currency": "JPY",
-            "url": href, "image": img, "source": "snkrdunk",
+            "title":    title,
+            "price":    price,
+            "currency": "JPY",
+            "url":      href,
+            "image":    img,
+            "source":   "hareruya2",
         })
     return out
 
@@ -506,17 +538,17 @@ except Exception as _e:  # pragma: no cover
 #                          like 'Pokemon Center' that work in either lang)
 #   cardmarket → no rewrite (tcgdex.net REST API is English-keyed)
 _TRANSLATE_LANG: dict[str, str] = {
-    "snkrdunk": "ja_kana",
-    "tcgkorea": "ko",
+    "hareruya2": "ja_kana",
+    "bunjang":   "ko",
 }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 SCRAPERS: dict[str, Callable[..., list[dict]]] = {
-    "naver":      naver_shopping,
-    "tcgkorea":   tcgkorea,
-    "snkrdunk":   snkrdunk,
-    "cardmarket": cardmarket,
+    "naver":      naver_shopping,   # KR Open API,    via openapi.naver.com
+    "bunjang":    bunjang,          # KR C2C JSON,    via api.bunjang.co.kr
+    "hareruya2":  hareruya2,        # JP Pokemon-spec, via hareruya2.com SSR
+    "cardmarket": cardmarket,       # EU EUR,         via api.tcgdex.net
 }
 
 

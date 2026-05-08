@@ -39,8 +39,8 @@ DRIFT_THRESHOLD = int(os.environ.get("SCRAPER_DRIFT_THRESHOLD", "3"))
 # from "site CSS broke" (drift). Empty results for these = real drift.
 DRIFT_CANARIES = {
     "naver":      ("pikachu", "포켓몬"),
-    "tcgkorea":   ("피카츄", "리자몽"),
-    "snkrdunk":   ("pikachu", "ピカチュウ"),
+    "bunjang":    ("피카츄", "리자몽"),
+    "hareruya2":  ("ピカチュウ", "リザードン"),
     "cardmarket": ("Charizard", "Pikachu"),
     # tcgplayer canary intentionally omitted — tcgdex's tcgplayer field is
     # empirically null on essentially every card (see price_scrapers.py
