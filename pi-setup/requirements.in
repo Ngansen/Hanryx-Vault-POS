@@ -111,3 +111,12 @@ openpyxl>=3.1.0
 # Unified card DB: parse TCGdex multilingual TS modules — used as a fallback
 # when the upstream JSON dist artefacts aren't present in the cloned fork.
 PyYAML>=6.0.1
+
+# Playwright — real-browser scraper for sites that block requests-based
+# clients (naver HTTP 418, cardmarket Cloudflare 403) or render entirely
+# client-side (snkrdunk SPA). The Dockerfile downloads chromium itself
+# into /opt/playwright after pip install. Disable at runtime with
+# ENABLE_PLAYWRIGHT_SCRAPER=0 if the ~150 MB browser RAM cost is too
+# much for the deployment (POS will fall back to requests-based scrapers,
+# which today return 0 listings for the four blocked sites).
+playwright>=1.45,<2

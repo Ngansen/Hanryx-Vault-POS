@@ -134,6 +134,12 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # Chromium (Playwright) writes lots of small files to /dev/shm during
+    # rendering. Docker's default 64MB is far too small and causes silent
+    # tab crashes ("Target page, context or browser has been closed").
+    # 256MB matches Playwright's recommended docker shm size and is well
+    # within the Pi 5's 8GB RAM budget.
+    shm_size: "256mb"
     environment:
       DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       REDIS_URL:        redis://redis:6379/0
@@ -229,6 +235,23 @@ services:
       # service over the Docker network. Disable by unsetting OLLAMA_BASE_URL.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://assistant:11434}
       OLLAMA_MODEL:    ${OLLAMA_MODEL:-qwen2.5:3b}
+
+      # ── Playwright real-browser scraper (native-language pricing) ─────────
+      # Powers KR/JP/CN/TW pricing chips on the Market screen by driving a
+      # headless chromium against naver / cardmarket / snkrdunk / tcgkorea.
+      # Required for those four sites — they all block requests-based access
+      # via TLS fingerprinting or are client-rendered SPAs.
+      #
+      # Set ENABLE_PLAYWRIGHT_SCRAPER=0 in .env to kill it (e.g. for a
+      # battery-constrained trade-show day where the ~150 MB chromium RAM
+      # cost is unwelcome). With it disabled, those four scrapers fall back
+      # to requests-based fetches and return 0 listings — no crash, just
+      # empty native-pricing chips.
+      ENABLE_PLAYWRIGHT_SCRAPER:  ${ENABLE_PLAYWRIGHT_SCRAPER:-1}
+      PLAYWRIGHT_NAV_TIMEOUT_MS:  ${PLAYWRIGHT_NAV_TIMEOUT_MS:-12000}
+      PLAYWRIGHT_SETTLE_MS:       ${PLAYWRIGHT_SETTLE_MS:-1500}
+      # Where the chromium binary lives inside the image (baked at build).
+      PLAYWRIGHT_BROWSERS_PATH:   /opt/playwright
 
       # SATELLITE_TOKEN: your-secret-token
       # ZETTLE_CLIENT_ID:     your-client-id
