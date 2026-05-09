@@ -1,0 +1,92 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # Force-run the mirror — adds inventory_snapshot + price_history_recent + ... in-place
+docker compose exec -T sync python3 -c '
+import usb_mirror, json
+print(json.dumps(usb_mirror.run_mirror(), indent=2, default=str))
+'
+
+# Verify tables now exist (use python — sqlite3 CLI isn't in the sync image)
+docker compose exec -T sync python3 -c '
+import sqlite3, cards_db_path
+c = sqlite3.connect(cards_db_path.local_db_path()) 
+print("tables:", [r[0] for r in c.execute(
+    "SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name")])
+for t in ("inventory_snapshot","price_history_rece  -d '{"message":"price of pikachu"}' | jqory;"aul
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[mirror] cards_jpn SELECT failed: column "hp" does not exist
+LINE 3:                rarity, hp, artist, image_url
+                               ^
+
+[mirror] cards_jpn failed: column "hp" does not exist
+LINE 3:                rarity, hp, artist, image_url
+                               ^
+
+[mirror] cards_chs failed: UNIQUE constraint failed: cards_chs.commodity_code
+[mirror] cards_master failed: cannot start a transaction within a transaction
+[mirror] ref_set_mapping failed: cannot start a transaction within a transaction
+[mirror] ref_variant_terms failed: cannot start a transaction within a transaction
+[mirror] ref_pokedex_species failed: cannot start a transaction within a transaction
+[mirror] ref_promo_provenance failed: cannot start a transaction within a transaction
+[mirror] inventory_snapshot SELECT failed: column "set_name" does not exist
+LINE 2:         SELECT qr_code, name, set_name, language, condition,...
+                                      ^
+HINT:  Perhaps you meant to reference the column "inventory.set_code".
+
+[mirror] inventory_snapshot failed: column "set_name" does not exist
+LINE 2:         SELECT qr_code, name, set_name, language, condition,...
+                                      ^
+HINT:  Perhaps you meant to reference the column "inventory.set_code".
+
+[mirror] sale_history_recent SELECT failed: column "qr_code" does not exist
+LINE 2:         SELECT id, qr_code, name, sold_price,
+                           ^
+
+[mirror] sale_history_recent failed: column "qr_code" does not exist
+LINE 2:         SELECT id, qr_code, name, sold_price,
+                           ^
+
+[mirror] price_history_recent SELECT failed: column "price" does not exist
+LINE 2:         SELECT id, card_id, source, grade, price, currency, ...
+                                                   ^
+
+[mirror] price_history_recent failed: column "price" does not exist
+LINE 2:         SELECT id, card_id, source, grade, price, currency, ...
+                                                   ^
+
+{
+  "counts": {
+    "cards_kr": 15121,
+    "cards_jpn": -1,
+    "cards_jpn_pocket": 3041,
+    "cards_chs": -1,
+    "cards_master": -1,
+    "ref_set_mapping": -1,
+    "ref_variant_terms": -1,
+    "ref_pokedex_species": -1,
+    "ref_promo_provenance": -1,
+    "inventory_snapshot": -1,
+    "sale_history_recent": -1,
+    "price_history_recent": -1
+  },
+  "elapsed_sec": 2.88,
+  "ts": 1778286293
+}
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+tables: ['cards_jpn_pocket', 'cards_kr', 'inventory', 'sets', 'sync_log', 'tcg_cards']
+  inventory_snapshot: ERR no such table: inventory_snapshot
+  price_history_recent: ERR no such table: price_history_recent
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ inv_rows 
+----------
+       56
+(1 row)
+
+{
+  "answer": "Database not ready: attempt to write a readonly database. The orchestrator may still be building the mirror.",
+  "intent": {
+    "grade": "raw",
+    "intent": "lookup_price",
+    "name": "pikachu"
+  },
+  "result": null
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
