@@ -444,12 +444,23 @@ def _mirror_one(pg_conn, lite_conn: sqlite3.Connection, name: str, ddl: str, sel
     # short window where the table doesn't exist (between DROP and the
     # next reader's query) is irrelevant because the writer holds the
     # write lock for the whole transaction.
+    # C13.4: try/except around the SQLite txn so an INSERT failure (e.g. a
+    # UNIQUE constraint violation, or a column-count mismatch between SELECT
+    # and INSERT) gets ROLLBACK'd. Without this, the lite_conn stays mid-
+    # BEGIN forever and every subsequent _mirror_one call dies with
+    # "cannot start a transaction within a transaction" — silently wiping
+    # the rest of the mirror cycle (we lost inventory_snapshot + the two
+    # *_recent tables this way for months).
     lite_conn.execute("BEGIN IMMEDIATE")
-    lite_conn.execute(f"DROP TABLE IF EXISTS {name}")
-    lite_conn.execute(ddl)
-    if rows:
-        lite_conn.executemany(insert_sql, rows)
-    lite_conn.commit()
+    try:
+        lite_conn.execute(f"DROP TABLE IF EXISTS {name}")
+        lite_conn.execute(ddl)
+        if rows:
+            lite_conn.executemany(insert_sql, rows)
+        lite_conn.commit()
+    except Exception:
+        lite_conn.rollback()
+        raise
     return len(rows)
 
 
@@ -465,6 +476,19 @@ def run_mirror() -> dict:
     db_path = local_db_path()
     counts: dict[str, int] = {}
 
+    # C13.4: the sync container runs as root but the pos container's Flask
+    # process runs as the unprivileged `hanryx` user (see pi-setup/Dockerfile
+    # ENTRYPOINT → entrypoint.sh `exec su -s /bin/sh hanryx ...`). With the
+    # default 022 umask, root-created sqlite files end up mode 644 → hanryx
+    # can read but not write, and SQLite needs write access on the .db file
+    # AND its directory to create the -journal/-wal/-shm sidecars even for
+    # SELECT queries. Symptom: ai_assistant returns "attempt to write a
+    # readonly database" while the orchestrator's mirror succeeds. Forcing
+    # 0o002 here makes new files 664 (rw for group, where hanryx and root
+    # share the supplementary group via the bind mount) and lets us chmod
+    # any pre-existing root-644 file in-place after the cycle completes.
+    os.umask(0o002)
+
     with _pg_conn() as pg, _sqlite_conn(db_path) as lite:
         for name, (ddl, select_sql, insert_sql) in _MIRRORS.items():
             try:
@@ -476,6 +500,18 @@ def run_mirror() -> dict:
                 # endpoint reports per-table errors.
                 log.error("[mirror] %s failed: %s", name, e)
                 counts[name] = -1
+
+    # C13.4: chmod the .db (and any -wal/-shm/-journal sidecars SQLite has
+    # created by now) to 0o664 so the unprivileged hanryx user inside the
+    # pos container can open them r/w. The umask above only takes effect
+    # for files created AFTER this point — pre-existing root:644 files
+    # need an explicit chmod.
+    import glob as _glob
+    for _p in _glob.glob(db_path + "*"):
+        try:
+            os.chmod(_p, 0o664)
+        except OSError as _e:
+            log.warning("[mirror] chmod %s skipped: %s", _p, _e)
 
     elapsed = time.time() - started
     summary = {"counts": counts, "elapsed_sec": round(elapsed, 2), "ts": int(time.time())}
