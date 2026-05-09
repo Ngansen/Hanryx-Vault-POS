@@ -1,0 +1,100 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T db psql -U vaultpos -d vaultpos -c "\d inventory"
+echo "──────"
+docker compose exec -T db psql -U vaultpos -d vaultpos -c "\d price_history"
+echo "──────"
+docker compose exec -T db psql -U vaultpos -d vaultpos -c "\d sale_history"
+echo "──────"
+# Also: who owns the SQLite mirror file (explains the "readonly database" error)?
+docker compose exec -T pos sh -c 'ls -la /mnt/cards/pokedex_local.db; id'
+docker compose exec -T sync sh -c 'ls -la /mnt/cards/pokedex_local.db; id'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+                                            Table "public.inventory"
+     Column      |       Type       | Collation | Nullable |                       Default                       
+-----------------+------------------+-----------+----------+-----------------------------------------------------
+ qr_code         | text             |           | not null | 
+ name            | text             |           | not null | 
+ price           | double precision |           | not null | 0
+ category        | text             |           | not null | 'General'::text
+ rarity          | text             |           | not null | ''::text
+ set_code        | text             |           | not null | ''::text
+ description     | text             |           | not null | ''::text
+ stock           | integer          |           | not null | 0
+ last_updated    | bigint           |           | not null | (EXTRACT(epoch FROM now()) * 1000::numeric)::bigint
+ image_url       | text             |           | not null | ''::text
+ tcg_id          | text             |           | not null | ''::text
+ language        | text             |           | not null | 'English'::text
+ condition       | text             |           | not null | 'NM'::text
+ item_type       | text             |           | not null | 'Single'::text
+ grading_company | text             |           | not null | ''::text
+ grade           | text             |           | not null | ''::text
+ cert_number     | text             |           | not null | ''::text
+ back_image_url  | text             |           | not null | ''::text
+ purchase_price  | double precision |           | not null | 0
+ sale_price      | double precision |           | not null | 0
+ tags            | text             |           | not null | ''::text
+ featured        | integer          |           | not null | 0
+ listed_for_sale | integer          |           | not null | 1
+ search_key      | text             |           | not null | ''::text
+ card_number     | text             |           | not null | ''::text
+ variant         | text             |           | not null | ''::text
+ release_year    | integer          |           | not null | 0
+ resale_price    | double precision |           | not null | 0
+ card_vector     | vector(1536)     |           |          | 
+Indexes:
+    "inventory_pkey" PRIMARY KEY, btree (qr_code)
+    "idx_inventory_card_number" btree (card_number)
+    "idx_inventory_card_vector" hnsw (card_vector vector_cosine_ops)
+    "idx_inventory_category" btree (category)
+    "idx_inventory_last_updated" btree (last_updated DESC)
+    "idx_inventory_name" btree (name)
+    "idx_inventory_qr_code" btree (qr_code)
+    "idx_inventory_rarity" btree (rarity)
+    "idx_inventory_release_year" btree (release_year)
+    "idx_inventory_stock" btree (stock)
+    "idx_inventory_stock_cat" btree (stock, category)
+
+──────
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+                                             Table "public.price_history"
+    Column    |           Type           | Collation | Nullable |                       Default                       
+--------------+--------------------------+-----------+----------+-----------------------------------------------------
+ id           | bigint                   |           | not null | nextval('price_history_id_seq'::regclass)
+ card_id      | text                     |           | not null | 
+ card_name    | text                     |           | not null | ''::text
+ market_price | double precision         |           | not null | 
+ fetched_ms   | bigint                   |           | not null | (EXTRACT(epoch FROM now()) * 1000::numeric)::bigint
+ source       | text                     |           | not null | 'tcgplayer'::text
+ grade        | text                     |           | not null | 'raw'::text
+ currency     | text                     |           | not null | 'USD'::text
+ price_usd    | double precision         |           |          | 
+ observed_at  | timestamp with time zone |           | not null | now()
+ query_used   | text                     |           | not null | ''::text
+Indexes:
+    "price_history_pkey" PRIMARY KEY, btree (id)
+    "idx_price_hist" btree (card_id, fetched_ms)
+    "idx_price_hist_card_src" btree (card_id, source, observed_at DESC)
+    "idx_price_hist_observed" btree (observed_at DESC)
+
+──────
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+                                       Table "public.sale_history"
+  Column  |       Type       | Collation | Nullable |                       Default                       
+----------+------------------+-----------+----------+-----------------------------------------------------
+ id       | bigint           |           | not null | nextval('sale_history_id_seq'::regclass)
+ name     | text             |           | not null | 
+ price    | double precision |           | not null | 
+ quantity | integer          |           | not null | 1
+ sold_at  | bigint           |           | not null | (EXTRACT(epoch FROM now()) * 1000::numeric)::bigint
+Indexes:
+    "sale_history_pkey" PRIMARY KEY, btree (id)
+    "idx_sale_history_name" btree (name, sold_at)
+
+──────
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+-rw-r--r-- 1 root root 16596992 May  9 00:24 /mnt/cards/pokedex_local.db
+uid=0(root) gid=0(root) groups=0(root),7(lp)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+-rw-r--r-- 1 root root 16596992 May  9 00:24 /mnt/cards/pokedex_local.db
+uid=0(root) gid=0(root) groups=0(root)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
