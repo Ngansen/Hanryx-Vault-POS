@@ -1,0 +1,265 @@
+limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[mirror] cards_jpn SELECT failed: column "hp" does not exist
+LINE 3:                rarity, hp, artist, image_url
+                               ^
+
+[mirror] cards_jpn failed: column "hp" does not exist
+LINE 3:                rarity, hp, artist, image_url
+                               ^
+
+[mirror] cards_chs failed: UNIQUE constraint failed: cards_chs.commodity_code
+-rw-rw-rw- 1 root root 55795712 May  9 00:54 /mnt/cards/pokedex_local.db
+777 ngansen:ngansen
+{
+  "answer": "Result available — model unreachable for summary.",
+  "intent": {
+    "grade": "raw",
+    "intent": "lookup_price",
+    "name": "pikachu"
+  },
+  "result": {
+    "matches": [
+      {
+        "condition": "NM",
+        "grade": "",
+        "markets": {
+          "bunjang": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 37.8221,
+            "observed_at": 1778286010,
+            "price_usd": 37.8221,
+            "stale": false
+          },
+          "cardmarket": {
+            "age_days": 0,
+            "currency": "EUR",
+            "native_price": 6.8944,
+            "observed_at": 1778286010,
+            "price_usd": 6.8944,
+            "stale": false
+          },
+          "hareruya2": {
+            "age_days": 0,
+            "currency": "JPY",
+            "native_price": 5.6829,
+            "observed_at": 1778286010,
+            "price_usd": 5.6829,
+            "stale": false
+          },
+          "naver": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 35.5183,
+            "observed_at": 1778286010,
+            "price_usd": 35.5183,
+            "stale": false
+          },
+          "tcgplayer": {
+            "age_days": 0,
+            "currency": "USD",
+            "native_price": 39.2,
+            "observed_at": 1778285531,
+            "price_usd": null,
+            "stale": false
+          }
+        },
+        "name": "Pikachu",
+        "our_price": 2.5,
+        "our_sale": 0.0,
+        "qr_code": "PKM-MLA9QW87-F454D3",
+        "set_name": "2026 Promo "
+      },
+      {
+        "condition": "NM",
+        "grade": "",
+        "markets": {
+          "bunjang": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 37.8221,
+            "observed_at": 1778286021,
+            "price_usd": 37.8221,
+            "stale": false
+          },
+          "hareruya2": {
+            "age_days": 0,
+            "currency": "JPY",
+            "native_price": 5.6829,
+            "observed_at": 1778286021,
+            "price_usd": 5.6829,
+            "stale": false
+          },
+          "naver": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 35.5183,
+            "observed_at": 1778286021,
+            "price_usd": 35.5183,
+            "stale": false
+          }
+        },
+        "name": "Pikachu ( 2025 World Championships )",
+        "our_price": 8.0,
+        "our_sale": 0.0,
+        "qr_code": "PKM-MLDXMUOJ-577E42",
+        "set_name": "Evolving Skies"
+      },
+      {
+        "condition": "NM",
+        "grade": "",
+        "markets": {
+          "bunjang": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 37.8221,
+            "observed_at": 1778286014,
+            "price_usd": 37.8221,
+            "stale": false
+          },
+          "cardmarket": {
+            "age_days": 0,
+            "currency": "EUR",
+            "native_price": 2.7719,
+            "observed_at": 1778286014,
+            "price_usd": 2.7719,
+            "stale": false
+          },
+          "hareruya2": {
+            "age_days": 0,
+            "currency": "JPY",
+            "native_price": 5.6829,
+            "observed_at": 1778286014,
+            "price_usd": 5.6829,
+            "stale": false
+          },
+          "naver": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 35.5183,
+            "observed_at": 1778286014,
+            "price_usd": 35.5183,
+            "stale": false
+          },
+          "tcgplayer": {
+            "age_days": 0,
+            "currency": "USD",
+            "native_price": 25.8,
+            "observed_at": 1778285508,
+            "price_usd": null,
+            "stale": false
+          }
+        },
+        "name": "Pikachu EX",
+        "our_price": 2.75,
+        "our_sale": 0.0,
+        "qr_code": "PKM-MLDXZ3O4-DCDCE6",
+        "set_name": "Paldea Evolved"
+      },
+      {
+        "condition": "NM",
+        "grade": "",
+        "markets": {
+          "bunjang": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 2.063,
+            "observed_at": 1778286013,
+            "price_usd": 2.063,
+            "stale": false
+          },
+          "cardmarket": {
+            "age_days": 0,
+            "currency": "EUR",
+            "native_price": 4.6158,
+            "observed_at": 1778286013,
+            "price_usd": 4.6158,
+            "stale": false
+          },
+          "hareruya2": {
+            "age_days": 0,
+            "currency": "JPY",
+            "native_price": 63.8524,
+            "observed_at": 1778286013,
+            "price_usd": 63.8524,
+            "stale": false
+          },
+          "naver": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 24.0686,
+            "observed_at": 1778286013,
+            "price_usd": 24.0686,
+            "stale": false
+          },
+          "tcgplayer": {
+            "age_days": 0,
+            "currency": "USD",
+            "native_price": 3.99,
+            "observed_at": 1778285516,
+            "price_usd": null,
+            "stale": false
+          }
+        },
+        "name": "Flying Pikachu V",
+        "our_price": 2.55,
+        "our_sale": 0.0,
+        "qr_code": "PKM-MLDXZ48Z-B1DA7C",
+        "set_name": "Celebrations"
+      },
+      {
+        "condition": "NM",
+        "grade": "",
+        "markets": {
+          "bunjang": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 37.8221,
+            "observed_at": 1778286017,
+            "price_usd": 37.8221,
+            "stale": false
+          },
+          "cardmarket": {
+            "age_days": 0,
+            "currency": "EUR",
+            "native_price": 6.8944,
+            "observed_at": 1778286017,
+            "price_usd": 6.8944,
+            "stale": false
+          },
+          "hareruya2": {
+            "age_days": 0,
+            "currency": "JPY",
+            "native_price": 5.6829,
+            "observed_at": 1778286017,
+            "price_usd": 5.6829,
+            "stale": false
+          },
+          "naver": {
+            "age_days": 0,
+            "currency": "KRW",
+            "native_price": 35.5183,
+            "observed_at": 1778286017,
+            "price_usd": 35.5183,
+            "stale": false
+          },
+          "tcgplayer": {
+            "age_days": 0,
+            "currency": "USD",
+            "native_price": 31.74,
+            "observed_at": 1778285476,
+            "price_usd": null,
+            "stale": false
+          }
+        },
+        "name": "Pikachu",
+        "our_price": 5.0,
+        "our_sale": 0.0,
+        "qr_code": "PKM-MLDY23DN-53A400",
+        "set_name": "Trick or Treat 2024"
+      }
+    ]
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
