@@ -336,9 +336,13 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         )
         """,
         """
-        SELECT qr_code, name, set_name, language, condition, item_type,
+        -- C13.3: postgres column is `set_code`, not `set_name` (aliased so the
+        -- SQLite consumer side doesn't have to change). The historical `sold`
+        -- column was never added to the inventory table; SOLD items just have
+        -- stock=0, so we hard-zero the column for now.
+        SELECT qr_code, name, set_code AS set_name, language, condition, item_type,
                grade, grading_company, stock, price, sale_price, image_url,
-               COALESCE(sold, 0)
+               0 AS sold
           FROM inventory
         """,
         f"""
@@ -357,10 +361,15 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         )
         """,
         """
-        SELECT id, qr_code, name, sold_price,
-               EXTRACT(EPOCH FROM sold_at)::BIGINT
+        -- C13.3: postgres sale_history is name-keyed (no qr_code column —
+        -- the table predates the inventory rewrite that introduced QR codes
+        -- as the primary key). sold_at is BIGINT epoch-MS, not TIMESTAMPTZ,
+        -- so we divide by 1000 to match the SQLite mirror's seconds convention
+        -- and compare in epoch-ms against (NOW - 90d).
+        SELECT id, '' AS qr_code, name, price AS sold_price,
+               (sold_at / 1000)::BIGINT AS sold_at_sec
           FROM sale_history
-         WHERE sold_at >= NOW() - INTERVAL '90 days'
+         WHERE sold_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '90 days') * 1000)::BIGINT
         """,
         f"""
         INSERT INTO sale_history_recent VALUES (?,?,?,?,?,{_NOW_EPOCH_SQL})
@@ -383,7 +392,11 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         )
         """,
         """
-        SELECT id, card_id, source, grade, price, currency, price_usd,
+        -- C13.3: postgres column is `market_price`; the SQLite consumer
+        -- side keeps the `price` name (aliased here) so ai_assistant.py's
+        -- C12 CTE doesn't have to be re-patched.
+        SELECT id, card_id, source, grade, market_price AS price,
+               currency, price_usd,
                EXTRACT(EPOCH FROM observed_at)::BIGINT
           FROM price_history
          WHERE observed_at >= NOW() - INTERVAL '90 days'
