@@ -109,6 +109,11 @@ def _summarise_source(rows: list[dict]) -> dict | None:
     # Currency is consistent within a source (naver→KRW, bunjang→KRW,
     # hareruya2→JPY, cardmarket→EUR). Read off the first row.
     currency = (enriched[0].get("currency") or "USD").upper()
+    # C13.8: when the source is already USD (tcgplayer), fx_rates may
+    # leave price_usd unset — copy native through so the tablet UI's USD
+    # column is never blank for USD-native sources.
+    if usd_med is None and currency == "USD":
+        usd_med = native_med
     return {
         "price": float(native_med),
         "currency": currency,
