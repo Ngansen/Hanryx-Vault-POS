@@ -146,19 +146,24 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         """
         CREATE TABLE cards_jpn (
             set_code TEXT, card_number TEXT, set_name TEXT, series TEXT,
-            name_jp TEXT, name_en TEXT, rarity TEXT, hp INTEGER,
+            name_jp TEXT, name_en TEXT, rarity TEXT,
             artist TEXT, image_url TEXT,
             _mirror_at INTEGER,
             PRIMARY KEY (set_code, card_number)
         )
         """,
+        # C13.5: dropped `hp` — postgres cards_jpn has never carried this
+        # column (it's a Pokémon TCG attribute, but the JP catalog dump
+        # from cardrush/pokemon-card.com doesn't expose it). The SELECT
+        # has been failing every mirror cycle with "column hp does not
+        # exist" since the table was added.
         """
         SELECT set_code, card_number, set_name, series, name_jp, name_en,
-               rarity, hp, artist, image_url
+               rarity, artist, image_url
           FROM cards_jpn
         """,
         f"""
-        INSERT INTO cards_jpn VALUES (?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO cards_jpn VALUES (?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 
@@ -194,9 +199,20 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
             PRIMARY KEY (commodity_code)
         )
         """,
+        # C13.5: postgres cards_chs has duplicate commodity_code rows
+        # (the upstream taobao/CCG-CN dump occasionally lists the same
+        # SKU under multiple yoren_code entries) — the SQLite PRIMARY
+        # KEY (commodity_code) then 4-replicates them. DISTINCT ON +
+        # ORDER BY collapses each commodity_code to its first row,
+        # preferring entries with a populated image_url so the mirror
+        # surfaces the most useful copy.
         """
-        SELECT commodity_code, commodity_name, collection_number, yoren_code, image_url
+        SELECT DISTINCT ON (commodity_code)
+               commodity_code, commodity_name, collection_number, yoren_code, image_url
           FROM cards_chs
+         ORDER BY commodity_code,
+                  (CASE WHEN COALESCE(image_url,'') = '' THEN 1 ELSE 0 END),
+                  yoren_code
         """,
         f"""
         INSERT INTO cards_chs VALUES (?,?,?,?,?,{_NOW_EPOCH_SQL})
@@ -387,16 +403,26 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
             id INTEGER PRIMARY KEY,
             card_id TEXT, source TEXT, grade TEXT,
             price REAL, currency TEXT, price_usd REAL,
+            price_native REAL,
             observed_at INTEGER,
             _mirror_at INTEGER
         )
         """,
+        # C13.5: added price_native — the actual native-currency price
+        # from the scraper before USD conversion. Pre-C13.5 we only
+        # stored market_price (USD) and price_usd (also USD); ai_assistant
+        # was reading market_price and labelling it native_price, which
+        # produced nonsense like "naver: 35.5 ₩ (~$35.5)" for a card
+        # that's actually 47k KRW. COALESCE here so old rows (where
+        # price_native is NULL) gracefully fall back to market_price —
+        # the legacy display will be wrong but won't crash, and gets
+        # corrected on the next refresh_market_prices tick.
+        # Postgres market_price is still aliased to `price` for the
+        # legacy /admin/market trend chart consumers.
         """
-        -- C13.3: postgres column is `market_price`; the SQLite consumer
-        -- side keeps the `price` name (aliased here) so ai_assistant.py's
-        -- C12 CTE doesn't have to be re-patched.
         SELECT id, card_id, source, grade, market_price AS price,
                currency, price_usd,
+               COALESCE(price_native, market_price) AS price_native,
                EXTRACT(EPOCH FROM observed_at)::BIGINT
           FROM price_history
          WHERE observed_at >= NOW() - INTERVAL '90 days'
@@ -404,7 +430,7 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
          LIMIT 200000
         """,
         f"""
-        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 }

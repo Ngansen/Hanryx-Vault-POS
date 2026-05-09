@@ -128,10 +128,10 @@ def _insert_observations(
                 """
                 INSERT INTO price_history
                     (card_id, card_name, market_price, fetched_ms,
-                     source, grade, currency, price_usd,
+                     source, grade, currency, price_usd, price_native,
                      observed_at, query_used)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                 """,
                 (
                     card_id,
@@ -145,6 +145,10 @@ def _insert_observations(
                     grade or "raw",
                     summary["currency"],
                     summary["price_usd"],
+                    # C13.5: store the real native-currency median so the
+                    # AI cashier can show "naver: 47,300₩ (~$35.50)"
+                    # instead of double-USD nonsense.
+                    float(summary["price"]),
                     (query_used.get(source) or "")[:255],
                 ),
             )

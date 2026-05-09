@@ -173,7 +173,14 @@ def _exec_lookup_price(intent: dict) -> dict:
             ranked AS (
               SELECT m.qr_code, m.name, m.set_name, m.grade, m.condition,
                      m.our_price, m.our_sale,
-                     p.source, p.price AS native_price,
+                     p.source,
+                     -- C13.5: prefer the real native-currency price
+                     -- (added in this commit). Old mirrored rows have
+                     -- NULL → fall back to `price` (which is the USD-
+                     -- equivalent market_price) so the response stays
+                     -- well-formed; the value will be wrong-currency
+                     -- for those rows but corrects on next refresh.
+                     COALESCE(p.price_native, p.price) AS native_price,
                      p.currency, p.price_usd, p.observed_at,
                      ROW_NUMBER() OVER (
                        PARTITION BY m.qr_code, p.source

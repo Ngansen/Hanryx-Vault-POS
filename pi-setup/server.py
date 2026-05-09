@@ -3233,6 +3233,11 @@ def init_db():
         ("price_usd",   "ALTER TABLE price_history ADD COLUMN price_usd  DOUBLE PRECISION"),
         ("observed_at", "ALTER TABLE price_history ADD COLUMN observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
         ("query_used",  "ALTER TABLE price_history ADD COLUMN query_used TEXT NOT NULL DEFAULT ''"),
+        # C13.5: native-currency price (real KRW/JPY/EUR value before
+        # USD conversion). market_price/price_usd are USD-equivalents;
+        # without this column the AI cashier was forced to alias the
+        # USD value as `native_price` and produce double-USD output.
+        ("price_native","ALTER TABLE price_history ADD COLUMN price_native DOUBLE PRECISION"),
     ]:
         if not _col_exists("price_history", col):
             db.execute(ddl)
@@ -7181,10 +7186,18 @@ def card_enrich():
     _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
     if _ph_price:
         try:
+            # C13.5: also populate price_usd + price_native (= the same
+            # USD value, since tcgplayer prices ARE in USD). Without
+            # this, the AI cashier's lookup_price returned price_usd:
+            # null for tcgplayer rows even though native_price was set.
             db.execute(
-                "INSERT INTO price_history (card_id, card_name, market_price, fetched_ms) "
-                "VALUES (%s,%s,%s,%s)",
-                (norm_qr, result.get("name") or norm_qr, float(_ph_price), _now_ms())
+                "INSERT INTO price_history "
+                "  (card_id, card_name, market_price, fetched_ms, "
+                "   source, currency, price_usd, price_native) "
+                "VALUES (%s,%s,%s,%s,'tcgplayer','USD',%s,%s)",
+                (norm_qr, result.get("name") or norm_qr,
+                 float(_ph_price), _now_ms(),
+                 float(_ph_price), float(_ph_price))
             )
             db.commit()
         except Exception:
@@ -22235,10 +22248,15 @@ def _enrich_single_card(qr_code: str, db) -> bool:
     rp = updated_fields.get("resale_price")
     if rp:
         try:
+            # C13.5: populate source/currency/price_usd/price_native so
+            # the AI cashier's lookup_price returns a fully-populated
+            # tcgplayer market entry instead of null price_usd.
             db.execute(
-                "INSERT INTO price_history (card_id, card_name, market_price) "
-                "VALUES (%s, %s, %s)",
-                (qr_code, card_name, rp),
+                "INSERT INTO price_history "
+                "  (card_id, card_name, market_price, "
+                "   source, currency, price_usd, price_native) "
+                "VALUES (%s, %s, %s, 'tcgplayer', 'USD', %s, %s)",
+                (qr_code, card_name, rp, float(rp), float(rp)),
             )
             db.commit()
         except Exception:
