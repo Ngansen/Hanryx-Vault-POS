@@ -1,0 +1,81 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T sync python3 -c '
+import sqlite3
+c = sqlite3.connect("/mnt/cards/pokedex_local.db") 
+print("cards_chs rows:", c.execute("SELECT COUNT(*) FROM cards_chs").fetchone()[0])
+print("sample:", c.execute("SELECT name_chs, collection_number, rarity_text FROM cards_chs LIMIT 3").fetchall())
+'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+sqlite3.OperationalError: no such column: name_chs
+cards_chs rows: 9
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -sS -X POST localhost:8080/ai/chat -H 'Content-Type: application/json' \
+  -d '{"message":"price of pikachu"}' \
+  | jq '{ok, intent: .result.intent, n_matches: (.result.matches|length // 0), first_match_keys: (.result.matches[0]|keys // []), first_match: .result.matches[0]}'
+{
+  "ok": null,
+  "intent": null,
+  "n_matches": 5,
+  "first_match_keys": [
+    "condition",
+    "grade",
+    "markets",
+    "name",
+    "our_price",
+    "our_sale",
+    "qr_code",
+    "set_name"
+  ],
+  "first_match": {
+    "condition": "NM",
+    "grade": "",
+    "markets": {
+      "bunjang": {
+        "age_days": 0,
+        "currency": "KRW",
+        "native_price": 45000.0,
+        "observed_at": 1778289081,
+        "price_usd": 30.9453,
+        "stale": false
+      },
+      "cardmarket": {
+        "age_days": 0,
+        "currency": "EUR",
+        "native_price": 5.87,
+        "observed_at": 1778289081,
+        "price_usd": 6.8944,
+        "stale": false
+      },
+      "hareruya2": {
+        "age_days": 0,
+        "currency": "JPY",
+        "native_price": 890.0,
+        "observed_at": 1778289081,
+        "price_usd": 5.6829,
+        "stale": false
+      },
+      "naver": {
+        "age_days": 0,
+        "currency": "KRW",
+        "native_price": 51650.0,
+        "observed_at": 1778289081,
+        "price_usd": 35.5183,
+        "stale": false
+      },
+      "tcgplayer": {
+        "age_days": 0,
+        "currency": "USD",
+        "native_price": 39.2,
+        "observed_at": 1778285531,
+        "price_usd": null,
+        "stale": false
+      }
+    },
+    "name": "Pikachu",
+    "our_price": 2.5,
+    "our_sale": 0.0,
+    "qr_code": "PKM-MLA9QW87-F454D3",
+    "set_name": "2026 Promo "
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
