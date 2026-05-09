@@ -1,0 +1,33 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+                                                                                                                        Try the new cross-platform PowerShell https://aka.ms/pscore6                                                                                                                                                                                    PS C:\Users\USER> python scrape_all.py --limit 1 2>&1 | Tee-Object scrape_debug.txt                                     >> # Smoke test - 1 species
+>>
+>> python -m pip install tqdm
+>> # Install the missing dep
+>>
+>> dir scrape_all.py
+>> # Verify it's no longer 0 bytes (should show ~4500)
+>>
+>> iwr https://raw.githubusercontent.com/Ngansen/Hanryx-Vault-POS/main/pi-setup/scripts/scrape_pokellector_all.py -OutFile scrape_all.py
+>> # Download the script directly from your GitHub repo
+>>
+>> cd $HOME\Documents\PokeScraper_3.0
+python : C:\Users\USER\AppData\Local\Python\pythoncore-3.14-64\python.exe: can't open file
+'C:\\Users\\USER\\scrape_all.py': [Errno 2] No such file or directory
+At line:1 char:1
++ python scrape_all.py --limit 1 2>&1 | Tee-Object scrape_debug.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\USER\A...le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+Requirement already satisfied: tqdm in .\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages (4.67.3)
+Requirement already satisfied: colorama in .\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages (from tqdm) (0.4.6)
+dir : Cannot find path 'C:\Users\USER\scrape_all.py' because it does not exist.
+At line:7 char:1
++ dir scrape_all.py
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\Users\USER\scrape_all.py:String) [Get-ChildItem], ItemNotFoundExcept
+   ion
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetChildItemCommand
+
+PS C:\Users\USER\Documents\PokeScraper_3.0>
