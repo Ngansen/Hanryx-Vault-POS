@@ -1,0 +1,59 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull
+cd pi-setup
+# git pull will warn that local docker-compose.yml is now untracked — remove it:
+rm -f docker-compose.yml
+
+# Re-run the refresh (sync already restarted with creds)
+docker compose exec -T sync python3 /app/refresh_market_prices.py 2>&1 | tail -15
+
+# Confirm all 4 sources now appear
+docker compose exec -T db psql -U vaultpos -d vaultpos -c \
+  "SELECT source, currency, COUNT(*), AVG(price_usd)::numeric(10,2) AS avg_usd
+     FROM price_history WHERE observed_at > NOW() - INTERVAL '5 minutes'
+  -d '{"message":"price of charizard ex"}' | jq
+remote: Enumerating objects: 5, done.
+remote: Counting objects: 100% (5/5), done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 3 (delta 2), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (3/3), 653 bytes | 65.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   27fe336..144843b  main       -> origin/main
+Updating 27fe336..144843b
+Fast-forward
+ pi-setup/docker-compose.yml | 585 --------------
+ 1 file changed, 585 deletions(-)
+ delete mode 100644 pi-setup/docker-compose.yml
+2026-05-09 00:20:17,386 INFO price_scrapers: [scrape:hareruya2] query translated 'Pikachu' → 'ピカチュウ' (ja_kana)
+2026-05-09 00:20:17,394 INFO price_scrapers: [scrape:naver] query translated 'Scizor ( Korean )' → '핫삼' (ko)
+2026-05-09 00:20:17,394 INFO price_scrapers: [scrape:bunjang] query translated 'Scizor ( Korean )' → '핫삼' (ko)
+2026-05-09 00:20:17,395 INFO price_scrapers: [scrape:hareruya2] query translated 'Scizor ( Korean )' → 'ハッサム' (ja_kana)
+2026-05-09 00:20:17,674 INFO price_scrapers: [scrape:naver] query translated 'Gyarados V' → '갸라도스' (ko)
+2026-05-09 00:20:17,675 INFO price_scrapers: [scrape:bunjang] query translated 'Gyarados V' → '갸라도스' (ko)
+2026-05-09 00:20:17,675 INFO price_scrapers: [scrape:hareruya2] query translated 'Gyarados V' → 'ギャラドス' (ja_kana)
+2026-05-09 00:20:17,682 INFO refresh_market_prices: [market_refresh] progress 50/56  rows=159  empties=41  err=0
+2026-05-09 00:20:17,682 INFO price_scrapers: [scrape:naver] query translated 'Tapu Koko' → '카푸꼬꼬꼭' (ko)
+2026-05-09 00:20:17,683 INFO price_scrapers: [scrape:bunjang] query translated 'Tapu Koko' → '카푸꼬꼬꼭' (ko)
+2026-05-09 00:20:17,683 INFO price_scrapers: [scrape:hareruya2] query translated 'Tapu Koko' → 'カプ・コケコ' (ja_kana)
+2026-05-09 00:20:21,044 INFO price_scrapers: [scrape:naver] query translated 'Pikachu ( 2025 World Championships )' → '피카츄' (ko)
+2026-05-09 00:20:21,045 INFO price_scrapers: [scrape:bunjang] query translated 'Pikachu ( 2025 World Championships )' → '피카츄' (ko)
+2026-05-09 00:20:21,045 INFO price_scrapers: [scrape:hareruya2] query translated 'Pikachu ( 2025 World Championships )' → 'ピカチュウ' (ja_kana)
+2026-05-09 00:20:24,714 INFO refresh_market_prices: [market_refresh] done: {'cards': 56, 'scrapes': 224, 'rows_written': 167, 'empties': 57, 'errors': 0, 'elapsed_sec': 25.2}
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+   source   | currency | count | avg_usd 
+------------+----------+-------+---------
+ bunjang    | KRW      |    76 |   27.55
+ cardmarket | EUR      |    74 |   21.87
+ hareruya2  | JPY      |    92 |  230.68
+ naver      | KRW      |    92 |   16.81
+(4 rows)
+
+{
+  "answer": "Database not ready: no such table: inventory_snapshot. The orchestrator may still be building the mirror.",
+  "intent": {
+    "grade": "psa10",
+    "intent": "lookup_price",
+    "name": "charizard ex"
+  },
+  "result": null
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
