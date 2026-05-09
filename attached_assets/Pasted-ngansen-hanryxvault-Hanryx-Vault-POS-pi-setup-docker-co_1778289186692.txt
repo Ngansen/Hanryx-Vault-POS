@@ -1,0 +1,28 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos python3 -c '
+import refresh_market_prices as r, price_scrapers as ps
+from refresh_market_prices import _summarise_source, _insert_observations, _connect_pg
+fanout = ps.search_all("Pikachu")
+per_source = {s: x for s, l in fanout["results"].items()
+              if (x := _summarise_source(l or []))}
+conn = _connect_pg()
+for qr in ["PKM-MLA9QW87-F454D3","PKM-MLDXMUOJ-577E42",
+           "PKM-MLDXZ3O4-DCDCE6","PKM-MLDXZ48Z-B1DA7C","PKM-MLDY23DN-53A400"]:
+    print(qr, _insert_observations(conn, qr, "Pikachu", "raw",
+          per_source, fanout.get("query_used") or t.matches[0].markets'ce of pikachu"}' | jq '.resul
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-05-09T01:11:16","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-09T01:11:16","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-09T01:11:16","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-09T01:11:17","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-09T01:11:17","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-09T01:11:17","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-09T01:11:17","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-09T01:11:17","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-09T01:11:18","level":"INFO","logger":"price_scrapers","msg":"[scrape:bunjang] query translated 'Pikachu' → '피카츄' (ko)"}
+{"ts":"2026-05-09T01:11:18","level":"INFO","logger":"price_scrapers","msg":"[scrape:hareruya2] query translated 'Pikachu' → 'ピカチュウ' (ja_kana)"}
+PKM-MLA9QW87-F454D3 4
+PKM-MLDXMUOJ-577E42 4
+PKM-MLDXZ3O4-DCDCE6 4
+PKM-MLDXZ48Z-B1DA7C 4
+PKM-MLDY23DN-53A400 4
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string
