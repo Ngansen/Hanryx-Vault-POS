@@ -193,32 +193,34 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
     # cards_chs — Chinese card pool (covers both Simplified and Traditional;
     # commodity_code is the official 商品编码 from cn.pokemon.com).
     "cards_chs": (
+        # C13.7: postgres PK is card_id (BIGINT) — commodity_code defaults
+        # to '' for most upstream rows, so the previous DISTINCT ON
+        # (commodity_code) collapsed 16,527 → 9 rows and the SQLite schema
+        # was missing name_chs entirely. Use card_id as PK; carry the
+        # display columns the offline POS actually needs.
         """
         CREATE TABLE cards_chs (
-            commodity_code TEXT, commodity_name TEXT,
-            collection_number TEXT, yoren_code TEXT,
-            image_url TEXT,
-            _mirror_at INTEGER,
-            PRIMARY KEY (commodity_code)
+            card_id INTEGER PRIMARY KEY,
+            commodity_code TEXT, collection_number TEXT,
+            commodity_name TEXT, name_chs TEXT,
+            yoren_code TEXT, card_type_text TEXT,
+            rarity_text TEXT, hp INTEGER,
+            attribute TEXT, pokedex_code TEXT,
+            illustrators TEXT, image_url TEXT,
+            _mirror_at INTEGER
         )
         """,
-        # C13.5: postgres cards_chs has duplicate commodity_code rows
-        # (the upstream taobao/CCG-CN dump occasionally lists the same
-        # SKU under multiple yoren_code entries) — the SQLite PRIMARY
-        # KEY (commodity_code) then 4-replicates them. DISTINCT ON +
-        # ORDER BY collapses each commodity_code to its first row,
-        # preferring entries with a populated image_url so the mirror
-        # surfaces the most useful copy.
         """
-        SELECT DISTINCT ON (commodity_code)
-               commodity_code, commodity_name, collection_number, yoren_code, image_url
+        SELECT card_id, commodity_code, collection_number,
+               commodity_name, name_chs,
+               yoren_code, card_type_text,
+               rarity_text, hp,
+               attribute, pokedex_code,
+               illustrators, image_url
           FROM cards_chs
-         ORDER BY commodity_code,
-                  (CASE WHEN COALESCE(image_url,'') = '' THEN 1 ELSE 0 END),
-                  yoren_code
         """,
         f"""
-        INSERT INTO cards_chs VALUES (?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO cards_chs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 
