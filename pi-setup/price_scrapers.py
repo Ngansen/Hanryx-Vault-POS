@@ -535,6 +535,7 @@ except Exception as _e:  # pragma: no cover
 _TRANSLATE_LANG: dict[str, str] = {
     "hareruya2": "ja_kana",
     "bunjang":   "ko",
+    "naver":     "ko",   # naver Open API: KR text matches site catalog 5-10x better than EN
 }
 
 
