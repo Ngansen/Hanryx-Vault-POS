@@ -1,0 +1,590 @@
+services:
+
+  # ── PostgreSQL — shared database server ───────────────────────────────────────
+  # Two databases are created automatically on first start:
+  #   vaultpos   — Flask POS server (inventory, sales, scan queue, etc.)
+  #   storefront — HanRyx-Vault public storefront (products, orders, users)
+  db:
+    # Pinned to an explicit pgvector + Postgres version so `docker compose pull`
+    # is reproducible on the Pi. Bump deliberately, not accidentally — a Postgres
+    # minor or new pgvector build can change planner defaults / extension SQL.
+    # The trailing @sha256:… is the content-addressable digest of the multi-arch
+    # manifest list: tags on Docker Hub are technically mutable (a hijacked
+    # registry account could re-push the same tag with malicious bits), so
+    # pinning by digest makes `docker compose pull` tamper-evident — substituted
+    # bits change the digest and the pull fails. The tag is kept for human
+    # readability only. See `docs/REPRODUCIBILITY.md` for the bump procedure.
+    image: pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10
+    restart: unless-stopped
+    command: ["postgres", "-c", "password_encryption=md5"]
+    environment:
+      POSTGRES_DB:       vaultpos
+      POSTGRES_USER:     vaultpos
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}
+    volumes:
+      # Postgres data dir lives on the UGreen USB drive at
+      # /mnt/cards/postgres-data by default — same drive as
+      # cards_master images, CLIP/OCR model files, and the FAISS
+      # index. Keeping the DB and the bulky offline assets on the
+      # same physical drive means a single removable medium carries
+      # the entire offline state of the POS (embeddings + OCR text
+      # + image local paths + model files) — pull the drive, plug it
+      # into a different Pi, `docker compose up`, and you're trading
+      # again at a different booth.
+      #
+      # The DB_DATA_DIR env var is the migration knob: set it in
+      # pi-setup/.env to the legacy Docker-volume path
+      # (`/var/lib/docker/volumes/pi-setup_pgdata/_data`) on the
+      # first boot AFTER pulling this commit, run
+      # `pi-setup/scripts/move_pgdata_to_drive.sh`, then unset
+      # DB_DATA_DIR so the default takes over. See the script for
+      # the full safety-checked migration flow.
+      - type: bind
+        source: ${DB_DATA_DIR:-/mnt/cards/postgres-data}
+        target: /var/lib/postgresql/data
+        bind:
+          propagation: rslave
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultpos -d vaultpos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis — cross-worker pub/sub (SSE) + shared L2 cache ─────────────────────
+  redis:
+    # Pinned to an explicit Redis + Alpine build so `docker compose pull` is
+    # reproducible on the Pi. The 7-alpine floating tag silently picks up new
+    # Redis 7.x minors and new Alpine bases (which can drop busybox applets
+    # the healthcheck relies on). Bump deliberately, not on every pull.
+    # The trailing @sha256:… is the content-addressable digest of the multi-arch
+    # manifest list — see the comment on the `db:` image above and
+    # `docs/REPRODUCIBILITY.md` for the rationale and bump procedure.
+    image: redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── PgBouncer — connection pooler ────────────────────────────────────────────
+  pgbouncer:
+    # Pinned to an explicit edoburu/pgbouncer build so `docker compose pull` is
+    # reproducible on the Pi. The trailing @sha256:… is the content-addressable
+    # digest of the multi-arch manifest list — see the comment on the `db:`
+    # image above and `docs/REPRODUCIBILITY.md` for the rationale and bump
+    # procedure.
+    #
+    # Tag note: the previous `1.21.0` (no patch suffix) tag is no longer
+    # published on Docker Hub — only the `1.21.0-pN` patch revisions remain.
+    # `-p2` is the latest patch in the 1.21.0 line and is what we now pin.
+    image: edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:      postgres://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
+      POOL_MODE:         transaction
+      MAX_CLIENT_CONN:   200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE:     5
+      RESERVE_POOL_SIZE: 5
+      SERVER_RESET_QUERY: DISCARD ALL
+      LOG_CONNECTIONS:   "0"
+      LOG_DISCONNECTIONS: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # edoburu/pgbouncer is Alpine-based and ships without the Postgres
+      # client tools, so `pg_isready` isn't available here (the previous
+      # `|| true` was masking that and making the badge always green).
+      # busybox `nc` IS available, and a TCP connect to pgbouncer's listen
+      # port is a truthful liveness signal — if pgbouncer is up it accepts
+      # the TCP handshake, if it's down/crashed the connect fails.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── Flask POS server ──────────────────────────────────────────────────────────
+  # Handles: tablet POS (proxied via satellite Pi), admin dashboard, scan queue
+  # Network: Main Pi (home) ← Tailscale ← Satellite Pi (shop) ← LAN ← Tablet
+  # Accessible on Tailscale as 'hanryxvault' at port 8080
+  pos:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # Chromium (Playwright) writes lots of small files to /dev/shm during
+    # rendering. Docker's default 64MB is far too small and causes silent
+    # tab crashes ("Target page, context or browser has been closed").
+    # 256MB matches Playwright's recommended docker shm size and is well
+    # within the Pi 5's 8GB RAM budget.
+    shm_size: "256mb"
+    environment:
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
+      REDIS_URL:        redis://redis:6379/0
+      FLASK_ENV:        production
+      PYTHONUNBUFFERED: "1"
+
+      SESSION_SECRET:   ${SESSION_SECRET:?SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)}
+      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in pi-setup/.env)}
+
+      # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
+      GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
+
+      # PSA Public API — cert authentication on PSA slabs.
+      # Free token from https://www.psacard.com/publicapi
+      PSA_API_TOKEN:    ${PSA_API_TOKEN:-}
+
+      # tcgpricelookup.com — secondary reference price source on Market screen.
+      # Free tier is 200 req/day; only fired on explicit operator "Compare" clicks.
+      TCGPL_API_KEY:    ${TCGPL_API_KEY:-}
+
+      # Disable background prewarm threads.  These walk the inventory and call
+      # eBay continuously to pre-cache prices, which exhausts the 5000/day
+      # Finding API quota in hours and breaks live sold-listings lookups.
+      # Keep "1" (disabled) — pricing is cached on demand when you actually
+      # search a card in the UI.  Set to "0" only if you have a higher quota.
+      DISABLE_BG_PRICING_PREWARM: "1"
+      DISABLE_BG_LANG_PREWARM:    "1"
+      DISABLE_BG_PRICE_REFRESH:   "1"
+
+      # Storefront cloud sync — remove if you don't run the storefront service
+      CLOUD_INVENTORY_SOURCES: ${CLOUD_INVENTORY_SOURCES:-}
+
+      # Inventory-Scanner live API (fastest sync — set to your deployed scanner URL)
+      # INVENTORY_SCANNER_URL: https://your-scanner.replit.app/api/inventory
+
+      # GitHub inventory repo (fallback if INVENTORY_SCANNER_URL not set)
+      GITHUB_INVENTORY_REPO:   ${GITHUB_INVENTORY_REPO:-Ngansen/Inventory-Scanner}
+      GITHUB_INVENTORY_BRANCH: ${GITHUB_INVENTORY_BRANCH:-main}
+
+      # Idle-screen kiosk video directory (matches the volume mount below).
+      KIOSK_VIDEOS_DIR: /app/kiosk-videos
+
+      # eBay Finding API credentials (sold listings, 30/90-day price history).
+      # Set EBAY_APP_ID / EBAY_CERT_ID in pi-setup/.env on the host.
+      EBAY_APP_ID:  ${EBAY_APP_ID:-}
+      EBAY_CERT_ID: ${EBAY_CERT_ID:-}
+
+      # pokemontcg.io API key (for the TCGplayer-price proxy in
+      # tcgplayer_proxy.py). Optional — works without one, but a key bumps
+      # the rate limit from 1k/day to 20k/day. Get one free at dev.pokemontcg.io.
+      POKEMONTCG_API_KEY: ${POKEMONTCG_API_KEY:-}
+
+      # Naver Open API (Korean shopping pricing). The HTML shopping site
+      # IP-bans the trade-show egress (see replit.md gotcha) — the Open API
+      # is the only working surface. Register at developers.naver.com/apps
+      # (tick "검색"/Search), set both values in pi-setup/.env. Without
+      # them, naver_shopping() returns [] and the chip stays empty (the
+      # rest of the language-pricing response renders fine).
+      NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+
+      # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
+      # The Flask server prefers this URL and only falls back to pokeapi.co
+      # if the local mirror is unreachable.
+      POKEAPI_BASE_URL: ${POKEAPI_BASE_URL:-http://pokeapi/api/v2}
+
+      # PaddleOCR model cache root (one subdir per language: korean/,
+      # japan/, ch/, en/). On the USB drive by default so the
+      # ~50-100MB-per-language model downloads survive container
+      # rebuilds and SD card reflashes. The ocr_index worker reads
+      # this and passes per-language det_model_dir/rec_model_dir to
+      # PaddleOCR; if the dir is empty PaddleOCR downloads the
+      # models there on first use.
+      OCR_MODELS_DIR: ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+
+      # CLIP visual-recognition model file. The clip_embed worker
+      # mmaps this ONNX file into onnxruntime; ~350MB on disk.
+      CLIP_MODEL_PATH: ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
+
+      # Pokémon-card-recognizer service (separate container, see below).
+      RECOGNIZER_BASE_URL: ${RECOGNIZER_BASE_URL:-http://recognizer:8081}
+
+      # ── Receipt printer (MUNBYN P047 / any ESC/POS thermal) ───────────────
+      # Ethernet path (preferred): set PRINTER_NETWORK_HOST in pi-setup/.env
+      # to the printer's static LAN IP. Default port 9100 (RAW/JetDirect).
+      # USB path is auto-detected via the device mount below — leave unset
+      # if you're using USB only.
+      PRINTER_NETWORK_HOST: ${PRINTER_NETWORK_HOST:-}
+      PRINTER_NETWORK_PORT: ${PRINTER_NETWORK_PORT:-9100}
+
+      # Folder where PokeScraper_3.0 CSVs are dropped (bind-mounted below).
+      JPN_DATA_DIR: /app/data/jp_pokellector
+
+      # ── Offline Card Database (USB) ────────────────────────────────────
+      # When set, the SQLite TCG DB, the FAISS visual-recognition index,
+      # and the sync orchestrator's logs all land on the USB drive at
+      # /mnt/cards (bind-mounted below). Unset HANRYX_LOCAL_DB_DIR to
+      # force the legacy in-container path (tests, dev shells, etc.).
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+
+      # Ollama assistant — local AI cashier. Talks to the `assistant`
+      # service over the Docker network. Disable by unsetting OLLAMA_BASE_URL.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://assistant:11434}
+      OLLAMA_MODEL:    ${OLLAMA_MODEL:-qwen2.5:3b}
+
+      # ── Playwright real-browser scraper (native-language pricing) ─────────
+      # Powers KR/JP/CN/TW pricing chips on the Market screen by driving a
+      # headless chromium against naver / cardmarket / snkrdunk / tcgkorea.
+      # Required for those four sites — they all block requests-based access
+      # via TLS fingerprinting or are client-rendered SPAs.
+      #
+      # Set ENABLE_PLAYWRIGHT_SCRAPER=0 in .env to kill it (e.g. for a
+      # battery-constrained trade-show day where the ~150 MB chromium RAM
+      # cost is unwelcome). With it disabled, those four scrapers fall back
+      # to requests-based fetches and return 0 listings — no crash, just
+      # empty native-pricing chips.
+      ENABLE_PLAYWRIGHT_SCRAPER:  ${ENABLE_PLAYWRIGHT_SCRAPER:-1}
+      PLAYWRIGHT_NAV_TIMEOUT_MS:  ${PLAYWRIGHT_NAV_TIMEOUT_MS:-12000}
+      PLAYWRIGHT_SETTLE_MS:       ${PLAYWRIGHT_SETTLE_MS:-1500}
+      # Where the chromium binary lives inside the image (baked at build).
+      PLAYWRIGHT_BROWSERS_PATH:   /opt/playwright
+
+      # SATELLITE_TOKEN: your-secret-token
+      # ZETTLE_CLIENT_ID:     your-client-id
+      # ZETTLE_CLIENT_SECRET: your-client-secret
+      # POKEMONTCG_API_KEY: your-api-key  (optional; raises pokemontcg.io rate limit from 1k/day to 20k/day)
+      # OPENAI_API_KEY: sk-...
+      # SMTP_USER:         you@gmail.com
+      # SMTP_APP_PASSWORD: xxxx-xxxx-xxxx-xxxx
+      # NOTIFY_EMAIL:      alerts@example.com
+    volumes:
+      # Flask /data — uploads, transient scratch, scan-queue artifacts.
+      # Lives on the USB drive by default so it survives a `docker
+      # compose down -v` and so the SD card stays read-mostly (extends
+      # SD lifetime — writes are the #1 killer of consumer microSD).
+      # Override via POS_DATA_DIR in pi-setup/.env to keep on SD card.
+      - type: bind
+        source: ${POS_DATA_DIR:-/mnt/cards/pos-data}
+        target: /data
+        bind:
+          propagation: rslave
+      # Card-image cache (legacy/transient). On the drive for the
+      # same SD-longevity reason. The canonical card-image storage
+      # is /mnt/cards/cards_master/ via HANRYX_LOCAL_DB_DIR — this
+      # mount is for the Flask app's local working copy.
+      - type: bind
+        source: ${CARD_IMAGES_DIR:-/mnt/cards/card-images}
+        target: /app/card-images
+        bind:
+          propagation: rslave
+      # Idle-screen video playlist (downloaded by hanryxvault-kiosk-videos.timer
+      # on the host into /opt/hanryxvault/kiosk/videos/).  Read-only inside the
+      # container; Flask serves them via /kiosk/videos/<file>.
+      - /opt/hanryxvault/kiosk/videos:/app/kiosk-videos:ro
+      # PokeScraper_3.0 CSV drop folder (read-only).  See data/jp_pokellector/README.md.
+      - ./data/jp_pokellector:/app/data/jp_pokellector:ro
+      # ── USB-mounted offline card database (ext4 partition labeled
+      # `hanryxcards`).  Holds pokedex_local.db, the FAISS visual index, and
+      # the sync orchestrator's logs.  bind-mount (not Docker volume) so a
+      # `docker compose down -v` does NOT wipe the USB.  See
+      # docs/USB_OFFLINE_DB.md for the one-time mount setup.
+      #
+      # `propagation: rslave` is critical: when /mnt/cards is remounted on
+      # the host (e.g. after a USB drive hiccup → `sudo mount -a`), the
+      # container immediately sees the freshly-mounted contents instead of
+      # being stuck pointing at the original (now stale) inode. Without
+      # this, a USB disconnect requires `docker compose up --force-recreate
+      # pos` to recover, which wipes any files added via `docker compose cp`.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
+      # ── USB receipt printer passthrough (MUNBYN P047, etc.) ──────────────
+      # Bind-mount the /dev/usb parent directory with shared (rslave)
+      # propagation rather than a static `devices: - /dev/usb/lp0` mapping.
+      # A static device mapping is captured at container-create time; if the
+      # printer is unplugged the cgroup rule points at a dead inode and the
+      # only way to recover is `docker compose up --force-recreate pos`.
+      # With this bind-mount + cgroup rule, unplug/replug of the printer is
+      # reflected live inside the container — no recreate needed. The printer
+      # must still be plugged in BEFORE the first `docker compose up` so that
+      # /dev/usb exists on the host (Docker fails to start the container if
+      # the source path is missing). For Ethernet printers, you can comment
+      # this line and the device_cgroup_rules block out and set
+      # PRINTER_NETWORK_HOST in pi-setup/.env instead.
+      - /dev/usb:/dev/usb:rslave
+    # Grant the container r/w/mknod on the USB lp character-device class
+    # (major 180 = /dev/usb/lp*). Combined with the /dev/usb bind-mount above,
+    # this lets newly enumerated lp devices appear inside the container with
+    # no recreate. See `man 4 lp` and Documentation/admin-guide/devices.txt
+    # in the kernel tree for the major-number assignment.
+    device_cgroup_rules:
+      - 'c 180:* rmw'
+    # The /dev/usb/lp0 device is owned by root:lp on the host. The container
+    # runs as the unprivileged 'hanryx' user, so we add gid 7 (lp on Debian /
+    # Raspberry Pi OS) so the user can open the device for writing receipts.
+    group_add:
+      - "7"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ── Pokémon-card recognizer (video / image ML inference) ─────────────────────
+  # Wraps prateekt/pokemon-card-recognizer in a small Flask service.  Heavy
+  # dependencies (torch, easyocr, opencv, ffmpeg) are isolated here so they
+  # don't bloat the POS container.  On a Pi 5 (CPU-only) inference is slow
+  # but workable for one-off binder scans / booster opening videos.
+  #
+  # Build is large (~3 GB) and slow first time — torch + easyocr download a
+  # lot of wheels.  After the build completes, container starts in ~30 s.
+  recognizer:
+    build: ./recognizer
+    restart: unless-stopped
+    environment:
+      PORT: "8081"
+      PYTHONUNBUFFERED: "1"
+      # Same USB mount as `pos` — recognizer reads the FAISS index from
+      # /mnt/cards/faiss/ when CLIP-based identification is requested
+      # via the smart-scan path.
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+    volumes:
+      # See `pos` service for rationale on the bind mount + propagation: rslave.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    mem_limit: 3g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Sync orchestrator — Postgres → SQLite mirror + scheduled importers ───
+  # Runs the same image as `pos` (so it has every Python dep the importers
+  # need) but boots into sync_orchestrator.py instead of server.py. Sleeps
+  # between ticks; on each tick decides which jobs are due and runs them in
+  # series. See pi-setup/sync_orchestrator.py for the full schedule.
+  #
+  # Sized small (256m) because each job is a short subprocess (the heavy work
+  # — pokemontcg.io download, eBay sweep, image hashing — happens in those
+  # subprocesses and can briefly use more RAM).
+  sync:
+    build: .
+    restart: unless-stopped
+    command: ["python3", "/app/sync_orchestrator.py"]
+    environment:
+      DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
+      REDIS_URL:       redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+      # Same on-drive defaults as the pos service — the workers/run
+      # CLI runs equally well in either container, so both need to
+      # know where the model files live.
+      OCR_MODELS_DIR:      ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+      CLIP_MODEL_PATH:     ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
+      SYNC_TICK_SECONDS:   ${SYNC_TICK_SECONDS:-60}
+      SYNC_LOG_LEVEL:      ${SYNC_LOG_LEVEL:-INFO}
+      # Inherit the same upstream API keys the importers need so we don't
+      # have to re-document them — set them in pi-setup/.env.
+      EBAY_APP_ID:         ${EBAY_APP_ID:-}
+      EBAY_CERT_ID:        ${EBAY_CERT_ID:-}
+      POKEMONTCG_API_KEY:  ${POKEMONTCG_API_KEY:-}
+      TCGPL_API_KEY:       ${TCGPL_API_KEY:-}
+      # Naver Open API creds — refresh_market_prices.py calls naver_shopping()
+      # which silently returns [] without these (no rows in price_history for
+      # the naver source). Same vars are set on the pos service.
+      NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+    volumes:
+      # See `pos` service for rationale on the bind mount + propagation: rslave.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 512m: orchestrator itself is tiny (~30m), but the importer subprocesses
+    # it spawns — especially import_kr_cards.py, which loads a 14MB JSON
+    # blob and joins it against postgres — can briefly hit ~200m. 256m
+    # turned out to be too tight in code review; 512m gives 2x headroom.
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── AI cashier assistant (Ollama + Qwen 2.5 3B) ──────────────────────────
+  # Local LLM serving at :11434. The pos container's /ai/chat blueprint
+  # talks to it over the Docker network. Pulling the model is a one-time
+  # 2GB download — see pi-setup/scripts/setup-ollama.sh.
+  #
+  # Why pinned to a recent ollama tag (rather than `latest`):
+  # The `latest` tag silently moves to new model formats which sometimes
+  # require re-pulling models. We pin a known-good tag and bump deliberately
+  # via docs/REPRODUCIBILITY.md (no @sha256 here yet — Ollama's image is
+  # huge and the digest changes weekly with model-format updates; the next
+  # reproducibility pass will lock it).
+  assistant:
+    image: ollama/ollama:0.4.7
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      # Keep the model resident in memory between requests so the cashier
+      # doesn't pay the 5-second cold-start tax every chat. 30-minute idle
+      # eviction so it's gone overnight when the shop is closed.
+      OLLAMA_KEEP_ALIVE: 30m
+      # Single concurrent request — the Pi 5 CPU can't handle two LLM
+      # generations in parallel without thrashing.
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      # Model cache — survives container rebuilds. Big (~2 GB per model)
+      # so we keep it in a Docker volume on the SD card; moving it to USB
+      # would speed up cold-start but the trade-off isn't worth the USB
+      # being a hard dependency for the assistant container.
+      - ollama-data:/root/.ollama
+    healthcheck:
+      # Ollama image has no curl/wget — use the bundled `ollama` CLI which
+      # exits 0 only when the daemon on $OLLAMA_HOST (default 127.0.0.1:11434)
+      # responds. Falls back to a TCP connect via /dev/tcp if the CLI is ever
+      # missing, so the check survives image upgrades.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || (exec 3<>/dev/tcp/127.0.0.1/11434) 2>/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    # 4 GB cap: Qwen 2.5 3B uses ~3 GB resident; the headroom covers
+    # context-window allocation. Bump if you swap in a larger model
+    # (qwen2.5:7b needs ~6 GB).
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── Offline PokeAPI mirror ────────────────────────────────────────────────────
+  # nginx serving the static JSON dump from PokeAPI/api-data.  On first start
+  # the init script clones the dataset (~240 MB) into the volume; subsequent
+  # starts are instant.  The Flask POS server reads POKEAPI_BASE_URL and prefers
+  # this URL over the public pokeapi.co API so the POS keeps working when the
+  # shop's internet drops.
+  pokeapi:
+    build: ./pokeapi
+    restart: unless-stopped
+    volumes:
+      # Offline PokeAPI mirror static files (~240 MB after first sync).
+      # On the USB drive by default. Override with POKEAPI_DATA_DIR if
+      # you want to keep it on SD (small enough that it's reasonable
+      # either way; default-on-drive matches the rest of the bulky
+      # state).
+      - type: bind
+        source: ${POKEAPI_DATA_DIR:-/mnt/cards/pokeapi-data}
+        target: /usr/share/nginx/html
+        bind:
+          propagation: rslave
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── HanRyx-Vault storefront ───────────────────────────────────────────────────
+  storefront:
+    build:
+      context: ./services/storefront
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/storefront
+      PORT:         "3000"
+      NODE_ENV:     production
+
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)}
+
+      HANRYX_POS_PUSH_URL: http://pos:8080/push/inventory
+
+      # PAYPAL_CLIENT_ID:     your-paypal-client-id
+      # PAYPAL_CLIENT_SECRET: your-paypal-client-secret
+      # POKEMONTCG_API_KEY: your-api-key
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Hits the dedicated /health route in the storefront (server/index.ts) —
+      # returns 200 instantly, no DB call, no auth, no body parsing. Independent
+      # of business routes so a transient DB hiccup doesn't restart the container.
+      # Node base image has no curl; use node's built-in http module instead.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # Ollama model cache (Qwen 2.5 weights + tokeniser, ~2 GB). The ONLY
+  # remaining named volume — every other piece of bulky state has been
+  # moved to bind-mounts on /mnt/cards (see the `db`, `pos`, and
+  # `pokeapi` service blocks above). Ollama stays on SD on purpose:
+  # if the USB drive is unplugged, the assistant container should
+  # still come up and answer "I'm offline" rather than failing to
+  # start at all. See pi-setup/scripts/move-volumes-to-drive.sh for
+  # the one-time migration of the four legacy volumes (pgdata,
+  # pos-data, card-images, pokeapi-data) to the drive.
+  ollama-data:
