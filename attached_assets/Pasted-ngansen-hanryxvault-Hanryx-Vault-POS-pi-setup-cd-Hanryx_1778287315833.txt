@@ -1,0 +1,31 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1) Verify the new code IS in the rebuilt sync image
+docker compose exec -T sync grep -nE "market_price AS price|set_code AS set_name|price AS sold_price" /app/usb_mirror.py
+
+# 2) Run mirror with FULL output (no tail) — capture the very first error
+docker compose exec -T sync python3 -c '
+import logging, usb_mirror, json
+logging.basicConfig(level=logging.INFO)
+print(json.dumps(usb_mirror.run_mirror(), indent=2, default=str))
+' 2>&1 | grep -E "^\[mirror\]|failed|error" | head -30
+
+# 3) Who runs the Flask process inside pos (vs `doer>  (don't run yet — let's see #3 first)</paramet
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+343:        SELECT qr_code, name, set_code AS set_name, language, condition, item_type,
+369:        SELECT id, '' AS qr_code, name, price AS sold_price,
+398:        SELECT id, card_id, source, grade, market_price AS price,
+ERROR:usb_mirror:[mirror] cards_jpn SELECT failed: column "hp" does not exist
+ERROR:usb_mirror:[mirror] cards_jpn failed: column "hp" does not exist
+ERROR:usb_mirror:[mirror] cards_chs failed: UNIQUE constraint failed: cards_chs.commodity_code
+ERROR:usb_mirror:[mirror] cards_master failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] ref_set_mapping failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] ref_variant_terms failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] ref_pokedex_species failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] ref_promo_provenance failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] inventory_snapshot failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] sale_history_recent failed: cannot start a transaction within a transaction
+ERROR:usb_mirror:[mirror] price_history_recent failed: cannot start a transaction within a transaction
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+sh: 1: ps: not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
