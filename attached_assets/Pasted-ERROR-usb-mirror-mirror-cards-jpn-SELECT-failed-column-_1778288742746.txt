@@ -1,0 +1,42 @@
+ERROR:usb_mirror:[mirror] cards_jpn SELECT failed: column "artist" does not exist
+ERROR:usb_mirror:[mirror] cards_jpn failed: column "artist" does not exist
+INFO:usb_mirror:[mirror] cards_jpn_pocket: 3041 rows
+INFO:usb_mirror:[mirror] cards_chs: 9 rows
+INFO:usb_mirror:[mirror] inventory_snapshot: 56 rows
+INFO:usb_mirror:[mirror] sale_history_recent: 0 rows
+INFO:usb_mirror:[mirror] price_history_recent: 796 rows
+    "cards_jpn": -1,
+    "cards_jpn_pocket": 3041,
+    "cards_chs": 9,
+    "inventory_snapshot": 56,
+    "sale_history_recent": 0,
+    "price_history_recent": 796
+  "elapsed_sec": 5.1,
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+INFO:refresh_market_prices:[market_refresh] starting: top 10 cards
+INFO:hanryxvault:[redis] Connected to redis://redis:6379/0
+INFO:hanryxvault:[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)
+INFO:hanryxvault:[pokeapi] canonical name index ready: 1025 species
+INFO:hanryxvault:[bg] price-refresh scheduler disabled via env
+INFO:hanryxvault:[blueprint] tcg_lookup registered → /tcg/*
+INFO:hanryxvault:[blueprint] cards.fuzzy_search wired → /tcg/search-multi
+INFO:hanryxvault:[blueprint] cards_master search wired → /tcg/search-master
+INFO:hanryxvault:[blueprint] cards.ai_assistant registered → /ai/*
+INFO:price_scrapers:[scrape:naver] query translated 'Eevee Heroes' → '이브이' (ko)
+INFO:price_scrapers:[scrape:bunjang] query translated 'Eevee Heroes' → '이브이' (ko)
+INFO:price_scrapers:[scrape:hareruya2] query translated 'Eevee Heroes' → 'イーブイ' (ja_kana)
+INFO:price_scrapers:[scrape:naver] query translated 'Snorlax' → '잠만보' (ko)
+INFO:price_scrapers:[scrape:bunjang] query translated 'Snorlax' → '잠만보' (ko)
+INFO:price_scrapers:[scrape:hareruya2] query translated 'Snorlax' → 'カビゴン' (ja_kana)
+INFO:price_scrapers:[scrape:naver] query translated 'Dewgong' → '쥬레곤' (ko)
+INFO:price_scrapers:[scrape:bunjang] query translated 'Dewgong' → '쥬레곤' (ko)
+INFO:price_scrapers:[scrape:hareruya2] query translated 'Dewgong' → 'ジュゴン' (ja_kana)
+{'cards': 10, 'scrapes': 40, 'rows_written': 21, 'empties': 19, 'errors': 0, 'elapsed_sec': 25.7}
+INFO:refresh_market_prices:[market_refresh] done: {'cards': 10, 'scrapes': 40, 'rows_written': 21, 'empties': 19, 'errors': 0, 'elapsed_sec': 25.7}
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[mirror] cards_jpn SELECT failed: column "artist" does not exist
+LINE 3:                rarity, artist, image_url
+                               ^
+
+[mirror] cards_jpn failed: column "artist" does not exist
+LINE 3:                rarity, artist, image_url
