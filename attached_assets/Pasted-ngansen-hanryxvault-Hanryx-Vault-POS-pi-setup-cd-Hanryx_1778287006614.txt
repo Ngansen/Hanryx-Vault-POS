@@ -1,0 +1,78 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull
+cd pi-setup
+# Code-only change in sync — no rebuild needed, just reload the module
+docker compose restart sync
+
+# Re-run mirror (should now succeed for our 3 tables)
+docker compose exec -T sync python3 -c '
+import usb_mirror, json
+print(json.dumps(usb_mirror.run_mirror(), indent=2, default=str))
+' 2>&1 | tail -25
+
+# Confirm the tables are now populated
+docker compose exec -T sync python3 -c '
+import sqlite3, cards_db_path
+c = sqlite3.connect(cards_db_path.local_db_path())  -d '{"message":"price of pikachu"}' | jqnventory
+remote: Enumerating objects: 7, done.
+remote: Counting objects: 100% (7/7), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (4/4), 1.95 KiB | 332.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   144843b..f386a53  main       -> origin/main
+Updating 144843b..f386a53
+Fast-forward
+ pi-setup/usb_mirror.py | 25 +++++++++++++++-----
+ 1 file changed, 19 insertions(+), 6 deletions(-)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠼ Container pi-setup-sync-1 Restarting       2.4s
+LINE 2:         SELECT id, card_id, source, grade, price, currency, ...
+                                                   ^
+
+[mirror] price_history_recent failed: column "price" does not exist
+LINE 2:         SELECT id, card_id, source, grade, price, currency, ...
+                                                   ^
+
+{
+  "counts": {
+    "cards_kr": 15121,
+    "cards_jpn": -1,
+    "cards_jpn_pocket": 3041,
+    "cards_chs": -1,
+    "cards_master": -1,
+    "ref_set_mapping": -1,
+    "ref_variant_terms": -1,
+    "ref_pokedex_species": -1,
+    "ref_promo_provenance": -1,
+    "inventory_snapshot": -1,
+    "sale_history_recent": -1,
+    "price_history_recent": -1
+  },
+  "elapsed_sec": 1.52,
+  "ts": 1778286967
+}
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+inventory_snapshot        ERR no such table: inventory_snapshot
+price_history_recent      ERR no such table: price_history_recent
+sale_history_recent       ERR no such table: sale_history_recent
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+        name        |       qr_code       | sale_price 
+--------------------+---------------------+------------
+ Kangaskhan         | PKM-MLDXZF33-998A72 |          0
+ Blaine's Growlithe | PKM-MLDXZJLE-B0C033 |          0
+ Tapu Koko          | PKM-MLDY2523-C10833 |          0
+ Gyarados V         | PKM-MLDY25LJ-A3738F |          0
+ Foongus            | PKM-MLDXZH3A-144ADB |          0
+(5 rows)
+
+{
+  "answer": "Database not ready: attempt to write a readonly database. The orchestrator may still be building the mirror.",
+  "intent": {
+    "grade": "raw",
+    "intent": "lookup_price",
+    "name": "pikachu"
+  },
+  "result": null
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
