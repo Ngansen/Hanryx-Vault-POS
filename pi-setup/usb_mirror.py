@@ -502,14 +502,24 @@ def run_mirror() -> dict:
                 counts[name] = -1
 
     # C13.4: chmod the .db (and any -wal/-shm/-journal sidecars SQLite has
-    # created by now) to 0o664 so the unprivileged hanryx user inside the
-    # pos container can open them r/w. The umask above only takes effect
-    # for files created AFTER this point — pre-existing root:644 files
-    # need an explicit chmod.
+    # created by now) to 0o666, plus the parent dir to 0o777, so the
+    # unprivileged hanryx user inside the pos container can open them r/w.
+    # 0o664 isn't enough — hanryx (created via `useradd -r` in pi-setup/
+    # Dockerfile, primary group `hanryx`) is NOT a member of root's group,
+    # so a root:root 664 file is effectively read-only to it. SQLite then
+    # raises "attempt to write a readonly database" even on SELECT-only
+    # workloads because it tries to create -journal/-wal/-shm sidecars in
+    # the same directory. World-writable is acceptable here: /mnt/cards is
+    # an internal bind mount that's never exposed to untrusted users, and
+    # the kiosk runs as a single appliance.
     import glob as _glob
+    try:
+        os.chmod(os.path.dirname(db_path), 0o777)
+    except OSError as _e:
+        log.warning("[mirror] chmod dir %s skipped: %s", os.path.dirname(db_path), _e)
     for _p in _glob.glob(db_path + "*"):
         try:
-            os.chmod(_p, 0o664)
+            os.chmod(_p, 0o666)
         except OSError as _e:
             log.warning("[mirror] chmod %s skipped: %s", _p, _e)
 
