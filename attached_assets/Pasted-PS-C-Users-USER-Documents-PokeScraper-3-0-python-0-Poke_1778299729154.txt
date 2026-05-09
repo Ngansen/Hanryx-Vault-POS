@@ -1,0 +1,182 @@
+PS C:\Users\USER\Documents\PokeScraper_3.0> python 0_Poke_Sets_v2.py
+PS C:\Users\USER\Documents\PokeScraper_3.0> python scrape_all.py --limit 5
+>> # Smoke test - 5 species, ~5 min
+>>
+>> # (paste the full script I gave you, save, close)
+>> notepad scrape_all.py
+>> # Save the bulk-scrape wrapper from my earlier message
+>>
+>> # expect: ~75 KB, dated April 2025
+>> dir data\pokellector_set_data.csv
+>> # Confirm the pre-built CSV is there
+C:\Users\USER\AppData\Local\Python\pythoncore-3.14-64\python.exe: can't open file 'C:\\Users\\USER\\Documents\\PokeScraper_3.0\\scrape_all.py': [Errno 2] No such file or directory
+
+
+    Directory: C:\Users\USER\Documents\PokeScraper_3.0\data
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----          5/8/2026  10:54 PM          75748 pokellector_set_data.csv
+
+
+PS C:\Users\USER\Documents\PokeScraper_3.0> python scrape_all.py --limit 5
+PS C:\Users\USER\Documents\PokeScraper_3.0> python scrape_all.py
+PS C:\Users\USER\Documents\PokeScraper_3.0> type scrape_all_progress.log
+>> dir output
+>> cd $HOME\Documents\PokeScraper_3.0
+type : Cannot find path 'C:\Users\USER\Documents\PokeScraper_3.0\scrape_all_progress.log' because it does not exist.
+At line:1 char:1
++ type scrape_all_progress.log
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\Users\USER\D...ll_progress.log:String) [Get-Content], ItemNotFoundEx
+   ception
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+
+dir : Cannot find path 'C:\Users\USER\Documents\PokeScraper_3.0\output' because it does not exist.
+At line:2 char:1
++ dir output
++ ~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\Users\USER\D...aper_3.0\output:String) [Get-ChildItem], ItemNotFound
+   Exception
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetChildItemCommand
+
+PS C:\Users\USER\Documents\PokeScraper_3.0> notepad 01_Pokellector_V3.py
+PS C:\Users\USER\Documents\PokeScraper_3.0> python -u -c "import sys; print('python', sys.version); print('cwd:', __import__('os').getcwd())"
+>> # 3. If still no output, force a flush + show the python version
+>>
+>> python scrape_all.py --limit 1 2>&1 | Tee-Object scrape_debug.txt
+>> # 2. Run it with full error visibility (PS swallows some stderr by default)
+>>
+>> dir scrape_all.py
+>> # 1. Does scrape_all.py actually exist?
+>>
+>> cd $HOME\Documents\PokeScraper_3.0
+python 3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]
+cwd: C:\Users\USER\Documents\PokeScraper_3.0
+
+
+    Directory: C:\Users\USER\Documents\PokeScraper_3.0
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----          5/8/2026  11:03 PM              0 scrape_all.py
+
+
+PS C:\Users\USER\Documents\PokeScraper_3.0>         try
+>>
+>>         except: pass
+>>         try: processor.scraper.close()
+>>     finally:
+>>                 processor.pricecharting_scraper = ps.PriceChartingScraper()
+>>                 processor.scraper = ps.PokellectorScraper()
+>>                 except: pass
+>>                 try: processor.pricecharting_scraper.close()
+>>                 except: pass
+>>                 try: processor.scraper.close()
+>>                 log(f"[{i}/{len(names)}] {name}: FATAL\n{traceback.format_exc()}")
+>>             except Exception:
+>>                 log(f"[{i}/{len(names)}] {name}: {n} cards in {dt:.1f}s (total {total})")
+>>                 n, dt = scrape_one(processor, name); total += n
+>>             try:
+>>                 log(f"[{i}/{len(names)}] {name}: skip"); continue
+>>             if already_done(name):
+>>         for i, name in enumerate(names, start=1):
+>>     try:
+>>     total = 0
+>>
+>>     processor.scraper = ps.PokellectorScraper()
+>>     processor.pricecharting_scraper = ps.PriceChartingScraper()
+>>     cfg = ps.Config(); processor = ps.PokemonCardProcessor(cfg)
+>>     log(f"=== run start: {len(names)} species, output -> {OUTPUT_DIR} ===")
+>>
+>>         if args.limit: names = names[:args.limit]
+>>         if args.start: names = names[args.start:]
+>>         names = fetch_all_species()
+>>     else:
+>>         names = [n.strip() for n in args.only.split(",") if n.strip()]
+>>     if args.only:
+>>
+>>     args = p.parse_args()
+>>     p.add_argument("--only", type=str, default="")
+>>     p.add_argument("--start", type=int, default=0)
+>>     p.add_argument("--limit", type=int, default=0)
+>>     p = argparse.ArgumentParser()
+>> def main():
+>>
+>>
+>>     return len(cards), time.time() - t0
+>>     write_csv(name, cards)
+>>     except Exception as e: log(f"  [pc]  {name}: {e}")
+>>             ps.Config.PRICECHARTING_URL, name))
+>>         cards.extend(processor.pricecharting_scraper.fetch_price_data(
+>>     try:
+>>     except Exception as e: log(f"  [jp]  {name}: {e}")
+>>             ps.Config.JP_URL, jp_urls, "Pokellector Japanese", processor.set_loader))
+>>         cards.extend(processor.scraper.fetch_card_data(
+>>         jp_urls = processor.scraper.fetch_page_urls(ps.Config.JP_URL, name)
+>>     try:
+>>     except Exception as e: log(f"  [eng] {name}: {e}")
+>>             ps.Config.ENG_URL, eng_urls, "Pokellector English", processor.set_loader))
+>>         cards.extend(processor.scraper.fetch_card_data(
+>>         eng_urls = processor.scraper.fetch_page_urls(ps.Config.ENG_URL, name)
+>>     try:
+>>     t0 = time.time(); cards = []
+>> def scrape_one(processor, name):
+>>
+>>
+>>     with PROGRESS_LOG.open("a", encoding="utf-8") as f: f.write(line + "\n")
+>>     print(line, flush=True)
+>>     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+>> def log(msg):
+>>
+>>
+>>         for c in cards: w.writerow(c)
+>>         w = csv.DictWriter(f, fieldnames=keys); w.writeheader()
+>>     with (OUTPUT_DIR / f"{safe_name(name)}.csv").open("w", encoding="utf-8", newline="") as f:
+>>     keys = sorted({k for c in cards for k in c.keys()})
+>>         (OUTPUT_DIR / f"{safe_name(name)}.csv").touch(); return
+>>     if not cards:
+>> def write_csv(name, cards):
+>>
+>>
+>> def already_done(name): return (OUTPUT_DIR / f"{safe_name(name)}.csv").exists()
+>> def safe_name(name): return "".join(c for c in name if c.isalnum() or c in "_-")
+>>
+>>
+>>     return canon
+>>     print(f"[species] cached {len(canon)} species", flush=True)
+>>     cache.write_text(json.dumps(canon))
+>>     canon = [n for n in names if "-" not in n]
+>>     names = [s["name"].capitalize() for s in r.json()["results"]]
+>>     r = requests.get(POKEAPI, timeout=30); r.raise_for_status()
+>>     print(f"[species] fetching from {POKEAPI} ...", flush=True)
+>>         return json.loads(cache.read_text())
+>>     if cache.exists():
+>>     cache = SCRIPT_DIR / "all_species.json"
+>> def fetch_all_species():
+>>
+>>
+>> POKEAPI = "https://pokeapi.co/api/v2/pokemon-species?limit=2000"
+>> PROGRESS_LOG = SCRIPT_DIR / "scrape_all_progress.log"
+>> OUTPUT_DIR.mkdir(exist_ok=True)
+>> OUTPUT_DIR = SCRIPT_DIR / "output"
+>>
+>> spec.loader.exec_module(ps)
+>> ps = importlib.util.module_from_spec(spec)
+>>     "pokescraper", SCRIPT_DIR / "01_Pokellector_V3.py")
+>> spec = importlib.util.spec_from_file_location(
+>> import importlib.util
+>>
+>> sys.path.insert(0, str(SCRIPT_DIR))
+>> SCRIPT_DIR = Path(__file__).resolve().parent
+>>
+>> import requests
+>> from pathlib import Path
+>> import argparse, csv, json, os, sys, time, traceback
+>> from __future__ import annotations
+>> """scrape_all.py - bulk-scrape every Pokémon species via PokeScraper_3.0."""
+>> @'
+>>
+>> cd $HOME\Documents\PokeScraper_3.0
