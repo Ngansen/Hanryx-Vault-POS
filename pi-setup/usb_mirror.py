@@ -147,23 +147,26 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         CREATE TABLE cards_jpn (
             set_code TEXT, card_number TEXT, set_name TEXT, series TEXT,
             name_jp TEXT, name_en TEXT, rarity TEXT,
-            artist TEXT, image_url TEXT,
+            card_type TEXT, image_url TEXT, release_date TEXT,
             _mirror_at INTEGER,
             PRIMARY KEY (set_code, card_number)
         )
         """,
-        # C13.5: dropped `hp` — postgres cards_jpn has never carried this
-        # column (it's a Pokémon TCG attribute, but the JP catalog dump
-        # from cardrush/pokemon-card.com doesn't expose it). The SELECT
-        # has been failing every mirror cycle with "column hp does not
-        # exist" since the table was added.
+        # C13.6: matched to the actual postgres schema in server.py (init_db
+        # CREATE TABLE IF NOT EXISTS cards_jpn → url,set_code,set_name,
+        # series,card_number,name_en,name_jp,rarity,card_type,image_url,
+        # release_date,raw,imported_at). Earlier pre-C13.5 mirror SELECT
+        # referenced `hp` and `artist` which have NEVER existed in
+        # postgres — both were guesses. Replaced with the real columns
+        # card_type + release_date (also useful for the multi-language
+        # browser) and properly dropped `hp` / `artist`.
         """
         SELECT set_code, card_number, set_name, series, name_jp, name_en,
-               rarity, artist, image_url
+               rarity, card_type, image_url, release_date
           FROM cards_jpn
         """,
         f"""
-        INSERT INTO cards_jpn VALUES (?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO cards_jpn VALUES (?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 
