@@ -4869,22 +4869,98 @@ def card_image_resolve():
             except Exception:
                 local = ""
         if local and os.path.isfile(local):
-            try:
-                resp = send_file(local, conditional=True)
-                resp.headers["Cache-Control"] = "public, max-age=86400"
-                resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
-                return resp
-            except Exception:
-                log.exception("[card/image] send_file failed for %s", local)
-                # Fall through to next candidate / network url.
+            if _is_valid_image_file(local):
+                try:
+                    resp = send_file(local, conditional=True)
+                    resp.headers["Cache-Control"] = "public, max-age=86400"
+                    resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
+                    return resp
+                except Exception:
+                    log.exception("[card/image] send_file failed for %s", local)
+                    # Fall through to this candidate's URL (transient IO error,
+                    # the URL is presumed valid).
+            else:
+                # Local file exists but is corrupt (e.g. tcgdex's helper-text
+                # placeholder saved as .png by a buggy mirror run). The URL
+                # is from the SAME source so it's almost certainly equally
+                # broken — skip the entire candidate and try the next one.
+                log.warning("[card/image] skipping corrupt local %s (src=%s)",
+                            local, c.get("src", "?"))
+                continue
         url = (c.get("url") or "").strip()
         if url:
-            return redirect(url, code=302)
+            return _proxy_remote_image(url, source_tag=f"alt:{c.get('src','?')}")
 
     # Last-ditch fallback: the legacy primary image_url column.
     if primary_url:
-        return redirect(primary_url, code=302)
+        return _proxy_remote_image(primary_url, source_tag="primary")
     return jsonify({"error": "no image available"}), 404
+
+
+def _is_valid_image_file(path: str) -> bool:
+    """
+    Sanity-check a local file before serving it as an image.
+
+    Past mirror runs occasionally saved a CDN's HTML 404 page (~300 bytes,
+    starting with "<!DOC" or "<htm") into the .png slot when the upstream
+    fork moved files. send_file() then served those bytes to the kiosk
+    with the wrong Content-Type and the user got a "broken image" icon
+    with no diagnostic clue. This guard rejects:
+      * files smaller than 512 bytes (smallest legit card thumb is ~3KB)
+      * files whose first 8 bytes don't match a known image magic number
+
+    On any IO error we return False (defensive — the remote-URL proxy
+    branch will then try to fetch a fresh copy).
+    """
+    try:
+        st = os.stat(path)
+        if st.st_size < 512:
+            return False
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+        # PNG, JPEG, GIF, WebP, BMP magic numbers.
+        return (head.startswith(b"\x89PNG\r\n\x1a\n")
+                or head.startswith(b"\xff\xd8\xff")
+                or head.startswith(b"GIF87a") or head.startswith(b"GIF89a")
+                or (head[:4] == b"RIFF" and len(head) >= 8)  # WebP container
+                or head.startswith(b"BM"))
+    except Exception:
+        return False
+
+
+def _proxy_remote_image(url: str, source_tag: str = "remote"):
+    """
+    Stream a remote image back through this server instead of 302-redirecting.
+
+    Why: the trade-show kiosk loads over plain HTTP (no LE cert in the booth
+    tent), but cards_master.image_url points at HTTPS CDNs (pokemontcg.io,
+    images.tcgdex.net, etc). Browsers block HTTPS subresources from HTTP
+    pages as "mixed content" — silently — so a 302 redirect produces a
+    broken-image placeholder with no diagnostic clue. Streaming the bytes
+    back keeps the response same-origin, same-scheme as the page.
+
+    Cached for 24h client-side; the upstream Content-Type is preserved.
+    Failures return 502 with the upstream status so /admin/errors surfaces
+    them, rather than a confusing 200-with-broken-image.
+    """
+    try:
+        import requests
+        r = requests.get(url, stream=True, timeout=10,
+                         headers={"User-Agent": "HanryxVault/1.0"})
+        if r.status_code != 200:
+            log.warning("[card/image] proxy upstream %s returned %s",
+                        url[:100], r.status_code)
+            return jsonify({"error": "upstream image fetch failed",
+                            "status": r.status_code}), 502
+        from flask import Response
+        ct = r.headers.get("Content-Type") or "image/png"
+        resp = Response(r.iter_content(chunk_size=8192), content_type=ct)
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["X-Image-Source"] = f"proxy:{source_tag}"
+        return resp
+    except Exception as e:
+        log.exception("[card/image] proxy fetch failed for %s", url[:100])
+        return jsonify({"error": str(e)}), 502
 
 
 @app.route("/admin/multi/<game>/visual/status", methods=["GET"])
@@ -19514,9 +19590,33 @@ def _lookup_native_name(card: dict, lang: str) -> str | None:
         db.close()
         if row:
             v = row["native"] if isinstance(row, dict) else row[0]
-            return (v or "").strip() or None
+            v = (v or "").strip()
+            if v:
+                return v
     except Exception as _e:
         log.debug("[lang-native] lookup failed for %s/%s: %s", name_en, lang, _e)
+
+    # Species-level fallback: when cards_master has no localised name for
+    # this row (most older sets), fall back to the PokéAPI species table
+    # in species_names.py — "Mew" → "ミュウ"/"뮤"/"夢幻"/"梦幻". Lossy at
+    # the card level (all Mew variants share one species name) but
+    # produces a useful native marketplace query instead of fanning out
+    # the English string to KR/JP sellers who don't list under it.
+    # NOT used when cards_master returned a non-empty value — even if
+    # that value is wrong (e.g. a misaligned korean_names_filler row),
+    # the per-card data is still a closer match to reality than the
+    # species name. Track those data bugs separately.
+    try:
+        from species_names import translate as _species_translate
+        _species_field = {"jp": "ja_kana", "kr": "ko",
+                          "cn": "zh_hans", "tw": "zh_hant"}.get(lang)
+        if _species_field:
+            translated = _species_translate(name_en, _species_field)
+            if translated and translated.strip():
+                return translated.strip()
+    except Exception as _e:
+        log.debug("[lang-native] species fallback failed for %s/%s: %s",
+                  name_en, lang, _e)
     return None
 
 
@@ -19550,11 +19650,21 @@ def _fetch_native_lang_price(card: dict, lang: str) -> dict:
     listings: list[dict] = []
     used:     list[str]  = []
 
+    # C10 dropped tcgkorea + snkrdunk (wrong-catalog scrapers) and added
+    # bunjang (KR C2C) + hareruya2 (JP Pokemon-specialist Shopify). Old
+    # code imported the dead names — ImportError set ALL four scrapers to
+    # None and every language returned count=0 silently. Import only what
+    # exists today; missing names become None individually so a future
+    # drop-one doesn't cascade-kill the rest.
+    naver_shopping = bunjang = hareruya2 = cardmarket = None  # type: ignore
     try:
-        from price_scrapers import naver_shopping, tcgkorea, snkrdunk, cardmarket
+        import price_scrapers as _ps
+        naver_shopping = getattr(_ps, "naver_shopping", None)
+        bunjang        = getattr(_ps, "bunjang", None)
+        hareruya2      = getattr(_ps, "hareruya2", None)
+        cardmarket     = getattr(_ps, "cardmarket", None)
     except Exception as _e:
         log.info("[lang-native:%s] price_scrapers unavailable: %s", lang, _e)
-        naver_shopping = tcgkorea = snkrdunk = cardmarket = None  # type: ignore
 
     def _try(src_name: str, fn, *args, **kwargs):
         if fn is None:
@@ -19567,11 +19677,16 @@ def _fetch_native_lang_price(card: dict, lang: str) -> dict:
         except Exception as _e:
             log.debug("[lang-native:%s] %s failed: %s", lang, src_name, _e)
 
+    # NOTE: query passed here is already-translated (e.g. "ミュウ 29" for jp).
+    # bunjang/hareruya2 do their own translation inside SCRAPERS via
+    # _TRANSLATE_LANG, but they receive the EN query when called direct
+    # like this — so we hand them the species-translated string from
+    # _lookup_native_name to keep their hit rates up.
     if lang == "kr":
-        _try("tcgkorea", tcgkorea, query, limit=20)
-        _try("naver",    naver_shopping, query, limit=20)
+        _try("naver",   naver_shopping, query, limit=20)
+        _try("bunjang", bunjang,        query, limit=20)
     elif lang == "jp":
-        _try("snkrdunk",      snkrdunk, query, limit=20)
+        _try("hareruya2",     hareruya2,  query, limit=20)
         _try("cardmarket_jp", cardmarket, query, limit=20, game="Pokemon")
     elif lang == "cn":
         _try("cardmarket_cn", cardmarket, query, limit=20, game="Pokemon")
