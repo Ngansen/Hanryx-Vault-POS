@@ -1,0 +1,232 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 18:14:59 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+echo '===== /card/image rest (4870-4970) ====='
+sed -n '4870,4970p' server.py
+echo
+echo '===== _lookup_native_name (19465-19525) ====='
+sed -n '19465,19525p' server.py
+echo
+echo '===== species_names module ====='
+ls -la species_names.py 2>/dev/null && sed -n '1,30p' species_names.py
+echo
+echo '===== xy10-29 cards_master row ====='
+docker compose exec -T pos psql "$DATABASE_URL" -c "SELECT set_id, card_number, name_en, name_jp, name_kr, name_chs, name_cht, LEFT(image_url, 80) as img, image_url_alt IS NOT NULL as has_alt FROM cards_master WHERE set_id='xy10' AND card_number IN (echo00e=Mew&set=xy10&number=29&refresh=1' | head -
+===== /card/image rest (4870-4970) =====
+                local = ""
+        if local and os.path.isfile(local):
+            try:
+                resp = send_file(local, conditional=True)
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+                resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
+                return resp
+            except Exception:
+                log.exception("[card/image] send_file failed for %s", local)
+                # Fall through to next candidate / network url.
+        url = (c.get("url") or "").strip()
+        if url:
+            return redirect(url, code=302)
+
+    # Last-ditch fallback: the legacy primary image_url column.
+    if primary_url:
+        return redirect(primary_url, code=302)
+    return jsonify({"error": "no image available"}), 404
+
+
+@app.route("/admin/multi/<game>/visual/status", methods=["GET"])
+def multi_visual_status(game: str):
+    try:
+        import multi_tcg_visual
+        return jsonify(multi_tcg_visual.status(game.lower()))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/multi/<game>/visual/rebuild", methods=["POST"])
+def multi_visual_rebuild(game: str):
+    if not _kr_admin_authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        import multi_tcg_visual, threading
+        # Build in background — embedding thousands of images takes minutes
+        threading.Thread(
+            target=lambda: multi_tcg_visual.build_index(
+                _direct_db(), game.lower(), force=True),
+            name=f"multi-visual-{game}", daemon=True).start()
+        return jsonify({"game": game, "started": True,
+                        "note": "build runs in background; poll /status"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/admin/errors", methods=["GET"])
+@require_admin
+def admin_errors():
+    """Tail of recent WARNING+ log records — saves SSH'ing to the Pi for
+    every glitch. Returns JSON when ?format=json, otherwise an HTML page."""
+    level_filter = (request.args.get("level") or "").upper().strip()
+    limit = max(1, min(500, _safe_int(request.args.get("limit"), 200)))
+    rows = list(_ERROR_RING)[-limit:]
+    if level_filter:
+        rows = [r for r in rows if r["level"] == level_filter]
+    rows.reverse()  # newest first
+
+    if (request.args.get("format") or "").lower() == "json":
+        return jsonify({"count": len(rows), "rows": rows})
+
+    def _row_html(r):
+        color = {"ERROR": "#f87171", "WARNING": "#facc15",
+                 "CRITICAL": "#dc2626"}.get(r["level"], "#aaa")
+        ts = datetime.datetime.fromtimestamp(r["ts"] / 1000).strftime("%H:%M:%S")
+        msg = (r["msg"] or "").replace("<", "&lt;").replace(">", "&gt;")
+        return (f'<tr><td style="color:#666">{ts}</td>'
+                f'<td style="color:{color};font-weight:600">{r["level"]}</td>'
+                f'<td><pre style="margin:0;white-space:pre-wrap;'
+                f'font-family:ui-monospace,monospace;font-size:12px;'
+                f'color:#ddd">{msg}</pre></td></tr>')
+
+    body_rows = "".join(_row_html(r) for r in rows) or (
+        '<tr><td colspan="3" style="text-align:center;color:#555;'
+        'padding:40px">No warnings or errors in buffer 🎉</td></tr>'
+    )
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Recent Errors — HanryxVault</title>
+<meta http-equiv="refresh" content="10">
+<style>
+  body{{background:#0a0a0a;color:#eee;font-family:system-ui,sans-serif;
+       margin:0;padding:24px}}
+  h1{{color:#facc15;margin:0 0 6px;font-size:22px}}
+  .meta{{color:#666;font-size:12px;margin-bottom:18px}}
+  .links a{{color:#60a5fa;text-decoration:none;margin-right:14px;font-size:13px}}
+  table{{width:100%;border-collapse:collapse;margin-top:16px}}
+  td{{padding:6px 10px;vertical-align:top;border-bottom:1px solid #181818;
+     font-size:13px}}
+  th{{text-align:left;padding:8px 10px;color:#666;font-size:11px;
+     text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #222}}
+</style></head>
+<body>
+  <h1>⚠️ Recent Errors & Warnings</h1>
+  <div class="meta">Live ring buffer (last {len(_ERROR_RING)} of 500). Auto-refreshes every 10 s.</div>
+  <div class="links">
+    <a href="/admin/errors">All</a>
+    <a href="/admin/errors?level=ERROR">ERROR only</a>
+    <a href="/admin/errors?level=WARNING">WARNING only</a>
+    <a href="/admin/errors?format=json">JSON</a>
+    <a href="/admin">← Admin</a>
+  </div>
+
+===== _lookup_native_name (19465-19525) =====
+    Cross-reference cards_master to find the native-language name for a card.
+
+    Match strategy (strict — never falls back to name-only because EN names
+    are not unique across reprints, and a wrong-card name passed to a native
+    scraper produces silently misleading results):
+
+      1. Normalise card_number to its localId form ("4/102" → "4"), since
+         cards_master stores only the localId from TCGdex, not the "/total".
+      2. Match on (LOWER(name_en) = ?, card_number = ?) with non-empty
+         native column.
+      3. If no number was supplied, accept ANY exact name_en match — the
+         caller has explicitly opted out of disambiguation.
+
+    Returns None when no confident match exists, which is the correct
+    behaviour for cards that genuinely don't trade in that language
+    (e.g. Base Set 1999 has no Korean release).
+    """
+    col = _LANG_NAME_COL.get(lang)
+    if not col:
+        return None
+    name_en = (card.get("name") or "").strip()
+    number  = (card.get("number") or "").strip()
+    if not name_en:
+        return None
+
+    # cards_master stores card_number as bare localId (TCGdex convention).
+    # Strip any "/total" suffix the UI / pricing route might pass through.
+    number_local = number.split("/", 1)[0].strip() if number else ""
+
+    try:
+        db = _direct_db()
+        row = None
+        if number_local:
+            row = db.execute(
+                f"SELECT {col} AS native FROM cards_master "
+                f"WHERE LOWER(name_en) = LOWER(%s) "
+                f"  AND card_number = %s "
+                f"  AND {col} <> '' "
+                f"LIMIT 1",
+                (name_en, number_local),
+            ).fetchone()
+        else:
+            # Caller didn't supply a number — accept any exact-name match.
+            row = db.execute(
+                f"SELECT {col} AS native FROM cards_master "
+                f"WHERE LOWER(name_en) = LOWER(%s) AND {col} <> '' "
+                f"LIMIT 1",
+                (name_en,),
+            ).fetchone()
+        db.close()
+        if row:
+            v = row["native"] if isinstance(row, dict) else row[0]
+            return (v or "").strip() or None
+    except Exception as _e:
+        log.debug("[lang-native] lookup failed for %s/%s: %s", name_en, lang, _e)
+    return None
+
+
+def _fetch_native_lang_price(card: dict, lang: str) -> dict:
+    """
+    Fetch native-market price for a card in the requested language.
+
+===== species_names module =====
+-rw-rw-r-- 1 ngansen ngansen 219110 May  8 22:45 species_names.py
+"""
+species_names.py — multilingual Pokémon species name table.
+
+GENERATED FILE — DO NOT EDIT MANUALLY.
+Run `python3 pi-setup/build_species_names.py` to regenerate from PokéAPI.
+
+Snapshot: 1025 species, fetched 2026-05-08 22:41 UTC
+
+Used by:
+  - price_scrapers.search_all() to translate English card-name queries
+    into katakana (snkrdunk) and hangul (tcgkorea) before scraping,
+    because those marketplaces only index in their native language.
+  - card_enrich, ai_assistant, fuzzy search — anywhere we need to
+    map between localised names of the same species.
+"""
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+# {pokedex_number: {language_field: localized_name}}
+# Field meaning:
+#   en       — English
+#   ja       — Japanese (default form, usually katakana)
+#   ja_kana  — Japanese explicit hiragana/katakana (= what snkrdunk uses)
+#   ja_roma  — Japanese romaji (latin transliteration)
+#   ko       — Korean (hangul, = what tcgkorea uses)
+#   zh_hant  — Chinese traditional
+#   zh_hans  — Chinese simplified
+#   fr, de   — French, German
+
+===== xy10-29 cards_master row =====
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: No such file or directory
+        Is the server running locally and accepting connections on that socket?
+
+===== curl /card/image =====
+
+===== curl /admin/cards/en-match =====
+
+===== curl /api/v1/pricing/language =====
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
