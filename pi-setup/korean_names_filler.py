@@ -247,28 +247,18 @@ def fetch_set_cards_generic(client: PoliteClient, set_url: str,
         if len(out) >= 3:
             candidates.append(out)
 
-    # Strategy C: line-based scan. Walk text content; for any line that
-    # starts with a 1-3 digit number followed by Korean characters, capture.
-    body_text = soup.get_text("\n")
-    out = {}
-    for line in body_text.splitlines():
-        line = line.strip()
-        if not line or not looks_korean(line):
-            continue
-        n = parse_card_number(line)
-        if not n:
-            continue
-        # Drop the leading number token from the captured Korean text.
-        kr = re.sub(r"^[\s#0-9/\-:.,]+", "", line).strip()
-        # If the line still contains an English Pokémon name first, take the
-        # Korean cluster after the last Latin run.
-        m = re.search(r"([\uac00-\ud7a3][\uac00-\ud7a3\s·,]*)", kr)
-        if m:
-            kr = m.group(1).strip()
-        if kr and looks_korean(kr):
-            out.setdefault(n, kr)
-    if len(out) >= 3:
-        candidates.append(out)
+    # Strategy C (REMOVED 2026-05): line-based body scan was the source of
+    # systemic offset bugs (Mew XY10/29 → 피그킹, etc). Page navigation,
+    # sidebars, and unrelated set listings frequently contain a stray "29"
+    # token AND a Hangul Pokémon name on the same line, but for a totally
+    # different card. Strategy C paired them happily and poisoned cards_master.
+    # Skipping this strategy means some old/oddly-formatted set pages will now
+    # yield nothing — that's the correct behaviour: an empty name_kr lets
+    # _lookup_native_name fall back to species_names.translate() at query
+    # time, which is lossy but never produces a WRONG-card lookup.
+    # If a future site genuinely needs line-based parsing, gate it on the
+    # SAME line containing both the EN Pokémon name AND the KR name AND the
+    # number, and verify against species_names before accepting.
 
     if not candidates:
         return {}
