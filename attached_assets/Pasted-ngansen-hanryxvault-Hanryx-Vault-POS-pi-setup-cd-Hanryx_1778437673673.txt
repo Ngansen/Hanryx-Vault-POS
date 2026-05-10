@@ -1,0 +1,39 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+echo "===== /card/image route ====="
+grep -n '"/card/image"\|def.*card_image\|/card/image' server.py | head -5
+echo ""
+echo "===== _fetch_native_lang_price ====="
+grep -n "_fetch_native_lang_price\|_fetch_ebay_lang_price\|_LANG_QUERY_SUFFIXES" server.py | head -10
+echo ""
+echo "===== check NAVER keys are set ====="
+grep -E '^NAVER_CLIENT' .env | sed 's/=.*/=<SET>/'===== /card/image route =====
+1206:        # Route image_url through /card/image so the kiosk and scanner UIs
+4788:@app.route("/card/image", methods=["GET"])
+4789:def card_image_resolve():
+6702:      * image_local_url points at the existing /card/image route, which
+7080:def _card_image_src(card: dict, lang: str = "") -> str:
+
+===== _fetch_native_lang_price =====
+19437:_LANG_QUERY_SUFFIXES: dict[str, str] = {
+19523:def _fetch_native_lang_price(card: dict, lang: str) -> dict:
+19584:    suffix_for_ebay = _LANG_QUERY_SUFFIXES.get(lang, "")
+19635:def _fetch_ebay_lang_price(card: dict, lang_suffix: str) -> dict:
+20130:            lang_codes = list(_LANG_QUERY_SUFFIXES.keys())
+20131:            suffixes   = list(_LANG_QUERY_SUFFIXES.values())
+20134:                fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+20135:                fut_langs = [pool.submit(_fetch_native_lang_price, card, c)
+20929:    lang_codes = list(_LANG_QUERY_SUFFIXES.keys())   # jp, kr, cn, tw
+20932:        fut_en    = pool.submit(_fetch_ebay_lang_price, card, "")
+
+===== check NAVER keys are set =====
+NAVER_CLIENT_ID=<SET>
+NAVER_CLIENT_SECRET=<SET>
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -d pos sh -c 'exec python /app/scripts/c16_ebay_backfill.py --rate-sec 22 >/tmp/c16.log 2>&1'
+sleep 3
+docker compose exec -T pos sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < $d/cmdline 2>/dev/null); echo "$c" | grep -q c16_ebay && echo "pid=$(basename $d)"; done'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pid=10943
+pid=12086
+pid=12099
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
