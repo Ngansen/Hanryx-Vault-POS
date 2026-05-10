@@ -19369,11 +19369,21 @@ def _fetch_native_lang_price(card: dict, lang: str) -> dict:
     listings: list[dict] = []
     used:     list[str]  = []
 
+    # C10 dropped tcgkorea + snkrdunk (wrong-catalog scrapers) and added
+    # bunjang (KR C2C) + hareruya2 (JP Pokemon-specialist Shopify). Old
+    # code imported the dead names — ImportError set ALL four scrapers to
+    # None and every language returned count=0 silently. Import only what
+    # exists today; missing names become None individually so a future
+    # drop-one doesn't cascade-kill the rest.
+    naver_shopping = bunjang = hareruya2 = cardmarket = None  # type: ignore
     try:
-        from price_scrapers import naver_shopping, tcgkorea, snkrdunk, cardmarket
+        import price_scrapers as _ps
+        naver_shopping = getattr(_ps, "naver_shopping", None)
+        bunjang        = getattr(_ps, "bunjang", None)
+        hareruya2      = getattr(_ps, "hareruya2", None)
+        cardmarket     = getattr(_ps, "cardmarket", None)
     except Exception as _e:
         log.info("[lang-native:%s] price_scrapers unavailable: %s", lang, _e)
-        naver_shopping = tcgkorea = snkrdunk = cardmarket = None  # type: ignore
 
     def _try(src_name: str, fn, *args, **kwargs):
         if fn is None:
@@ -19386,11 +19396,16 @@ def _fetch_native_lang_price(card: dict, lang: str) -> dict:
         except Exception as _e:
             log.debug("[lang-native:%s] %s failed: %s", lang, src_name, _e)
 
+    # NOTE: query passed here is already-translated (e.g. "ミュウ 29" for jp).
+    # bunjang/hareruya2 do their own translation inside SCRAPERS via
+    # _TRANSLATE_LANG, but they receive the EN query when called direct
+    # like this — so we hand them the species-translated string from
+    # _lookup_native_name to keep their hit rates up.
     if lang == "kr":
-        _try("tcgkorea", tcgkorea, query, limit=20)
-        _try("naver",    naver_shopping, query, limit=20)
+        _try("naver",   naver_shopping, query, limit=20)
+        _try("bunjang", bunjang,        query, limit=20)
     elif lang == "jp":
-        _try("snkrdunk",      snkrdunk, query, limit=20)
+        _try("hareruya2",     hareruya2,  query, limit=20)
         _try("cardmarket_jp", cardmarket, query, limit=20, game="Pokemon")
     elif lang == "cn":
         _try("cardmarket_cn", cardmarket, query, limit=20, game="Pokemon")
