@@ -1,0 +1,164 @@
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+
+# (1) confirm EBAY_APP_ID is in the container
+docker compose -f pi-setup/docker-compose.yml exec -T pos sh -c \
+  '[ -n "$EBAY_APP_ID" ] && echo "OK len=$(echo -n $EBAY_APP_ID | wc -c)" || echo "MISSING"'
+
+# (2) launch C16 backfill at slightly slower rate to leave room for C17
+cd pi-setup
+docker compose exec -d pos sh -c \
+  'nohup python /app/scripts/c16_ebay_backfill.py --rate-sec 22 > /tmp/c16.log 2>&1 < /dev/null &'
+
+# (3) launch C17 watcher
+docker compose exec -d pos sh -c \
+  'nohup python /app/scripts/c17_price_watcher.py .log /tmp/c17.log'c -T pos sh -c 'tail -f /tmp/c16
+remote: Enumerating objects: 18, done.
+remote: Counting objects: 100% (18/18), done.
+remote: Compressing objects: 100% (14/14), done.
+remote: Total 14 (delta 9), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (14/14), 12.53 KiB | 251.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   88a9f71..48977e9  main       -> origin/main
+Updating 88a9f71..48977e9
+Fast-forward
+ .../scripts/c16_ebay_backfill.py | 235 ++++++
+ .../scripts/c17_price_watcher.py | 357 +++++++++
+ pi-setup/server.py               | 213 +++++
+ 3 files changed, 805 insertions(+)
+ create mode 100755 pi-setup/scripts/c16_ebay_backfill.py
+ create mode 100755 pi-setup/scripts/c17_price_watcher.py
+open /home/ngansen/Hanryx-Vault-POS/pi-setup/docker-compose.yml: no such file or directory
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+  pid=1
+  pid=10071
+  pid=10549
+  pid=11041
+  pid=11048
+  pid=11542
+  pid=11549
+  pid=11999
+  pid=12006
+  pid=12480
+  pid=12944
+  pid=13401
+  pid=13888
+  pid=14374
+  pid=14853
+  pid=1487
+  pid=15323
+  pid=15788
+  pid=15795
+  pid=16262
+  pid=16747
+  pid=17220
+  pid=17227
+  pid=17678
+  pid=18142
+  pid=18806
+  pid=18813
+  pid=19305
+  pid=19312
+  pid=1965
+  pid=1972
+  pid=19853
+  pid=19860
+  pid=20313
+  pid=20320
+  pid=20791
+  pid=21280
+  pid=21287
+  pid=21759
+  pid=22238
+  pid=22245
+  pid=22718
+  pid=23182
+  pid=23189
+  pid=23649
+  pid=23656
+  pid=24141
+  pid=2454
+  pid=24600
+  pid=25075
+  pid=25082
+  pid=25561
+  pid=25568
+  pid=26060
+  pid=26067
+  pid=26614
+  pid=27072
+  pid=27079
+  pid=27552
+  pid=27559
+  pid=27883
+  pid=28086
+  pid=28553
+  pid=28735
+  pid=28808
+  pid=29228
+  pid=2933
+  pid=2940
+  pid=29708
+  pid=29715
+  pid=30181
+  pid=30188
+  pid=30640
+  pid=31126
+  pid=31133
+  pid=31606
+  pid=31613
+  pid=32076
+  pid=32083
+  pid=32527
+  pid=32534
+  pid=32993
+  pid=33000
+  pid=33472
+  pid=33479
+  pid=33962
+  pid=3419
+  pid=3426
+  pid=34443
+  pid=34450
+  pid=34907
+  pid=34914
+  pid=35401
+  pid=35859
+  pid=36318
+  pid=36806
+  pid=36813
+  pid=37277
+  pid=37838
+  pid=37845
+  pid=37846
+  pid=37875
+  pid=37882
+  pid=37883
+  pid=3901
+  pid=3908
+  pid=4367
+  pid=4374
+  pid=4845
+  pid=508
+  pid=515
+  pid=5329
+  pid=5336
+  pid=5808
+  pid=6300
+  pid=6308
+  pid=6780
+  pid=7238
+  pid=7245
+  pid=7714
+  pid=7721
+  pid=8184
+  pid=8644
+  pid=9
+  pid=9105
+  pid=9585
+  pid=9592
+  pid=988
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+==> /tmp/c17.log <==
+tail: cannot open '/tmp/c16.log' for reading: No such file or directory
