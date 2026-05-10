@@ -1,0 +1,49 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c '
+  python -c "
+import sys; sys.path.insert(0, \"/app\")
+import server
+matches = [(r.rule, r.endpoint) for r in server.app.url_map.iter_rules() if \"/card/image\" in r.rule or r.rule == \"/<path:filename>\" or \"image\" in r.rule.lower()]
+for m in matches: print(m)
+"
+'
+echo "---"
+curl -sv 'http://localhost:8080/card/image?set_id=xy10&card_number=29&lang=en' 2>&1 | grep -iE "^(<|>|\*) " | head -25
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-10T19:03:33","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+('/card/image', 'card_image_resolve')
+('/card/scan/image', 'card_scan_image')
+('/card/identify-image', 'card_identify_image')
+---
+* Host localhost:8080 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:8080...
+* Connected to localhost (::1) port 8080
+* using HTTP/1.x
+> GET /card/image?set_id=xy10&card_number=29&lang=en HTTP/1.1
+> Host: localhost:8080
+> User-Agent: curl/8.14.1
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/1.1 200 OK
+< Server: gunicorn
+< Date: Sun, 10 May 2026 19:03:33 GMT
+< Connection: keep-alive
+< Content-Disposition: inline; filename=29
+< Content-Type: application/octet-stream
+< Content-Length: 299
+< Last-Modified: Fri, 17 Jan 2025 09:29:13 GMT
+< Cache-Control: public, max-age=86400
+< Expires: Tue, 09 Jun 2026 19:03:33 GMT
+< ETag: "1737106153.0-299-2357465152"
+< Accept-Ranges: bytes
+< X-Image-Source: local:tcgdex
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 

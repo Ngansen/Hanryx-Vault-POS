@@ -4648,7 +4648,7 @@ def card_image_resolve():
                                        set_id=set_id)
             except Exception:
                 local = ""
-        if local and os.path.isfile(local):
+        if local and os.path.isfile(local) and _is_valid_image_file(local):
             try:
                 resp = send_file(local, conditional=True)
                 resp.headers["Cache-Control"] = "public, max-age=86400"
@@ -4665,6 +4665,37 @@ def card_image_resolve():
     if primary_url:
         return _proxy_remote_image(primary_url, source_tag="primary")
     return jsonify({"error": "no image available"}), 404
+
+
+def _is_valid_image_file(path: str) -> bool:
+    """
+    Sanity-check a local file before serving it as an image.
+
+    Past mirror runs occasionally saved a CDN's HTML 404 page (~300 bytes,
+    starting with "<!DOC" or "<htm") into the .png slot when the upstream
+    fork moved files. send_file() then served those bytes to the kiosk
+    with the wrong Content-Type and the user got a "broken image" icon
+    with no diagnostic clue. This guard rejects:
+      * files smaller than 512 bytes (smallest legit card thumb is ~3KB)
+      * files whose first 8 bytes don't match a known image magic number
+
+    On any IO error we return False (defensive — the remote-URL proxy
+    branch will then try to fetch a fresh copy).
+    """
+    try:
+        st = os.stat(path)
+        if st.st_size < 512:
+            return False
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+        # PNG, JPEG, GIF, WebP, BMP magic numbers.
+        return (head.startswith(b"\x89PNG\r\n\x1a\n")
+                or head.startswith(b"\xff\xd8\xff")
+                or head.startswith(b"GIF87a") or head.startswith(b"GIF89a")
+                or (head[:4] == b"RIFF" and len(head) >= 8)  # WebP container
+                or head.startswith(b"BM"))
+    except Exception:
+        return False
 
 
 def _proxy_remote_image(url: str, source_tag: str = "remote"):
