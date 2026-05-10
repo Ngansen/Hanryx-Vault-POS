@@ -1,0 +1,115 @@
+That's a Pi-side fix only — I edited pi-setup/server.py (the _format_receipt() function). The tablet APK is unchanged.
+
+Which means:
+
+No new APK build needed. The one already on your tablet will work as-is.
+You just need to push the updated server.py to the Pi and restart the service:
+sudo bash pi-setup/scripts/update-server.sh
+The very next receipt printed after that will show the smaller header crest (about 1.4″ wide on 80mm paper, capped at 1.2″ tall).
+Doing it on the Pi side is the right place because the rasterising happens there — the tablet just sends the raw PNG bytes and the Pi decides how big to print them. This way you can tweak the size again later without touching the APK.
+What are the card data endpoints
+5 minutes ago
+Yes both
+4 minutes ago
+Both endpoints, with full request/response shapes:
+
+GET / POST /card/enrich — full card detail
+The richest single-card lookup. Combines local inventory + Pokémon TCG API (24 h cached) + last-known market price.
+
+Request — three ways to ask
+Form	Example
+By QR / set-num	GET /card/enrich?qr=SV1-1
+By name + set	GET /card/enrich?name=Charizard&set=sv3
+By set + number	GET /card/enrich?set=SV1&num=25
+POST JSON	POST /card/enrich body {"qr":"SV1-1"} (or {"name":"Charizard","set":"sv3"})
+qr accepts the canonical "SET-NUM" form (e.g. SV1-25) or the raw scan string — the server normalises it.
+
+Response (200 OK)
+{
+  "name":            "Charizard ex",
+  "qr_code":         "SV1-25",
+  "normalizedQr":    "SV1-25",
+  "price":           45.00,
+  "stock":           2,
+  "rarity":          "Double Rare",
+  "category":        "Singles",
+  "set_code":        "SV1",
+  "image_url":       "https://images.pokemontcg.io/sv1/25_hires.png",
+  "inLocalInventory": true,
+  "isDuplicate":      true,
+  "suggestedPrice":   42.50,
+  "imageUrl":         "https://images.pokemontcg.io/sv1/25_hires.png",
+  "tcgData": {
+    "name":   "Charizard ex",
+    "hp":     "330",
+    "types":  ["Fire"],
+    "rarity": "Double Rare",
+    "set": {
+      "id":    "sv1",
+      "name":  "Scarlet & Violet",
+      "series":"Scarlet & Violet",
+      "releaseDate": "2023/03/31"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/sv1/25.png",
+      "large": "https://images.pokemontcg.io/sv1/25_hires.png"
+    },
+    "attacks":     [...],
+    "weaknesses":  [...],
+    "tcgplayer": {
+      "marketPrice": 42.50,
+      "priceTiers":  { "normal": {...}, "holofoil": {...}, "reverseHolofoil": {...} }
+    }
+  }
+}
+Errors
+400 {"error": "Provide qr, name, or set+num"} — no identifier sent.
+Side effect
+Every successful enrich with a TCGPlayer market price writes a row to the price_history table for trend tracking — so you can later chart how a card's value moves over time.
+
+POST /market/price — your store's local market price
+A weighted blend of three trust-tiered sources. This is what the trade-in calculator and the cart "Estimate" chip on the tablet use.
+
+Request body
+{
+  "name":         "Charizard ex",      // required (text-search key)
+  "language":     "EN",                // optional, default "EN"
+  "store_price":  39.99,               // optional fallback the caller already knows
+  "set_code":     "SV1",               // optional — narrows to exact card
+  "card_number":  "025"                // optional — combined with set_code for exact match
+}
+If set_code + card_number are both provided, the server tries an exact lookup first (SV1-025). Otherwise it falls back to a fuzzy LIKE %name% search over local inventory.
+
+Response (200 OK)
+{
+  "marketPrice":    41.00,        // ← the answer (weighted average)
+  "confidence":     "high",       // "high" | "medium" | "low" | "none"
+  "localSalesAvg":  42.50,        // your store's 30-day avg sale price
+  "localSales30d":  4,            // how many of these you've sold in 30 days
+  "tcgdbPrice":     40.00,        // local inventory DB median price
+  "tcgdbName":      "Charizard ex",
+  "tcgdbSet":       "SV1",
+  "tcgdbRarity":    "Double Rare",
+  "storePrice":     39.99,        // echoed back from request
+  "language":       "EN"
+}
+Weighting (how marketPrice is computed)
+Source	Weight	When it counts
+Your 30-day sale_history avg	3	You've actually sold ≥1 of this card recently — most trusted
+Local inventory DB price (median of top 10 matches)	2	The card exists in your TCG DB import
+Caller's store_price	1	Fallback only — the price the cashier was looking at
+marketPrice = Σ(price × weight) / Σ(weight) over whatever sources returned a value.
+
+Confidence rules
+Value	Meaning
+"high"	You've sold ≥3 of this card in the last 30 days. Use the price as-is.
+"medium"	At least 2 sources agreed (combined weight ≥4) — solid but no recent sales.
+"low"	Only one source replied — best guess, ask before honoring.
+"none"	Nothing matched. marketPrice will be 0.0.
+Important: this is the local price route
+There's also the heavier external lookup (/market/price on the cloud repl, which hits pokemontcg.io + the TCGPlayer search API) — that's used for fresh first-time prices. The Pi's /market/price is the fast offline-friendly one and only consults what's already in your store's database.
+
+When to use which
+Scanning a card to add to cart / trade-in? → POST /market/price (fast, weighted, knows your sales).
+Showing a card detail screen, image, set info, attacks, full TCGPlayer breakdown? → GET /card/enrich (heavier, hits external API once, caches 24 h).
+Need both? → call enrich for the visuals/metadata, then market/price for the actual offer.

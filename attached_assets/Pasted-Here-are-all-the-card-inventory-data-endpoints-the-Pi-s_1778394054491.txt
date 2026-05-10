@@ -1,0 +1,50 @@
+Here are all the card/inventory data endpoints the Pi server exposes, grouped by purpose:
+
+🔍 Lookup & enrichment (read a single card)
+Endpoint	What it does
+GET /card/lookup?qr=<raw>	Resolve any scanned value (raw QR, set-num, card ID) to the matching inventory row. Lightweight — local DB only.
+POST /card/lookup	Same as above but takes the raw value in the JSON body (handles long/odd payloads).
+GET /card/scan	The "smart scan" path used by the Expo scanner — does fuzzy matching, learns aliases, falls back to suggestions.
+GET /card/enrich?qr=<id>	Local row + full TCG API data + market price + image URL. Heavier; used by the market sheet.
+GET /card/condition/<qr>	Read the saved condition (NM/LP/MP/HP/DMG) + notes.
+POST /card/condition/<qr>	Set condition + notes for a card.
+📷 Scanning relay (Expo scanner ↔ tablet)
+Endpoint	What it does
+POST /scan	Queue a scanned QR (Pokémon TCG URLs auto-normalised to set-num form).
+GET /scan/pending	Tablet poller — returns the next queued scan + its resolved product.
+POST /scan/ack/<id>	Mark a queued scan as consumed.
+GET /scan/stream	Server-Sent Events stream — push scans live instead of polling.
+POST /scan/frame	Push a camera frame for image-based identification.
+POST /scan/intelligent	Multi-candidate AI scan — returns top-N possible matches.
+POST /scan/intelligent/select	Confirm which candidate from /scan/intelligent the cashier picked.
+POST /card/identify-image	Direct image → card identification (FAISS + image hash).
+POST /api/push-scan	External push entry point (used by the cloud scanner relay).
+📦 Inventory CRUD (admin)
+Endpoint	What it does
+GET /inventory	Public list of in-stock products (lightweight).
+GET /admin/inventory	Full inventory list (admin auth).
+POST /admin/inventory	Add a new card to inventory.
+PATCH /admin/inventory/<qr>	Update fields on an existing card.
+DELETE /admin/inventory/<qr>	Remove a card.
+POST /inventory/deduct	Decrement stock by a structured soldItems payload (used at checkout).
+POST /inventory/decrement	Single-item decrement helper.
+POST /push/inventory	Bulk-push the tablet's full inventory to the Pi (replaces all rows).
+POST /push/inventory/csv	Same but accepts CSV.
+GET /admin/inventory/export	Download current inventory as JSON.
+POST /admin/inventory/import	Upload a JSON dump to overwrite local inventory.
+GET /admin/inventory/template	Blank import template.
+GET /admin/export-inventory	CSV export for spreadsheets.
+GET /admin/export-cards	TCG-card-only export (no accessories/sealed).
+GET /admin/scan-log	History of every scan that hit the Pi.
+💰 Market price (live external lookups)
+Endpoint	What it does
+POST /market/price	Live market price for a card name (+ optional set + card number). Combines pokemontcg.io + TCGPlayer search + your own 30-day sales avg.
+GET /market/search	Web-portal search box (HTML).
+GET /admin/market	Full market lookup dashboard.
+GET /offline-search	Fallback search using only the local DB when external APIs are down.
+🌐 Cloud sync
+Endpoint	What it does
+POST /admin/sync-scanner	Pull the latest inventory snapshot from the cloud inventory-scanner repo.
+POST /admin/set-satellite-token	Store the auth token for the cloud relay.
+Notes
+Discovery endpoints (POST /admin/discovery/report, GET /admin/discovery/queue.json) — the tablet expects these but they aren't on the Pi yet. 
