@@ -1,0 +1,163 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+echo "===== /card/image route (4788-4870) ====="
+sed -n '4788,4870p' server.py
+echo ""
+echo "===== _LANG_QUERY_SUFFIXES dict (19437-19470) ====="
+sed -n '19437,19470p' server.py
+echo ""
+echo "===== _fetch_native_lang_price (19523-19640) ====="
+sed -n '19523,19640p' server.py
+===== /card/image route (4788-4870) =====
+@app.route("/card/image", methods=["GET"])
+def card_image_resolve():
+    """
+    Resolve the best image for a (set_id, card_number) — preferring a local
+    file on the USB drive over a network URL, and a language-matching
+    source over an unrelated one. Used by the kiosk and admin views so
+    images keep rendering even when booth Wi-Fi is dead.
+
+    Query params:
+        set_id        canonical TCGdex set id (required)
+        card_number   normalised collector number, e.g. '025' (required)
+        lang          'en'|'kr'|'jp'|'chs'|'cht' (optional, default '')
+
+    Resolution order:
+        1. lang-matching candidate, local file exists  → send_file
+        2. lang-matching candidate, network URL        → 302 redirect
+        3. any candidate, local file exists            → send_file
+        4. any candidate, network URL                  → 302 redirect
+        5. cards_master.image_url (legacy primary)     → 302 redirect
+        else 404
+    """
+    set_id = (request.args.get("set_id") or "").strip()
+    card_number = (request.args.get("card_number") or "").strip()
+    want_lang = (request.args.get("lang") or "").strip().lower()
+    if not set_id or not card_number:
+        return jsonify({"error": "set_id and card_number required"}), 400
+
+    try:
+        db = _direct_db()
+        cur = db.cursor()
+        cur.execute(
+            "SELECT image_url, image_url_alt FROM cards_master "
+            "WHERE set_id=%s AND card_number=%s LIMIT 1",
+            (set_id, card_number),
+        )
+        row = cur.fetchone()
+    except Exception as e:
+        log.exception("[card/image] db lookup failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    if not row:
+        return jsonify({"error": "card not found"}), 404
+
+    primary_url, alt = row[0], row[1]
+    if isinstance(alt, str):
+        try:
+            alt = json.loads(alt) if alt else []
+        except Exception:
+            alt = []
+    candidates = list(alt) if isinstance(alt, list) else []
+
+    # Sort: lang-match local < lang-match url < any local < any url.
+    def _rank(c):
+        lang_match = (c.get("lang") or "") == want_lang and want_lang
+        has_local  = bool(c.get("local"))
+        if lang_match and has_local: return 0
+        if lang_match:               return 1
+        if has_local:                return 2
+        return 3
+    candidates.sort(key=_rank)
+
+    # Lazy re-check: even if the consolidator recorded local="", the file
+    # may have just been mirrored by sync_card_mirror.py. Re-derive the
+    # local path on every request so newly-downloaded files become
+    # available immediately, no consolidator re-run required.
+    try:
+        from unified.local_images import local_path_for as _resolve_local
+    except Exception:
+        _resolve_local = None  # type: ignore
+
+    for c in candidates:
+        local = (c.get("local") or "").strip()
+        if not local and _resolve_local:
+            try:
+                local = _resolve_local(c.get("src", ""), c.get("url", ""),
+                                       set_id=set_id)
+            except Exception:
+                local = ""
+
+===== _LANG_QUERY_SUFFIXES dict (19437-19470) =====
+_LANG_QUERY_SUFFIXES: dict[str, str] = {
+    "jp": "japanese",
+    "kr": "korean",
+    "cn": "chinese simplified",
+    "tw": "traditional chinese",
+}
+
+
+# ── Option B: native-market language pricing ─────────────────────────────────
+# eBay's category 183050 (Pokémon Individual Cards) under-indexes foreign-
+# language listings, and `_filter_and_score_lang` is too strict for raw eBay
+# JP/KR titles. So for each language chip we cross-reference cards_master to
+# get the *native* card name (e.g. EN "Charizard" → KR "리자몽" / JP "リザード"),
+# then fan out to language-appropriate pricing sources that DO understand
+# native names: tcgkorea + naver for KR, snkrdunk + cardmarket for JP, etc.
+# Falls back to eBay-with-native-name as a safety net so we never go fully
+# empty when a chip has at least *some* signal.
+
+_LANG_NAME_COL: dict[str, str] = {
+    "jp": "name_jp",
+    "kr": "name_kr",
+    "cn": "name_chs",
+    "tw": "name_cht",
+}
+
+
+def _lookup_native_name(card: dict, lang: str) -> str | None:
+    """
+    Cross-reference cards_master to find the native-language name for a card.
+
+    Match strategy (strict — never falls back to name-only because EN names
+    are not unique across reprints, and a wrong-card name passed to a native
+    scraper produces silently misleading results):
+
+
+===== _fetch_native_lang_price (19523-19640) =====
+def _fetch_native_lang_price(card: dict, lang: str) -> dict:
+    """
+    Fetch native-market price for a card in the requested language.
+
+    Pipeline:
+      1. Cross-reference cards_master to get the native-language card name.
+      2. Build a query using the NATIVE name + card number (number
+         disambiguates reprints across sets).
+      3. Fan out to language-appropriate scrapers in parallel-ish (HTTP-bound,
+         all sub-second so sequential is fine for this 4-language fan-out).
+      4. Append eBay-with-native-name as a safety net.
+      5. Normalise every listing to USD via fx_rates.
+      6. Trimmed median (drop 10% tails when ≥5 listings).
+
+    Returns:
+      {market, sample_size, sources_used, native_name, native_query}
+      market is None when no listings found anywhere.
+    """
+    native = _lookup_native_name(card, lang)
+    name   = native or (card.get("name") or "").strip()
+    number = (card.get("number") or "").strip()
+
+    query = " ".join(p for p in [name, number] if p).strip()
+    if not query:
+        return {"market": None, "sample_size": 0, "sources_used": [],
+                "native_name": native, "native_query": ""}
+
+    listings: list[dict] = []
+    used:     list[str]  = []
+
+    try:
+      
