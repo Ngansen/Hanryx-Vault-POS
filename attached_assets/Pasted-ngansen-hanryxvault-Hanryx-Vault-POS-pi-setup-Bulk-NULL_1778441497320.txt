@@ -1,0 +1,54 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # ── Bulk-NULL the corrupted KR + JP rows ──────────────────────────────────
+# Same logic as the audit: if cards_master.name_X shares no character with
+# species_names.translate(name_en, target), the value is almost certainly a
+# wrong-card paste from the now-removed Strategy C/D. NULL them so
+# _lookup_native_name's species fallback can produce correct queries.
+# Trainer/energy cards (no species translation) are never touched.
+docker compose exec -T pos python3 << 'PY'
+import sys
+sys.path.insert(0, "/app")
+from server import _direct_db
+from species_names import translate
+
+echo "(none = clean)"'/null; done grep -al c16_eba
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-10T19:30:28","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+Will NULL name_kr in 1005 rows
+Will NULL name_jp in 4 rows
+Done. Re-run audit if you want to confirm.
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+wrapper installed:
+-rwxr-xr-x 1 root root 1121 May 10 19:30 /app/scripts/c16_launch.sh
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+killing stale c16 pid 598
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -d pos /app/scripts/c16_launch.sh
+# Tail logs as before:
+docker compose exec -T pos tail -f /tmp/c16.log
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=22.0s/card  ETA=7d5h16m  min_usd=0.0  min_hits=3  dry_run=False
+[c16] [1/28355] 351430 (exu-%3F)  q='Unown EXU %3F'  hits=0 usd=0 median=$0.00  written=0 skipped=1 api_err=0 hist_rows=0  elapsed=0m  ETA=0d7h52m
+[c16] [50/28355] 351479 (tk-ex-m-1)  q='Arcanine TK-EX-M 1'  hits=0 usd=0 -> skip (below min_hits=3)
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=17.0s/card  ETA=5d13h53m  min_usd=0.0  min_hits=3  dry_run=False
+[c16] [1/28355] 351430 (exu-%3F)  q='Unown EXU %3F'  hits=0 usd=0 median=$0.00  written=0 skipped=1 api_err=0 hist_rows=0  elapsed=0m  ETA=0d7h52m
+^C
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ curl -s 'http://localhost:8080/api/v1/pricing/language?name=Mew&set=xy10&number=29&refresh=1' | python3 -m json.tool | grep -A4 '"kr"\|"jp"'
+    "jp": {
+        "count": 3,
+        "median": 4.15,
+        "native_name": "\u30df\u30e5\u30a6",
+        "pct_off": null,
+--
+    "kr": {
+        "count": 40,
+        "median": 50.6,
+        "native_name": "\ubba4",
+        "pct_off": null,
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
