@@ -1,0 +1,40 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "\d ebay_sold_history"'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+                                      Table "public.ebay_sold_history"
+   Column   |       Type       | Collation | Nullable |                       Default                       
+------------+------------------+-----------+----------+-----------------------------------------------------
+ id         | bigint           |           | not null | nextval('ebay_sold_history_id_seq'::regclass)
+ query      | text             |           | not null | 
+ title      | text             |           | not null | 
+ price      | double precision |           | not null | 
+ sold_date  | date             |           |          | 
+ score      | integer          |           | not null | 0
+ scraped_at | bigint           |           | not null | (EXTRACT(epoch FROM now()) * 1000::numeric)::bigint
+Indexes:
+    "ebay_sold_history_pkey" PRIMARY KEY, btree (id)
+    "idx_ebay_sold_date" btree (sold_date DESC)
+    "idx_ebay_sold_query" btree (query)
+    "idx_ebay_sold_scraped_at" btree (scraped_at DESC)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE "^def |ebay_sold_history|INSERT|search_ebay_sold" ebay_sold.py | head -30
+3:Requires the EBAY_APP_ID env var. Without it, search_ebay_sold() returns []
+8:    from ebay_sold import search_ebay_sold
+9:    SCRAPERS["ebay_sold"] = search_ebay_sold
+26:def search_ebay_sold(query: str, limit: int = 20) -> list[dict[str, Any]]:
+80:    print(json.dumps(search_ebay_sold(q, 5), indent=2, default=str))
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+  SELECT count(*) AS n_rows,
+         count(DISTINCT query) AS n_queries,
+         min(sold_date) AS oldest,
+         max(sold_date) AS newest
+  FROM ebay_sold_history;"'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ n_rows | n_queries |   oldest   |   newest   
+--------+-----------+------------+------------
+   3073 |        93 | 2019-05-05 | 2026-05-08
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
