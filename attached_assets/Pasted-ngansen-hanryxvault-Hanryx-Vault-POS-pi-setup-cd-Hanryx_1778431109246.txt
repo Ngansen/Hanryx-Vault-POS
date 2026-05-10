@@ -1,0 +1,144 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '1,50p;/def trends/,/^def /p' price_trends.py | head -120
+"""
+Price-trend & velocity signals from data we already collect.
+
+Reads two tables that are already populated by other parts of the system:
+
+  ebay_sold_history(query, title, price, sold_date, score, scraped_at)
+      → market signal — what real buyers paid on eBay
+  sale_history(name, price, quantity, sold_at)
+      → your own POS sales — *your* velocity, which can diverge from eBay's
+
+For a given card query we return three buckets:
+
+  medians       7-day / 30-day / 90-day median sale price (USD)
+                with sample counts and a confidence flag
+  trend         % change last 7d vs prior 7d, last 30d vs prior 30d,
+                direction tag (rising / stable / falling), and a
+                human-readable badge string
+  velocity      eBay sales/week + your-shop sales/week, plus a
+                temperature label (hot / warm / cool / cold) so the
+                buy-list can adjust offers automatically
+
+Pure SQL. No external HTTP calls. Cached in Redis for 1 hour because
+the underlying eBay history only refreshes when the operator clicks
+"Live Refresh" or the nightly job runs.
+
+Public API
+----------
+    trends(conn, query, *, your_name=None) → dict
+"""
+from __future__ import annotations
+
+import datetime
+import logging
+import statistics
+from typing import Iterable
+
+log = logging.getLogger("price_trends")
+
+# Hot/warm/cool/cold thresholds in eBay sales-per-week.
+# Tuned for Pokémon singles; tweak via constants if a different game
+# distribution shifts the curve.
+_HOT_PER_WEEK  = 7.0   # ≥ 1 a day on average
+_WARM_PER_WEEK = 2.0   # a few a week
+_COOL_PER_WEEK = 0.5   # 1-2 a month
+# Anything below _COOL is cold
+
+# Trend direction thresholds (% change). 5% noise floor — anything
+# inside ±5% reads as "stable" so we don't flap between rising and
+# falling on tiny week-to-week wiggles.
+_TREND_NOISE = 0.05
+def trends(conn, query: str, *, your_name: str | None = None) -> dict:
+    """
+    Compute the trend & velocity report for `query`.
+
+    `query` is matched against `ebay_sold_history.query` (case-insensitive
+    LIKE). `your_name`, if provided, is matched against `sale_history.name`
+    the same way; pass it when the in-shop product name differs from the
+    eBay search query.
+    """
+    if not query or not query.strip():
+        return {"error": "empty query"}
+    your_name = (your_name or query).strip()
+
+    today = datetime.date.today()
+    d7   = today - datetime.timedelta(days=7)
+    d14  = today - datetime.timedelta(days=14)
+    d30  = today - datetime.timedelta(days=30)
+    d60  = today - datetime.timedelta(days=60)
+    d90  = today - datetime.timedelta(days=90)
+
+    # ── pull eBay sold history once (cheap; index on query+sold_date) ──
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT sold_date, price FROM ebay_sold_history "
+            "WHERE LOWER(query) LIKE LOWER(%s) "
+            "  AND sold_date IS NOT NULL "
+            "  AND sold_date >= %s",
+            (f"%{query.strip()}%", d90),
+        )
+        ebay_rows = [(r[0], r[1]) for r in cur.fetchall()]
+
+    p7    = _trim_outliers(_bucket(ebay_rows, d7))
+    p7_p  = _trim_outliers(_bucket(ebay_rows, d14, d7))   # prior 7d
+    p30   = _trim_outliers(_bucket(ebay_rows, d30))
+    p30_p = _trim_outliers(_bucket(ebay_rows, d60, d30))  # prior 30d
+    p90   = _trim_outliers(_bucket(ebay_rows, d90))
+
+    medians = {
+        "7d":  {"median": _median(p7),  "count": len(p7)},
+        "30d": {"median": _median(p30), "count": len(p30)},
+        "90d": {"median": _median(p90), "count": len(p90)},
+    }
+
+    pct_7d  = _pct_change(_median(p7),  _median(p7_p))
+    pct_30d = _pct_change(_median(p30), _median(p30_p))
+    direction = _direction(pct_30d if pct_30d is not None else pct_7d)
+    if direction == "rising":
+        badge = f"📈 +{round((pct_30d or pct_7d or 0) * 100)}% trending up"
+    elif direction == "falling":
+        badge = f"📉 {round((pct_30d or pct_7d or 0) * 100)}% cooling off"
+    elif direction == "stable":
+        badge = "➡️ Stable"
+    else:
+        badge = "—"
+
+    trend = {
+        "pct_7d_vs_prev":  pct_7d,
+        "pct_30d_vs_prev": pct_30d,
+        "direction":       direction,
+        "badge":           badge,
+    }
+
+    # ── velocity ────────────────────────────────────────────────────
+    ebay_sales_30d = len([r for r in ebay_rows if r[0] >= d30])
+    ebay_per_week  = round(ebay_sales_30d / 30 * 7, 2)
+
+    your_per_week = 0.0
+    your_sales_30d = 0
+    cutoff_ms = int(datetime.datetime.combine(d30, datetime.time()).timestamp() * 1000)
+    with conn.cursor() as cur:
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ grep -nE "@app\.route|@app\.get|@app\.post" server.py | grep -iE "market|admin|price|trend" | head -20
+4710:@app.route("/admin/wireguard/status", methods=["GET"])
+4720:@app.route("/admin/printer/discover", methods=["POST", "GET"])
+4890:@app.route("/admin/multi/<game>/visual/status", methods=["GET"])
+4899:@app.route("/admin/multi/<game>/visual/rebuild", methods=["POST"])
+4916:@app.route("/admin/errors", methods=["GET"])
+4978:@app.route("/admin/monitor-stats", methods=["GET"])
+5846:@app.route("/admin/jpn-pocket/refresh", methods=["POST"])
+5863:@app.route("/admin/jpn-pocket/status", methods=["GET"])
+5880:@app.route("/admin/jpn-cards/refresh", methods=["POST"])
+5897:@app.route("/admin/multi/<game>/refresh", methods=["POST"])
+5919:@app.route("/admin/multi/status", methods=["GET"])
+5945:@app.route("/card/price", methods=["GET", "POST"])
+6014:@app.route("/admin/scrape/status", methods=["GET"])
+6024:@app.route("/admin/scrape/invalidate", methods=["POST"])
+6038:@app.route("/admin/fx/rates", methods=["GET"])
+6048:@app.route("/admin/jpn-cards/status", methods=["GET"])
+6106:@app.route("/admin/chs-cards/refresh", methods=["POST"])
+6127:@app.route("/admin/chs-cards/status", methods=["GET"])
+6389:@app.route("/admin/kr-cards/refresh", methods=["POST"])
+6410:@app.route("/admin/kr-cards/status", methods=["GET"])
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
