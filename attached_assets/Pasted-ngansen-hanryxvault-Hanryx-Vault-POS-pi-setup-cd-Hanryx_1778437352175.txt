@@ -1,0 +1,420 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '12815,12895p' server.py
+echo "===== JS renderer ====="
+sed -n '13260,13430p' server.py
+echo "===== en_match tier 3 ====="
+sed -n '300,380p' unified/en_match.py
+echo "===== tcg_lookup ====="
+sed -n '100,170p' tcg_lookup.py
+            <span class="trade-val" id="rTrade">—</span>
+            <div style="font-size:10px;color:#555;margin-top:2px">Suggested cash buy</div>
+          </div>
+        </div>
+
+        <div class="lang-wrap">
+          <div class="lang-title-row">
+            <div class="lang-title">🌐 Language Variant Pricing</div>
+            <div style="display:flex;align-items:center">
+              <span class="lang-age" id="langAge"></span>
+              <button class="lang-refresh-btn" id="langRefreshBtn" onclick="onLangRefresh()" title="Force fresh eBay scrape">↺</button>
+            </div>
+          </div>
+          <div class="lang-delta" id="langDelta" style="display:none"></div>
+          <!-- Matched-as header: shows the EN-edition card we anchored
+               this language-pricing block to. Hidden until the en-match
+               lookup resolves; failure leaves the chips alone. -->
+          <div class="match-strip" id="matchStrip" style="display:none"></div>
+          <div class="lang-grid" id="langGrid"></div>
+        </div>
+
+        <div class="local-box" id="localBox">
+          <div>
+            <div style="font-size:12px;color:#4ade80;font-weight:600">🏷️ In Your Inventory</div>
+            <div style="font-size:11px;color:#555;margin-top:2px" id="localSub"></div>
+          </div>
+          <div style="font-size:18px;font-weight:800;color:#86efac" id="localPrice"></div>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn-add" id="btnAdd" onclick="addToInventory()">+ Add to Inventory</button>
+          <button class="btn-add" id="btnQuickTrade" onclick="quickTradeInToTablet()" style="background:#0ea5e9;color:#000">📲 Trade-In → Tablet</button>
+          <button class="btn-gold" onclick="location.href='/admin'" style="background:#1a1a2a;color:#aaa;border:1px solid #333">↩ Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── eBay sold history chart panel ─────────────────── -->
+  <div class="ebay-section" id="ebaySection">
+    <div class="ebay-hdr">
+      <span style="font-size:16px">📉</span>
+      <span class="ebay-title">eBay Sold History <span style="font-size:11px;color:#555;font-weight:400">(90 days · IQR filtered)</span></span>
+      <span class="ebay-src" id="ebaySrc"></span>
+      <button class="ebay-refresh" id="ebayRefreshBtn" onclick="loadEbayHistory(true)">↺ Live Refresh</button>
+    </div>
+
+    <div class="ebay-loading" id="ebayLoading">Fetching eBay sold listings…</div>
+
+    <div id="ebayBody" style="display:none">
+      <!-- Period summary cards -->
+      <div class="period-row" id="periodRow"></div>
+
+      <!-- Buy intelligence panel (max-buy / fair / steal + sparkline + verdict) -->
+      <div class="buy-panel" id="buyPanel" style="display:none">
+        <div class="buy-hdr">
+          <span style="font-size:16px">💰</span>
+          <span class="buy-title">Best Buy Intelligence <span style="font-size:10px;color:#555;font-weight:500;text-transform:none;letter-spacing:0">· trend-adjusted from 90d sold</span></span>
+          <span class="buy-conf" id="buyConf"></span>
+        </div>
+        <div class="buy-grid" id="buyGrid"></div>
+        <div class="buy-spark">
+          <div class="buy-spark-hdr">
+            <span>90-Day Price Thread</span>
+            <span id="buySparkMeta"></span>
+          </div>
+          <div id="buySparkSvg"></div>
+        </div>
+        <div class="buy-ask">
+          <label for="buyAskInput">Test Asking $</label>
+          <input id="buyAskInput" type="number" step="0.01" min="0" placeholder="85.00" inputmode="decimal" />
+          <div class="buy-verdict neutral" id="buyVerdict">Enter a seller's price to get an instant verdict</div>
+          <button id="buyKioskBtn" type="button" onclick="pushTransparency()" style="background:#0a0a0a;border:1px solid #4ade80aa;color:#4ade80;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;letter-spacing:.5px;cursor:pointer;text-transform:uppercase" title="Display this pricing breakdown on the customer kiosk">🖥 Show Customer</button>
+        </div>
+      </div>
+
+      <!-- Price trend chart -->
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+
+===== JS renderer =====
+        const src = _langData.data_source === 'cached' ? 'cached' : 'live';
+        if (ld.median) {{
+          ebayLine = `eBay: $${{ld.median.toFixed(2)}} · ${{count}} sold`;
+        }} else {{
+          ebayLine = 'No recent sales';
+        }}
+        srcBadge = `<span class="lang-src ${{src}}">● ${{src === 'cached' ? 'Cached' : 'Live'}}</span>`;
+        // Arbitrage flags
+        if (count > 0 && count < 5) {{
+          arbBadge = `<span class="arb-badge arb-lowdata">⚠ Low data (${{count}})</span>`;
+        }} else if (pct < 0) {{
+          arbBadge = `<span class="arb-badge arb-premium">🔥 Premium — higher than EN</span>`;
+        }} else if (pct <= 10 && count >= 5) {{
+          arbBadge = `<span class="arb-badge arb-parity">⚠ Near parity (${{pct}}% off)</span>`;
+        }}
+      }} else {{
+        pct      = _LANG_DEFAULTS[l.key] || 30;
+        price    = mktM * (1 - pct / 100);
+        ebayLine = _langData ? 'No eBay sales found' : '';
+        srcBadge = `<span class="lang-src est">est.</span>`;
+      }}
+    }}
+
+    const tradein   = price * 0.80;
+    const tradeStr  = mktM > 0 ? `<div class="lang-tradein">Trade-in: $${{tradein.toFixed(2)}}</div>` : '';
+    const highlighted = l.code === selLang ? 'border:1px solid #f59e0b' : '';
+    const pctBadge = pct !== null
+      ? `<span class="lang-pct" style="background:#1a1a2e;color:#818cf8">${{pct}}% off</span>`
+      : `<span class="lang-pct" style="background:#1a1400;color:#f59e0b">Base</span>`;
+
+    return `<div class="lang-cell" style="${{highlighted}}">
+      <div class="lang-flag">${{l.flag}}</div>
+      <div class="lang-code">${{l.code}}</div>
+      <div class="lang-price">${{mktM > 0 ? '$' + price.toFixed(2) : 'N/A'}}</div>
+      ${{pctBadge}}
+      ${{tradeStr}}
+      ${{ebayLine ? `<div class="lang-ebay">${{ebayLine}}</div>` : ''}}
+      ${{arbBadge}}
+      ${{srcBadge}}
+    </div>`;
+  }}).join('');
+}}
+
+async function loadLangPrices(name, set, number, variant, forceRefresh) {{
+  if (!name) return;
+  _langCurrentCard = {{name, set, number, variant}};
+  _langData = null;
+  applyCond();
+  _updateLangAge();
+  // Kick off the matched-as lookup in parallel — it doesn't block the
+  // language pricing chips and has its own error handling.
+  loadMatchStrip(name, set, number, variant);
+  try {{
+    const p = new URLSearchParams({{name}});
+    if (set)          p.set('set', set);
+    if (number)       p.set('number', number);
+    if (variant)      p.set('variant', variant);
+    if (forceRefresh) p.set('refresh', '1');
+    const r = await fetch('/api/v1/pricing/language?' + p);
+    if (!r.ok) return;
+    _langData      = await r.json();
+    _langFetchedAt = Date.now();
+    applyCond();
+    _updateLangAge();
+  }} catch(e) {{ /* non-fatal — estimates remain */ }}
+}}
+
+// ── Matched-as header strip ───────────────────────────────────────────────
+// Shows the EN-edition card the language-pricing chips were anchored to,
+// so the operator can sanity-check the match before reading percentages.
+// Everything resolves locally except the eBay deep-link, which is greyed
+// out when the browser reports offline. No part of the card-search or
+// price-display flows depend on this strip succeeding.
+// Monotonic-token stale guard. Each call to begin() returns a fresh
+// token; only the most recent token is "current". Replaces the older
+// per-key string-comparison pattern — clearer intent ("is my work
+// still the latest?") and works even when the same lookup repeats.
+// Reusable for any other async-render path that can race with itself.
+function makeStaleGuard() {{
+  let token = 0;
+  return {{
+    begin:     function () {{ token += 1; return token; }},
+    isCurrent: function (t) {{ return t === token; }},
+  }};
+}}
+
+const _matchStripGuard = makeStaleGuard();
+async function loadMatchStrip(name, set, number, variant) {{
+  const strip = document.getElementById('matchStrip');
+  if (!strip) return;
+  // Claim the latest token; any in-flight older call's checks fail.
+  const t = _matchStripGuard.begin();
+  strip.style.display = 'flex';
+  strip.classList.add('is-loading');
+  strip.innerHTML =
+    '<div class="match-img">…</div>' +
+    '<div class="match-body">' +
+      '<div class="match-row1"><span class="match-label">Matched as</span></div>' +
+      '<div class="match-meta">Looking up English edition…</div>' +
+    '</div>';
+  try {{
+    const p = new URLSearchParams();
+    if (name)    p.set('name', name);
+    if (set)     p.set('set', set);
+    if (number)  p.set('number', number);
+    const r = await fetch('/admin/cards/en-match?' + p);
+    // Two stale-response checks: one after the network round-trip and
+    // one after JSON parsing. The body parse is itself async (gzip +
+    // UTF-8 decode), so a newer card lookup can race in between and
+    // we must not paint over its result with our older response.
+    if (!_matchStripGuard.isCurrent(t)) return;   // stale response, drop it
+    if (!r.ok) {{ renderMatchStrip(null); return; }}
+    const j = await r.json();
+    if (!_matchStripGuard.isCurrent(t)) return;   // newer card landed mid-parse
+    renderMatchStrip(j && j.match ? j.match : null);
+  }} catch (e) {{
+    if (_matchStripGuard.isCurrent(t)) renderMatchStrip(null);
+  }}
+}}
+
+function renderMatchStrip(m) {{
+  const strip = document.getElementById('matchStrip');
+  if (!strip) return;
+  strip.classList.remove('is-loading');
+  if (!m) {{
+    // Don't take up booth screen real estate when there's no match —
+    // the chips below already say what we know.
+    strip.style.display = 'none';
+    strip.innerHTML = '';
+    return;
+  }}
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+  const conf = (m.confidence || 'name').toLowerCase();
+  const confLabel = conf === 'exact'    ? 'Exact'
+                  : conf === 'name_set' ? 'Name + Set'
+                  : 'Name only';
+  // Surface how the SET portion was canonicalised so the operator can
+  // tell e.g. "Name+Set match was real" from "Name+Set match because
+  // an alias rescued a typo". Tier-3 (name-only) and any unresolved
+  // set fall through to 'raw' — the tooltip then says so plainly.
+  const sm = (m.set_match || 'raw').toLowerCase();
+  const smTip = sm === 'set_id'     ? 'Set matched directly by ID'
+              : sm === 'name_exact' ? 'Set matched by exact name'
+              : sm === 'name_like'  ? 'Set matched by partial name'
+              : sm === 'alias'      ? 'Set matched via operator-curated alias'
+              :                       'Set not canonicalised — name lookup only';
+  // Ambiguity badge — the resolver pulled up to 11 candidates per
+  // tier and reports the count here. Anything > 1 means there were
+  // multiple cards_master rows the operator might have meant; we
+  // surface "1 of N" so they can think twice before pricing. The
+  // backend caps at 11, so we render "1 of 10+" in that case rather
+  // than implying we know the exact size of a long list.
+  const cc = Number(m.candidate_count) || 1;
+  let candBadge = '';
+  if (cc > 1) {{
+    const ccLabel = cc >= 11 ? '1 of 10+' : ('1 of ' + cc);
+    const ccTip = 'Multiple cards matched — pick again from the chips below ' +
+                  'or narrow the set/number to disambiguate';
+    candBadge = '<span class="match-cand" title="' + esc(ccTip) + '" ' +
+                'data-candidate-count="' + esc(String(cc)) + '">' +
+                esc(ccLabel) + '</span>';
+  }}
+  const metaBits = [];
+  if (m.set_id)      metaBits.push(esc(m.set_id));
+  if (m.card_number) metaBits.push('#' + esc(m.card_number));
+  if (m.rarity)      metaBits.push(esc(m.rarity));
+  const metaLine = metaBits.join('<span class="sep">·</span>');
+  const artistLine = m.artist
+    ? '<div class="match-meta" style="font-size:10px">Illus. ' + esc(m.artist) + '</div>'
+===== en_match tier 3 =====
+        if set_code and num_norm:
+            cur.execute(
+                _SELECT_COLS +
+                " WHERE set_id = %s "
+                "   AND (card_number = %s OR card_number = %s) "
+                "   AND name_en <> '' "
+                " LIMIT %s",
+                (set_code, num_norm, number, _CANDIDATE_FETCH_CAP),
+            )
+            rows = cur.fetchall()
+            if rows:
+                return build_match_response(
+                    rows[0], confidence="exact",
+                    set_match=set_match,
+                    candidate_count=len(rows))
+
+        # 2. name + set
+        if name and set_code:
+            cur.execute(
+                _SELECT_COLS +
+                " WHERE set_id = %s "
+                "   AND name_en <> '' "
+                "   AND (name_en   ILIKE %s OR name_kr ILIKE %s OR "
+                "        name_jp   ILIKE %s OR name_chs ILIKE %s OR "
+                "        name_cht  ILIKE %s) "
+                " ORDER BY length(name_en) ASC "
+                " LIMIT %s",
+                (set_code,) + (f"%{name}%",) * 5 + (_CANDIDATE_FETCH_CAP,),
+            )
+            rows = cur.fetchall()
+            if rows:
+                return build_match_response(
+                    rows[0], confidence="name_set",
+                    set_match=set_match,
+                    candidate_count=len(rows))
+
+        # 3. name only
+        if name:
+            cur.execute(
+                _SELECT_COLS +
+                " WHERE name_en <> '' "
+                "   AND (name_en   ILIKE %s OR name_kr ILIKE %s OR "
+                "        name_jp   ILIKE %s OR name_chs ILIKE %s OR "
+                "        name_cht  ILIKE %s) "
+                " ORDER BY length(name_en) ASC "
+                " LIMIT %s",
+                (f"%{name}%",) * 5 + (_CANDIDATE_FETCH_CAP,),
+            )
+            rows = cur.fetchall()
+            if rows:
+                # Tier-3 ignored set_code entirely, so the set-resolution
+                # tier is moot — flag it explicitly to avoid implying a
+                # trust signal we didn't earn.
+                return build_match_response(
+                    rows[0], confidence="name",
+                    set_match="raw",
+                    candidate_count=len(rows))
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+    return None
+
+
+# ── Response builder ─────────────────────────────────────────────────────
+
+def build_match_response(
+    row: Sequence,
+    confidence: str = "name",
+    set_match: str = "raw",
+    candidate_count: int = 1,
+) -> dict:
+    """
+    Shape the cards_master row into the JSON the frontend consumes.
+
+    The image URL goes through /card/image so the USB mirror is
+    consulted before the network — non-negotiable for offline-first.
+    The eBay URL targets *sold + completed* listings (LH_Sold=1 +
+    LH_Complete=1) because that's what determines trade-in pricing,
+===== tcg_lookup =====
+        (str(barcode_or_id), str(barcode_or_id), str(barcode_or_id))
+    ).fetchone()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def get_tcg_card(tcg_id: str) -> dict | None:
+    """Get a single TCG card by its pokemontcg.io ID (e.g. 'xy1-1')."""
+    conn = _get_db()
+    if not conn:
+        return None
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM tcg_cards WHERE id=?", (tcg_id,)).fetchone()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def find_price(name: str, set_name: str = "", number: str = "") -> float | None:
+    """
+    Best-effort market price lookup for a card.
+    Returns the market price in USD, or None if not found.
+    Tries to match by name + set + number first, then falls back to name only.
+    """
+    conn = _get_db()
+    if not conn:
+        return None
+    cur = conn.cursor()
+
+    if set_name and number:
+        row = cur.execute(
+            "SELECT market_price FROM tcg_cards WHERE name=? AND set_name=? AND number=? LIMIT 1",
+            (name, set_name, number)
+        ).fetchone()
+        if row and row[0]:
+            conn.close()
+            return float(row[0])
+
+    if set_name:
+        row = cur.execute(
+            "SELECT market_price FROM tcg_cards WHERE name=? AND set_name=? LIMIT 1",
+            (name, set_name)
+        ).fetchone()
+        if row and row[0]:
+            conn.close()
+            return float(row[0])
+
+    row = cur.execute(
+        "SELECT market_price FROM tcg_cards WHERE name=? ORDER BY release_date DESC LIMIT 1",
+        (name,)
+    ).fetchone()
+    conn.close()
+    return float(row[0]) if (row and row[0]) else None
+
+
+def db_stats() -> dict:
+    """Return stats about the local database."""
+    conn = _get_db()
+    if not conn:
+        return {"error": "Database not found. Run import_tcg_db.py first."}
+    cur = conn.cursor()
+    return {
+        "inventory_cards": cur.execute("SELECT COUNT(*) FROM inventory").fetchone()[0],
+        "inventory_active": cur.execute("SELECT COUNT(*) FROM inventory WHERE sold=0 AND is_wishlist=0").fetchone()[0],
+        "tcg_sets": cur.execute("SELECT COUNT(*) FROM sets").fetchone()[0],
+        "tcg_cards": cur.execute("SELECT COUNT(*) FROM tcg_cards").fetchone()[0],
+        "db_path": _DB_PATH(),
+    }
+
+
+# ── Flask Blueprint routes ─────────────────────────────────────────────────────
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ./pi-setup/services/storefront/storefront-src/pi-setup/server.py:6915
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:13278  (etc)
+-bash: ./pi-setup/services/storefront/storefront-src/pi-setup/server.py:6915: No such file or directory
+-bash: syntax error near unexpected token `etc'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
