@@ -4648,15 +4648,25 @@ def card_image_resolve():
                                        set_id=set_id)
             except Exception:
                 local = ""
-        if local and os.path.isfile(local) and _is_valid_image_file(local):
-            try:
-                resp = send_file(local, conditional=True)
-                resp.headers["Cache-Control"] = "public, max-age=86400"
-                resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
-                return resp
-            except Exception:
-                log.exception("[card/image] send_file failed for %s", local)
-                # Fall through to next candidate / network url.
+        if local and os.path.isfile(local):
+            if _is_valid_image_file(local):
+                try:
+                    resp = send_file(local, conditional=True)
+                    resp.headers["Cache-Control"] = "public, max-age=86400"
+                    resp.headers["X-Image-Source"] = f"local:{c.get('src','?')}"
+                    return resp
+                except Exception:
+                    log.exception("[card/image] send_file failed for %s", local)
+                    # Fall through to this candidate's URL (transient IO error,
+                    # the URL is presumed valid).
+            else:
+                # Local file exists but is corrupt (e.g. tcgdex's helper-text
+                # placeholder saved as .png by a buggy mirror run). The URL
+                # is from the SAME source so it's almost certainly equally
+                # broken — skip the entire candidate and try the next one.
+                log.warning("[card/image] skipping corrupt local %s (src=%s)",
+                            local, c.get("src", "?"))
+                continue
         url = (c.get("url") or "").strip()
         if url:
             return _proxy_remote_image(url, source_tag=f"alt:{c.get('src','?')}")

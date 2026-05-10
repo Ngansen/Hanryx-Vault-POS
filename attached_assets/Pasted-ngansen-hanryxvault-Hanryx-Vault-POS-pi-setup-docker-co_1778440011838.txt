@@ -1,0 +1,27 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos python -c "
+from unified.local_images import local_path_for
+# Same args used by card_image_resolve for xy10/29 tcgdex candidate
+import json, sys
+sys.path.insert(0, '/app')
+from server import _direct_db
+db = _direct_db()
+row = db.execute(\"SELECT image_url_alt FROM cards_master WHERE set_id='xy10' AND card_number='29' LIMIT 1\").fetchone()
+alt = row[0] if row else None
+if isinstance(alt, str): alt = json.loads(alt)
+db.close()
+import os
+for c in (alt or []):
+    p = local_path_for(c.get('src',''), c.get('url',''), set_id='xy10')
+"ead={head!r}')'{c.get(\"src\")}: {p}  size={sz}  
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-10T19:06:16","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+tcgdex: /mnt/cards/cdn/assets.tcgdex.net/en/xy/xy10/29  size=299  head=b'To access the final image file, you need to add the extension and/or the quality'
+kr_official: /mnt/cards/cdn/cards.image.pokemonkorea.co.kr/data/wmimages/XY/XY10/XY10_029.png  size=572887  head=b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x02\x00\x00\x00\x02\xca\x08\x06\x00\x00\x00D\x0b\xe9(\x00\x00\x00\tpHYs\x00\x00\x0e\xc4\x00\x00\x0e\xc4\x01\x95+\x0e\x1b\x00\x00 \x00IDATx\x9c\xec\xbdi\x90e\xc7u\xe7\xf7;y\xef}\xef\xd5\xab'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
