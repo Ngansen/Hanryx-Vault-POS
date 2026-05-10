@@ -114,9 +114,11 @@ def main():
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    # Build the work-list.  Includes a LEFT JOIN to price_history to filter
-    # out cards already done within --refresh-days, AND an optional join to
-    # the latest tcgplayer price for --min-usd filtering.
+    # Build the work-list.  Uses master_id::text as the canonical card_id
+    # (price_history.card_id is text; existing scrapers use opaque PKM-ML*
+    # hashes that don't link to cards_master, so eBay rows we insert use the
+    # master_id key for clean joins).  Filters out cards with non-numeric
+    # card_number (Unown promos like "!", "%3F") which give useless eBay hits.
     cutoff_ts = f"NOW() - INTERVAL '{int(args.refresh_days)} days'"
     sql = f"""
     WITH last_ebay AS (
@@ -131,13 +133,17 @@ def main():
         WHERE source = 'tcgplayer' AND price_usd > 0
         ORDER BY card_id, observed_at DESC
     )
-    SELECT cm.master_id, cm.set_id, cm.card_number, cm.name_en,
+    SELECT cm.master_id,
+           UPPER(cm.master_id::text) AS card_id,
+           cm.set_id, cm.card_number, cm.name_en,
            COALESCE(lt.price_usd, 0)::float AS tcg_usd
     FROM cards_master cm
-    LEFT JOIN last_ebay  le ON UPPER(le.card_id) = UPPER(cm.master_id)
-    LEFT JOIN latest_tcg lt ON UPPER(lt.card_id) = UPPER(cm.master_id)
+    LEFT JOIN last_ebay  le ON le.card_id = UPPER(cm.master_id::text)
+    LEFT JOIN latest_tcg lt ON lt.card_id = UPPER(cm.master_id::text)
     WHERE cm.name_en IS NOT NULL AND cm.name_en <> ''
       AND cm.set_id  IS NOT NULL AND cm.card_number IS NOT NULL
+      AND cm.card_number ~ '[0-9]'
+      AND cm.variant_code = 'STD'
       AND (le.last_seen IS NULL OR le.last_seen < {cutoff_ts})
       AND (%(min_usd)s = 0 OR lt.price_usd >= %(min_usd)s)
     ORDER BY COALESCE(lt.price_usd, 0) DESC, cm.master_id
@@ -165,7 +171,8 @@ def main():
           flush=True)
     if args.dry_run:
         for r in work[:5]:
-            print(f"  would process: {r['master_id']:14s} q={_build_query(dict(r))!r}", flush=True)
+            print(f"  would process: {r['card_id']:>10s} ({r['set_id']}-{r['card_number']}) "
+                  f"q={_build_query(dict(r))!r}", flush=True)
         print("  ... (--dry-run, exiting)", flush=True)
         return
 
@@ -177,15 +184,16 @@ def main():
     for i, r in enumerate(work, 1):
         if _STOP:
             break
-        row    = dict(r)
-        master = row["master_id"]
-        query  = _build_query(row)
+        row     = dict(r)
+        card_id = row["card_id"]                  # UPPER(master_id::text)
+        label   = f"{card_id} ({row['set_id']}-{row['card_number']})"
+        query   = _build_query(row)
 
         try:
             hits = search_ebay_sold(query, limit=args.limit)
         except Exception as e:
             api_errors += 1
-            print(f"[c16] [{i}/{len(work)}] {master}  API ERROR: {e}", flush=True)
+            print(f"[c16] [{i}/{len(work)}] {label}  API ERROR: {e}", flush=True)
             time.sleep(args.rate_sec)
             continue
 
@@ -193,7 +201,7 @@ def main():
         if n_usd < args.min_hits or median <= 0:
             skipped_no_hits += 1
             if i % 50 == 0:
-                print(f"[c16] [{i}/{len(work)}] {master}  q={query!r}  hits={len(hits)} usd={n_usd} -> skip (below min_hits={args.min_hits})", flush=True)
+                print(f"[c16] [{i}/{len(work)}] {label}  q={query!r}  hits={len(hits)} usd={n_usd} -> skip (below min_hits={args.min_hits})", flush=True)
         else:
             try:
                 cur.execute("""
@@ -202,14 +210,14 @@ def main():
                        source, currency, price_usd, price_native, query_used,
                        observed_at)
                     VALUES (%s,%s,%s,%s,'ebay_sold','USD',%s,%s,%s, NOW())
-                """, (master.upper(), (row["name_en"] or master)[:160],
+                """, (card_id, (row["name_en"] or card_id)[:160],
                       median, int(time.time()*1000),
                       median, median, query[:200]))
                 conn.commit()
                 written += 1
             except Exception as e:
                 conn.rollback()
-                print(f"[c16] [{i}/{len(work)}] {master}  DB ERROR: {e}", flush=True)
+                print(f"[c16] [{i}/{len(work)}] {label}  DB ERROR: {e}", flush=True)
 
         if i % 100 == 0 or i == 1:
             elapsed = time.time() - t0
@@ -217,7 +225,7 @@ def main():
             remain  = (len(work) - i) / max(rate, 0.001)
             eh, em  = divmod(int(remain/60), 60)
             ed, eh  = divmod(eh, 24)
-            print(f"[c16] [{i}/{len(work)}] {master}  q={query!r}  "
+            print(f"[c16] [{i}/{len(work)}] {label}  q={query!r}  "
                   f"hits={len(hits)} usd={n_usd} median=${median:.2f}  "
                   f"written={written} skipped={skipped_no_hits} api_err={api_errors}  "
                   f"elapsed={int(elapsed/60)}m  ETA={ed}d{eh}h{em}m",

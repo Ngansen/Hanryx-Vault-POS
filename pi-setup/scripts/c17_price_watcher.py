@@ -134,8 +134,8 @@ SELECT a.card_id,
        CASE WHEN a.p_24_48h > 0 THEN ABS(a.p_24h - a.p_24_48h) / a.p_24_48h * 100 ELSE 0 END AS pct_24h,
        CASE WHEN a.p_7_14d  > 0 THEN ABS(a.p_7d  - a.p_7_14d)  / a.p_7_14d  * 100 ELSE 0 END AS pct_7d
 FROM agg a
-JOIN cards_master cm ON UPPER(cm.master_id) = UPPER(a.card_id)
-LEFT JOIN last_ebay le ON UPPER(le.card_id) = UPPER(a.card_id)
+JOIN cards_master cm ON UPPER(cm.master_id::text) = a.card_id
+LEFT JOIN last_ebay le ON le.card_id = a.card_id
 WHERE a.p_24h IS NOT NULL OR a.p_7d IS NOT NULL
 """
 
