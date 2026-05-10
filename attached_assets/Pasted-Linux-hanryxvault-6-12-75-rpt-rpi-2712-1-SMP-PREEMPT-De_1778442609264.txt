@@ -1,0 +1,34 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 19:43:45 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS
+
+# 1. Push commit #1
+git push "https://Ngansen:${GITHUB_TOKEN}@github.com/Ngansen/Hanryx-Vault-POS.git" main
+
+# 2. Stage server.py + requirements.txt for commit #2
+git add pi-setup/server.py pi-setup/requirements.txt
+git --no-optional-locks status --short | grep -v '^??'
+
+# 3. Commit #2 (message file already exists at /tmp/commit_msg2.txt)
+git -c user.name="ngansen" -c user.email="ngansen@hanryxvault" commit -F /tmp/commit_msg2.txt
+
+# 4. Push commit #2
+git push "https://Ngansen:${GITHUB_TOKEN}@github.cgit --no-optional-locks log --oneline -3
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/Ngansen/Hanryx-Vault-POS.git/'
+M  pi-setup/requirements.txt
+M  pi-setup/server.py
+fatal: could not read log file '/tmp/commit_msg2.txt': No such file or directory
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/Ngansen/Hanryx-Vault-POS.git/'
+95ef220 (HEAD -> main) fix(names): drop line-scan strategy from kr/jp fillers; NULL 1009 corrupted rows
+a49bc45 (origin/main, origin/HEAD) C16 dual-write: persist every eBay hit to ebay_sold_history (with NOT EXISTS dedupe) so price_trends.trends() — which feeds the admin marketplace UI — sees C16 backfill data, not just per-card /card/price scans. Mirrors server.py:19898 INSERT pattern.
+73a4905 C16/C17 fix: use master_id::text as canonical card_id (price_history was joining bigint→text and crashing). C16 also filters out non-numeric card_number (Unown promos) + variant_code='STD' only.
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
