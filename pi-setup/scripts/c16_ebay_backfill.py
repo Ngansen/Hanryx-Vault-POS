@@ -91,6 +91,46 @@ def _median_usd(hits: list[dict]) -> tuple[float, int]:
     return (round(statistics.median(usd), 2), len(usd)) if usd else (0.0, 0)
 
 
+def _parse_sold_date(raw):
+    """eBay returns sold_at as ISO8601 like '2026-05-08T12:34:56.000Z'.
+    Extract the date portion; return None on failure (column is nullable)."""
+    if not raw:
+        return None
+    try:
+        s = str(raw).strip()
+        return s[:10] if len(s) >= 10 and s[4] == "-" and s[7] == "-" else None
+    except Exception:
+        return None
+
+
+def _persist_ebay_history(cur, query, hits):
+    """Mirror server.py:19898 pattern — bulk-insert each hit into
+    ebay_sold_history with NOT EXISTS dedupe so price_trends.trends()
+    sees the same data as the per-card /card/price flow."""
+    written = 0
+    for h in hits:
+        try:
+            title = (h.get("title") or "")[:500]
+            price = float(h.get("price") or 0)
+            if not title or price <= 0:
+                continue
+            sold_date = _parse_sold_date(h.get("sold_at"))
+            cur.execute("""
+                INSERT INTO ebay_sold_history (query, title, price, sold_date, score, scraped_at)
+                SELECT %s, %s, %s, %s, 0, (EXTRACT(epoch FROM now())*1000)::bigint
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ebay_sold_history
+                    WHERE query=%s AND title=%s AND price=%s
+                      AND sold_date IS NOT DISTINCT FROM %s
+                )
+            """, (query, title, price, sold_date,
+                  query, title, price, sold_date))
+            written += cur.rowcount or 0
+        except Exception:
+            continue
+    return written
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rate-sec",      type=float, default=17.0)
@@ -180,6 +220,7 @@ def main():
     written = 0
     skipped_no_hits = 0
     api_errors = 0
+    ebay_hist_rows = 0
 
     for i, r in enumerate(work, 1):
         if _STOP:
@@ -198,6 +239,18 @@ def main():
             continue
 
         median, n_usd = _median_usd(hits)
+
+        # Always persist raw hits to ebay_sold_history (feeds price_trends.trends()
+        # which the admin marketplace renders).  Done even when below min_hits so
+        # the trend module can decide its own confidence threshold.
+        try:
+            new_rows = _persist_ebay_history(cur, query, hits)
+            conn.commit()
+            ebay_hist_rows += new_rows
+        except Exception as e:
+            conn.rollback()
+            print(f"[c16] [{i}/{len(work)}] {label}  ebay_sold_history ERROR: {e}", flush=True)
+
         if n_usd < args.min_hits or median <= 0:
             skipped_no_hits += 1
             if i % 50 == 0:
@@ -217,7 +270,7 @@ def main():
                 written += 1
             except Exception as e:
                 conn.rollback()
-                print(f"[c16] [{i}/{len(work)}] {label}  DB ERROR: {e}", flush=True)
+                print(f"[c16] [{i}/{len(work)}] {label}  price_history DB ERROR: {e}", flush=True)
 
         if i % 100 == 0 or i == 1:
             elapsed = time.time() - t0
@@ -227,7 +280,8 @@ def main():
             ed, eh  = divmod(eh, 24)
             print(f"[c16] [{i}/{len(work)}] {label}  q={query!r}  "
                   f"hits={len(hits)} usd={n_usd} median=${median:.2f}  "
-                  f"written={written} skipped={skipped_no_hits} api_err={api_errors}  "
+                  f"written={written} skipped={skipped_no_hits} api_err={api_errors} "
+                  f"hist_rows={ebay_hist_rows}  "
                   f"elapsed={int(elapsed/60)}m  ETA={ed}d{eh}h{em}m",
                   flush=True)
 
@@ -235,6 +289,7 @@ def main():
 
     print(f"[c16] DONE  processed={i} written={written} "
           f"skipped_no_hits={skipped_no_hits} api_err={api_errors} "
+          f"hist_rows={ebay_hist_rows} "
           f"elapsed={int((time.time()-t0)/60)}m", flush=True)
     cur.close(); conn.close()
 
