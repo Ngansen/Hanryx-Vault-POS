@@ -414,26 +414,20 @@ def fetch_set_cards_generic(client: PoliteClient, set_url: str,
         if len(out) >= 3:
             candidates.append(out)
 
-    # Strategy D: line-based scan of body text.
-    body_text = soup.get_text("\n")
-    out = {}
-    for line in body_text.splitlines():
-        line = line.strip()
-        if not line or not looks_japanese(line):
-            continue
-        n = parse_card_number(line)
-        if not n:
-            continue
-        jp = re.sub(r"^[\s#0-9/\-:.,]+", "", line).strip()
-        # Pick the first contiguous JP cluster on the line.
-        m = re.search(r"([\u3040-\u30ff\u3400-\u9fff][\u3040-\u30ff\u3400-\u9fff\s·,]*)",
-                      jp)
-        if m:
-            jp = m.group(1).strip()
-        if jp and looks_japanese(jp) and not _HANGUL_RX.search(jp):
-            out.setdefault(n, jp)
-    if len(out) >= 3:
-        candidates.append(out)
+    # Strategy D (REMOVED 2026-05): line-based body scan was the source of
+    # systemic offset bugs in the sister korean_names_filler (Mew XY10/29
+    # → 피그킹) — same code shape here, same risk class. Page navigation,
+    # sidebars, and unrelated set listings frequently contain a stray
+    # number AND a JP Pokémon name on the same line, but for a totally
+    # different card. Strategy D paired them happily and would poison
+    # cards_master.name_jp the same way. Skipping this strategy means
+    # some old/oddly-formatted set pages will now yield nothing — that's
+    # the correct behaviour: an empty name_jp lets _lookup_native_name
+    # fall back to species_names.translate(name_en, "ja_kana") at query
+    # time, which is lossy but never produces a WRONG-card lookup.
+    # If a future site genuinely needs line-based parsing, gate it on the
+    # SAME line containing both the EN Pokémon name AND the JP name AND
+    # the number, and verify against species_names before accepting.
 
     if not candidates:
         return {}
