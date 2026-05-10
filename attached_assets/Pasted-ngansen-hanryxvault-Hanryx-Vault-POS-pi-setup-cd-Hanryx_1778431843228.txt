@@ -1,0 +1,76 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '20,80p' ebay_sold.py
+EBAY_APP_ID  = os.environ.get("EBAY_APP_ID", "").strip()
+EBAY_TIMEOUT = float(os.environ.get("EBAY_TIMEOUT", "8"))
+EBAY_ENDPOINT = "https://svcs.ebay.com/services/search/FindingService/v1"
+GLOBAL_ID = os.environ.get("EBAY_GLOBAL_ID", "EBAY-US")
+
+
+def search_ebay_sold(query: str, limit: int = 20) -> list[dict[str, Any]]:
+    if not EBAY_APP_ID or not query:
+        return []
+    params = {
+        "OPERATION-NAME": "findCompletedItems",
+        "SERVICE-VERSION": "1.13.0",
+        "SECURITY-APPNAME": EBAY_APP_ID,
+        "GLOBAL-ID": GLOBAL_ID,
+        "RESPONSE-DATA-FORMAT": "JSON",
+        "REST-PAYLOAD": "",
+        "keywords": query,
+        "paginationInput.entriesPerPage": str(min(max(limit, 1), 100)),
+        "itemFilter(0).name": "SoldItemsOnly",
+        "itemFilter(0).value": "true",
+        "sortOrder": "EndTimeSoonest",
+    }
+    try:
+        r = requests.get(EBAY_ENDPOINT, params=params, timeout=EBAY_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return []
+
+    try:
+        items = (data["findCompletedItemsResponse"][0]
+                     ["searchResult"][0].get("item", []))
+    except (KeyError, IndexError, TypeError):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for it in items:
+        try:
+            sp = it["sellingStatus"][0]["currentPrice"][0]
+            price = float(sp["__value__"]); currency = sp["@currencyId"]
+        except (KeyError, IndexError, ValueError, TypeError):
+            continue
+        out.append({
+            "title": it.get("title", [None])[0],
+            "price": price,
+            "price_native": price,
+            "currency": currency,
+            "native_currency": currency,
+            "sold_at": (it.get("listingInfo", [{}])[0].get("endTime", [None])[0]),
+            "listing_url": (it.get("viewItemURL", [None])[0]),
+            "image_url":   (it.get("galleryURL", [None])[0]),
+            "condition":   ((it.get("condition", [{}])[0].get("conditionDisplayName", [None]))[0]),
+            "source": "ebay_sold",
+        })
+    return out
+
+
+if __name__ == "__main__":
+    import json, sys
+    q = " ".join(sys.argv[1:]) or "Charizard ex 199/197"
+    print(json.dumps(search_ebay_sold(q, 5), indent=2, default=str))
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -n "ebay_sold_history" server.py | head -10
+2854:        f"""CREATE TABLE IF NOT EXISTS ebay_sold_history (
+2863:        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_query      ON ebay_sold_history (query)",
+2864:        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_date       ON ebay_sold_history (sold_date DESC)",
+2865:        "CREATE INDEX IF NOT EXISTS idx_ebay_sold_scraped_at ON ebay_sold_history (scraped_at DESC)",
+14316:        "FROM ebay_sold_history "
+19884:    Persist eBay matched sold listings to ebay_sold_history for analytics.
+19898:                INSERT INTO ebay_sold_history (query, title, price, sold_date, score, scraped_at)
+19901:                    SELECT 1 FROM ebay_sold_history
+19925:            "FROM ebay_sold_history "
+20760:    Loads from the ebay_sold_history table first (zero eBay calls if data exists).
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
