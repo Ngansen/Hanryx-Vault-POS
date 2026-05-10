@@ -1,0 +1,100 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS
+git --no-optional-locks diff --stat pi-setup/server.py pi-setup/requirements.txt
+echo "---requirements diff---"
+git --no-optional-locks diff pi-setup/requirements.txt
+echo "---server.py changed regions---"
+git --no-optional-locks diff pi-setup/server.py | grep -E '^(@@|\+\+\+|---)' | head -30
+ pi-setup/requirements.txt | 108 ++++++++++-
+ pi-setup/server.py        | 149 ++++++++++++++--
+ 2 files changed, 239 insertions(+), 18 deletions(-)
+---requirements diff---
+diff --git a/pi-setup/requirements.txt b/pi-setup/requirements.txt
+index 5df09cd..0ba5361 100644
+--- a/pi-setup/requirements.txt
++++ b/pi-setup/requirements.txt
+@@ -556,6 +556,10 @@ distro==1.9.0 \
+     --hash=sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed \
+     --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+     # via openai
++et-xmlfile==2.0.0 \
++    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa \
++    --hash=sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54
++    # via openpyxl
+ evdev==1.9.3 \
+     --hash=sha256:2c140e01ac8437758fa23fe5c871397412461f42d421aa20241dc8fe8cfccbc9
+     # via -r requirements.in
+@@ -831,7 +835,9 @@ greenlet==3.4.0 \
+     --hash=sha256:f50a96b64dafd6169e595a5c56c9146ef80333e67d4476a65a9c55f400fc22ff \
+     --hash=sha256:f8296d4e2b92af34ebde81085a01690f26a51eb9ac09a0fcadb331eb36dbc802 \
+     --hash=sha256:f82cb6cddc27dd81c96b1506f4aa7def15070c3b2a67d4e46fd19016aacce6cf
+-    # via gevent
++    # via
++    #   gevent
++    #   playwright
+ gunicorn==25.3.0 \
+     --hash=sha256:cacea387dab08cd6776501621c295a904fe8e3b7aae9a1a3cbb26f4e7ed54660 \
+     --hash=sha256:f74e1b2f9f76f6cd1ca01198968bd2dd65830edc24b6e8e4d78de8320e2fe889
+@@ -1602,6 +1608,10 @@ openai==2.32.0 \
+     --hash=sha256:4dcc9badeb4bf54ad0d187453742f290226d30150890b7890711bda4f32f192f \
+     --hash=sha256:c54b27a9e4cb8d51f0dd94972ffd1a04437efeb259a9e60d8922b8bd26fe55e0
+     # via -r requirements.in
++openpyxl==3.1.5 \
++    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 \
++    --hash=sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050
++    # via -r requirements.in
+ orjson==3.11.8 \
+     --hash=sha256:0022bb50f90da04b009ce32c512dc1885910daa7cb10b7b0cba4505b16db82a8 \
+     --hash=sha256:003646067cc48b7fcab2ae0c562491c9b5d2cbd43f1e5f16d98fd118c5522d34 \
+@@ -1787,6 +1797,22 @@ pillow==12.2.0 \
+     #   qrcode
+     #   reportlab
+     #   torchvision
++playwright==1.59.0 \
++    --hash=sha256:4a4a2d4842b0e4120de3fa48636e4b69085a05b81d8a35ad4353f530ade72ed6 \
++    --hash=sha256:6989c476be2b9cd3e24a18cc9dcf202e266fb3d91e3e5395cd668c54ea54b119 \
++    --hash=sha256:8c881a19377d2b900af855fb525b5f22a27bf3cfbecba6d1edb36766d56cb100 \
++    --hash=sha256:93581ad515728cadc8af39b288a5633ba6d36e7d72048e79d890ce01ea2156f9 \
++    --hash=sha256:af068143a0c045ec11608b67d6c42e58db7e9cf65a742dd21fddedc1a9802c47 \
++    --hash=sha256:bfc6940100b57423175c819ce2422ec5880d55fa2769987f62ab7a1f5fe6783e \
++    --hash=sha256:c5792aad9e22b91a09264b9edbc18553cf05ea5a39404d65dc19a012c6b2e51d \
++    --hash=sha256:d5a5cc064b82ca92996080025710844e417f44df8fda9001102c28f44174171c
++    # via
++    #   -r requirements.in
++    #   playwright-stealth
++playwright-stealth==2.0.3 \
++    --hash=sha256:1887ade423ab7ff8ae16d363a30a38de0b5817e1e4a29d47b74bf3a0e3dbfcb4 \
++    --hash=sha256:1d8e488fbdd8f190f1269ea8cf5d57d14df3a9f1af1001c41ee3588b2aac3133
++    # via -r requirements.in
+ propcache==0.4.1 \
+     --hash=sha256:0002004213ee1f36cfb3f9a42b5066100c44276b9b72b4e1504cddd3d692e86e \
+     --hash=sha256:0013cb6f8dde4b2a2f66903b8ba740bdfe378c943c4377a200551ceb27f379e4 \
+@@ -2111,6 +2137,10 @@ pydantic-core==2.46.3 \
+     --hash=sha256:ff5e7783bcc5476e1db448bf268f11cb257b1c276d3e89f00b5727be86dd0127 \
+     --hash=sha256:ffe0883b56cfc05798bf994164d2b2ff03efe2d22022a2bb080f3b626176dd56
+     # via pydantic
++pyee==13.0.1 \
++    --hash=sha256:0b931f7c14535667ed4c7e0d5317163:
++    --hash=sha256:1887ade423ab7ff8ae16d363a30a38de0b5817e1e4a29d47b74bf3a0e3dbfcb4 \
++    --hash=sha256:1d8e488fbdd8f190f1269ea8cf5d57d14df3a9f1af1001c41ee3588b2aac3133
++    # via -r requirements.in
+ propcache==0.4.1 \
+     --hash=sha256:0002004213ee1f36cfb3f9a42b5066100c44276b9b72b4e1504cddd3d692e86e \
+     --hash=sha256:0013cb6f8dde4b2a2f66903b8ba740bdfe378c943c4377a200551ceb27f379e4 \
+@@ -2111,6 +2137,10 @@ pydantic-core==2.46.3 \
+     --hash=sha256:ff5e7783bcc5476e1db448bf268f11cb257b1c276d3e89f00b5727be86dd0127 \
+     --hash=sha256:ffe0883b56cfc05798bf994164d2b2ff03efe2d22022a2bb080f3b626176dd56
+     # via pydantic
++pyee==13.0.1 \
++    --hash=sha256:0b931f7c14535667ed4c7e0d5317163:
++    --hash=sha256:1887ade423ab7ff8ae16d363a30a38de0b5817e1e4a29d47b74bf3a0e3dbfcb4 \
++    --hash=sha256:1d8e488fbdd8f190f1269ea8cf5d57d14df3a9f1af1001c41ee3588b2aac3133
++    # via -r requirements.in
+ propcache==0.4.1 \
+     --hash=sha256:0002004213ee1f36cfb3f9a42b5066100c44276b9b72b4e1504cddd3d692e86e \
+     --hash=sha256:0013cb6f8dde4b2a2f66903b8ba740bdfe378c943c4377a200551ceb27f379e4 \
+@@ -2111,6 +2137,10 @@ pydantic-core==2.46.3 \
+     --hash=sha256:ff5e7783bcc5476e1db448bf268f11cb257b1c276d3e89f00b5727be86dd0127 \
+     --hash=sha256:ffe0883b56cfc05798bf994164d2b2ff03efe2d22022a2bb080f3b626176dd56
+     # via pydantic
++pyee==13.0.1 \
++    --hash=sha256:0b931f7c14535667ed4c7e0d5317163:
