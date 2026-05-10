@@ -1,0 +1,200 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 16:45:48 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+cd pi-setup
+docker compose cp scripts/c16_ebay_backfill.py pos:/app/scripts/c16_ebay_backfill.py
+
+# Kill the running C16 (keep the other 3 jobs alive)
+docker compose exec -T pos sh -c 'kill $(ps -ef | awk "/c16_ebay_backfill/ && !/awk/{print \$2}") 2>/dev/null; sleep 2; ps -ef | grep c16_ebay | grep -v grep || echo "c16 stopped"'
+
+# Relaunch with new code
+docker compose exec -d pos sh -c 'exec python /app/scripts/c16_ebay_backfill.py --rate-sec 22 >/tmp/c16.log 2>&1'
+
+.log'r compose exec -T pos sh -c 'tail -5 /tmp/c16
+remote: Enumerating objects: 9, done.
+remote: Counting objects: 100% (9/9), done.
+remote: Compressing objects: 100% (5/5), done.
+remote: Total 5 (delta 4), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (5/5), 1.51 KiB | 771.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   73a4905..a49bc45  main       -> origin/main
+Updating 73a4905..a49bc45
+Fast-forward
+ .../scripts/c16_ebay_backfill.py | 59 +++++++++-
+ 1 file changed, 57 insertions(+), 2 deletions(-)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c16_ebay_... 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+sh: 1: ps: not found
+sh: 1: ps: not found
+c16 stopped
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=22.0s/card  ETA=7d5h16m  min_usd=0.0  min_hits=3  dry_run=False
+[c16] [1/28355] 351430 (exu-%3F)  q='Unown EXU %3F'  hits=0 usd=0 median=$0.00  written=0 skipped=1 api_err=0 hist_rows=0  elapsed=0m  ETA=0d7h52m
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE 'LANGUAGE VARIANT|language[_-]variant|lang_variant|name_only|MATCHED AS' server.py | head -10
+6579:                                   "WHERE lang_variant = 'SC'"),
+6586:        "gap_tc": _gap_summary("zh_set_gap", "WHERE lang_variant = 'TC'"),
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -rnE 'LANGUAGE VARIANT|language-variant|lang_variant|matchedAs|name_only' --include='*.html' --include='*.js' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.py' . 2>/dev/null | grep -v node_modules | head -20
+./scripts/tests/test_admin_cards_en_match.py:192:    def test_falls_through_to_name_only_when_others_miss(self):
+./scripts/tests/test_admin_cards_en_match.py:203:    def test_name_only_skips_exact_and_name_set_branches(self):
+./scripts/tests/test_admin_cards_en_match.py:282:        # See test_name_only_skips_exact_and_name_set_branches above.
+./scripts/tests/test_admin_cards_en_match.py:804:    def test_set_match_is_raw_for_tier3_name_only_match(self):
+./scripts/tests/test_admin_cards_en_match.py:917:    def test_name_only_tier_reports_candidate_count(self):
+./scripts/tests/test_admin_cards_en_match.py:925:    def test_name_only_tier_passes_limit_param_last(self):
+./scripts/tests/test_zh_set_audit.py:16:  schema check  — lang_variant CHECK enforced (string-level)
+./scripts/tests/test_zh_set_audit.py:375:            # set_id, lang_variant, expected, actual, missing, extras, audited_at
+./scripts/tests/test_zh_set_audit.py:469:    def test_lang_variant_check_constraint_in_ddl(self):
+./scripts/tests/test_zh_set_audit.py:474:        self.assertIn("CHECK (lang_variant IN ('TC', 'SC'))", DDL_ZH_SET_GAP)
+./scripts/tests/test_zh_set_audit.py:477:        # PRIMARY KEY (set_id, lang_variant) — same numeric set_id
+./scripts/tests/test_zh_set_audit.py:479:        self.assertIn("PRIMARY KEY (set_id, lang_variant)", DDL_ZH_SET_GAP)
+./unified/schema.py:771:# lang_variant disambiguates and prevents an SC audit from clobbering
+./unified/schema.py:786:    lang_variant     TEXT NOT NULL,
+./unified/schema.py:792:    PRIMARY KEY (set_id, lang_variant),
+./unified/schema.py:793:    CHECK (lang_variant IN ('TC', 'SC'))
+./unified/schema.py:798:    ON zh_set_gap (lang_variant, audited_at DESC);
+./workers/zh_set_audit.py:62:# Per (lang_dir on disk, lang_variant in zh_set_gap, canonical filename).
+./workers/zh_set_audit.py:371:        for lang_dir, lang_variant, fname in LANG_VARIANTS:
+./workers/zh_set_audit.py:401:                    lang_variant=lang_variant,
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < $d/cmdline 2>/dev/null); echo "$c" | grep -q c16_ebay && echo "pid=$(basename $d)  $c"; done'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pid=10943  python /app/scripts/c16_ebay_backfill.py --rate-sec 22 
+pid=11019  sh -c for d in /proc/[0-9]*; do c=$(tr "" " " < $d/cmdline 2>/dev/null); echo "$c" | grep -q c16_ebay && echo "pid=$(basename $d)  $c"; done 
+pid=1478  python /app/scripts/c16_ebay_backfill.py --rate-sec 22 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos tail -10 /tmp/c16.log
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=22.0s/card  ETA=7d5h16m  min_usd=0.0  min_hits=3  dry_run=False
+[c16] [1/28355] 351430 (exu-%3F)  q='Unown EXU %3F'  hits=0 usd=0 median=$0.00  written=0 skipped=1 api_err=0 hist_rows=0  elapsed=0m  ETA=0d7h52m
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'kill <OLD_PID>'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+sh: 1: Syntax error: end of file unexpected
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE 'LANGUAGE VARIANT|language[_-]variant|lang_variant|name_only|MATCHED AS' server.py | head -10
+6579:                                   "WHERE lang_variant = 'SC'"),
+6586:        "gap_tc": _gap_summary("zh_set_gap", "WHERE lang_variant = 'TC'"),
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS
+grep -rnE 'LANGUAGE VARIANT|language-variant|lang_variant|matchedAs|name_only' --include='*.html' --include='*.js' --include='*.ts' --include='*.tsx' --include='*.py' . 2>/dev/null | grep -v node_modules | head -20
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:192:    def test_falls_through_to_name_only_when_others_miss(self):
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:203:    def test_name_only_skips_exact_and_name_set_branches(self):
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:282:        # See test_name_only_skips_exact_and_name_set_branches above.
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:804:    def test_set_match_is_raw_for_tier3_name_only_match(self):
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:917:    def test_name_only_tier_reports_candidate_count(self):
+./pi-setup/scripts/tests/test_admin_cards_en_match.py:925:    def test_name_only_tier_passes_limit_param_last(self):
+./pi-setup/scripts/tests/test_zh_set_audit.py:16:  schema check  — lang_variant CHECK enforced (string-level)
+./pi-setup/scripts/tests/test_zh_set_audit.py:375:            # set_id, lang_variant, expected, actual, missing, extras, audited_at
+./pi-setup/scripts/tests/test_zh_set_audit.py:469:    def test_lang_variant_check_constraint_in_ddl(self):
+./pi-setup/scripts/tests/test_zh_set_audit.py:474:        self.assertIn("CHECK (lang_variant IN ('TC', 'SC'))", DDL_ZH_SET_GAP)
+./pi-setup/scripts/tests/test_zh_set_audit.py:477:        # PRIMARY KEY (set_id, lang_variant) — same numeric set_id
+./pi-setup/scripts/tests/test_zh_set_audit.py:479:        self.assertIn("PRIMARY KEY (set_id, lang_variant)", DDL_ZH_SET_GAP)
+./pi-setup/unified/schema.py:771:# lang_variant disambiguates and prevents an SC audit from clobbering
+./pi-setup/unified/schema.py:786:    lang_variant     TEXT NOT NULL,
+./pi-setup/unified/schema.py:792:    PRIMARY KEY (set_id, lang_variant),
+./pi-setup/unified/schema.py:793:    CHECK (lang_variant IN ('TC', 'SC'))
+./pi-setup/unified/schema.py:798:    ON zh_set_gap (lang_variant, audited_at DESC);
+./pi-setup/workers/zh_set_audit.py:62:# Per (lang_dir on disk, lang_variant in zh_set_gap, canonical filename).
+./pi-setup/workers/zh_set_audit.py:371:        for lang_dir, lang_variant, fname in LANG_VARIANTS:
+./pi-setup/workers/zh_set_audit.py:401:                    lang_variant=lang_variant,
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS
+grep -rnE 'Language Variant Pricing|MATCHED AS|No eBay sales found|Trade-in|1 of 10\+|matched_as|name only|NAME ONLY' \
+  --include='*.html' --include='*.js' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.py' \
+  . 2>/dev/null | grep -v node_modules | grep -v test_ | head -30
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:1131:        # ── Trade-in tables ──────────────────────────────────────────────────
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:4006:# Feature 3: Trade-in Flow
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:4077:<!-- Trade-in detail modal -->
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:4245:        return jsonify({"error": "Trade-in not found or not open"}), 404
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:4291:        return jsonify({"error": "Trade-in not found or not open"}), 404
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:4314:        """, (it["qr_code"], it["condition"], f"Trade-in {ti['reference']}", _now_ms()))
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:5936:# Profit & Loss + Trade-in P&L
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:5977:    # ── Trade-in P&L ────────────────────────────────────────────────────────
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:6084:<h3 style="margin-top:0">🔁 Trade-in P&L</h3>
+./pi-setup/services/storefront/storefront-src/pi-setup/server.py:6915:          <div class="lang-title">🌐 Language Variant Pricing</div>
+./pi-setup/unified/en_match.py:336:        # 3. name only
+./pi-setup/server.py:2547:        # ── Trade-in tables ──────────────────────────────────────────────────
+./pi-setup/server.py:8503:# Feature 3: Trade-in Flow
+./pi-setup/server.py:8574:<!-- Trade-in detail modal -->
+./pi-setup/server.py:9107:        return jsonify({"error": "Trade-in not found or has no accepted items"}), 404
+./pi-setup/server.py:9414:        return jsonify({"error": "Trade-in not found or not open"}), 404
+./pi-setup/server.py:9462:        return jsonify({"error": "Trade-in not found or not open"}), 404
+./pi-setup/server.py:9473:    # paper). Trade-ins that never went through the tablet at all skip
+./pi-setup/server.py:9501:        """, (it["qr_code"], it["condition"], f"Trade-in {ti['reference']}", _now_ms()))
+./pi-setup/server.py:11701:# Profit & Loss + Trade-in P&L
+./pi-setup/server.py:11742:    # ── Trade-in P&L ────────────────────────────────────────────────────────
+./pi-setup/server.py:11849:<h3 style="margin-top:0">🔁 Trade-in P&L</h3>
+./pi-setup/server.py:12822:            <div class="lang-title">🌐 Language Variant Pricing</div>
+./pi-setup/server.py:13278:        ebayLine = _langData ? 'No eBay sales found' : '';
+./pi-setup/server.py:13284:    const tradeStr  = mktM > 0 ? `<div class="lang-tradein">Trade-in: $${{tradein.toFixed(2)}}</div>` : '';
+./pi-setup/server.py:13412:  // backend caps at 11, so we render "1 of 10+" in that case rather
+./pi-setup/server.py:13417:    const ccLabel = cc >= 11 ? '1 of 10+' : ('1 of ' + cc);
+./pi-setup/server.py:14455:/* Trade-in calculator */
+./pi-setup/server.py:14514:  <!-- Trade-in calculator -->
+./pi-setup/tcg_lookup.py:121:    Tries to match by name + set + number first, then falls back to name only.
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS
+ls pi-setup/static/ pi-setup/templates/ pi-setup/web/ pi-setup/admin/ pi-setup/pos_app/ 2>/dev/null
+find . -name '*.html' -not -path '*/node_modules/*' 2>/dev/null | head -20
+pi-setup/static/:
+brand-pulse.jpeg  logo.png
+./artifacts/mockup-sandbox/index.html
+./probe/tcg-pikachu.html
+./probe/snk-en-eng.html
+./probe/tcg-front-search.html
+./probe/snk-jp-pkmn.html
+./probe/tcg-search-html.html
+./probe/snk-en-kana.html
+./probe/snk-jp-kana.html
+./probe/tcg-search-q.html
+./scrape-dump/naver.html
+./scrape-dump/cardmarket.html
+./scrape-dump/tcgkorea.html
+./scrape-dump/snkrdunk.html
+./pi-setup/services/storefront/storefront-src/client/index.html
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE '@app\.route.*card|/card/' server.py | head -30
+28:  GET  /card/lookup?q=charizard          — fuzzy name search (local inventory)
+29:  GET  /card/lookup?qr=<raw_scan>        — resolve any scan value to a card
+30:  GET  /card/lookup?name=X&set=SV1&num=1 — explicit fields
+31:  POST /card/lookup                      — same, JSON body
+32:  GET  /card/enrich?qr=SV1-1            — local + full TCG API data + market price + image
+33:  POST /card/enrich                      — same, JSON body
+34:  GET  /card/condition/<qr>             — get NM/LP/MP/HP/DMG condition for a card
+35:  POST /card/condition/<qr>             — set condition + notes
+752:_qr_scan_cache   = TTLCache(maxsize=500, ttl=300)  # /card/scan — 5 min per QR code
+1206:        # Route image_url through /card/image so the kiosk and scanner UIs
+3681:#   ptcg://card/SV1/001  (deep-link used by the companion app)
+3691:      • ptcg://card/SET/NUMBER  (companion app deep-link)    → SET-NUMBER
+3694:      • pkmncards.com slugs  /card/slug-number               → best guess
+3718:        # ── Deep-link: ptcg://card/SET/NUMBER ───────────────────────────────
+3749:        # ── pkmncards.com/card/<slug> ─────────────────────────────────────────
+4385:# C15a — extras surfaced to /card/enrich and /market/price.
+4740:@app.route("/card/scan/multi", methods=["POST"])
+4788:@app.route("/card/image", methods=["GET"])
+5377:# Korean card support (ptcg-kr-db) — helpers used by /card/lookup
+5421:    Returns a list of dicts shaped like the rest of /card/lookup output.
+5880:@app.route("/admin/jpn-cards/refresh", methods=["POST"])
+5945:@app.route("/card/price", methods=["GET", "POST"])
+6048:@app.route("/admin/jpn-cards/status", methods=["GET"])
+6074:@app.route("/card/scan/video", methods=["POST"])
+6095:@app.route("/card/scan/recognizer/status", methods=["GET"])
+6106:@app.route("/admin/chs-cards/refresh", methods=["POST"])
+6127:@app.route("/admin/chs-cards/status", methods=["GET"])
+6202:@app.route("/card/scan/image", methods=["POST"])
+6219:                                       # /card/lookup)
+6389:@app.route("/admin/kr-cards/refresh", methods=["POST"])
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < $d/cmdline 2>/dev/null); echo "$c" | grep -q c16_ebay && echo "pid=$(basename $d)"; done; echo --; tail -3 /tmp/c16.log'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pid=10943
+pid=11229
+pid=1478
+--
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=22.0s/card  ETA=7d5h16m  min_usd=0.0  min_hits=3  dry_run=False
+[c16] [1/28355] 351430 (exu-%3F)  q='Unown EXU %3F'  hits=0 usd=0 median=$0.00  written=0 skipped=1 api_err=0 hist_rows=0  elapsed=0m  ETA=0d7h52m
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
