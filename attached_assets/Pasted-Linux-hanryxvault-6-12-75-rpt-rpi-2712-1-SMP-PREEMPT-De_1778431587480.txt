@@ -1,0 +1,66 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 16:35:17 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+ls *.py *.html 2>/dev/null | head -40
+ls -d static templates web ui admin frontend 2>/dev/null
+build_cards_master.py
+build_species_names.py
+buy_price.py
+card_enrich.py
+cards_db_path.py
+cgc_cert.py
+cluster_backfill.py
+desktop_monitor.py
+discover_new_sets.py
+discovery_dispatch.py
+ebay_sold.py
+filler_db.py
+fx_rates.py
+gunicorn.conf.py
+health_aggregator.py
+http_client.py
+image_lazy.py
+import_artwork_hashes.py
+import_chs_cards.py
+import_eng_xlsx.py
+import_ex_codes.py
+import_gaps.py
+import_jpn_cards.py
+import_jpn_pocket_cards.py
+import_jp_pokemoncardcom.py
+import_jp_xlsx.py
+import_kr_cards.py
+import_kr_promos.py
+import_multi_tcg.py
+import_pocket_limitless.py
+import_pokeapi_species.py
+import_ref_mappings.py
+import_tcg_db.py
+import_tcgdex.py
+japanese_image_filler.py
+japanese_names_filler.py
+korean_names_filler.py
+mirror_tcg_to_pg.py
+multi_tcg_visual.py
+notion_master_import.py
+static
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -n "^def \|trends" price_trends.py | head -4028:    trends(conn, query, *, your_name=None) → dict
+37:log = logging.getLogger("price_trends")
+55:def _median(values: list[float]) -> float | None:
+59:def _trim_outliers(prices: list[float]) -> list[float]:
+73:def _pct_change(now: float | None, prev: float | None) -> float | None:
+79:def _direction(pct: float | None) -> str:
+89:def _temperature(per_week: float) -> str:
+96:def _bucket(rows: Iterable[tuple], cutoff: datetime.date,
+116:def trends(conn, query: str, *, your_name: str | None = None) -> dict:
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS
+grep -rlnE 'marketplace|price-grid|price_history|ebay_sold' --include='*.html' --include='*.tsx' --include='*.jsx' --include='*.vue' --include='*.svelte' 2>/dev/null | head -20
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ 
