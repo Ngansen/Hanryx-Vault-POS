@@ -1,0 +1,79 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS && patch -p1 < /tmp/scraper_routing.patch
+cd ~/Hanryx-Vault-POS/pi-setup
+docker compose cp server.py pos:/app/server.py
+docker compose exec -T pos python -c "import ast; ast.parse(open('/app/server.py').read()); print('syntax OK')"
+
+# Fix the KR Mew data bug (xy10/29 had 피그킹 instead of 뮤). Audit
+# korean_names_filler.py later — likely more rows misaligned.
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+  UPDATE cards_master SET name_kr='\''뮤'\''
+   WHERE set_id='\''xy10'\'' AND card_number='\''29'\'' AND LOWER(name_en)='\''mew'\'';
+  SELECT set_id, card_number, name_en, name_kr, naon3 -m json.toolt=xy10&number=29&refresh=1' | pyth
+patching file pi-setup/server.py
+Hunk #1 succeeded at 19650 (offset 281 lines).
+Hunk #2 succeeded at 19677 (offset 281 lines).
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied server.py to pi-s... 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+syntax OK
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+UPDATE 1
+ERROR:  column "name_cn" does not exist
+LINE 4: ...T set_id, card_number, name_en, name_kr, name_jp, name_cn, n...
+                                                             ^
+HINT:  Perhaps you meant to reference the column "cards_master.name_en".
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+{
+    "card": {
+        "name": "Mew",
+        "number": "29",
+        "set": "xy10",
+        "variant": null
+    },
+    "cn": {
+        "count": 0,
+        "median": null,
+        "native_name": "\u68a6\u5e7b",
+        "pct_off": null,
+        "query": "\u68a6\u5e7b 29",
+        "sources_used": []
+    },
+    "data_source": "live",
+    "en": {
+        "count": 0,
+        "median": null,
+        "query": "Mew 29 xy10 pokemon"
+    },
+    "jp": {
+        "count": 3,
+        "median": 4.15,
+        "native_name": "\u30df\u30e5\u30a6",
+        "pct_off": null,
+        "query": "\u30df\u30e5\u30a6 29",
+        "sources_used": [
+            "hareruya2"
+        ]
+    },
+    "kr": {
+        "count": 20,
+        "median": 14.55,
+        "native_name": "\ud53c\uadf8\ud0b9",
+        "pct_off": null,
+        "query": "\ud53c\uadf8\ud0b9 29",
+        "sources_used": [
+            "naver"
+        ]
+    },
+    "tw": {
+        "count": 0,
+        "median": null,
+        "native_name": "\u5922\u5e7b",
+        "pct_off": null,
+        "query": "\u5922\u5e7b 29",
+        "sources_used": []
+    }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
