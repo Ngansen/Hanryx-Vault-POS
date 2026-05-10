@@ -4659,12 +4659,47 @@ def card_image_resolve():
                 # Fall through to next candidate / network url.
         url = (c.get("url") or "").strip()
         if url:
-            return redirect(url, code=302)
+            return _proxy_remote_image(url, source_tag=f"alt:{c.get('src','?')}")
 
     # Last-ditch fallback: the legacy primary image_url column.
     if primary_url:
-        return redirect(primary_url, code=302)
+        return _proxy_remote_image(primary_url, source_tag="primary")
     return jsonify({"error": "no image available"}), 404
+
+
+def _proxy_remote_image(url: str, source_tag: str = "remote"):
+    """
+    Stream a remote image back through this server instead of 302-redirecting.
+
+    Why: the trade-show kiosk loads over plain HTTP (no LE cert in the booth
+    tent), but cards_master.image_url points at HTTPS CDNs (pokemontcg.io,
+    images.tcgdex.net, etc). Browsers block HTTPS subresources from HTTP
+    pages as "mixed content" — silently — so a 302 redirect produces a
+    broken-image placeholder with no diagnostic clue. Streaming the bytes
+    back keeps the response same-origin, same-scheme as the page.
+
+    Cached for 24h client-side; the upstream Content-Type is preserved.
+    Failures return 502 with the upstream status so /admin/errors surfaces
+    them, rather than a confusing 200-with-broken-image.
+    """
+    try:
+        import requests
+        r = requests.get(url, stream=True, timeout=10,
+                         headers={"User-Agent": "HanryxVault/1.0"})
+        if r.status_code != 200:
+            log.warning("[card/image] proxy upstream %s returned %s",
+                        url[:100], r.status_code)
+            return jsonify({"error": "upstream image fetch failed",
+                            "status": r.status_code}), 502
+        from flask import Response
+        ct = r.headers.get("Content-Type") or "image/png"
+        resp = Response(r.iter_content(chunk_size=8192), content_type=ct)
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["X-Image-Source"] = f"proxy:{source_tag}"
+        return resp
+    except Exception as e:
+        log.exception("[card/image] proxy fetch failed for %s", url[:100])
+        return jsonify({"error": str(e)}), 502
 
 
 @app.route("/admin/multi/<game>/visual/status", methods=["GET"])
@@ -19233,9 +19268,33 @@ def _lookup_native_name(card: dict, lang: str) -> str | None:
         db.close()
         if row:
             v = row["native"] if isinstance(row, dict) else row[0]
-            return (v or "").strip() or None
+            v = (v or "").strip()
+            if v:
+                return v
     except Exception as _e:
         log.debug("[lang-native] lookup failed for %s/%s: %s", name_en, lang, _e)
+
+    # Species-level fallback: when cards_master has no localised name for
+    # this row (most older sets), fall back to the PokéAPI species table
+    # in species_names.py — "Mew" → "ミュウ"/"뮤"/"夢幻"/"梦幻". Lossy at
+    # the card level (all Mew variants share one species name) but
+    # produces a useful native marketplace query instead of fanning out
+    # the English string to KR/JP sellers who don't list under it.
+    # NOT used when cards_master returned a non-empty value — even if
+    # that value is wrong (e.g. a misaligned korean_names_filler row),
+    # the per-card data is still a closer match to reality than the
+    # species name. Track those data bugs separately.
+    try:
+        from species_names import translate as _species_translate
+        _species_field = {"jp": "ja_kana", "kr": "ko",
+                          "cn": "zh_hans", "tw": "zh_hant"}.get(lang)
+        if _species_field:
+            translated = _species_translate(name_en, _species_field)
+            if translated and translated.strip():
+                return translated.strip()
+    except Exception as _e:
+        log.debug("[lang-native] species fallback failed for %s/%s: %s",
+                  name_en, lang, _e)
     return None
 
 

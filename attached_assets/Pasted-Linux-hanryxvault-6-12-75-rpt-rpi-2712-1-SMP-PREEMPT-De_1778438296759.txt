@@ -1,0 +1,49 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 18:36:43 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+echo '=== DB credentials ==='
+grep -E 'POSTGRES_(USER|DB|PASSWORD)' docker-compose.yml | head -10
+echo
+echo '=== DB query (auto-detect user) ==='
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT set_id, card_number, name_en, name_jp, name_kr, name_chs, name_cht, LEFT(image_url,60) AS img FROM cards_master WHERE set_id='\''xy10'\'' AND card_number IN ('\''29'\'','\''029'\'');"'
+=== DB credentials ===
+grep: docker-compose.yml: No such file or directory
+
+=== DB query (auto-detect user) ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ set_id | card_number | name_en | name_jp | name_kr | name_chs | name_cht |                   img                    
+--------+-------------+---------+---------+---------+----------+----------+------------------------------------------
+ xy10   | 29          | Mew     |         | 피그킹  |          |          | https://images.pokemontcg.io/xy10/29.png
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ echo '=== curl image ==='
+curl -sI 'http://localhost/card/image?set_id=xy10&card_number=29&lang=en' | head -8
+echo '--- end ---'
+echo
+echo '=== curl en-match ==='
+curl -s 'http://localhost/admin/cards/en-match?name=Mew' | head -c 600
+echo
+echo '--- end ---'
+echo
+echo '=== curl lang pricing ==='
+curl -s 'http://localhost/api/v1/pricing/language?name=Mew&set=xy10&number=29&refresh=1' | head -c 1200
+echo
+echo '--- end ---'
+=== curl image ===
+--- end ---
+
+=== curl en-match ===
+
+--- end ---
+
+=== curl lang pricing ===
+
+--- end ---
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
