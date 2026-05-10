@@ -1,0 +1,27 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE 'LANGUAGE VARIANT|language[_-]variant|lang_variant|name_only|MATCHED AS' server.py | head -10
+6579:                                   "WHERE lang_variant = 'SC'"),
+6586:        "gap_tc": _gap_summary("zh_set_gap", "WHERE lang_variant = 'TC'"),
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -rnE 'LANGUAGE VARIANT|language-variant|lang_variant|matchedAs|name_only' --include='*.html' --include='*.js' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.py' . 2>/dev/null | grep -v node_modules | head -20
+./scripts/tests/test_admin_cards_en_match.py:192:    def test_falls_through_to_name_only_when_others_miss(self):
+./scripts/tests/test_admin_cards_en_match.py:203:    def test_name_only_skips_exact_and_name_set_branches(self):
+./scripts/tests/test_admin_cards_en_match.py:282:        # See test_name_only_skips_exact_and_name_set_branches above.
+./scripts/tests/test_admin_cards_en_match.py:804:    def test_set_match_is_raw_for_tier3_name_only_match(self):
+./scripts/tests/test_admin_cards_en_match.py:917:    def test_name_only_tier_reports_candidate_count(self):
+./scripts/tests/test_admin_cards_en_match.py:925:    def test_name_only_tier_passes_limit_param_last(self):
+./scripts/tests/test_zh_set_audit.py:16:  schema check  — lang_variant CHECK enforced (string-level)
+./scripts/tests/test_zh_set_audit.py:375:            # set_id, lang_variant, expected, actual, missing, extras, audited_at
+./scripts/tests/test_zh_set_audit.py:469:    def test_lang_variant_check_constraint_in_ddl(self):
+./scripts/tests/test_zh_set_audit.py:474:        self.assertIn("CHECK (lang_variant IN ('TC', 'SC'))", DDL_ZH_SET_GAP)
+./scripts/tests/test_zh_set_audit.py:477:        # PRIMARY KEY (set_id, lang_variant) — same numeric set_id
+./scripts/tests/test_zh_set_audit.py:479:        self.assertIn("PRIMARY KEY (set_id, lang_variant)", DDL_ZH_SET_GAP)
+./unified/schema.py:771:# lang_variant disambiguates and prevents an SC audit from clobbering
+./unified/schema.py:786:    lang_variant     TEXT NOT NULL,
+./unified/schema.py:792:    PRIMARY KEY (set_id, lang_variant),
+./unified/schema.py:793:    CHECK (lang_variant IN ('TC', 'SC'))
+./unified/schema.py:798:    ON zh_set_gap (lang_variant, audited_at DESC);
+./workers/zh_set_audit.py:62:# Per (lang_dir on disk, lang_variant in zh_set_gap, canonical filename).
+./workers/zh_set_audit.py:371:        for lang_dir, lang_variant, fname in LANG_VARIANTS:
+./workers/zh_set_audit.py:401:                    lang_variant=lang_variant,
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
