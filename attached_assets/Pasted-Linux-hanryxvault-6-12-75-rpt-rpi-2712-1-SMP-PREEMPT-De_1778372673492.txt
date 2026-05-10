@@ -1,0 +1,422 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sat May  9 13:22:45 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ # 1. Top-level: where's it going?
+df -h /
+sudo du -sh /var/lib/docker /var/log /home /root /tmp 2>/dev/null | sort -rh
+
+# 2. Docker is almost certainly #1 — see breakdown 
+docker system df -v | head -40
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   48G  8.5G  85% /
+2.0G    /home
+120M    /var/log
+100M    /tmp
+396K    /root
+Images space usage:
+
+REPOSITORY                 TAG        IMAGE ID       CREATED         SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+pi-setup-pos               latest     9b117146dbef   23 hours ago    4.02GB    2.929GB       1.096GB       1
+pi-setup-sync              latest     c83165b10b4e   23 hours ago    4.02GB    2.929GB       1.096GB       0
+pi-setup-recognizer        latest     9cf81c0179e1   5 days ago      1.35GB    172.2MB       1.182GB       1
+pi-setup-storefront        latest     0c862825ea7c   5 days ago      768MB     0B            767.6MB       1
+pi-setup-pokeapi           latest     aeed9c1460e4   5 days ago      101MB     9.486MB       91.37MB       1
+prom/prometheus            latest     e4254400b856   12 days ago     531MB     0B            530.7MB       1
+grafana/grafana            latest     0f86bada30d6   3 weeks ago     1.37GB    0B            1.371GB       1
+redis                      7-alpine   7aec734b2bb2   3 weeks ago     61.9MB    0B            61.95MB       1
+adminer                    latest     41898b976011   3 weeks ago     164MB     0B            164.2MB       1
+prom/node-exporter         latest     e9cff4fc67b1   4 weeks ago     38.4MB    0B            38.42MB       1
+pgvector/pgvector          pg16       7d400e340efb   2 months ago    639MB     0B            639.5MB       1
+jc21/nginx-proxy-manager   latest     2aa69b382a38   2 months ago    1.65GB    0B            1.649GB       1
+edoburu/pgbouncer          latest     85d1e3859361   4 months ago    23.6MB    0B            23.55MB       1
+ollama/ollama              0.4.7      55977eb61808   17 months ago   7.29GB    0B            7.291GB       0
+<none>                     <none>     c1e88455c852   19 months ago   71.2MB    9.486MB       61.75MB       0
+<none>                     <none>     7bbb2558b9b7   21 months ago   635MB     0B            635.5MB       0
+<none>                     <none>     6c5f93ba9e4c   2 years ago     33.6MB    0B            33.61MB       0
+
+Containers space usage:
+
+CONTAINER ID   IMAGE                             COMMAND                  LOCAL VOLUMES   SIZE      CREATED        STATUS                    NAMES
+09edccb779a8   pi-setup-storefront               "docker-entrypoint.sh"   0               74.6MB    11 hours ago   Up 11 hours (unhealthy)   pi-setup-storefront-1
+afcb64bfa268   pi-setup-pos                      "/entrypoint.sh"         2               24.6kB    11 hours ago   Up 11 hours (healthy)     pi-setup-pos-1
+60ed7515197a   edoburu/pgbouncer:latest          "/entrypoint.sh /usr…"   0               28.7kB    11 hours ago   Up 11 hours (healthy)     pi-setup-pgbouncer-1
+dff618c5594c   redis:7-alpine                    "docker-entrypoint.s…"   1               4.1kB     11 hours ago   Up 11 hours (healthy)     pi-setup-redis-1
+fb7842863b80   pgvector/pgvector:pg16            "docker-entrypoint.s…"   1               20.5kB    11 hours ago   Up 11 hours (healthy)     pi-setup-db-1
+1545acd97bab   pi-setup-pokeapi                  "/docker-entrypoint.…"   1               81.9kB    11 hours ago   Up 11 hours (healthy)     pi-setup-pokeapi-1
+df4f4e237857   pi-setup-recognizer               "python -u server.py"    0               246kB     11 hours ago   Up 11 hours (healthy)     pi-setup-recognizer-1
+01b80d16d9a7   prom/prometheus:latest            "/bin/prometheus --c…"   0               4.1kB     4 days ago     Up 11 hours               prometheus
+3ab3ba52815a   grafana/grafana:latest            "/run.sh"                0               8.19kB    5 days ago     Up 11 hours               grafana
+4500c973c8d3   jc21/nginx-proxy-manager:latest   "/init"                  0               46MB      5 days ago     Up 11 hours               npm
+c21623117d1b   adminer:latest                    "entrypoint.sh docke…"   0               24.6kB    5 days ago     Up 11 hours               adminer
+900260d47787   prom/node-exporter:latest         "/bin/node_exporter …"   0               20.5kB    5 days ago     Up 11 hours               node-exporter
+
+Local Volumes space usage:
+
+VOLUME NAME                                                        LINKS     SIZE
+ngansen@hanryxvault:~ $ # A) Dangling images + stopped containers + build cache (SAFE, biggest win)
+docker system prune -a -f --volumes=false
+# Note: --volumes=false keeps named volumes (DB data). DO NOT add --volumes=true.
+
+# B) Builder cache from C13.8 rebuild (often 2-5 GB after a few rebuilds)
+docker builder prune -a -f
+
+# C) Old logs (journald + container logs)
+sudo journalctl --vacuum-size=200M
+sudo find /var/lib/docker/containers/ -name '*-json.log' -exec sh -c 'truncate -s 0 "$1"' _ {} \;
+
+# D) APT cache
+sudo apt-get clean
+sudo apt-get autoremove --purge -y
+
+df -h /-check
+Deleted Images:
+untagged: pi-setup-sync:latest
+deleted: sha256:c83165b10b4ea15cb9b8648cc2c8670669bf364290ba5a60e4f2f961c3f4d2bb
+deleted: sha256:73f7ae6f823f09c6161333512075362a5c511c44ed0d06e4a1037bd97ffc40e1
+deleted: sha256:a6b0db9ea5b71742939e828a5593f0c886d817f09c56ce770f910526166e43bc
+untagged: redis@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275
+deleted: sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275
+deleted: sha256:2c70a43904b8985d52191bd8b23a3d663fdb32aeeb1ae67782ba1d9ca6e540ea
+deleted: sha256:52d1d85a28410fe55ab841920002936c87820d651d0d700fec0923c7d37e20a2
+untagged: pgvector/pgvector@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10
+deleted: sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10
+deleted: sha256:78586f2e9ffed4b646c7c24f232028360794358b63c19bee8be9a0abd947d7cc
+deleted: sha256:f79a0a532b4aa549f06def4c6f2f60d6396b6814ccdd6647345f7e6cd8b31cf9
+untagged: edoburu/pgbouncer@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c
+deleted: sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c
+deleted: sha256:ea484c3b77039175dd953cf57362c72d69be6e0e06879f71090772c6229225c7
+deleted: sha256:aa7c182c0ec05846eea18fed100222e6f796fd6f35cb92fca1ed4f8220422f9d
+untagged: ollama/ollama:0.4.7
+deleted: sha256:55977eb618082df0f81ea197a75dc1710e54524f2ef71fa1a8b83cc0148b6e2f
+deleted: sha256:0af9f6e17611b86c0e8183914f39bbe41b01401c20eab19786922fc6fa64df03
+deleted: sha256:75620d0caeb7298166e9a70ce28371b184592c45b2b5e320bdc3165ec92ba153
+
+Deleted build cache objects:
+ugsa228z8dzo9dzqzb972rk60
+z0juuy6153fff6uof83hkdfuw
+etzlzrcbxmwjyyov60g3ttd3v
+5wctxj0ko84nk4h5t9chyi1pl
+ggq1w2xwl1lu0to87mxi3l8xh
+v1nd352se9owty20wpoetkooa
+e780aragnd1sn18q99v3u08vy
+fpxab48x3mqj6ba2egfppvg2q
+l56kits40b3nwq3jjwrcwsu4s
+6oca15wx55cpoe8g9asqfoinu
+5cq9pbnm0t56th3yzsb98okly
+4v62067x6pnvpnywy605dj58s
+cvjk48dc5x1g83ls3if3cn2nj
+mt85pcnczt87oyebftmfbpmbh
+x3u9udq09md86o9yhkedzq02t
+m5vfz4eqy4w30tn11t2pgkt9f
+pvza8o8l20z0kfy82cb4mrl2k
+nkkbvrl6q95lajx5h1nezhe2a
+s41w19bynl6f0sxg18jjt33no
+u2dynftw0r10hude5xfj2ftyl
+i45b5mb8plzjyy9u34txa81sv
+ja4ytkfzcelm8i1u8u6p8ifa4
+rgj67vt4g6ts2amtmxdmnlypk
+j0v8pys2kmfb1221tu6ncleaj
+iltwchvkmic0m84ps3mk04nzl
+k44yl6uzrpotjw0fajgxp17el
+s7tg3zwd8n7ir8v2cpexh13xt
+ugwz8k2luw72z8mt4s0w6u4cr
+o7thh232juylv6aktg585ypbv
+95o13kjzb8i9kiyb72bgpf23n
+kn7fu043e1l8kqkauuc57eaws
+q8298brzh0cezodlh5uk33ru6
+tbkynq2k073n6ao03msj7dhvv
+v27tvbh7e284bpckk7ih0rchy
+i72znjua2fp45nnpwprmls7f5
+mkvm6zjie6addanli9lmx0d7j
+tpahe1pxd4rziji5pju7gn9kh
+wjdmp11lsti6iouzp0z6b7lyi
+j7w9a1plwh5udvsx9mu48q3vm
+kqayo9o8l0iwaaqzg3u2fclgs
+7vxlyi0xe505qob8zfij3stx2
+x7qrm66wtvi221mrdxuk9hybo
+nalwlv3tzwj1k95lzn5ctstov
+q8qkymyh1tr23kwmxgym43a9n
+z0iizazk542cglnyfqn0woic3
+3mmi5560fc1akg3aspgyqjkgv
+4feafhm7lvtz9r1blivh0zvqt
+fkcwz92kv1p4hup9q2qmrzfkr
+ki6dex1zm1ho2fxdcd4841ett
+o5jil9m717es6bpcmu9ktaux3
+wrv0fgtf9kf6b9y6f7l434114
+wvr381ig5tdtl1p3pljh3zj3a
+jxf3qdj1tg13eatnp4nm7ztp9
+6xy05se5otqksloaoi6yudcb4
+u7aiyw7gbg0kfg0hjb2r1febi
+y44zcwf44m6whox8yi3u091k2
+ocqz03gmdmxu2qhixagltag9i
+ll94i6il77qtmt7wstml1d0ws
+l51ejdbhn3oeb0b6heo41no9p
+hslucuy4gaeix6u7z3bqgfsv3
+wy8zq02ct4wyroj5u1gu101ms
+ey5w5fxn4zzm1vaxxz2kjvpmw
+yv8z3d49kutt67bjjbto2q63q
+ayx282z3zoqvksss1ys985dec
+elny12vtm90e2m5uux864l8jm
+g27ui5lymp8ps2g7b6xnqumxk
+oc1kkovtdjgnlktwaf82x0ppg
+opwdnpre2ic3orjppdpf2g1zz
+unb3x1ohqojcns2b2bv6kdfjg
+d3htrjfuis5kxzwey6fil8rmq
+v7ne4uphfk1pg68c4zga9h1u0
+rij2ud2qw1wvbqh3c5n9i5m83
+hjnrk0wnybig5g1egp723x7hq
+wmi2zw4eg7565ygkui5fx26lf
+secuk50c2zzs364noma5i5vu8
+aus7drd62cd8piyq0hdpxtxsj
+3xedalv7899imymro36rjxt10
+6s8nsfmmu12u5c085il6nwgxx
+ego2xgrjdpengcapyl7xutlze
+qyt8bwta5xtv3v0cw6fqywcm1
+6ajhsvoykgfdp0bo5el2bepcw
+8410kpvngyaeqkuz1dwxaop7m
+nu7r1xsqf7dmm11x45awcu3pp
+kwy6hpipj61kng1decx7at3fl
+s9kv4bgukly1ttfu2ni87i82l
+yje4vsaahb7wgcuz4y13qvx2g
+mcqw3jt22kj0loxpkkj3drlgd
+vh6ebv1g4aavdn82hnixabe6s
+0fbxdbgkorbb17eyt4k1fhpdw
+gyp292hdiwz2v3dl87nnbjgho
+q3u48r5d2wbb66kpb1ny61xss
+tejf7gc7f79sm567ceppyaz83
+1uy38dki2zi68ct6r7xtxl77e
+nvrp41bevxj2jms8g5jw67qm4
+nvsccqg3jlmgln61npk1cxt47
+8po73akn8l8g3amyvzkjgeqif
+zbnpdshx7ynkomhw2lx9thf9f
+luhdssni63eqo6939jvys4kbz
+qvztsgu9od4t6ic8g7hkj9cg5
+u4zd7jzbpk9x6c0kzm3kgxv94
+xu9lzfa89z13qh32fer5u2ajc
+r9pnuv0iwrpcsghv9tmq3d3mk
+kafxub0bxpn9ft5p37nea1fw0
+vyuv65r8ri1fr072iz0dr2k1z
+0kqu0qaj2ine7ox8fonsb42b7
+oz89x2wkyzupqkxnl3lhhbv6k
+rmcndu82bswa4rbsdipopcmdu
+lomblx7xqq9wsjfr28dhbd9tj
+jqzj5u1gn88h5l4gaoy6cu51k
+k2rgnl562ca4o19xd8y5cxvm1
+gatfmstsk97uxvfos36rh0krl
+owcqoqla3r0u49n4p1ttswdbw
+sj3y9cmharal5pgi9cqsq0p7t
+efvftkl561hbxmera9zluyp91
+xrkmmdaf6o3tviwqdirqb9hm3
+53ys0hh6t0zf6xrwdf0vq05j9
+6c6q75nc5wzn0u0j9p4d1ik7a
+yfde5b0twzfa0wwr3xrykxsbn
+ayofy2ya0a4xa9xo5bjs2t7uh
+ivdy3p158cp37ct4wwpkegvou
+nhi5ysu0y3q1g1y3qj1egel6n
+5oomj4junvrak23v9luz2qvmb
+58j9rb3wowtqe9efzfon4jwhd
+wrqdex0xuxjemb7u93srystbf
+ppx0zdpa19g7rb1gxoyagc1o1
+jrmpq76p9fn3x5n0b8t0n0m9h
+3x06anu35ahzs15ywqap2wqxy
+pzbcxd3hhaa7p07z3qoeodyrz
+wrsijb77mthth7qv8rm6cz9q6
+yn24rs7u3d5ohw9dsc2xraimv
+gr9vsgqn6cnt69bt4vkp5jo4z
+oin1mxs9pgj7svafq1kzj6402
+ci93qqir126m58trits192yc3
+vp747bv67agy5fwkc2scn14b1
+9ld3qrkaglhwl5swqxwnasbsy
+0udelo7y3vdih7aw4iczswhqw
+kyawkzq72ojodrpmke5gcj68y
+jyplhowngjf4brrue2b8sr281
+un506d0qd3e64koy4koveym2x
+kop6l5zv3846pathw5bvftt60
+7xlk09n2mvor0th380trf25nf
+ahj0muc6hl0pcpau5n342cpcc
+yrq282zuzzbijahxtah8hh79y
+3z069ikmdi9zhih99usknj7a5
+iotm986kuox54f6n9rd4mehfn
+p4ij36n5kfvl0pj2hyz122ksj
+z5ca5p58zcqdtcupkzz40cli4
+pm0f4ly5w9koe6rnr9uk6ydzn
+ovebxkm0j7t8altdxhwq5ukw7
+2kgqmoulv7mcg4qxx83twlc3g
+k4evetqxqmpc1sp8lsdzjbamv
+to68ofys5921gm2kwm5zpx3rw
+ytwywf66b3e19sqtklicl6lfj
+gkzpu9ia0742uylm2np1ea0y8
+wygmqpp7v7tme3bbha23slomx
+15vvkdbu2jhfevuhzsy4xiura
+dxeghd5dt96pgo2kqq3iajks3
+l2ndg0ohr8oizsvvs73si4qjo
+74hf6mnffhd6jjg4ps5zrniyf
+kf9tc8lom87cwc14kzl2nzdfa
+rkj0oni25y0xejqj4u1rb8mij
+w75bx6oqwozuihi64a5h6vck7
+xe4qbdm9mwkgy395ml1mpwx86
+eyves40z1zf8xpfkh9ugdcxus
+
+Total reclaimed space: 23.83GB
+Total:  0B
+Vacuuming done, freed 0B of archived journals from /run/log/journal.
+Vacuuming done, freed 0B of archived journals from /var/log/journal.
+Vacuuming done, freed 0B of archived journals from /run/log/journal/e88775ef85494421b5042921001b3cf9.
+find: ‘/var/lib/docker/containers/’: No such file or directory
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+The following packages will be REMOVED:
+  autotouch* fonts-cantarell* fonts-piboto*
+  gldriver-test* gtk-nop* gui-pkinst*
+  gui-runcmd* gvfs-fuse* laptop-detect*
+  libfm-data* libfm-gtk-data* libfm-gtk3-4t64*
+  libfm-modules* libfm4t64* libkeybinder-3.0-0*
+  libnotify-bin* libobrender32v5* libobt2v5*
+  libplymouth5* libqt5ct-common1.8* libqt6svg6*
+  libwnck-3-0* libwnck-3-common* libxres1*
+  lpplug-batt* lpplug-bluetooth* lpplug-clock*
+  lpplug-cpu* lpplug-cputemp* lpplug-ejecter*
+  lpplug-gpu* lpplug-magnifier* lpplug-menu*
+  lpplug-netman* lpplug-power* lpplug-updater*
+  lpplug-volumepulse* lxmenu-data* lxpanel*
+  lxpanel-data* lxpanel-pi* lxpolkit* lxsession*
+  lxsession-data* lxsession-logout* mate-polkit*
+  mate-polkit-bin* mate-polkit-common* openbox*
+  pcmanfm* pi-greeter* pishutdown*
+  pixflat-icons* pixflat-theme* plymouth*
+  plymouth-label* plymouth-themes* pprompt*
+  qt5-gtk2-platformtheme*
+  qt5-style-plugin-cleanlooks*
+  qt5-style-plugin-motif*
+  qt5-style-plugin-plastique* qt5-style-plugins*
+  qt5ct* qt6ct* rpd-plym-splash* rpi-gui-nop*
+  swaylock* wlopm* xcompmgr* xinit* xmlstarlet*
+  xsettingsd*
+0 upgraded, 0 newly installed, 73 to remove and 40 not upgraded.
+After this operation, 42.6 MB disk space will be freed.
+(Reading database ... 152481 files and directories currently installed.)
+Removing autotouch (0.1) ...
+Removing rpd-plym-splash (0.46) ...
+Removing plymouth-themes (24.004.60-5) ...
+update-initramfs: Generating /boot/initrd.img-6.12.75+rpt-rpi-v8
+'/boot/initrd.img-6.12.75+rpt-rpi-v8' -> '/boot/firmware/initramfs8'
+update-initramfs: Generating /boot/initrd.img-6.12.75+rpt-rpi-2712
+'/boot/initrd.img-6.12.75+rpt-rpi-2712' -> '/boot/firmware/initramfs_2712'
+update-initramfs: Generating /boot/initrd.img-6.12.47+rpt-rpi-v8
+update-initramfs: Generating /boot/initrd.img-6.12.47+rpt-rpi-2712
+Removing fonts-cantarell (0.303.1-4) ...
+Removing fonts-piboto (1.2) ...
+Removing gldriver-test (0.15) ...
+Removing gtk-nop (0.1+b1) ...
+Removing gui-pkinst (0.23) ...
+Removing gui-runcmd (0.1) ...
+Removing gvfs-fuse (1.57.2-2) ...
+Removing lxsession (0.5.6-2+rpt2) ...
+update-alternatives: using /usr/bin/openbox-session to provide /usr/bin/x-session-manager (x-session-manager) in auto mode
+Removing laptop-detect (0.16+nmu1) ...
+Removing pcmanfm (1.4.0-1+rpt9) ...
+Removing lpplug-batt (1.2) ...
+Removing lxpanel (0.11.1-1) ...
+Removing libfm-modules:arm64 (1.4.0-2+rpt8) ...
+Removing libnotify-bin (0.8.6-1) ...
+Removing openbox (3.6.1-12+rpt1) ...
+Removing libobrender32v5 (3.6.1-12+rpt1) ...
+Removing libobt2v5:arm64 (3.6.1-12+rpt1) ...
+Removing plymouth-label (24.004.60-5) ...
+Removing plymouth (24.004.60-5) ...
+update-initramfs: Generating /boot/initrd.img-6.12.75+rpt-rpi-v8
+'/boot/initrd.img-6.12.75+rpt-rpi-v8' -> '/boot/firmware/initramfs8'
+update-initramfs: Generating /boot/initrd.img-6.12.75+rpt-rpi-2712
+'/boot/initrd.img-6.12.75+rpt-rpi-2712' -> '/boot/firmware/initramfs_2712'
+update-initramfs: Generating /boot/initrd.img-6.12.47+rpt-rpi-v8
+update-initramfs: Generating /boot/initrd.img-6.12.47+rpt-rpi-2712
+Removing libplymouth5:arm64 (24.004.60-5) ...
+Removing qt5ct (1.8-2+b1) ...
+Removing libqt5ct-common1.8 (1.8-2+b1) ...
+Removing qt6ct (0.10-2+b1) ...
+Removing libqt6svg6:arm64 (6.8.2-3) ...
+Removing libwnck-3-0:arm64 (43.2-1) ...
+Removing libwnck-3-common (43.2-1) ...
+Removing libxres1:arm64 (2:1.2.1-1+b2) ...
+Removing lpplug-bluetooth (1.7) ...
+Removing lpplug-clock (1.5) ...
+Removing lpplug-cpu (1.2) ...
+Removing lpplug-cputemp (1.2) ...
+Removing lpplug-ejecter (1.8) ...
+Removing lpplug-gpu (1.2) ...
+Removing lpplug-magnifier (1.0) ...
+Removing lpplug-menu (1.14) ...
+Removing lpplug-netman (1.10) ...
+Removing lpplug-power (1.5) ...
+Removing lpplug-updater (1.4) ...
+Removing lpplug-volumepulse (1.9) ...
+Removing lxpanel-data (0.11.1-1) ...
+Removing lxpolkit (0.5.6-2+rpt2) ...
+Removing lxsession-logout (0.5.6-2+rpt2) ...
+Removing lxsession-data (0.5.6-2+rpt2) ...
+Removing mate-polkit-bin (1.26.1-4) ...
+Removing mate-polkit (1.26.1-4+b2) ...
+Removing mate-polkit-common (1.26.1-4) ...
+Removing pi-greeter (1.2) ...
+Removing pishutdown (0.36) ...
+Removing pixflat-icons (0.28) ...
+dpkg: warning: while removing pixflat-icons, directory '/usr/share/icons/PiXflat' not empty so not removed
+Removing pixflat-theme (0.24+b1) ...
+Removing pprompt (0.24) ...
+Removing qt5-style-plugins:arm64 (5.0.0+git23.g335dbec-6+rpt1) ...
+Removing qt5-gtk2-platformtheme:arm64 (5.0.0+git23.g335dbec-6+rpt1) ...
+Removing qt5-style-plugin-cleanlooks:arm64 (5.0.0+git23.g335dbec-6+rpt1) ...
+Removing qt5-style-plugin-motif:arm64 (5.0.0+git23.g335dbec-6+rpt1) ...
+Removing qt5-style-plugin-plastique:arm64 (5.0.0+git23.g335dbec-6+rpt1) ...
+Removing rpi-gui-nop (0.1.0) ...
+Removing swaylock (1.8.2-1+rpt4) ...
+Removing wlopm (0.1.0-1+b1) ...
+Removing xcompmgr (1.1.8-1+rpt2) ...
+Removing xinit (1.4.2-1+b2) ...
+Removing xmlstarlet (1.6.1-4+b1) ...
+Removing xsettingsd (1.0.2-1+rpt1) ...
+Removing lxpanel-pi (1.6) ...
+Removing libfm-gtk3-4t64:arm64 (1.4.0-2+rpt8) ...
+Removing libfm-gtk-data (1.4.0-2+rpt8) ...
+Removing libkeybinder-3.0-0:arm64 (0.3.2-1.1+b3) ...
+Removing libfm4t64:arm64 (1.4.0-2+rpt8) ...
+Removing libfm-data (1.4.0-2+rpt8) ...
+Removing lxmenu-data (0.1.6-3+rpt1) ...
+Processing triggers for desktop-file-utils (0.28-1) ...
+Processing triggers for hicolor-icon-theme (0.18-2) ...
+Processing triggers for libc-bin (2.41-12+rpt1+deb13u2) ...
+Processing triggers for man-db (2.13.1-1) ...
+Processing triggers for shared-mime-info (2.4-5+b2) ...
+Processing triggers for mailcap (3.74) ...
+Processing triggers for fontconfig (2.15.0-2.3) ...
+(Reading database ... 146997 files and directories currently installed.)
+Purging configuration files for libfm4t64:arm64 (1.4.0-2+rpt8) ...
+Purging configuration files for xinit (1.4.2-1+b2) ...
+Purging configuration files for gldriver-test (0.15) ...
+Purging configuration files for pcmanfm (1.4.0-1+rpt9) ...
+Purging configuration files for autotouch (0.1) ...
+Purging configuration files for plymouth (24.004.60-5) ...
+Purging configuration files for lxpanel-pi (1.6) ...
+Purging configuration files for lxpanel (0.11.1-1) ...
+Purging configuration files for qt5ct (1.8-2+b1) ...
+Purging configuration files for lxsession (0.5.6-2+rpt2) ...
+Purging configuration files for swaylock (1.8.2-1+rpt4) ...
+Purging configuration files for pprompt (0.24) ...
+Purging configuration files for libfm-data (1.4.0-2+rpt8) ...
+Purging configuration files for lxmenu-data (0.1.6-3+rpt1) ...
+Purging configuration files for openbox (3.6.1-12+rpt1) ...
+Purging configuration files for pi-greeter (1.2) ...
+Purging configuration files for mate-polkit-common (1.26.1-4) ...
+Purging configuration files for plymouth-themes (24.004.60-5) ...
+Purging configuration files for lxpolkit (0.5.6-2+rpt2) ...
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   22G   34G  39% /
+ngansen@hanryxvault:~ $ qq min| gfgfgfhg^C
+ngansen@hanryxvault:~ $ 
