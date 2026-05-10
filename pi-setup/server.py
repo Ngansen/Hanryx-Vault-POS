@@ -4381,6 +4381,166 @@ def _enrich_with_tcg(local_result: dict | None, qr_code: str) -> dict:
     return out
 
 
+# ===========================================================================
+# C15a — extras surfaced to /card/enrich and /market/price.
+#   Purely additive JSON keys — does NOT change any existing field.  Lets the
+#   tablet APK light up the variant picker, abilities panel, trend chip and
+#   buyback quote without an APK rebuild (next call picks them up).
+# ===========================================================================
+
+def _c15_split_qr(norm_qr: str) -> tuple[str, str]:
+    """'SV1-25' -> ('sv1', '25').  Empty strings on parse failure."""
+    m = re.match(r'^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$', (norm_qr or "").strip())
+    return (m.group(1).lower(), m.group(2).lstrip("0") or "0") if m else ("", "")
+
+
+def _c15_card_extras(db, norm_qr: str) -> dict:
+    """C14 enrichment fields from cards_master for a canonical qr_code.
+    Returns {} on miss/error so callers can dict-merge safely."""
+    set_id, num = _c15_split_qr(norm_qr)
+    if not set_id:
+        return {}
+    try:
+        row = db.execute("""
+            SELECT variant, rarity_subtype, card_text,
+                   abilities_jsonb, attacks_jsonb,
+                   name_en, name_jp, name_kr
+            FROM cards_master
+            WHERE LOWER(set_id) = %s
+              AND (card_number = %s OR card_number = LPAD(%s::text, 3, '0'))
+            LIMIT 1
+        """, (set_id, num, num)).fetchone()
+    except Exception as _e:
+        log.debug("[c15a] cards_master lookup failed for %s: %s", norm_qr, _e)
+        return {}
+    if not row:
+        return {}
+    return {
+        "variant":         row["variant"]         or "normal",
+        "rarity_subtype":  row["rarity_subtype"]  or "",
+        "card_text":       row["card_text"]       or "",
+        "abilities":       row["abilities_jsonb"] or [],
+        "attacks_full":    row["attacks_jsonb"]   or [],
+        "names_i18n":      {
+            "en": row["name_en"] or "",
+            "jp": row["name_jp"] or "",
+            "kr": row["name_kr"] or "",
+        },
+    }
+
+
+def _c15_trend(db, norm_qr: str) -> dict:
+    """Read pct_7d/30d/90d from price_trends_daily (matview).
+    Prefers tcgplayer, then cardmarket, else freshest source."""
+    try:
+        row = db.execute("""
+            SELECT source, pct_7d, pct_30d, pct_90d, price_now, last_seen
+            FROM price_trends_daily
+            WHERE card_id = %s
+            ORDER BY CASE source
+                       WHEN 'tcgplayer'  THEN 0
+                       WHEN 'cardmarket' THEN 1
+                       ELSE 2 END,
+                     last_seen DESC
+            LIMIT 1
+        """, (norm_qr,)).fetchone()
+    except Exception as _e:
+        log.debug("[c15a] price_trends_daily lookup failed for %s: %s", norm_qr, _e)
+        return {}
+    if not row:
+        return {}
+    return {
+        "source":    row["source"],
+        "pct_7d":    float(row["pct_7d"])    if row["pct_7d"]    is not None else None,
+        "pct_30d":   float(row["pct_30d"])   if row["pct_30d"]   is not None else None,
+        "pct_90d":   float(row["pct_90d"])   if row["pct_90d"]   is not None else None,
+        "price_now": float(row["price_now"]) if row["price_now"] is not None else None,
+        "as_of":     row["last_seen"].isoformat() if row["last_seen"] else None,
+    }
+
+
+def _c15_variants(db, norm_qr: str) -> list:
+    """Sibling cards with the same set+number but different variant — feeds
+    the variant-picker when a scan is ambiguous (e.g. normal vs reverse_holo
+    vs special_illust all printed at SV1-25)."""
+    set_id, num = _c15_split_qr(norm_qr)
+    if not set_id:
+        return []
+    try:
+        rows = db.execute("""
+            SELECT cm.master_id, cm.variant, cm.rarity_subtype, cm.name_en,
+                   COALESCE(inv.price, 0)::float AS price,
+                   COALESCE(inv.stock, 0)::int   AS stock
+            FROM cards_master cm
+            LEFT JOIN inventory inv
+              ON UPPER(inv.qr_code) = UPPER(cm.master_id)
+            WHERE LOWER(cm.set_id) = %s
+              AND (cm.card_number = %s OR cm.card_number = LPAD(%s::text, 3, '0'))
+            ORDER BY CASE cm.variant
+                       WHEN 'normal'         THEN 0
+                       WHEN 'reverse_holo'   THEN 1
+                       WHEN 'holo'           THEN 2
+                       WHEN 'full_art'       THEN 3
+                       WHEN 'special_illust' THEN 4
+                       WHEN 'hyper_rare'     THEN 5
+                       ELSE 9 END
+        """, (set_id, num, num)).fetchall()
+    except Exception as _e:
+        log.debug("[c15a] variants lookup failed for %s: %s", norm_qr, _e)
+        return []
+    return [
+        {"master_id":      r["master_id"],
+         "variant":        r["variant"] or "normal",
+         "rarity_subtype": r["rarity_subtype"] or "",
+         "name":           r["name_en"] or "",
+         "price":          float(r["price"]) if r["price"] else 0.0,
+         "stock":          int(r["stock"]) if r["stock"] else 0}
+        for r in rows
+    ]
+
+
+def _c15_buyback_quote(db, market_usd: float, *, rarity: str = "", set_id: str = "",
+                       condition: str = "NM", game: str = "pokemon") -> dict:
+    """Compute trade-in offer from buyback_rules.  Picks the most-specific
+    active rule (set+rarity > rarity-only > set-only > generic) breaking ties
+    by priority DESC."""
+    if not market_usd or market_usd <= 0:
+        return {}
+    try:
+        row = db.execute("""
+            SELECT rule_name, ratio::float AS ratio,
+                   COALESCE(min_price_usd, 0)::float AS min_price_usd
+            FROM buyback_rules
+            WHERE active = TRUE
+              AND condition = %s
+              AND game_code = %s
+              AND (set_id IS NULL OR LOWER(set_id) = LOWER(%s))
+              AND (rarity IS NULL OR LOWER(rarity) = LOWER(%s))
+            ORDER BY (CASE WHEN set_id IS NOT NULL THEN 2 ELSE 0 END
+                    + CASE WHEN rarity IS NOT NULL THEN 1 ELSE 0 END) DESC,
+                     priority DESC
+            LIMIT 1
+        """, (condition.upper(), game, set_id or "", rarity or "")).fetchone()
+    except Exception as _e:
+        log.debug("[c15a] buyback rule lookup failed: %s", _e)
+        return {}
+    if not row:
+        return {}
+    ratio = float(row["ratio"])
+    min_p = float(row["min_price_usd"])
+    if min_p > 0 and market_usd < min_p:
+        return {"ratio": ratio, "quote_usd": 0.0,
+                "rule_name": row["rule_name"], "below_min": True,
+                "min_price_usd": min_p}
+    return {"ratio": ratio, "quote_usd": round(market_usd * ratio, 2),
+            "rule_name": row["rule_name"], "below_min": False}
+
+
+# ===========================================================================
+# /  end C15a helpers  /
+# ===========================================================================
+
+
 def _fire_webhook(payload: dict):
     """POST card data to the configured webhook URL in a background thread (non-blocking)."""
     try:
@@ -7181,6 +7341,29 @@ def card_enrich():
     local   = matches[0] if matches else None
     result  = _enrich_with_tcg(local, norm_qr)
     result["normalizedQr"] = norm_qr
+
+    # ── C15a: extras (additive — old fields untouched) ─────────────────────
+    try:
+        result.update(_c15_card_extras(db, norm_qr))
+        _trend = _c15_trend(db, norm_qr)
+        if _trend:
+            result["trend"] = _trend
+        _vlist = _c15_variants(db, norm_qr)
+        if len(_vlist) > 1:
+            result["variants_available"] = _vlist
+        _mkt = ((result.get("tcgData") or {}).get("tcgplayer", {}) or {}).get("marketPrice") \
+               or result.get("price")
+        if _mkt:
+            _bb = _c15_buyback_quote(
+                db, float(_mkt),
+                rarity=(result.get("rarity") or ""),
+                set_id=(result.get("setCode") or "").lower(),
+                condition="NM",
+            )
+            if _bb:
+                result["buyback"] = _bb
+    except Exception as _c15_err:
+        log.debug("[c15a] /card/enrich extras failed for %s: %s", norm_qr, _c15_err)
 
     # Persist market price to price_history for trend tracking
     _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
@@ -17876,6 +18059,30 @@ def market_price():
         market = round(weighted_sum / weight_total, 2)
         confidence = "high" if local_sales_30d >= 3 else ("medium" if weight_total >= 4 else "low")
 
+    # ── C15a: trend chip + buyback quote (additive) ───────────────────────
+    trend_pct_7d = trend_pct_30d = trend_pct_90d = None
+    buyback_quote = None
+    buyback_ratio = None
+    try:
+        if set_code and card_number:
+            _qr = f"{set_code}-{card_number}".upper()
+            _t = _c15_trend(db, _qr)
+            trend_pct_7d  = _t.get("pct_7d")
+            trend_pct_30d = _t.get("pct_30d")
+            trend_pct_90d = _t.get("pct_90d")
+        if market > 0:
+            _bb = _c15_buyback_quote(
+                db, market,
+                rarity=(tcgdb_rarity or ""),
+                set_id=(set_code or "").lower(),
+                condition="NM",
+            )
+            if _bb:
+                buyback_quote = _bb.get("quote_usd")
+                buyback_ratio = _bb.get("ratio")
+    except Exception as _c15_mp_err:
+        log.debug("[c15a] /market/price extras failed: %s", _c15_mp_err)
+
     return jsonify({
         "marketPrice":    market,
         "confidence":     confidence,
@@ -17887,6 +18094,12 @@ def market_price():
         "tcgdbRarity":    tcgdb_rarity,
         "storePrice":     store_price,
         "language":       lang,
+        # C15a additive fields
+        "trend_pct_7d":   trend_pct_7d,
+        "trend_pct_30d":  trend_pct_30d,
+        "trend_pct_90d":  trend_pct_90d,
+        "buyback_quote":  buyback_quote,
+        "buyback_ratio":  buyback_ratio,
     })
 
 
