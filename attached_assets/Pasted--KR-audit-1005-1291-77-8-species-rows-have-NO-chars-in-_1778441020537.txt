@@ -1,0 +1,92 @@
+ KR audit: 1005/1291 (77.8%) species rows have NO chars in common with species_names ===
+  sm6/  13 Heatran               db='테르나'                species='히드런'
+  sm10/  13 Bellsprout            db='냐오불'                species='모다피'
+  xy6/  14 Fletchinder           db='파이어로'               species='불화살빈'
+  xy10/  14 Delphox BREAK         db='쥬레곤'                species='마폭시'
+  bw9/  14 Litwick               db='총어'                 species='불켜미'
+  bw7/  14 Cottonee              db='바오키'                species='소미안'
+  bw4/  14 Moltres               db='활화르바'               species='파이어'
+  bw2/  14 Lilligant             db='두까비'                species='드레디어'
+  sm9/  14 Charizard             db='식스테일'               species='리자몽'
+  sm8/  14 Jumpluff              db='헤라크로스'              species='솜솜코'
+
+=== JP audit: 4/4 (100.0%) species rows have NO chars in common with species_names ===
+  neo1/  42 Noctowl               db='ピチュ'                species='ヨルノズク'
+  neo3/  44 Geodude               db='猟犬'                 species='イシツブテ'
+  neo1/  44 Piloswine             db='Elekid'             species='イノムー'
+  neo2/  44 Poliwhirl             db='forretress'         species='ニョロゾ'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # DO NOT RUN YET — wait for audit results to confirm the threshold.
+docker compose exec -T db sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"
+  -- This NULLs name_kr where it shares no character with the species translation.
+  -- Run only after audit confirms the bug is widespread.
+\""
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # DO NOT RUN YET — wait for audit results to confirm the threshold.
+docker compose exec -T db sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"
+  -- This NULLs name_kr where it shares no character with the species translation.
+  -- Run only after audit confirms the bug is widespread.
+\""
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'head -60 /app/scripts/c16_ebay_backfill.py 2>/dev/null || find /app -name "c16*" -o -name "*ebay_backfill*" 2>/dev/null'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+#!/usr/bin/env python3
+"""C16: Backfill ebay_sold price_history rows for every card in cards_master.
+
+Why
+---
+The C14 price_trends_daily matview gives 7d/30d/90d % change per (card_id, source).
+Without ebay_sold data the chip only ever shows tcgplayer trends — which is
+inflated TCGplayer LIST prices, not realised sold prices.  This script fills
+the gap by recording one ebay_sold median per card per run.
+
+Cadence
+-------
+eBay's Finding API free tier = 5000 calls/day.  Default sleep is 17s/card,
+which gives 5,082 calls/day — fits the quota with a small margin.
+
+Run
+---
+    docker compose exec -d pos sh -c \\
+      'nohup python /app/scripts/c16_ebay_backfill.py > /tmp/c16.log 2>&1 < /dev/null &'
+
+Monitor
+-------
+    docker compose exec -T pos tail -f /tmp/c16.log
+    # progress query
+    docker compose exec -T pos python -c "import os,psycopg2; c=psycopg2.connect(os.environ['DATABASE_URL']).cursor(); c.execute(\\\"SELECT count(DISTINCT card_id) FROM price_history WHERE source='ebay_sold'\\\"); print(c.fetchone()[0], 'cards have ebay_sold data')"
+
+Resume
+------
+Killed/restarted runs auto-skip any card with an ebay_sold row within the
+last 30 days.  Safe to re-run anytime — it picks up where it left off.
+
+Flags
+-----
+    --rate-sec 17        seconds between calls (default 17 = 5082/day)
+    --limit 20           how many sold listings to fetch per card
+    --min-usd 0          skip cards whose tcgplayer market < this (default 0)
+    --max-cards N        process at most N cards this run (default = all)
+    --min-hits 3         drop cards where eBay returned <N matches (noise floor)
+    --refresh-days 30    re-scrape if last ebay row older than this
+    --dry-run            don't actually call eBay or write rows; print plan
+"""
+from __future__ import annotations
+import argparse, os, sys, time, signal, statistics
+from datetime import datetime, timezone
+
+import psycopg2
+import psycopg2.extras
+
+# Repo helper — same dir layout as other C-prefixed scripts
+sys.path.insert(0, "/app")
+try:
+    from ebay_sold import search_ebay_sold, EBAY_APP_ID
+except ImportError as e:
+    sys.exit(f"FATAL: could not import ebay_sold ({e}). "
+             f"Mount the repo at /app or run from the pos container.")
+
+
+_STOP = False
+def _sigterm(*_):
+    global _STOP
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
