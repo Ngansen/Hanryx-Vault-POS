@@ -1,0 +1,113 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== A. price_history.card_id format (top 10 by row count) ==="
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+  SELECT card_id, source, count(*) AS n
+  FROM price_history GROUP BY card_id, source
+  ORDER BY n DESC LIMIT 10;"'
+
+echo "=== B. cards_master FULL schema (no head truncation) ==="
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "\d cards_master"'
+
+echo "=== C. cards_master sample rows ==="
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+  SELECT master_id, set_id, card_number, variant_c_ebay_backfill.py --dry-run 2>&1 | head -20pts/c16
+=== A. price_history.card_id format (top 10 by row count) ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+       card_id       |   source   | n 
+---------------------+------------+---
+ PKM-MLA9QW87-F454D3 | hareruya2  | 7
+ PKM-MLA9QW87-F454D3 | cardmarket | 7
+ PKM-MLA9QW87-F454D3 | bunjang    | 7
+ PKM-MLFQCIWV-7E424C | hareruya2  | 6
+ PKM-MLDY23DN-53A400 | bunjang    | 6
+ PKM-MLA3V53W-5BB4E7 | hareruya2  | 6
+ PKM-MLDXZ48Z-B1DA7C | bunjang    | 6
+ PKM-MLFQUPBR-D416A6 | bunjang    | 6
+ PKM-MLDXZ48Z-B1DA7C | cardmarket | 6
+ PKM-MLFQP9FD-CD5CD0 | hareruya2  | 6
+(10 rows)
+
+=== B. cards_master FULL schema (no head truncation) ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+                                    Table "public.cards_master"
+     Column      |  Type   | Collation | Nullable |                     Default                     
+-----------------+---------+-----------+----------+-------------------------------------------------
+ master_id       | bigint  |           | not null | nextval('cards_master_master_id_seq'::regclass)
+ set_id          | text    |           | not null | 
+ card_number     | text    |           | not null | 
+ variant_code    | text    |           | not null | 'STD'::text
+ pokedex_id      | integer |           |          | 
+ name_en         | text    |           | not null | ''::text
+ name_kr         | text    |           | not null | ''::text
+ name_jp         | text    |           | not null | ''::text
+ name_chs        | text    |           | not null | ''::text
+ name_cht        | text    |           | not null | ''::text
+ name_fr         | text    |           | not null | ''::text
+ name_de         | text    |           | not null | ''::text
+ name_it         | text    |           | not null | ''::text
+ name_es         | text    |           | not null | ''::text
+ card_type       | text    |           | not null | ''::text
+ energy_type     | text    |           | not null | ''::text
+ subtype         | text    |           | not null | ''::text
+ stage           | text    |           | not null | ''::text
+ rarity          | text    |           | not null | ''::text
+ rarity_code     | text    |           | not null | ''::text
+ hp              | integer |           |          | 
+ artist          | text    |           | not null | ''::text
+ ex_serial_codes | jsonb   |           |          | '[]'::jsonb
+ other_pokemon   | text    |           | not null | ''::text
+ promo_source    | text    |           | not null | ''::text
+ image_url       | text    |           | not null | ''::text
+ image_url_alt   | jsonb   |           |          | '[]'::jsonb
+ source_refs     | jsonb   |           | not null | '{}'::jsonb
+ first_seen      | bigint  |           | not null | 0
+ last_built      | bigint  |           | not null | 0
+ variant         | text    |           |          | 'normal'::text
+ abilities_jsonb | jsonb   |           |          | 
+ attacks_jsonb   | jsonb   |           |          | 
+ card_text       | text    |           |          | 
+ rarity_subtype  | text    |           |          | 
+Indexes:
+    "cards_master_pkey" PRIMARY KEY, btree (master_id)
+    "cards_master_set_id_card_number_variant_code_key" UNIQUE CONSTRAINT, btree (set_id, card_number, variant_code)
+    "idx_cards_master_card_text_trgm" gin (card_text gin_trgm_ops) WHERE card_text IS NOT NULL
+    "idx_cards_master_name_chs" btree (name_chs)
+    "idx_cards_master_name_chs_trgm" gin (name_chs gin_trgm_ops)
+    "idx_cards_master_name_en" btree (name_en)
+    "idx_cards_master_name_en_trgm" gin (name_en gin_trgm_ops)
+    "idx_cards_master_name_jp" btree (name_jp)
+    "idx_cards_master_name_jp_trgm" gin (name_jp gin_trgm_ops)
+    "idx_cards_master_name_kr" btree (name_kr)
+    "idx_cards_master_name_kr_trgm" gin (name_kr gin_trgm_ops)
+    "idx_cards_master_pokedex" btree (pokedex_id)
+    "idx_cards_master_setnum" btree (set_id, card_number)
+    "idx_cards_master_variant" btree (variant)
+
+=== C. cards_master sample rows ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ master_id | set_id | card_number | variant_code |  name_en  
+-----------+--------+-------------+--------------+-----------
+    351429 | exu    | !           | STD          | Unown
+    351430 | exu    | %3F         | STD          | Unown
+    351431 | swsh1  | 1           | STD          | Celebi V
+    351432 | swsh9  | 1           | STD          | Exeggcute
+    351433 | swsh8  | 1           | STD          | Caterpie
+(5 rows)
+
+=== D. C16 dry-run (will show whether the SQL JOIN works at all) ===
+time="2026-05-10T12:18:01Z" level=warning msg="The \"GITHUB_TOKEN\" variable is not set. Defaulting to a blank string."
+Traceback (most recent call last):
+  File "/app/scripts/c16_ebay_backfill.py", line 235, in <module>
+    main()
+  File "/app/scripts/c16_ebay_backfill.py", line 145, in main
+    cur.execute(sql, {"min_usd": args.min_usd})
+  File "/opt/venv/lib/python3.11/site-packages/psycopg2/extras.py", line 146, in execute
+    return super().execute(query, vars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedFunction: function upper(bigint) does not exist
+LINE 17: ...   LEFT JOIN last_ebay  le ON UPPER(le.card_id) = UPPER(cm.m...
+                                                              ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
