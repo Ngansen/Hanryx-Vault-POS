@@ -1,0 +1,138 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+echo "===== renderMatchStrip image rendering ====="
+sed -n '13430,13530p' server.py
+echo "===== /api/v1/pricing/language endpoint ====="
+grep -n "/api/v1/pricing/language\|def.*pricing.*language\|pricing_language" server.py | head -10
+echo "===== /admin/cards/en-match endpoint ====="
+grep -n "/admin/cards/en-match\|en_match\|en-match" server.py | head -10
+echo "===== en_match.py SELECT_COLS (what columns it returns) ====="
+grep -n "_SELECT_COLS\|image_url\|return.*candidate" unified/en_match.py | head -20
+===== renderMatchStrip image rendering =====
+    ? '<div class="match-meta" style="font-size:10px">Illus. ' + esc(m.artist) + '</div>'
+    : '';
+  // navigator.onLine is the cheap up-front check; the offline event
+  // listener below also re-toggles the link if connectivity drops while
+  // the strip is on screen.
+  const offline = !navigator.onLine;
+  const ebayClass = 'match-ebay' + (offline ? ' is-offline' : '');
+  const ebayLabel = offline ? 'eBay sold (offline)' : 'eBay sold ↗';
+  strip.style.display = 'flex';
+  strip.innerHTML =
+    '<div class="match-img">' +
+      '<img src="' + esc(m.image_local_url) + '" alt="" ' +
+        'onerror="this.parentNode.innerHTML=\\'No image\\'" />' +
+    '</div>' +
+    '<div class="match-body">' +
+      '<div class="match-row1">' +
+        '<span class="match-label">Matched as</span>' +
+        '<span class="match-conf ' + esc(conf) + '" ' +
+          'title="' + esc(smTip) + '" ' +
+          'data-set-match="' + esc(sm) + '">' + confLabel + '</span>' +
+        candBadge +
+      '</div>' +
+      '<div class="match-name">' + esc(m.name_en || '(unnamed)') + '</div>' +
+      '<div class="match-meta">' + metaLine + '</div>' +
+      artistLine +
+      '<div class="match-actions">' +
+        '<a class="' + ebayClass + '" target="_blank" rel="noopener" ' +
+          'href="' + esc(m.ebay_sold_url) + '" ' +
+          'data-ebay-url="' + esc(m.ebay_sold_url) + '">' +
+          ebayLabel +
+        '</a>' +
+        (offline ? '<span class="match-offline-note">No internet — link disabled</span>' : '') +
+      '</div>' +
+    '</div>';
+}}
+
+// Re-toggle the eBay link when connectivity flips. The strip can sit on
+// screen for a long time at a trade show, and WiFi at booths comes and
+// goes — we don't want to require a full re-search to refresh the chip.
+window.addEventListener('online',  _refreshMatchEbay);
+window.addEventListener('offline', _refreshMatchEbay);
+function _refreshMatchEbay() {{
+  const link = document.querySelector('#matchStrip .match-ebay');
+  if (!link) return;
+  const offline = !navigator.onLine;
+  link.classList.toggle('is-offline', offline);
+  link.textContent = offline ? 'eBay sold (offline)' : 'eBay sold ↗';
+  // Keep/restore the offline note next to the link.
+  const actions = link.parentNode;
+  let note = actions.querySelector('.match-offline-note');
+  if (offline && !note) {{
+    note = document.createElement('span');
+    note.className = 'match-offline-note';
+    note.textContent = 'No internet — link disabled';
+    actions.appendChild(note);
+  }} else if (!offline && note) {{
+    note.remove();
+  }}
+}}
+
+function renderTiersOnly(m) {{
+  const tierLabels = {{holofoil:'Holo Rare',reverseHolofoil:'Reverse Holo',normal:'Normal','1stEditionHolofoil':'1st Ed. Holo','1stEditionNormal':'1st Ed. Normal',market:'Market'}};
+  if (!Object.keys(_rawTiers).length) return;
+  document.getElementById('priceTiers').innerHTML = Object.entries(_rawTiers).map(([tier, raw]) => {{
+    return `<div class="tier-row ${{tier==='holofoil'||tier==='market'?'best':''}}">
+      <span class="tier-label">${{tierLabels[tier]||tier}}</span>
+      <span class="tier-price">$${{(raw*m).toFixed(2)}} <span style="font-size:10px;color:#888;font-weight:400">(raw $${{raw.toFixed(2)}})</span></span>
+    </div>`;
+  }}).join('');
+}}
+
+// ── Add to inventory ──────────────────────────────────────────────────────
+
+function addToInventory() {{
+  if (!_lastData) return;
+  const d    = _lastData;
+  const t    = d.tcgData || {{}};
+  const qr   = d.tcgId || _selId || '';
+  // Use the condition-adjusted market price currently displayed, not raw
+  const condM   = parseFloat(condD.value) || 1;
+  const rawPrice = Object.values(_rawTiers)[0] || d.suggestedPrice
+                   || (t.tcgplayer && t.tcgplayer.marketPrice) || d.price || 0;
+  const adjPrice = parseFloat((rawPrice * condM).toFixed(2));
+  const pre = {{
+    qr:      qr,
+    name:    d.name || t.name || '',
+    price:   adjPrice,
+    rarity:  d.rarity || t.rarity || '',
+    set:     (t.set && t.set.ptcgoCode) || d.setCode || '',
+    imgurl:  d.imageUrl || (t.images && (t.images.large || t.images.small)) || '',
+    tcgid:   d.tcgId || t.id || '',
+  }};
+  sessionStorage.setItem('prefillData', JSON.stringify(pre));
+  location.href = '/admin#add-product';
+}}
+
+// ── Quick Trade-In → Tablet (one-click from Market) ───────────────────────
+async function quickTradeInToTablet() {{
+  if (!_lastData) {{ toast('Pick a card first', true); return; }}
+  const d        = _lastData;
+  const t        = d.tcgData || {{}};
+===== /api/v1/pricing/language endpoint =====
+13318:    const r = await fetch('/api/v1/pricing/language?' + p);
+20859:# ── GET /api/v1/pricing/language ──────────────────────────────────────────────
+20861:@app.route("/api/v1/pricing/language", methods=["GET"])
+20863:def api_pricing_language():
+===== /admin/cards/en-match endpoint =====
+6688:@app.route("/admin/cards/en-match", methods=["GET"])
+6689:def admin_cards_en_match():
+6727:    from unified.en_match import resolve_en_match
+6740:        match = resolve_en_match(db, name, set_code, number)
+6742:        log.exception("[admin/cards/en-match] db lookup failed")
+6758:# When /admin/cards/en-match returns set_match='raw' it means the operator
+12830:               this language-pricing block to. Hidden until the en-match
+13365:    const r = await fetch('/admin/cards/en-match?' + p);
+===== en_match.py SELECT_COLS (what columns it returns) =====
+234:# (name_en, set_id, card_number, rarity, artist, image_url)
+235:_SELECT_COLS = (
+236:    "SELECT name_en, set_id, card_number, rarity, artist, image_url "
+302:                _SELECT_COLS +
+319:                _SELECT_COLS +
+339:                _SELECT_COLS +
+395:    name_en, set_id, card_number, rarity, artist, _image_url = row
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < $d/cmdline 2>/dev/null); echo "$c" | grep -q c16_ebay && echo "pid=$(basename $d)"; done'
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pid=10943
+pid=11676
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
