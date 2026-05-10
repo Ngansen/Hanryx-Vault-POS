@@ -1,0 +1,57 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS && git pull --ff-only
+cd pi-setup
+
+# 1) push patched files into the running container (instant)
+docker compose cp scripts/c16_ebay_backfill.py pos:/app/scripts/c16_ebay_backfill.py
+docker compose cp scripts/c17_price_watcher.py pos:/app/scripts/c17_price_watcher.py
+
+# 2) confirm dry-run now WORKS (proves the SQL fix took)
+docker compose exec -T pos python /app/scripts/c16_ebay_backfill.py --dry-run
+
+# 3) launch all four background jobs
+docker compose exec -d pos sh -c 'nohup python /app/scripts/import_card_details.py    > /tmp/c14_enrdoneog 2>/dev/null"ec -T pos sh -c "head -10 /tmp/
+remote: Enumerating objects: 6, done.
+remote: Counting objects: 100% (6/6), done.
+remote: Compressing objects: 100% (6/6), done.
+remote: Total 6 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (6/6), 14.94 KiB | 325.00 KiB/s, done.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+   c1df143..73a4905  main       -> origin/main
+Updating c1df143..73a4905
+Fast-forward
+ .../scripts/c16_ebay_backfill.py | 38 ++++++----
+ .../scripts/c17_price_watcher.py |  4 +-
+ 2 files changed, 25 insertions(+), 17 deletions(-)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c16_ebay_... 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c17_price... 0.0s
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[c16] 28,355 cards to process (of 28,355 total candidates)  rate=17.0s/card  ETA=5d13h53m  min_usd=0.0  min_hits=3  dry_run=True
+  would process:     351430 (exu-%3F) q='Unown EXU %3F'
+  would process:     351431 (swsh1-1) q='Celebi V SWSH1 1'
+  would process:     351432 (swsh9-1) q='Exeggcute SWSH9 1'
+  would process:     351433 (swsh8-1) q='Caterpie SWSH8 1'
+  would process:     351434 (swsh11-1) q='Oddish SWSH11 1'
+  ... (--dry-run, exiting)
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+[trend-refresher] started  interval=30m  once=True
+[trend-refresher] refreshed (CONCURRENTLY): 168 rows  (0 with 7d delta) in 0.0s
+[trend-refresher] exited cleanly
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+pid=1049  sh -c for d in /proc/[0-9]*; do c=$(tr "" " " < "$d/cmdline" 2>/dev/null); echo "$c" | grep -qE "c15a1_|c16_|c17_|import_card_details" && echo "pid=$(basename $d)  $c"; done 
+=== c14_enrich ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+=== c16 ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+=== c17 ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+=== trend_refresher ===
+WARN[0000] The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string. 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup
