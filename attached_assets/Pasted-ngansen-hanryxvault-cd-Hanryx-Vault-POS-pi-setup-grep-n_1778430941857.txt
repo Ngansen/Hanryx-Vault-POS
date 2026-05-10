@@ -1,0 +1,43 @@
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE 'marketplace|market_place|price_history|price_trends' server.py | grep -vE '^\s*#|^\s*$' | head -40
+2516:        f"""CREATE TABLE IF NOT EXISTS price_history (
+2523:        "CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(card_id, fetched_ms)",
+3220:    # ── price_history schema migration (C11) ─────────────────────────────────
+3227:    # Note: usb_mirror.price_history_recent SELECT references source/grade/
+3230:        ("source",      "ALTER TABLE price_history ADD COLUMN source     TEXT NOT NULL DEFAULT 'tcgplayer'"),
+3231:        ("grade",       "ALTER TABLE price_history ADD COLUMN grade      TEXT NOT NULL DEFAULT 'raw'"),
+3232:        ("currency",    "ALTER TABLE price_history ADD COLUMN currency   TEXT NOT NULL DEFAULT 'USD'"),
+3233:        ("price_usd",   "ALTER TABLE price_history ADD COLUMN price_usd  DOUBLE PRECISION"),
+3234:        ("observed_at", "ALTER TABLE price_history ADD COLUMN observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+3235:        ("query_used",  "ALTER TABLE price_history ADD COLUMN query_used TEXT NOT NULL DEFAULT ''"),
+3240:        ("price_native","ALTER TABLE price_history ADD COLUMN price_native DOUBLE PRECISION"),
+3242:        if not _col_exists("price_history", col):
+3245:            log.info("[DB] Migration: added price_history.%s column", col)
+3252:            UPDATE price_history
+3262:        log.warning("[DB] price_history.observed_at backfill skipped: %s", _phe)
+3268:            "ON price_history(observed_at DESC)"
+3272:            "ON price_history(card_id, source, observed_at DESC)"
+3278:        log.warning("[DB] price_history index create skipped: %s", _phi)
+4433:    """Read pct_7d/30d/90d from price_trends_daily (matview).
+4438:            FROM price_trends_daily
+4448:        log.debug("[c15a] price_trends_daily lookup failed for %s: %s", norm_qr, _e)
+5948:    Live marketplace price scrape across Asian + EU sources.
+7368:    # Persist market price to price_history for trend tracking
+7377:                "INSERT INTO price_history "
+16136:    # Get min/max price per card_id from price_history
+16143:            (SELECT market_price FROM price_history p2
+16145:            (SELECT market_price FROM price_history p3
+16148:        FROM price_history ph
+22460:    # ── 4. Record in price_history ────────────────────────────────────────
+22468:                "INSERT INTO price_history "
+22762:        "SELECT market_price, fetched_ms FROM price_history "
+22808:        "price_history": [{"price": float(h["market_price"]), "at": h["fetched_ms"]}
+27196:    import price_trends as _price_trends
+27198:    log.warning("[server] price_trends unavailable: %s", _exc)
+27199:    _price_trends = None
+27338:            if _price_trends is not None:
+27340:                    quote["trends"] = _price_trends.trends(conn, query)
+27377:    Response (see price_trends.trends()):
+27381:    if _price_trends is None:
+27382:        return jsonify({"error": "price_trends module not loaded"}), 500
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
