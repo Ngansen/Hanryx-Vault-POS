@@ -1,0 +1,81 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+mkdir -p scripts
+
+# Pull the two container-only helpers out
+docker compose cp pos:/app/scripts/c16_launch.sh      scripts/c16_launch.sh
+docker compose cp pos:/app/scripts/guarded_launch.sh  scripts/guarded_launch.sh
+chmod +x scripts/*.sh scripts/*.py
+
+ls -la scripts/
+
+# Make sure the Dockerfile copies pi-setup/scripts/ into /app/scripts/
+grep -n "scripts" Dockerfile || echo "NO scripts COPY line — need to add one"
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pi-setup-pos-1:/a... 0.0s
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pi-setup-pos-1:/a... 0.0s
+chmod: changing permissions of 'scripts/postgres-backup.sh': Operation not permitted
+chmod: changing permissions of 'scripts/postgres-restore.sh': Operation not permitted
+chmod: changing permissions of 'scripts/preflight-usb-check.sh': Operation not permitted
+total 552
+drwxrwxr-x  5 ngansen ngansen  4096 May 11 00:51 .
+drwxrwxr-x 23 ngansen ngansen  4096 May 10 19:21 ..
+-rwxrwxr-x  1 ngansen ngansen  4242 Apr 19 17:52 add-site.sh
+-rwxrwxr-x  1 ngansen ngansen  3058 Apr 19 17:52 add-vpn-client.sh
+-rwxrwxr-x  1 ngansen ngansen  2494 Apr 19 17:52 backup.sh
+-rwxrwxr-x  1 ngansen ngansen 24618 Apr 19 17:52 barcode_daemon.py
+-rwxrwxr-x  1 ngansen ngansen  2127 May 10 04:31 c14_apply.py
+-rw-rw-r--  1 ngansen ngansen  3643 May 10 04:31 c14_README.md
+-rwxrwxr-x  1 ngansen ngansen  2732 May 10 12:15 c15a1_trend_refresher.py
+-rwxrwxr-x  1 ngansen ngansen 11721 May 10 18:15 c16_ebay_backfill.py
+-rwxr-xr-x  1 ngansen ngansen  1121 May 10 19:30 c16_launch.sh
+-rwxrwxr-x  1 ngansen ngansen  3077 May 11 00:48 c16_status_sidecar.py
+-rwxrwxr-x  1 ngansen ngansen 13064 May 10 12:26 c17_price_watcher.py
+drwxrwxr-x  2 ngansen ngansen  4096 Apr 30 22:58 canonical_sets
+-rwxrwxr-x  1 ngansen ngansen 12342 Apr 26 23:52 check-debian-snapshot-date.py
+-rwxrwxr-x  1 ngansen ngansen 20635 Apr 26 23:52 check-image-pins-resolve.py
+-rwxrwxr-x  1 ngansen ngansen 14403 Apr 26 23:52 check-no-floating-tags.py
+-rwxrwxr-x  1 ngansen ngansen  9062 Apr 26 23:52 check-no-insecure-tls.py
+-rwxrwxr-x  1 ngansen ngansen 13075 Apr 26 23:52 check-no-plaintext-http.py
+-rwxrwxr-x  1 ngansen ngansen  3540 Apr 26 23:52 check-vcs-pins-are-full-shas.py
+-rwxrwxr-x  1 ngansen ngansen  4625 May 10 04:31 cleanup_scrape.py
+-rwxrwxr-x  1 ngansen ngansen  2254 Apr 19 17:52 deploy-site.sh
+-rwxrwxr-x  1 ngansen ngansen 10372 Apr 26 23:52 embed-all-cards.py
+-rwxrwxr-x  1 ngansen ngansen  3083 Apr 19 17:52 enable-https.sh
+-rwxrwxr-x  1 ngansen ngansen  2488 Apr 19 17:52 export-db.py
+-rwxr-xr-x  1 ngansen ngansen   903 May 11 00:45 guarded_launch.sh
+-rwxrwxr-x  1 ngansen ngansen  6030 May 10 05:37 import_card_details.py
+-rwxrwxr-x  1 ngansen ngansen  6378 Apr 19 17:52 import-db.py
+-rwxrwxr-x  1 ngansen ngansen  5467 Apr 30 02:56 import_jp_cards_json.py
+-rwxrwxr-x  1 ngansen ngansen  6459 Apr 30 02:56 import_promo_classes.py
+-rwxrwxr-x  1 ngansen ngansen  3511 May 10 04:31 import_sealed_csv.py
+-rwxrwxr-x  1 ngansen ngansen  5602 Apr 30 02:56 import_set_aliases.py
+-rwxrwxr-x  1 ngansen ngansen  4388 Apr 19 17:52 install-wifi-manager.sh
+-rwxrwxr-x  1 ngansen ngansen  3999 Apr 30 03:52 kr_full_sync.sh
+-rwxrwxr-x  1 ngansen ngansen  4339 Apr 26 23:52 lock-python-deps.sh
+-rwxrwxr-x  1 ngansen ngansen  5668 Apr 26 23:52 migrate-db-to-usb.sh
+-rwxrwxr-x  1 ngansen ngansen  8537 Apr 19 17:52 migrate-sd-to-ssd.sh
+-rwxrwxr-x  1 ngansen ngansen  5739 Apr 30 02:56 mirror_failure_log.py
+-rwxrwxr-x  1 ngansen ngansen 10447 Apr 30 02:56 move-volumes-to-drive.sh
+-rwxr-xr-x  1 root    root     5733 May  6 21:17 postgres-backup.sh
+-rwxr-xr-x  1 root    root     2648 May  6 21:17 postgres-restore.sh
+-rwxr-xr-x  1 root    root     2947 May  6 21:17 preflight-usb-check.sh
+drwxrwxr-x  2 ngansen ngansen  4096 Apr 30 23:08 __pycache__
+-rwxrwxr-x  1 ngansen ngansen 23192 Apr 26 23:52 refresh-image-digests.py
+-rwxrwxr-x  1 ngansen ngansen   986 May 10 04:31 refresh_price_trends.py
+-rwxrwxr-x  1 ngansen ngansen  5956 Apr 26 23:52 resolve-alpine-apk-versions.sh
+-rwxrwxr-x  1 ngansen ngansen  5516 May 10 04:31 scrape_pokellector_all.py
+-rwxrwxr-x  1 ngansen ngansen  5303 Apr 19 17:52 setup-bluetooth-printer.sh
+-rwxrwxr-x  1 ngansen ngansen 12345 Apr 26 23:52 setup-network-failover.sh
+-rwxrwxr-x  1 ngansen ngansen 12171 May  2 15:04 setup-ocr-models.sh
+-rwxrwxr-x  1 ngansen ngansen  2576 Apr 26 23:52 setup-ollama.sh
+-rwxrwxr-x  1 ngansen ngansen 14568 Apr 19 17:52 setup-performance.sh
+-rwxrwxr-x  1 ngansen ngansen  5885 Apr 19 17:52 setup-vpn.sh
+-rwxrwxr-x  1 ngansen ngansen 33053 Apr 30 22:58 sync_card_mirror.py
+drwxrwxr-x  3 ngansen ngansen  4096 Apr 30 23:08 tests
+-rwxrwxr-x  1 ngansen ngansen   976 Apr 19 17:52 update-server.sh
+-rwxrwxr-x  1 ngansen ngansen 31215 Apr 19 17:52 wifi_manager.py
+-rwxrwxr-x  1 ngansen ngansen  6895 Apr 30 22:58 zh_full_sync.sh
+-rwxrwxr-x  1 ngansen ngansen  5768 Apr 30 22:58 zh_sources.py
+38:# `requirements.txt` is generated by `scripts/lock-python-deps.sh` from
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
