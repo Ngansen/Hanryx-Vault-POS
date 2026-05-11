@@ -1,0 +1,22 @@
+[+] up 9/9e                                        ✔ Container pi-setup-db-1         Healthy    9.6s
+ ✔ Container pi-setup-recognizer-1 Running    0.0s ✔ Container pi-setup-redis-1      Healthy    3.6s
+ ✔ Container pi-setup-pokeapi-1    Running    0.0s ✔ Container pi-setup-assistant-1  Running    0.0s
+ ✔ Container pi-setup-pgbouncer-1  Started    0.4s
+ ✔ Container pi-setup-sync-1       Started    0.5s
+ ✔ Container pi-setup-storefront-1 Started    0.5s
+ ✔ Container pi-setup-pos-1        Started    0.6s
+NAME                    IMAGE                                                                                                  COMMAND                  SERVICE      CREATED         STATUS                    PORTS
+pi-setup-assistant-1    ollama/ollama:0.4.7                                                                                    "/bin/ollama serve"      assistant    3 minutes ago   Up 42 seconds (healthy)   11434/tcp
+pi-setup-db-1           pgvector/pgvector:0.7.4-pg16@sha256:7bbb2558b9b73d23c4a7795d7a016cbb531ef5fb1e231115fa1aeac5129caf10   "docker-entrypoint.s…"   db           3 minutes ago   Up 42 seconds (healthy)   5432/tcp
+pi-setup-pgbouncer-1    edoburu/pgbouncer:1.21.0-p2@sha256:6c5f93ba9e4c78fc3d88456b4ab82097b1cc745185f4be891aca70bdac875d8c    "/entrypoint.sh /usr…"   pgbouncer    2 minutes ago   Up 30 seconds (healthy)   5432/tcp
+pi-setup-pokeapi-1      pi-setup-pokeapi                                                                                       "/docker-entrypoint.…"   pokeapi      3 minutes ago   Up 43 seconds (healthy)   80/tcp
+pi-setup-pos-1          pi-setup-pos                                                                                           "/entrypoint.sh"         pos          2 minutes ago   Up 30 seconds (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+pi-setup-recognizer-1   pi-setup-recognizer                                                                                    "python -u server.py"    recognizer   3 minutes ago   Up 33 seconds (healthy)   8081/tcp
+pi-setup-redis-1        redis:7.4.1-alpine@sha256:c1e88455c85225310bbea54816e9c3f4b5295815e6dbf80c34d40afc6df28275             "docker-entrypoint.s…"   redis        3 minutes ago   Up 42 seconds (healthy)   6379/tcp
+pi-setup-storefront-1   pi-setup-storefront                                                                                    "docker-entrypoint.sh"   storefront   2 minutes ago   Up 30 seconds (healthy)   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+pi-setup-sync-1         pi-setup-sync                                                                                          "/entrypoint.sh pyth…"   sync         2 minutes ago   Up 30 seconds             8080/tcp
+service "postgres" is not running
+Error response from daemon: OCI runtime exec failed: exec failed: unable to start container process: exec: "/app/scripts/guarded_launch.sh": stat /app/scripts/guarded_launch.sh: no such file or directory
+Error response from daemon: OCI runtime exec failed: exec failed: unable to start container process: exec: "/app/scripts/guarded_launch.sh": stat /app/scripts/guarded_launch.sh: no such file or directory
+cat: /tmp/c16_status.json: No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup
