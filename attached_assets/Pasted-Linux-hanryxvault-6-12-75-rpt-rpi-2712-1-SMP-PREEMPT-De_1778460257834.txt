@@ -1,0 +1,46 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun May 10 19:49:52 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos python3 << 'PY'
+import sys
+sys.path.insert(0, "/app")
+from server import _direct_db
+from species_names import translate
+
+LANGS = [
+    ("name_fr",  "fr",       "fr"),
+    ("name_de",  "de",       "de"),
+    ("name_chs", "zh_hans",  "chs"),
+    ("name_cht", "zh_hant",  "cht"),
+]
+
+db = _direct_db()
+rows = db.execute(f"""
+  SELECT set_id, card_number, name_en,
+         {", ".join(c for c,_,_ in LANGS)}
+PY  for s in samples: print(s)()}: {bad}/{total} (
+{"ts":"2026-05-11T00:44:01","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-11T00:44:01","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-11T00:44:02","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+
+=== FR: 1/15929 (0.0%) MISMATCH ===
+  dpp/DP50 Arceus             db='Dialga'           species='Arceus'
+
+=== DE: 0/14695 (0.0%) MISMATCH ===
+
+=== CHS: 0/0 (0.0%) MISMATCH ===
+
+=== CHT: 0/0 (0.0%) MISMATCH ===
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
