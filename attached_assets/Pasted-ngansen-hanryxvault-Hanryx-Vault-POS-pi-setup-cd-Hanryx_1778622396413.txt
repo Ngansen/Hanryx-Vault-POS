@@ -1,0 +1,127 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# --- 1. Fix checkup false positives ---
+sed -i \
+  -e 's|healthz|health|' \
+  -e 's|enrich/status|health/all|' \
+  -e 's|cards\.sqlite|pokedex_local.db|g' \
+  -e 's|sales WHERE created_at|sale_history WHERE ts|' \
+  scripts/checkup.sh
+
+# Replace the ollama section (service was renamed to "assistant" per `compose ps`)
+python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("scripts/checkup.sh")
+s = p.read_text()
+new = '''section "7. ASSISTANT (ollama-backed)"
+if docker compose exec -T assistant sh -c 'curl -s -m 3 http://localhost:11434/api/tags' 2>/dev/null./scripts/checkup.shd checkup ---os 2>/dev/null | 
+ollama section patched
+
+=== usb mirror status (why hasn't it run since May 9?) ===
+3227:    # Note: usb_mirror.price_history_recent SELECT references source/grade/
+total 58224
+drwxrwxrwx 25 ngansen ngansen             4096 May 12 21:39 .
+drwxr-xr-x  4 root    root                4096 May  3 17:40 ..
+drwxr-xr-x  2 root    root                4096 May  7 01:37 card-images
+drwxr-xr-x 10 root    root                4096 Apr 30 04:18 cards-database
+drwxr-xr-x  6 ngansen ngansen             4096 May  1 11:10 cdn
+drwx--x--- 12 root    root                4096 May 11 23:17 docker
+drwxr-xr-x  2 ngansen ngansen             4096 Apr 30 02:55 faiss
+drwxr-xr-x  2 ngansen ngansen             4096 Apr 30 02:55 git
+drwxr-xr-x  2 ngansen ngansen             4096 Apr 30 02:55 jp_pcc
+drwxr-xr-x  2 ngansen ngansen             4096 Apr 30 02:55 jp_pokell
+-rw-rw-r--  1 ngansen ngansen             9079 Apr 30 04:32 krsync.log
+-rw-rw-r--  1 ngansen ngansen              625 Apr 30 03:52 krsync.logm
+drwxr-xr-x  2 root    root                4096 May  9 00:24 logs
+drwx------  2 ngansen ngansen            16384 Apr 30 02:53 lost+found
+drwxrwxr-x  3 ngansen ngansen             4096 May  2 14:06 models
+drwxr-xr-x  3 root    root                4096 May  7 01:37 pokeapi-data
+-rw-rw-rw-  1 root    root            59420672 May  9 01:36 pokedex_local.db
+drwxr-xr-x  4 root    root                4096 Apr 30 04:18 pokemon-card-jp-database
+drwxr-xr-x  7 root    root                4096 Apr 30 04:20 pokemon-tcg-pocket-cards
+drwxr-xr-x  6 root    root                4096 Apr 30 04:18 pokemon-tcg-pocket-database
+drwxr-xr-x  9 root    root                4096 Apr 30 04:18 pokemon-tcg-tracker
+drwxr-xr-x  2     999 systemd-journal     4096 May  7 02:01 pos-data
+drwxr-xr-x  2 ngansen ngansen             4096 Apr 30 02:55 postgres
+drwx------ 19     999 root                4096 May 11 23:17 postgres-data
+drwxr-xr-x  4 root    root                4096 Apr 30 04:31 PTCG-CHS-Datasets
+drwxr-xr-x  9 root    root                4096 Apr 30 04:18 ptcg-kr-db
+drwxr-xr-x  4 ngansen ngansen             4096 Apr 30 02:55 thumbs
+drwxr-xr-x  3 root    root                4096 May  2 15:22 zh
+-rw-rw-r--  1 ngansen ngansen            64175 May  3 16:45 zhsync.log
+
+
+------------------------------------------------------------
+  1. CONTAINERS
+------------------------------------------------------------
+[   OK ]  assistant    Up 22 hours (healthy)   healthy
+[   OK ]  db           Up 22 hours (healthy)   healthy
+[   OK ]  pgbouncer    Up 22 hours (healthy)   healthy
+[   OK ]  pokeapi      Up 22 hours (healthy)   healthy
+[   OK ]  pos          Up 20 hours (healthy)   healthy
+[   OK ]  recognizer   Up 22 hours (healthy)   healthy
+[   OK ]  redis        Up 22 hours (healthy)   healthy
+[   OK ]  storefront   Up 22 hours (healthy)   healthy
+[ WARN ]  sync         Up 22 hours
+
+------------------------------------------------------------
+  2. DISK
+------------------------------------------------------------
+[   OK ]  /  35G/58G  62%  (22G free)
+[   OK ]  /mnt/cards  25G/1.8T  2%  (1.8T free)
+
+------------------------------------------------------------
+  3. MEMORY / CPU
+------------------------------------------------------------
+[   OK ]  RAM 2629/8058MB (33%)
+[   OK ]  Load 0.21, 0.19, 0.29  (4 cores)
+
+------------------------------------------------------------
+  4. POS HTTP
+------------------------------------------------------------
+[   OK ]  /health -> 200
+[   OK ]  /tcg/search-multi?q=pikachu -> 200
+[ WARN ]  /health/all -> 503
+
+------------------------------------------------------------
+  5. POSTGRES
+------------------------------------------------------------
+[   OK ]  cards_master:    63777
+[   OK ]  inventory rows:  56  (56 in-stock)
+[   OK ]  sales last 7d:   ?
+[   OK ]  active queries: 0
+
+------------------------------------------------------------
+  6. REDIS
+------------------------------------------------------------
+[   OK ]  PING -> PONG  (276 keys)
+
+------------------------------------------------------------
+  7. ASSISTANT (ollama-backed)
+------------------------------------------------------------
+[ WARN ]  assistant: ollama API not responding
+
+------------------------------------------------------------
+  8. PRICE HISTORY (per source)
+------------------------------------------------------------
+[   OK ]  bunjang          4479 rows   4317 cards  age=   0h  +431/h
+[   OK ]  cardmarket       4573 rows   4417 cards  age=   0h  +448/h
+[   OK ]  hareruya2        4874 rows   4677 cards  age=   0h  +464/h
+[   OK ]  naver            4598 rows   4539 cards  age=   0h  +452/h
+[   OK ]  pricecharting   30708 rows  18055 cards  age=   5h  +0/h
+[   OK ]  tcgplayer         130 rows     54 cards  age=  22h  +0/h
+
+------------------------------------------------------------
+  9. USB OFFLINE MIRROR
+------------------------------------------------------------
+[ WARN ]  pokedex_local.db  57M  last sync 5529min ago
+
+------------------------------------------------------------
+  10. RECENT ERRORS (POS, last 500 log lines)
+------------------------------------------------------------
+[   OK ]  no recent errors
+
+------------------------------------------------------------
+  done.  re-run: ./scripts/checkup.sh
+------------------------------------------------------------
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
