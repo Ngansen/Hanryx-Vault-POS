@@ -1,0 +1,79 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== full sync block in compose.yml ==="
+sed -n '407,440p' compose.yml
+
+echo
+echo "=== check if pos block has any orchestrator command we should mirror ==="
+grep -nE '^  pos:' compose.yml
+sed -n "$(grep -n '^  pos:' compose.yml | head -1 | cut -d: -f1),+30p" compose.yml | head -35
+=== full sync block in compose.yml ===
+  sync:
+    build: .
+    restart: unless-stopped
+    command: ["python3", "/app/sync_orchestrator.py"]
+    environment:
+      DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
+      REDIS_URL:       redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      HANRYX_LOCAL_DB_DIR: ${HANRYX_LOCAL_DB_DIR:-/mnt/cards}
+      # Same on-drive defaults as the pos service — the workers/run
+      # CLI runs equally well in either container, so both need to
+      # know where the model files live.
+      OCR_MODELS_DIR:      ${OCR_MODELS_DIR:-/mnt/cards/models/paddleocr}
+      CLIP_MODEL_PATH:     ${CLIP_MODEL_PATH:-/mnt/cards/models/clip-vit-b32.onnx}
+      SYNC_TICK_SECONDS:   ${SYNC_TICK_SECONDS:-60}
+      SYNC_LOG_LEVEL:      ${SYNC_LOG_LEVEL:-INFO}
+      # Inherit the same upstream API keys the importers need so we don't
+      # have to re-document them — set them in pi-setup/.env.
+      EBAY_APP_ID:         ${EBAY_APP_ID:-}
+      EBAY_CERT_ID:        ${EBAY_CERT_ID:-}
+      POKEMONTCG_API_KEY:  ${POKEMONTCG_API_KEY:-}
+      TCGPL_API_KEY:       ${TCGPL_API_KEY:-}
+      # Naver Open API creds — refresh_market_prices.py calls naver_shopping()
+      # which silently returns [] without these (no rows in price_history for
+      # the naver source). Same vars are set on the pos service.
+      NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+    volumes:
+      # See `pos` service for rationale on the bind mount + propagation: rslave.
+      - type: bind
+        source: /mnt/cards
+        target: /mnt/cards
+        bind:
+          propagation: rslave
+
+=== check if pos block has any orchestrator command we should mirror ===
+132:  pos:
+  pos:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # Chromium (Playwright) writes lots of small files to /dev/shm during
+    # rendering. Docker's default 64MB is far too small and causes silent
+    # tab crashes ("Target page, context or browser has been closed").
+    # 256MB matches Playwright's recommended docker shm size and is well
+    # within the Pi 5's 8GB RAM budget.
+    shm_size: "256mb"
+    environment:
+      DATABASE_URL:     postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
+      REDIS_URL:        redis://redis:6379/0
+      FLASK_ENV:        production
+      PYTHONUNBUFFERED: "1"
+
+      SESSION_SECRET:   ${SESSION_SECRET:?SESSION_SECRET is required (set in pi-setup/.env to a 32+ byte random hex)}
+      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in pi-setup/.env)}
+
+      # GitHub token — used for inventory sync from Ngansen/Inventory-Scanner repo
+      GITHUB_TOKEN:     ${GITHUB_TOKEN:-}
+
+      # PSA Public API — cert authentication on PSA slabs.
+      # Free token from https://www.psacard.com/publicapi
+      PSA_API_TOKEN:    ${PSA_API_TOKEN:-}
+
+      # tcgpricelookup.com — secondary reference price source on Market screen.
+      # Free tier is 200 req/day; only fired on explicit operator "Compare" clicks.
+      TCGPL_API_KEY:    ${TCGPL_API_KEY:-}
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
