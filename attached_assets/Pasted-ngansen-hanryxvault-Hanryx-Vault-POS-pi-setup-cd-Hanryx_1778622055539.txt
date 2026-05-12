@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+cat >> scripts/checkup.sh <<'EOF'
+
+section "8. PRICE HISTORY (per source)"
+psql_t "SELECT source, count(*), count(DISTINCT card_id), EXTRACT(EPOCH FROM (NOW() - max(observed_at)))::int, count(*) FILTER (WHERE observed_at > NOW() - INTERVAL '1 hour') FROM price_history GROUP BY source ORDER BY source;" | while IFS='|' read -r src rows cards age rows1h; do
+  [ -z "$src" ] && continue
+  age_h=$((age / 3600))
+  if   [ "$age_h" -gt 720 ]; then m=FAIL
+  elif [ "$age_h" -gt 168 ]; then m=WARN
+  else m=OK; fi
+  mark $m "$(printf '%-14s %6s rows  %5s cards  age=%4dh  +%s/h' "$src" "$rows" "$cards" "$age_h" "$rows1h")"
+./scripts/checkup.shp.sh.sh-run: ./scripts/checkup
+93 scripts/checkup.sh
+
+------------------------------------------------------------
+  1. CONTAINERS
+------------------------------------------------------------
+[   OK ]  assistant    Up 22 hours (healthy)   healthy
+[   OK ]  db           Up 22 hours (healthy)   healthy
+[   OK ]  pgbouncer    Up 22 hours (healthy)   healthy
+[   OK ]  pokeapi      Up 22 hours (healthy)   healthy
+[   OK ]  pos          Up 20 hours (healthy)   healthy
+[   OK ]  recognizer   Up 22 hours (healthy)   healthy
+[   OK ]  redis        Up 22 hours (healthy)   healthy
+[   OK ]  storefront   Up 22 hours (healthy)   healthy
+[ WARN ]  sync         Up 22 hours
+
+------------------------------------------------------------
+  2. DISK
+------------------------------------------------------------
+[   OK ]  /  35G/58G  62%  (22G free)
+[   OK ]  /mnt/cards  25G/1.8T  2%  (1.8T free)
+
+------------------------------------------------------------
+  3. MEMORY / CPU
+------------------------------------------------------------
+[   OK ]  RAM 2547/8058MB (32%)
+[   OK ]  Load 0.33, 0.37, 0.39  (4 cores)
+
+------------------------------------------------------------
+  4. POS HTTP
+------------------------------------------------------------
+[ WARN ]  /healthz -> 404
+[   OK ]  /tcg/search-multi?q=pikachu -> 200
+[ WARN ]  /enrich/status -> 404
+
+------------------------------------------------------------
+  5. POSTGRES
+------------------------------------------------------------
+[   OK ]  cards_master:    63777
+[   OK ]  inventory rows:  56  (56 in-stock)
+[   OK ]  sales last 7d:   ?
+[   OK ]  active queries: 0
+
+------------------------------------------------------------
+  6. REDIS
+------------------------------------------------------------
+[   OK ]  PING -> PONG  (260 keys)
+
+------------------------------------------------------------
+  7. OLLAMA / AI
+------------------------------------------------------------
+[ WARN ]  ollama: no response (AI assistant degraded)
+
+------------------------------------------------------------
+  8. PRICE HISTORY (per source)
+------------------------------------------------------------
+[   OK ]  bunjang          4437 rows   4275 cards  age=   0h  +433/h
+[   OK ]  cardmarket       4528 rows   4372 cards  age=   0h  +448/h
+[   OK ]  hareruya2        4829 rows   4632 cards  age=   0h  +464/h
+[   OK ]  naver            4553 rows   4494 cards  age=   0h  +453/h
+[   OK ]  pricecharting   30708 rows  18055 cards  age=   5h  +0/h
+[   OK ]  tcgplayer         130 rows     54 cards  age=  22h  +0/h
+
+------------------------------------------------------------
+  9. USB OFFLINE MIRROR
+------------------------------------------------------------
+[ FAIL ]  cards.sqlite missing at /mnt/cards/cards.sqlite
+
+------------------------------------------------------------
+  10. RECENT ERRORS (POS, last 500 log lines)
+------------------------------------------------------------
+[   OK ]  no recent errors
+
+------------------------------------------------------------
+  done.  re-run: ./scripts/checkup.sh
+------------------------------------------------------------
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
