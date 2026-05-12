@@ -1,0 +1,76 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== sync container — what's it actually doing? ==="
+docker compose ps sync
+docker compose logs --tail=80 sync 2>&1 | tail -40 
+
+echo
+echo "=== sync_orchestrator schedule + entrypoint ==="
+docker compose exec -T pos sh -c 'grep -nE "INTERVAL|sleep|schedule|while True|run_mirror|main\(\)|__main__" /app/sync_orchestrator.py | head -20'
+
+echo
+echo "=== runtime satellite_host (admin-editable) ==="
+docker compose exec -T pos sh -c "psql \"\$DATABASE_URL\" -tAc \"SELECT key, value FROM kv_settings WHERE key LIKE '%satellite%' OR key LIKE '%sat_%';ip: %{http_code}\n" http://100.121.45.69/health'e 
+=== sync container — what's it actually doing? ===
+NAME              IMAGE           COMMAND                  SERVICE   CREATED        STATUS        PORTS
+pi-setup-sync-1   pi-setup-sync   "/entrypoint.sh pyth…"   sync      23 hours ago   Up 23 hours   8080/tcp
+sync-1  | {"ts":"2026-05-12T17:21:39","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict \"Team Rocket's Spidops Destined Rivals pokemon\" → 0 items, broadening to \"Team Rocket's Spidops pokemon\""}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:42","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Pikachu EX 277 2026 Promo pokemon' → 0 items, broadening to 'Pikachu EX pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Dewgong 19 Pham Flames pokemon' → 0 items, broadening to 'Dewgong pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:43","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Mega Zygarde ex 124 Nihil Zero pokemon' → 0 items, broadening to 'Mega Zygarde ex pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:44","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Snorlax 63 151 pokemon' → 0 items, broadening to 'Snorlax pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:45","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:45","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Cynthia’s Garchomp Destined Rivals pokemon' → 0 items, broadening to 'Cynthia’s Garchomp pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:46","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:47","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:47","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Eevee Heroes Eevee Heroes pokemon' → 0 items, broadening to 'Eevee Heroes pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:47","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:47","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'OLD Maid Gengar Old Maid pokemon' → 0 items, broadening to 'OLD Maid Gengar pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Battle Region Battle Region pokemon' → 0 items, broadening to 'Battle Region pokemon'"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:48","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:49","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-12T17:21:49","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-12T17:21:49","level":"INFO","logger":"hanryxvault","msg":"[enrich] Price refresh: updated 31/31 cards"}
+
+=== sync_orchestrator schedule + entrypoint ===
+2:sync_orchestrator.py — schedules the offline-DB sync work.
+13:    - usb_mirror.run_mirror()  — Postgres → SQLite snapshot. Cheap (~1s).
+128:    """A scheduled job. Tracked between ticks so we know when it's due next."""
+165:    summary = usb_mirror.run_mirror()
+195:# These are scheduled less aggressively than the per-language importers
+384:def main() -> None:
+410:    while True:
+413:        time.sleep(TICK_SECONDS)
+416:if __name__ == "__main__":
+417:    main()
+
+=== runtime satellite_host (admin-editable) ===
+
+=== verify Tailscale MagicDNS resolves from pos container ===
+192.168.86.24   hanryxvault-sat
+via hostname: 000
+via tailscale ip: 000
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
