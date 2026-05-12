@@ -1,0 +1,87 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:32:14 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Inspect raw scraper output for "Oddish #1" — confirm same-title-diff-url case
+docker compose exec -T pos python3 -c "
+from pricecharting_scraper import search_pricecharting
+out = search_pricecharting('Oddish #1', limit=8)
+print('total rows:', len(out))
+seen = {}
+for r in out[:15]:
+    seen.setdefault(r.get('url',''), []).append(r['grade'])
+    print(' ', r['grade'], '\$%.2f' % r['price'], '|', r['title'], '|', r.get('set'), '|', r.get('url',''))
+print('---')
+print('distinct urls:', len(seen))
+ GROUP BY card_id ORDER BY card_id;"'echarting'\''
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:35:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+total rows: 8
+  Ungraded $0.23 | Oddish #1 | Pokemon Phantasmal Flames | https://www.pricecharting.com/game/pokemon-phantasmal-flames/oddish-1
+  Ungraded $0.56 | Oddish [Reverse Holo] #1 | Pokemon Phantasmal Flames | https://www.pricecharting.com/game/pokemon-phantasmal-flames/oddish-reverse-holo-1
+  Ungraded $0.09 | Erika's Oddish [Ball] #1 | Pokemon Ascended Heroes | https://www.pricecharting.com/game/pokemon-ascended-heroes/erika%27s-oddish-ball-1
+  Ungraded $0.13 | Oddish #1 | Pokemon Obsidian Flames | https://www.pricecharting.com/game/pokemon-obsidian-flames/oddish-1
+  Ungraded $0.14 | Oddish #1 | Pokemon Lost Origin | https://www.pricecharting.com/game/pokemon-lost-origin/oddish-1
+  Ungraded $0.90 | Erika's Oddish #1 | Pokemon Ascended Heroes | https://www.pricecharting.com/game/pokemon-ascended-heroes/erika%27s-oddish-1
+  Ungraded $0.41 | Oddish #1 | Pokemon Crown Zenith | https://www.pricecharting.com/game/pokemon-crown-zenith/oddish-1
+  Ungraded $1.41 | Oddish #1 | Pokemon Japanese Inferno X | https://www.pricecharting.com/game/pokemon-japanese-inferno-x/oddish-1
+---
+distinct urls: 8
+patched url-grouping
+DELETE 26
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c16_price... 0.0s
+[c16-pc] 10 of 28,355 cards  rate=1.0s ETA=0h0m  min_usd=0.0  dry=False
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:35:14","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+[c16-pc] DONE  cards_processed=8  rows_written=14  no_match=2  errors=0  elapsed=11s
+ card_id | n |             grades             |       prices        
+---------+---+--------------------------------+---------------------
+ 351431  | 2 | {"Grade 7",Ungraded}           | {10.88,1.93}
+ 351432  | 2 | {"Grade 7",Ungraded}           | {7.50,2.60}
+ 351433  | 1 | {Ungraded}                     | {0.08}
+ 351434  | 1 | {Ungraded}                     | {0.23}
+ 351435  | 1 | {Ungraded}                     | {0.24}
+ 351436  | 1 | {Ungraded}                     | {0.08}
+ 351438  | 3 | {"Grade 7","Grade 8",Ungraded} | {10.33,15.00,57.94}
+ 351439  | 3 | {"Grade 7","Grade 8",Ungraded} | {5.50,12.02,2.71}
+(8 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# How many cards have a tcgplayer baseline at various thresholds?
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+WITH latest_tcg AS (
+    SELECT DISTINCT ON (card_id) card_id, price_usd
+    FROM price_history
+    WHERE source = '\''tcgplayer'\'' AND price_usd > 0
+    ORDER BY card_id, observed_at DESC
+)
+SELECT
+  count(*) FILTER (WHERE price_usd >= 0.0)  AS all_tcg,
+  count(*) FILTER (WHERE price_usd >= 1.0)  AS gte"'OM latest_tcg;R (WHERE price_usd >= 25.0) AS gte
+ all_tcg | gte_1 | gte_5 | gte_10 | gte_25 
+---------+-------+-------+--------+--------
+      27 |    24 |    18 |     17 |      7
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
