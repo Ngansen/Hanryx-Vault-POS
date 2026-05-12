@@ -1,0 +1,24 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+read -rsp 'EBAY_OAUTH_TOKEN: ' EBAY_OAUTH_TOKEN; echo
+
+# Single-quoted, and warn if the token itself contains a single quote
+case "$EBAY_OAUTH_TOKEN" in
+  *\'*) echo "WARNING: token contains a single quote — single-quote escape needed";;
+esac
+
+grep -v '^EBAY_OAUTH_TOKEN' .env > .env.new
+printf "EBAY_OAUTH_TOKEN='%s'\n" "$EBAY_OAUTH_TOKEN" >> .env.new
+mv .env.new .env
+unset EBAY_OAUTH_TOKEN
+
+awk -F= '/^EBAY_OAUTH_TOKEN=/{print "line-len="lener len=${#EBAY_OAUTH_TOKEN}"' -c 'echo "in-contain
+EBAY_OAUTH_TOKEN: 
+line-len=2071
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 4/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         2.8s[+] up 2/4... Waiting                         2.8s ⠹ Contain... Waiting                         2.9s[+] up 2/4... Waiting                         2.9s ⠸ Contain... Waiting                         3.0s[+] up 2/4... Waiting                         3.0s ⠼ Contain... Waiting                         3.1s[+] up 2/4... Waiting                         3.1s ⠴ Contain... Waiting                         3.2s[+] up 3/4... Waiting                         3.2s ✔ Contain... Healthy                         3.2s[+] up 3/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s[+] up 4/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Started                         3.4s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+in-container len=0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
