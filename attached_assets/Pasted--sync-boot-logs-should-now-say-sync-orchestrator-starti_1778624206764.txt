@@ -1,0 +1,28 @@
+=== sync boot logs (should now say 'sync_orchestrator starting') ===
+sync-1  | 2026-05-12 22:16:17,693 INFO sync_orchestrator: sync_orchestrator starting; tick=60s; usb_configured=True
+sync-1  | 2026-05-12 22:16:18,010 INFO usb_mirror: [mirror] cards_kr: 15121 rows
+sync-1  | 2026-05-12 22:16:18,013 INFO usb_mirror: [mirror] cards_jpn: 0 rows
+sync-1  | 2026-05-12 22:16:18,035 INFO usb_mirror: [mirror] cards_jpn_pocket: 3041 rows
+sync-1  | 2026-05-12 22:16:18,293 INFO usb_mirror: [mirror] cards_chs: 16527 rows
+sync-1  | 2026-05-12 22:16:20,372 INFO usb_mirror: [mirror] cards_master: 63777 rows
+sync-1  | 2026-05-12 22:16:20,375 INFO usb_mirror: [mirror] ref_set_mapping: 0 rows
+sync-1  | 2026-05-12 22:16:20,376 INFO usb_mirror: [mirror] ref_variant_terms: 0 rows
+sync-1  | 2026-05-12 22:16:20,386 INFO usb_mirror: [mirror] ref_pokedex_species: 1025 rows
+sync-1  | 2026-05-12 22:16:20,387 INFO usb_mirror: [mirror] ref_promo_provenance: 0 rows
+sync-1  | 2026-05-12 22:16:20,390 INFO usb_mirror: [mirror] inventory_snapshot: 56 rows
+sync-1  | 2026-05-12 22:16:20,391 INFO usb_mirror: [mirror] sale_history_recent: 0 rows
+sync-1  | 2026-05-12 22:16:20,922 INFO usb_mirror: [mirror] price_history_recent: 50273 rows
+sync-1  | 2026-05-12 22:16:20,928 INFO sync_orchestrator: [mirror] complete: {'counts': {'cards_kr': 15121, 'cards_jpn': 0, 'cards_jpn_pocket': 3041, 'cards_chs': 16527, 'cards_master': 63777, 'ref_set_mapping': 0, 'ref_variant_terms': 0, 'ref_pokedex_species': 1025, 'ref_promo_provenance': 0, 'inventory_snapshot': 56, 'sale_history_recent': 0, 'price_history_recent': 50273}, 'elapsed_sec': 3.23, 'ts': 1778624180}
+sync-1  | 2026-05-12 22:16:20,957 INFO sync_orchestrator: [run] /opt/venv/bin/python3 /app/sync_tcg_db.py --once
+sync-1  | 2026-05-12 22:16:22,459 INFO sync_orchestrator: [run] /opt/venv/bin/python3 /app/tcgplayer_proxy.py --refresh --top 1000
+sync-1  | 2026-05-12 22:16:22,939 INFO sync_orchestrator: [run] /opt/venv/bin/python3 /app/ebay_sold.py --sweep --top 200
+sync-1  | 2026-05-12 22:16:23,837 INFO sync_orchestrator: [run] /opt/venv/bin/python3 /app/import_kr_cards.py
+sync-1  | 2026-05-12 22:16:24,160 INFO sync_orchestrator: [run] /opt/venv/bin/python3 /app/import_jpn_cards.py
+
+=== confirm process is python orchestrator, not gunicorn ===
+grep: (standard input): binary file matches
+python3 /app/sync_orchestrator.py 
+
+=== mirror should fire on boot — check pokedex_local.db mtime ===
+-rw-rw-rw- 1 root root 67915776 May 12 22:16 /mnt/cards/pokedex_local.db
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
