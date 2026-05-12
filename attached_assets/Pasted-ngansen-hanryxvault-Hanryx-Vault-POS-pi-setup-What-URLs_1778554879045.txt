@@ -1,0 +1,84 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # What URLs do the table rows actually link to?
+grep -oE 'href="[^"]+"' /tmp/pc_table.html | grep -vE 'fonts|css|js|png|jpg|svg|category|brand|console' | sort -u | head -20
+echo '==='
+# Are prices inline in the table rows? (look for $ signs near <tr>)
+grep -oP '\$[0-9,]+\.[0-9]{2}' /tmp/pc_table.html | head -20
+echo '==='
+# Look at what each tr actually contains — first product row's structure
+python3 - <<'PY'
+import re
+html = open('/tmp/pc_table.html').read()
+# Find the product table
+m = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.S)
+PY          print(" ", h)ll(r'href="([^"]+)"', r)[
+href="#"
+href="/api-documentation"
+href="/big-movers"
+href="/card-centering-calculator"
+href="/collections-for-sale"
+href="/compare"
+href="/contribute"
+href="/ebay-lot-bot"
+href="/edit-profile"
+href="/faq"
+href="http://blog.pricecharting.com"
+href="http://blog.pricecharting.com/feeds/posts/default"
+href="http://blog.pricecharting.com/feeds/posts/default?alt=rss"
+href="https://apps.apple.com/app/apple-store/id6452190948?pt=126520200&ct=website-app-page&mt=8"
+href="https://play.google.com/store/apps/details?id=com.vgpc.pricecharting&referrer=utm_source%3Dwebsite%26utm_medium%3Dreferral%26utm_campaign%3Dpricecharting"
+href="https://www.pricecharting.com"
+href="https://www.pricecharting.com/"
+href="https://www.pricecharting.com/api-documentation"
+href="https://www.pricecharting.com/create-account"
+href="https://www.pricecharting.com/de/search-products?q=charizard&#43;ex&amp;type=prices&amp;view=table"
+===
+$964.76
+$775.00
+$777.00
+$56.00
+$41.59
+$43.50
+$413.45
+$296.39
+$365.88
+$360.00
+$318.91
+$335.00
+$36.00
+$32.64
+$37.00
+$710.00
+$519.03
+$557.28
+$107.32
+$93.40
+===
+data rows: 100
+--- first row text ---
+
+                
+                 | 
+                     | 
+                         | 
+                             | 
+                         | 
+                     | 
+                 | 
+                
+                 | 
+                     | 
+                        Mega Charizard X ex #125 | 
+                    
+                    
+                    
+                     | 
+                        
+                             | 
+                                Pokemon Phantasma
+--- first row hrefs ---
+  https://www.pricecharting.com/game/pokemon-phantasmal-flames/mega-charizard-x-ex-125
+  https://www.pricecharting.com/game/pokemon-phantasmal-flames/mega-charizard-x-ex-125
+  /console/pokemon-phantasmal-flames
+  /console/pokemon-phantasmal-flames
+  #
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
