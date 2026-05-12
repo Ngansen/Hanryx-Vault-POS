@@ -1,0 +1,57 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ grep -n '^  grafana:' ~/Hanryx-Vault-POS/pi-setup/monitoring/docker-compose.yml
+# then dump that line + 50 after
+LN=$(grep -n '^  grafana:' ~/Hanryx-Vault-POS/pi-setup/monitoring/docker-compose.yml | head -1 | cut -d: -f1)
+sed -n "${LN},$((LN+50))p" ~/Hanryx-Vault-POS/pi-setup/monitoring/docker-compose.yml
+43:  grafana:
+  grafana:
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure.
+    image: grafana/grafana:13.1.0-25469333600-ubuntu@sha256:602d4df46b5ccc6d3cbd779f7094abdb256fcd21d855d30d8d98d984fe9bf6bb
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SERVER_ROOT_URL: "http://localhost:3001/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      # Anonymous read-only access — required so the 7" diagnostics-screen
+      # kiosk can show the dashboard without prompting for a login. The
+      # admin login form still works for editing from the laptop. Tailnet
+      # membership is what gates external access; anonymous here only
+      # means "anyone reaching Grafana can read", which is fine inside
+      # the tailnet.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # Admin password is set declaratively from pi-setup/.env so a fresh
+      # install is never reachable with the well-known admin/admin combo.
+      # Required: anyone on the tailnet can read dashboards (anonymous Viewer
+      # above), but only the holder of GRAFANA_ADMIN_PASSWORD can edit them
+      # or add data sources. Rotate by editing the .env value and running
+      # `docker compose up -d --force-recreate grafana`.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (set in pi-setup/.env)}
+    networks: [hanryx_net]
+    depends_on: [prometheus]
+
+  node-exporter:
+    # Pinned tag + multi-arch manifest digest. See pi-setup/docs/REPRODUCIBILITY.md
+    # for the bump procedure.
+    image: prom/node-exporter:v1.11.1@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205
+    container_name: node-exporter
+    restart: unless-stopped
+    # Host networking so node_exporter sees the real /proc and /sys
+    # of the Pi (not the container's view). Listens on host:9100.
+    # The host's firewall (or lack of it) plus tailnet membership
+    # is what gates external access.
+    pid: host
+    network_mode: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # rslave propagates host mount events (e.g. UGreen dock at /mnt/cards
+      # mounted after this container started) into the container's rootfs
+      # view so node_exporter can report node_filesystem_* for them.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
