@@ -1,0 +1,54 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== run mirror manually (correct name) ==="
+docker compose exec -T pos sh -c 'cd /app && timeout 120 python3 -c "import usb_mirror, json; print(json.dumps(usb_mirror.run_mirror(), indent=2, default=str))"' 2>&1 | tail -30
+ls -la /mnt/cards/pokedex_local.db
+
+echo
+echo "=== where is the satellite IP configured? ==="
+docker compose exec -T pos sh -c 'grep -rnE "192\.168\.86\.22|SATELLITE_HOST|SAT_HOST" /app/server.py /app/*.py 2>/dev/null | head -10'
+grep -nE "192\.168\.86\.22|SATELLITE" .env docker-compose.yml 2>/dev/null | head
+
+irror.py" | head' /app/*.py | grep -v "^/app/usb_m
+=== run mirror manually (correct name) ===
+{
+  "counts": {
+    "cards_kr": 15121,
+    "cards_jpn": 0,
+    "cards_jpn_pocket": 3041,
+    "cards_chs": 16527,
+    "cards_master": 63777,
+    "ref_set_mapping": 0,
+    "ref_variant_terms": 0,
+    "ref_pokedex_species": 1025,
+    "ref_promo_provenance": 0,
+    "inventory_snapshot": 56,
+    "sale_history_recent": 0,
+    "price_history_recent": 49529
+  },
+  "elapsed_sec": 3.53,
+  "ts": 1778622685
+}
+-rw-rw-rw- 1 root root 67825664 May 12 21:51 /mnt/cards/pokedex_local.db
+
+=== where is the satellite IP configured? ===
+/app/server.py:4691:      - Satellite Pi (192.168.86.22) — pings its /health
+/app/server.py:23401:    "satellite_host":    "192.168.86.22",  # Satellite Pi IP for display blanking
+/app/server.py:26277:                 value="{ks.get('satellite_host','192.168.86.22')}"
+/app/server.py:26278:                 placeholder="192.168.86.22">
+/app/server.py:26441:        "satellite_host":   request.form.get("satellite_host", "192.168.86.22").strip(),
+/app/health_aggregator.py:6:  - Satellite Pi (192.168.86.22, kiosk + nginx)
+/app/health_aggregator.py:24:                               "http://192.168.86.22/health")
+/app/server.py:4691:      - Satellite Pi (192.168.86.22) — pings its /health
+/app/server.py:23401:    "satellite_host":    "192.168.86.22",  # Satellite Pi IP for display blanking
+/app/server.py:26277:                 value="{ks.get('satellite_host','192.168.86.22')}"
+
+=== is run_mirror called anywhere? (should be on a bg thread) ===
+/app/refresh_market_prices.py:13:results into price_history (which usb_mirror replicates to the SQLite
+/app/server.py:3227:    # Note: usb_mirror.price_history_recent SELECT references source/grade/
+/app/sync_orchestrator.py:13:    - usb_mirror.run_mirror()  — Postgres → SQLite snapshot. Cheap (~1s).
+/app/sync_orchestrator.py:76:import usb_mirror
+/app/sync_orchestrator.py:165:    summary = usb_mirror.run_mirror()
+/app/sync_orchestrator.py:275:    connection style as usb_mirror and benefits from the orchestrator's
+/app/sync_orchestrator.py:322:    # USD conversion. usb_mirror replicates to price_history_recent on
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
