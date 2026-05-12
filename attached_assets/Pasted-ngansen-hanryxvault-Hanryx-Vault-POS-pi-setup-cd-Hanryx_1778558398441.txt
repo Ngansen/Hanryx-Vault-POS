@@ -1,0 +1,84 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "--- _run_price_refresh body (so we know what gets backfilled) ---"
+sed -n '22675,22735p' server.py
+
+echo "--- relaunch pricecharting backfill (no nohup, just -d) ---"
+docker compose exec -d pos sh -c \
+  'python3 /app/scripts/c16_pricecharting_backfill.py --rate-sec 1.0 > /tmp/c16-pc.log 2>&1'
+sleep 6
+docker compose exec -T pos ps -ef | grep -E 'c16_pricecharting|PID' | grep -v grep
+docker compose exec -T pos sh -c 'ls -la /tmp/c16-pc.log && tail -8 /tmp/c16-pc.log'
+--- _run_price_refresh body (so we know what gets backfilled) ---
+def _run_price_refresh():
+    """Background thread: refresh market prices for cards not updated in 24h."""
+    _enrich_log("Scheduled price refresh started")
+    try:
+        db = _direct_db()
+        cutoff = _now_ms() - 86_400_000  # 24 hours ago
+        rows = db.execute(
+            "SELECT qr_code, name, set_code, card_number, variant "
+            "FROM inventory WHERE last_updated < %s AND stock > 0 "
+            "ORDER BY last_updated ASC LIMIT 100",
+            (cutoff,)
+        ).fetchall()
+        db.close()
+
+        # Parallel refresh — pooled session + Retry replace the old sleep loop.
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        def _one(qr_code: str) -> bool:
+            wdb = None
+            try:
+                wdb = _direct_db()
+                _enrich_single_card(qr_code, wdb)
+                return True
+            except Exception:
+                return False
+            finally:
+                try:
+                    if wdb is not None: wdb.close()
+                except Exception: pass
+
+        # Same conn-budget logic as bulk enrich (see comment there).
+        _pg_max  = int(os.environ.get("PG_POOL_MAX", "20"))
+        _safe_cap = max(2, _pg_max // 4)
+        workers   = min(int(os.environ.get("PRICE_REFRESH_WORKERS", "4")), _safe_cap)
+        count = 0
+        with _TPE(max_workers=workers) as pool:
+            for ok in pool.map(_one, [r["qr_code"] for r in rows]):
+                if ok: count += 1
+
+        _enrich_log(f"Price refresh: updated {count}/{len(rows)} cards")
+    except Exception as _pre:
+        try: db.close()
+        except Exception: pass
+        _enrich_log(f"Price refresh failed: {_pre}")
+
+
+def _start_price_refresh_scheduler():
+    """Daemon thread: runs price refresh every 6 hours."""
+    def _loop():
+        _time.sleep(120)  # Wait 2 min after boot before first run
+        while True:
+            try:
+                _run_price_refresh()
+            except Exception:
+                pass
+            _time.sleep(_PRICE_REFRESH_INTERVAL)
+
+    t = threading.Thread(target=_loop, daemon=True, name="price-refresh")
+    t.start()
+    log.info("[enrich] Price refresh scheduler started (every %dh)", _PRICE_REFRESH_INTERVAL // 3600)
+
+--- relaunch pricecharting backfill (no nohup, just -d) ---
+-rw-r--r-- 1 root root 1124 May 12 03:58 /tmp/c16-pc.log
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup
