@@ -1,0 +1,199 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:35:05 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ docker compose exec -T pos tail -30 /tmp/c16-pc.log
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT count(*) AS rows, count(DISTINCT card_id) AS cards FROM price_history WHERE source='\''pricecharting'\'';"'
+no configuration file provided: not found
+no configuration file provided: not found
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos tail -30 /tmp/c16-pc.log
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT count(*) AS rows, count(DISTINCT card_id) AS cards FROM price_history WHERE source='\''pricecharting'\'';"'
+ rows | cards 
+------+-------
+   14 |     8
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos ps -ef | grep -iE 'backfill|c16|ebay|pricechart' | grep -v grep
+docker compose exec -T pos ls -la /tmp/*.log /tmp/*backfill* 2>/dev/null
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT source, count(*) AS rows, count(DISTINCT card_id) AS cards, min(observed_at) AS first_write, max(observed_at) AS last_write FROM price_history GROUP BY source ORDER BY rows DESC;"'
+    source     | rows | cards |          first_write          |          last_write           
+---------------+------+-------+-------------------------------+-------------------------------
+ hareruya2     |  243 |    46 | 2026-05-08 23:48:17.680778+00 | 2026-05-09 01:36:19.018206+00
+ bunjang       |  200 |    38 | 2026-05-08 23:48:17.680778+00 | 2026-05-09 01:36:19.018206+00
+ cardmarket    |  194 |    38 | 2026-05-08 23:48:12.836145+00 | 2026-05-09 01:36:19.018206+00
+ tcgplayer     |  130 |    54 | 2026-05-08 01:09:26.032+00    | 2026-05-11 23:08:41.890317+00
+ naver         |  105 |    46 | 2026-05-09 00:18:21.749356+00 | 2026-05-09 01:36:19.018206+00
+ pricecharting |   14 |     8 | 2026-05-12 03:35:13.234664+00 | 2026-05-12 03:35:23.940026+00
+(6 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+docker compose exec -d pos sh -c \
+  'nohup python3 /app/scripts/c16_pricecharting_backfill.py --rate-sec 1.0 > /tmp/c16-pc.log 2>&1 < /dev/null &'
+
+sleep 4
+docker compose exec -T pos ps -ef | grep -E 'c16_pricecharting|PID' | grep -v grep
+docker compose exec -T pos head -3 /tmp/c16-pc.logngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+ls -la scripts/ | grep -iE 'backfill|scrape|history'
+grep -rln "search_all\|naver_shopping\|hareruya2(" scripts/ pi-setup/scripts/ 2>/dev/null
+-rwxrwxr-x  1 ngansen ngansen 11721 May 10 18:15 c16_ebay_backfill.py
+-rw-rw-r--  1 ngansen ngansen  8855 May 12 03:35 c16_pricecharting_backfill.py
+-rwxrwxr-x  1 ngansen ngansen  4625 May 10 04:31 cleanup_scrape.py
+-rwxrwxr-x  1 ngansen ngansen  5516 May 10 04:31 scrape_pokellector_all.py
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "--- did pricecharting backfill actually launch? ---"
+docker compose exec -T pos ps -ef | grep -E 'c16_pricecharting|PID' | grep -v grep
+docker compose exec -T pos sh -c 'ls -la /tmp/c16-pc.log 2>/dev/null && tail -5 /tmp/c16-pc.log'
+
+echo "--- bg price-refresh scheduler ---"
+grep -nE 'price[-_]refresh|price_refresh_scheduler|search_all|bg.*price' server.py | head -20
+grep -nE 'PRICE_REFRESH|DISABLE_PRICE|bg_disabled' server.py | head -10
+
+echo "--- env knob currently set ---"
+docker compose exec -T pos env | grep -iE 'price|refresh|scheduler' | head
+--- did pricecharting backfill actually launch? ---
+-rw-r--r-- 1 root root 0 May 12 03:37 /tmp/c16-pc.log
+--- bg price-refresh scheduler ---
+6069:    out = price_scrapers.search_all(q, sources=sources,
+7184:            cmp_out = price_scrapers.search_all(q, limit_per_source=3)
+22675:def _run_price_refresh():
+22721:def _start_price_refresh_scheduler():
+22727:                _run_price_refresh()
+22732:    t = threading.Thread(target=_loop, daemon=True, name="price-refresh")
+22740:    log.info("[bg] price-refresh scheduler disabled via env")
+22742:    _start_price_refresh_scheduler()
+23115:@app.route("/api/v1/enrich/price-refresh", methods=["POST"])
+23117:def api_v1_price_refresh():
+23119:    _bg(_run_price_refresh)
+23361:  var r = await fetch('/api/v1/enrich/price-refresh', {{method:'POST'}});
+22456:_PRICE_REFRESH_INTERVAL = 6 * 3600  # 6 hours
+22708:        workers   = min(int(os.environ.get("PRICE_REFRESH_WORKERS", "4")), _safe_cap)
+22730:            _time.sleep(_PRICE_REFRESH_INTERVAL)
+22734:    log.info("[enrich] Price refresh scheduler started (every %dh)", _PRICE_REFRESH_INTERVAL // 3600)
+22739:if os.environ.get("DISABLE_BG_PRICE_REFRESH") == "1":
+--- env knob currently set ---
+DISABLE_BG_PRICE_REFRESH=1
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "--- _run_price_refresh body (so we know what gets backfilled) ---"
+sed -n '22675,22735p' server.py
+
+echo "--- relaunch pricecharting backfill (no nohup, just -d) ---"
+docker compose exec -d pos sh -c \
+  'python3 /app/scripts/c16_pricecharting_backfill.py --rate-sec 1.0 > /tmp/c16-pc.log 2>&1'
+sleep 6
+docker compose exec -T pos ps -ef | grep -E 'c16_pricecharting|PID' | grep -v grep
+docker compose exec -T pos sh -c 'ls -la /tmp/c16-pc.log && tail -8 /tmp/c16-pc.log'
+--- _run_price_refresh body (so we know what gets backfilled) ---
+def _run_price_refresh():
+    """Background thread: refresh market prices for cards not updated in 24h."""
+    _enrich_log("Scheduled price refresh started")
+    try:
+        db = _direct_db()
+        cutoff = _now_ms() - 86_400_000  # 24 hours ago
+        rows = db.execute(
+            "SELECT qr_code, name, set_code, card_number, variant "
+            "FROM inventory WHERE last_updated < %s AND stock > 0 "
+            "ORDER BY last_updated ASC LIMIT 100",
+            (cutoff,)
+        ).fetchall()
+        db.close()
+
+        # Parallel refresh — pooled session + Retry replace the old sleep loop.
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        def _one(qr_code: str) -> bool:
+            wdb = None
+            try:
+                wdb = _direct_db()
+                _enrich_single_card(qr_code, wdb)
+                return True
+            except Exception:
+                return False
+            finally:
+                try:
+                    if wdb is not None: wdb.close()
+                except Exception: pass
+
+        # Same conn-budget logic as bulk enrich (see comment there).
+        _pg_max  = int(os.environ.get("PG_POOL_MAX", "20"))
+        _safe_cap = max(2, _pg_max // 4)
+        workers   = min(int(os.environ.get("PRICE_REFRESH_WORKERS", "4")), _safe_cap)
+        count = 0
+        with _TPE(max_workers=workers) as pool:
+            for ok in pool.map(_one, [r["qr_code"] for r in rows]):
+                if ok: count += 1
+
+        _enrich_log(f"Price refresh: updated {count}/{len(rows)} cards")
+    except Exception as _pre:
+        try: db.close()
+        except Exception: pass
+        _enrich_log(f"Price refresh failed: {_pre}")
+
+
+def _start_price_refresh_scheduler():
+    """Daemon thread: runs price refresh every 6 hours."""
+    def _loop():
+        _time.sleep(120)  # Wait 2 min after boot before first run
+        while True:
+            try:
+                _run_price_refresh()
+            except Exception:
+                pass
+            _time.sleep(_PRICE_REFRESH_INTERVAL)
+
+    t = threading.Thread(target=_loop, daemon=True, name="price-refresh")
+    t.start()
+    log.info("[enrich] Price refresh scheduler started (every %dh)", _PRICE_REFRESH_INTERVAL // 3600)
+
+--- relaunch pricecharting backfill (no nohup, just -d) ---
+-rw-r--r-- 1 root root 1124 May 12 03:58 /tmp/c16-pc.log
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "--- full pc log ---"
+docker compose exec -T pos sh -c 'wc -l /tmp/c16-pc.log; echo ---; cat /tmp/c16-pc.log'
+
+echo "--- is the proc actually alive? ---"
+docker compose exec -T pos pgrep -af c16_pricecharting
+
+echo "--- live row count ---"
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT count(*) AS rows, count(DISTINCT card_id) AS cards, max(observed_at) AS last_write FROM price_history WHERE source='\''pricecharting'\'';"'
+--- full pc log ---
+11 /tmp/c16-pc.log
+---
+[c16-pc] 28,347 of 28,347 cards  rate=1.0s ETA=7h52m  min_usd=0.0  dry=False
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:58:58","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+[c16-pc] [50/28347] 351487 (bw1-1)  +3 rows  (35 cards, 58 total rows, 15 no-match, 0 errs, 0.68 cards/s)
+[c16-pc] [100/28347] 351537 (ecard1-1)  +3 rows  (82 cards, 160 total rows, 18 no-match, 0 errs, 0.75 cards/s)
+--- is the proc actually alive? ---
+OCI runtime exec failed: exec failed: unable to start container process: exec: "pgrep": executable file not found in $PATH
+--- live row count ---
+ rows | cards |          last_write          
+------+-------+------------------------------
+  181 |    93 | 2026-05-12 04:01:13.86649+00
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
