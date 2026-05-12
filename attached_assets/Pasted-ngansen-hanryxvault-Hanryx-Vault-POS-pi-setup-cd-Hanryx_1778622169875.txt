@@ -1,0 +1,42 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== why pricecharting stopped ==="
+docker compose exec -T pos sh -c 'tail -15 /tmp/c16-pc.log'
+
+echo
+echo "=== correct routes/files (so checkup stops false-WARNing) ==="
+docker compose exec -T pos sh -c 'grep -nE "@app.route\(.+(health|status|ping)" /app/server.py | head -5'
+ls -la /mnt/cards/*.sqlite /mnt/cards/*.db 2>/dev/null
+docker compose exec -T pos sh -c "psql \"\$DATABASE_URL\" -tAc \"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name ~ 'sale|order|transac' ORDER BY table_name;>&1 | head'ose exec -T ollama sh -c 'ollama list 2
+=== why pricecharting stopped ===
+[c16-pc] [28050/28347] 389965 (swsh35-78)  q='Piers #78'  hits=0 matched=0
+{"ts":"2026-05-12T16:15:20","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Scorbunny on the Ball #4'"}
+{"ts":"2026-05-12T16:15:22","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Sobble on the Ball #5'"}
+{"ts":"2026-05-12T16:15:23","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Special Delivery Charizard #SWSH075'"}
+{"ts":"2026-05-12T16:15:24","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Galarian Articuno #SWSH282'"}
+{"ts":"2026-05-12T16:15:26","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Klara #SWSH302'"}
+{"ts":"2026-05-12T16:15:27","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Greninja #SWSH305'"}
+{"ts":"2026-05-12T16:15:30","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Arceus V #SWSH306'"}
+{"ts":"2026-05-12T16:15:38","level":"WARNING","logger":"pricecharting_scraper","msg":"pricecharting HTTP 403 for 'Galarian Zapdos #SWSH283'"}
+[c16-pc] [28100/28347] 390015 (mcd18-2)  +2 rows  (17904 cards, 30459 total rows, 10196 no-match, 0 errs, 0.63 cards/s)
+[c16-pc] [28150/28347] 390065 (sm75-39)  +1 rows  (17945 cards, 30529 total rows, 10205 no-match, 0 errs, 0.63 cards/s)
+[c16-pc] [28200/28347] 390115 (sm5-122a)  q='Escape Board #122a'  hits=0 matched=0
+[c16-pc] [28250/28347] 390165 (sm35-33)  +1 rows  (18002 cards, 30625 total rows, 10248 no-match, 0 errs, 0.63 cards/s)
+[c16-pc] [28300/28347] 390215 (sm3-88a)  q='Darkrai-GX #88a'  hits=4 matched=0
+[c16-pc] DONE  cards_processed=18047  rows_written=30694  no_match=10300  errors=0  elapsed=44667s
+
+=== correct routes/files (so checkup stops false-WARNing) ===
+4595:@app.route("/health", methods=["GET"])
+4686:@app.route("/health/all", methods=["GET"])
+4710:@app.route("/admin/wireguard/status", methods=["GET"])
+4966:@app.route("/admin/multi/<game>/visual/status", methods=["GET"])
+5237:@app.route("/zettle/status", methods=["GET"])
+-rw-rw-rw- 1 root root 59420672 May  9 01:36  /mnt/cards/pokedex_local.db
+offline_sale_queue
+purchase_order_items
+purchase_orders
+sale_history
+sales
+sales_idempotency
+service "ollama" is not running
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
