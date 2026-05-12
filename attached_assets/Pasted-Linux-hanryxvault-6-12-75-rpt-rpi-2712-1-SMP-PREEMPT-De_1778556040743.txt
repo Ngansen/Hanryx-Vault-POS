@@ -1,0 +1,47 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:15:09 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# A) Adapt scraper to unified schema
+python3 - <<'PY'
+import re, pathlib
+p = pathlib.Path("pricecharting_scraper.py")
+s = p.read_text()
+# Signature
+s = s.replace(
+    "def search_pricecharting(query: str, max_cards: int = 30) -> list[dict[str, Any]]:",
+    "def search_pricecharting(query: str, *, limit: int = 30) -> list[dict[str, Any]]:")
+s = s.replace("max_cards: int = 30", "limit: int = 30")
+s = s.replace("`max_cards`", "`limit`")
+s = s.replace("len(seen) >= max_cards", "len(seen) >= limit")
+'"set"))rrency"], "|", r["title"][:40], "|", r.get
+--- patched search signature ---
+  "price": v,
+  "image": "",
+  def search_pricecharting(query: str, *, limit: int = 30) -> list[dict[str, Any]]:
+  File "<stdin>", line 12
+    \x27    "cardmarket": cardmarket,       # EU EUR,         via api.tcgdex.net\n}\x27,
+     ^
+SyntaxError: unexpected character after line continuation character
+--- SCRAPERS now ---
+SCRAPERS: dict[str, Callable[..., list[dict]]] = {
+    "naver":      naver_shopping,   # KR Open API,    via openapi.naver.com
+    "bunjang":    bunjang,          # KR C2C JSON,    via api.bunjang.co.kr
+    "hareruya2":  hareruya2,        # JP Pokemon-spec, via hareruya2.com SSR
+    "cardmarket": cardmarket,       # EU EUR,         via api.tcgdex.net
+}
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pricecharting_scr... 0.0s
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+KeyErrorerrors: {'pricecharting': 'unknown source'}
+query_used: {}
+: 'pricecharting'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
