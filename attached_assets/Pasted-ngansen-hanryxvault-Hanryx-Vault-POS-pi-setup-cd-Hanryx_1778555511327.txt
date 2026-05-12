@@ -1,0 +1,109 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -i 's/@cached(ttl=3600, key_prefix="pricecharting_search")/@cached("pricecharting", ttl=3600)/' \
+  pricecharting_scraper.py
+grep -n '@cached' pricecharting_scraper.py
+docker compose cp pricecharting_scraper.py pos:/app/pricecharting_scraper.py
+docker compose exec -T pos python3 -c '
+from pricecharting_scraper import search_pricecharting
+out = search_pricecharting("charizard ex", max_cards=5)
+print("rows:", len(out))
+for r in out[:9]:
+    print(" ", r["grade"], "$%.2f" % r["price_value"], "|", r["title"][:40], "|", r["set"])
+'
+100:@cached("pricecharting", ttl=3600)
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pricecharting_scr... 0.0s
+{"ts":"2026-05-12T03:10:10","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:10:10","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:10:10","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:10:10","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:10:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:10:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:10:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:10:11","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+rows: 15
+  Ungraded $964.76 | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Grade 7 $775.00 | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Grade 8 $777.00 | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Ungraded $56.00 | Mega Charizard X EX #23 | Pokemon Promo
+  Grade 7 $41.59 | Mega Charizard X EX #23 | Pokemon Promo
+  Grade 8 $43.50 | Mega Charizard X EX #23 | Pokemon Promo
+  Ungraded $413.45 | Charizard ex #199 | Pokemon Scarlet &amp; Violet 151
+  Grade 7 $296.39 | Charizard ex #199 | Pokemon Scarlet &amp; Violet 151
+  Grade 8 $365.88 | Charizard ex #199 | Pokemon Scarlet &amp; Violet 151
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# A) Fix HTML-entity decoding in scraped strings
+sed -i \
+  -e 's/^import urllib.parse$/import html\nimport urllib.parse/' \
+  -e 's/title = link_m.group(2).strip()/title = html.unescape(link_m.group(2)).strip()/' \
+  -e 's/set_name = set_m.group(1).strip() if set_m else ""/set_name = html.unescape(set_m.group(1)).strip() if set_m else ""/' \
+  pricecharting_scraper.py
+grep -n -E 'import html|unescape' pricecharting_scraper.py
+
+# B) Show me how SCRAPERS is wired in price_scrapers.py
+docker compose exec -T pos sh -c '
+' 2>&1 | tail -8"])rade"], "$%.2f" % r["price_valu
+18:import html
+80:        title = html.unescape(link_m.group(2)).strip()
+82:        set_name = html.unescape(set_m.group(1)).strip() if set_m else ""
+--- SCRAPERS dict ---
+--- DRIFT_CANARIES ---
+--- _TRANSLATE_LANG ---
+535:_TRANSLATE_LANG: dict[str, str] = {
+536-    "hareruya2": "ja_kana",
+537-    "bunjang":   "ko",
+538-    "naver":     "ko",   # naver Open API: KR text matches site catalog 5-10x better than EN
+539-}
+540-
+541-
+542-# ──────────────────────────────────────────────────────────────────────────────
+543-SCRAPERS: dict[str, Callable[..., list[dict]]] = {
+--
+586:        target_lang = _TRANSLATE_LANG.get(name)
+587-        if target_lang:
+588-            translated = _species_translate(query, target_lang)
+589-            q_for_source = translated if translated else query
+590-            if translated and translated != query:
+--- imports near top ---
+"""
+Asian + EU price scrapers
+=========================
+
+Best-effort marketplace price lookups for the languages the POS supports
+beyond eBay (which is handled separately in server.py).
+
+Sources
+-------
+  - naver       → openapi.naver.com           (Korean general marketplace,
+                                               via Naver Open Search API)
+  - tcgkorea    → tcgkorea.com                (Korean Pokémon-card store)
+  - snkrdunk    → snkrdunk.com                (Japanese marketplace, large
+                                               Pokémon-card section)
+  - cardmarket  → api.tcgdex.net              (EU TCG marketplace EUR pricing
+                                               via tcgdex.net, Pokemon-only)
+
+  Reachable but not populated (kept in code, not in active SCRAPERS):
+  - tcgplayer   → api.tcgdex.net              (US TCG marketplace USD pricing
+                                               via tcgdex.net — wrapper exists
+                                               in `tcgdex_api.py` but tcgdex's
+                                               tcgplayer field is empirically
+                                               null on essentially every card,
+                                               so it's not in SCRAPERS to
+                                               avoid wasted detail fetches and
+                                               drift-canary noise. Re-enable
+                                               by re-adding to the dict if
+                                               tcgdex ever backfills.)
+
+Every scraper returns a UNIFORM list of dicts:
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pricecharting_scr... 0.0s
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/pricecharting_scraper.py", line 115, in search_pricecharting
+    rows = _parse_search_html(resp.text, query)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/pricecharting_scraper.py", line 80, in _parse_search_html
+    title = html.unescape(link_m.group(2)).strip()
+            ^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'unescape'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
