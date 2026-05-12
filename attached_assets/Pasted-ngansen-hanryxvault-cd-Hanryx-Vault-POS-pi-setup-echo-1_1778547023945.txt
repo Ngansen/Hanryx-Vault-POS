@@ -1,0 +1,88 @@
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo '=== 1. All compose services healthy? ==='
+docker compose ps --format 'table {{.Name}}\t{{.Status}}'
+
+echo '=== 2. POS HTTP responding? ==='
+curl -fsS -m 5 http://localhost:8080/healthz && echo OK || echo FAIL
+curl -fsS -m 5 http://localhost:3000/api/health && echo OK || echo FAIL  # storefront
+
+echo '=== 3. Scrapers — sample query for Mew (Kr+Jp pricing) ==='
+curl -fsS -m 30 'http://localhost:8080/tcg/price-multi?q=Mew&set_id=xy10&number=29' \
+  | python3 -m json.tool 2>/dev/null | head -40
+
+echo '=== 4. USB mirror tick — when did it last wrtimedatectl | grep -E 'synchronized|Time zone'th s
+=== 1. All compose services healthy? ===
+NAME                    STATUS
+pi-setup-assistant-1    Up 2 hours (healthy)
+pi-setup-db-1           Up 2 hours (healthy)
+pi-setup-pgbouncer-1    Up 2 hours (healthy)
+pi-setup-pokeapi-1      Up 2 hours (healthy)
+pi-setup-pos-1          Up About an hour (healthy)
+pi-setup-recognizer-1   Up 2 hours (healthy)
+pi-setup-redis-1        Up 2 hours (healthy)
+pi-setup-storefront-1   Up 2 hours (healthy)
+pi-setup-sync-1         Up 2 hours
+=== 2. POS HTTP responding? ===
+curl: (22) The requested URL returned error: 404
+FAIL
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#c9982e" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="HanRYX Vault" />
+    <title>HanRYX Vault - Premium Korean Pokémon Cards</title>
+    <meta name="description" content="HanRYX Vault specializes in premium Korean Pokémon card singles, with select English and Japanese cards. Discover rare singles and sealed products from your trusted source." />
+    <meta property="og:title" content="HanRYX Vault - Premium Korean Pokémon Cards" />
+    <meta property="og:description" content="Your trusted source for premium Korean Pokémon cards. Shop rare singles, booster boxes, and sealed products." />
+    <meta property="og:image" content="https://han-ryx-vault.replit.app/icon-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:url" content="https://han-ryx-vault.replit.app/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="HanRYX Vault - Premium Korean Pokémon Cards" />
+    <meta name="twitter:description" content="Your trusted source for premium Korean Pokémon cards. Shop rare singles, booster boxes, and sealed products." />
+    <meta name="twitter:image" content="https://han-ryx-vault.replit.app/icon-512.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-es0xVvUg.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CQ0Q3EEs.css">
+  </head>
+  <body class="dark">
+    <div id="root"></div>
+  </body>
+</html>
+OK
+=== 3. Scrapers — sample query for Mew (Kr+Jp pricing) ===
+curl: (22) The requested URL returned error: 404
+=== 4. USB mirror tick — when did it last write? ===
+=== 5. C16 backfill + sidecar still running? ===
+43
+49
+
+[c16] [250/28355] 351679 (dv1-2)  q='Dratini DV1 2'  hits=0 usd=0 -> skip (below min_hits=3)
+[c16] [300/28355] 351729 (me02-2)  q='Gloom ME02 2'  hits=0 usd=0 -> skip (below min_hits=3)
+[c16] [300/28355] 351729 (me02-2)  q='Gloom ME02 2'  hits=0 usd=0 median=$0.00  written=0 skipped=300 api_err=0 hist_rows=0  elapsed=86m  ETA=5d15h15m
+=== 6. Disk + memory headroom ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p2   58G   34G   22G  62% /
+/dev/sda1       1.8T   25G  1.8T   2% /mnt/cards
+               total        used        free      shared  buff/cache   available
+Mem:           7.9Gi       2.4Gi       3.2Gi       232Mi       2.5Gi       5.4Gi
+=== 7. Watchdog + display services ===
+inactive
+inactive
+active
+=== 8. Time sync (important for ebay/oauth signatures) ===
+                Time zone: Atlantic/Reykjavik (GMT, +0000)
+System clock synchronized: yes
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
