@@ -1,0 +1,43 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $ # 1. Find the real wayland socket and try grim through the session
+ls -la /run/user/$(id -u)/wayland* 2>/dev/null
+ls -la /run/user/1000/wayland* 2>/dev/null
+# Try as the lightdm session user via loginctl
+LIGHTDM_USER=$(loginctl list-sessions --no-legend | awk '$3=="lightdm" || $4~/seat0/ {print $3; exit}')
+echo "session user: $LIGHTDM_USER"
+SESSION_UID=$(id -u)
+sudo -u ngansen XDG_RUNTIME_DIR=/run/user/$SESSION_UID WAYLAND_DISPLAY=wayland-0 grim /tmp/kiosk.png 2>&1 | head -3
+ls -la /tmp/kiosk.png 2>/dev/null
+
+# 2. Chromium process tree — renderer alive?
+pgrep -af chromium | wc -l
+echo '---'
+pgrep -af chromium | awk '{print $1, $4, $5, $6}' op 2>/dev/null | head -30anryx-grafana-kiosk.deskt
+srwxrwxr-x 1 ngansen ngansen 0 May 11 23:16 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May 11 23:16 /run/user/1000/wayland-0.lock
+srwxrwxr-x 1 ngansen ngansen 0 May 11 23:16 /run/user/1000/wayland-0
+-rw-rw---- 1 ngansen ngansen 0 May 11 23:16 /run/user/1000/wayland-0.lock
+session user: ngansen
+-rw-rw-r-- 1 ngansen ngansen 119099 May 12 02:25 /tmp/kiosk.png
+11
+---
+164664 --noerrdialogs --disable-infobars --disable-translate
+164666 --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports
+164668 --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports
+164672 --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=,
+164673 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs
+164676 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs
+164708 --ozone-platform=wayland --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0
+164709 --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none
+164718 --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility
+164741 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs
+164742 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs
+---
+    PID %CPU %MEM     ELAPSED STAT
+ 164664  0.1  3.2       54:47 Sl
+-rw-rw-r-- 1 ngansen ngansen 246 May  7 23:57 /home/ngansen/.config/autostart/hanryx-grafana-kiosk.desktop
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Grafana Diagnostic Kiosk
+Exec=/bin/bash -c 'sleep 8 && /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >> /home/ngansen/grafana-kiosk.log 2>&1'
+X-GNOME-Autostart-enabled=true
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup/monitoring $
