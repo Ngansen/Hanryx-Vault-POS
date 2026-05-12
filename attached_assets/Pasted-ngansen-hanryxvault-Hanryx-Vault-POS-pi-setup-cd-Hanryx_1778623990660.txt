@@ -1,0 +1,169 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== compose file name ==="
+ls -la *compose* *.yaml *.yml 2>/dev/null | head
+
+echo
+echo "=== sync container FIRST 50 log lines (boot output) ==="
+docker compose logs sync 2>&1 | head -60
+
+echo
+echo "=== any mirror/lock errors anywhere? ==="
+docker compose logs sync 2>&1 | grep -iE 'mirror|lock|pidfile|usb_configured|exception|traceback|error' | head -20
+
+echo
+echo "=== JOBS table + tick logic ==="
+docker compose exec -T sync sh -c 'grep -nE "JOBS\s*=|interval|@dataclass|class.*Job|_run_due" /app/2>&1 | head -10lnp | grep -vE "127\.0\.0\.1|::1"' 
+=== compose file name ===
+-rw-rw-r-- 1 ngansen ngansen 28629 May  9 00:18 compose.yml
+-rw-rw-r-- 1 ngansen ngansen 28629 May  9 00:18 compose.yml
+-rw-rw-r-- 1 ngansen ngansen   150 May 12 01:17 docker-compose.override.yml
+-rw-rw-r-- 1 ngansen ngansen   150 May 12 01:17 docker-compose.override.yml
+
+=== sync container FIRST 50 log lines (boot output) ===
+sync-1  | [2026-05-11 23:05:54 +0000] [8] [INFO] Starting gunicorn 25.3.0
+sync-1  | {"ts":"2026-05-11T23:05:57","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+sync-1  | {"ts":"2026-05-11T23:05:57","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+sync-1  | {"ts":"2026-05-11T23:05:58","level":"INFO","logger":"hanryxvault","msg":"[enrich] Price refresh scheduler started (every 6h)"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init] DB auth preflight OK"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[pgvector] Extension enabled"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] cache stale (0 entries, 0.0 days old) — fetching fresh"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_kr already has 15121 rows"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_chs already has 16527 rows"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_jpn_pocket has 3041 rows"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] multi-TCG weekly auto-refresh enabled"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[onepiece] empty — background import"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[lorcana] has 2283 rows"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"import_multi_tcg","msg":"[onepiece] fetching https://raw.githubusercontent.com/BepoTCG/OPTCG-Card-List/main/OPTCG.json"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"unified.schema","msg":"[unified.schema] init complete (31 tables, trgm=True)"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[DB] Unified schema ready: 31 tables, trgm=True"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+sync-1  | [2026-05-11 23:05:59 +0000] [8] [INFO] DB schema initialised successfully
+sync-1  | [2026-05-11 23:05:59 +0000] [8] [INFO] Listening at: http://0.0.0.0:8080 (8)
+sync-1  | [2026-05-11 23:05:59 +0000] [8] [INFO] Using worker: gevent
+sync-1  | [2026-05-11 23:05:59 +0000] [13] [INFO] Booting worker with pid: 13
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] daily refresh scheduler started"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 56 products — skipping auto-sync"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 56 cards"}
+sync-1  | {"ts":"2026-05-11T23:05:59","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+sync-1  | [2026-05-11 23:06:00 +0000] [8] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+sync-1  | {"ts":"2026-05-11T23:06:00","level":"WARNING","logger":"hanryxvault","msg":"[multi-import:onepiece] failed: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))","exc":"urllib3.exceptions.SSLError: [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/requests/adapters.py\", line 645, in send\n    resp = conn.urlopen(\n           ^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/connectionpool.py\", line 841, in urlopen\n    retries = retries.increment(\n              ^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/util/retry.py\", line 535, in increment\n    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nurllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/app/server.py\", line 5851, in _run_multi_import_safely\n    result = fn(conn, force=False)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/import_multi_tcg.py\", line 207, in import_onepiece\n    data = requests.get(OP_JSON_URL, headers=_HDR, timeout=60).json()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 73, in get\n    return request(\"get\", url, params=params, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 59, in request\n    return session.request(method=method, url=url, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 592, in request\n    resp = self.send(prep, **send_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 706, in send\n    r = adapter.send(request, **kwargs)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/adapters.py\", line 676, in send\n    raise SSLError(e, request=request)\nrequests.exceptions.SSLError: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))"}
+sync-1  | {"ts":"2026-05-11T23:06:00","level":"WARNING","logger":"hanryxvault","msg":"[multi-import:onepiece] failed: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)","exc":"Traceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 903, in _error_catcher\n    yield\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1028, in _raw_read\n    data = self._fp_read(amt, read1=read1) if not fp_closed else b\"\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1011, in _fp_read\n    return self._fp.read(amt) if amt is not None else self._fp.read()\n           ^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/http/client.py\", line 473, in read\n    s = self.fp.read(amt)\n        ^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 718, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/gevent/ssl.py\", line 635, in recv_into\n    return self.read(nbytes, buffer)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/gevent/ssl.py\", line 437, in read\n    bytes_read += self._sslobj.read(nbytes, buffer)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nssl.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 822, in generate\n    yield from self.raw.stream(chunk_size, decode_content=True)\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1257, in stream\n    data = self.read(amt=amt, decode_content=decode_content)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1112, in read\n    data = self._raw_read(amt)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1027, in _raw_read\n    with self._error_catcher():\n  File \"/usr/local/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 914, in _error_catcher\n    raise SSLError(e) from e\nurllib3.exceptions.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/app/server.py\", line 5851, in _run_multi_import_safely\n    result = fn(conn, force=False)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/import_multi_tcg.py\", line 207, in import_onepiece\n    data = requests.get(OP_JSON_URL, headers=_HDR, timeout=60).json()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 73, in get\n    return request(\"get\", url, params=params, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 59, in request\n    return session.request(method=method, url=url, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 592, in request\n    resp = self.send(prep, **send_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 749, in send\n    r.content\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 904, in content\n    self._content = b\"\".join(self.iter_content(CONTENT_CHUNK_SIZE)) or b\"\"\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 830, in generate\n    raise RequestsSSLError(e)\nrequests.exceptions.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)"}
+sync-1  | {"ts":"2026-05-11T23:06:00","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] stored 1025 species names"}
+sync-1  | {"ts":"2026-05-11T23:06:29","level":"INFO","logger":"hanryxvault","msg":"[prewarm] starting bulk pricing pre-warm …"}
+sync-1  | {"ts":"2026-05-11T23:06:29","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [17/56] fetching 'Giovanni's Exile (Full Art) Hidden Fates pokemon' …"}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict \"Giovanni's Exile (Full Art) Hidden Fates pokemon\" → 0 items, broadening to \"Giovanni's Exile (Full Art) pokemon\""}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-11T23:06:33","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [19/56] fetching 'Piplup Full Art Pham flames pokemon' …"}
+sync-1  | {"ts":"2026-05-11T23:06:33","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:33","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Piplup Full Art Pham flames pokemon' → 0 items, broadening to 'Piplup Full Art pokemon'"}
+sync-1  | {"ts":"2026-05-11T23:06:34","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:34","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-11T23:06:36","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [21/56] fetching 'Rotom (SIR) Pham Flames pokemon' …"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Rotom (SIR) Pham Flames pokemon' → 0 items, broadening to 'Rotom (SIR) pokemon'"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [33/56] fetching 'Wobbuffet ( Team Rocket ) Scarlet and Violet Promo pokemon' …"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"INFO","logger":"hanryxvault","msg":"[ebay] strict 'Wobbuffet ( Team Rocket ) Scarlet and Violet Promo pokemon' → 0 items, broadening to 'Wobbuffet ( Team Rocket ) pokemon'"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"INFO","logger":"hanryxvault","msg":"[ebay] broader query added 0 items (total now 0)"}
+sync-1  | {"ts":"2026-05-11T23:06:43","level":"INFO","logger":"hanryxvault","msg":"[prewarm] [39/56] fetching 'Meowth ( Team Rocket) Destined Rivals pokemon' …"}
+sync-1  | {"ts":"2026-05-11T23:06:43","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+
+=== any mirror/lock errors anywhere? ===
+sync-1  | {"ts":"2026-05-11T23:06:00","level":"WARNING","logger":"hanryxvault","msg":"[multi-import:onepiece] failed: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))","exc":"urllib3.exceptions.SSLError: [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/requests/adapters.py\", line 645, in send\n    resp = conn.urlopen(\n           ^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/connectionpool.py\", line 841, in urlopen\n    retries = retries.increment(\n              ^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/util/retry.py\", line 535, in increment\n    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nurllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/app/server.py\", line 5851, in _run_multi_import_safely\n    result = fn(conn, force=False)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/import_multi_tcg.py\", line 207, in import_onepiece\n    data = requests.get(OP_JSON_URL, headers=_HDR, timeout=60).json()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 73, in get\n    return request(\"get\", url, params=params, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 59, in request\n    return session.request(method=method, url=url, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 592, in request\n    resp = self.send(prep, **send_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 706, in send\n    r = adapter.send(request, **kwargs)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/adapters.py\", line 676, in send\n    raise SSLError(e, request=request)\nrequests.exceptions.SSLError: HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries exceeded with url: /BepoTCG/OPTCG-Card-List/main/OPTCG.json (Caused by SSLError(SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:2580)')))"}
+sync-1  | {"ts":"2026-05-11T23:06:00","level":"WARNING","logger":"hanryxvault","msg":"[multi-import:onepiece] failed: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)","exc":"Traceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 903, in _error_catcher\n    yield\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1028, in _raw_read\n    data = self._fp_read(amt, read1=read1) if not fp_closed else b\"\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1011, in _fp_read\n    return self._fp.read(amt) if amt is not None else self._fp.read()\n           ^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/http/client.py\", line 473, in read\n    s = self.fp.read(amt)\n        ^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 718, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/gevent/ssl.py\", line 635, in recv_into\n    return self.read(nbytes, buffer)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/gevent/ssl.py\", line 437, in read\n    bytes_read += self._sslobj.read(nbytes, buffer)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nssl.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 822, in generate\n    yield from self.raw.stream(chunk_size, decode_content=True)\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1257, in stream\n    data = self.read(amt=amt, decode_content=decode_content)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1112, in read\n    data = self._raw_read(amt)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 1027, in _raw_read\n    with self._error_catcher():\n  File \"/usr/local/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/venv/lib/python3.11/site-packages/urllib3/response.py\", line 914, in _error_catcher\n    raise SSLError(e) from e\nurllib3.exceptions.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/app/server.py\", line 5851, in _run_multi_import_safely\n    result = fn(conn, force=False)\n             ^^^^^^^^^^^^^^^^^^^^^\n  File \"/app/import_multi_tcg.py\", line 207, in import_onepiece\n    data = requests.get(OP_JSON_URL, headers=_HDR, timeout=60).json()\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 73, in get\n    return request(\"get\", url, params=params, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/api.py\", line 59, in request\n    return session.request(method=method, url=url, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 592, in request\n    resp = self.send(prep, **send_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/sessions.py\", line 749, in send\n    r.content\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 904, in content\n    self._content = b\"\".join(self.iter_content(CONTENT_CHUNK_SIZE)) or b\"\"\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.11/site-packages/requests/models.py\", line 830, in generate\n    raise RequestsSSLError(e)\nrequests.exceptions.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)"}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:30","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:33","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:34","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:37","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:40","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:43","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:44","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:46","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:47","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:51","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:52","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:54","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:55","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:57","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+sync-1  | {"ts":"2026-05-11T23:06:58","level":"WARNING","logger":"hanryxvault","msg":"[ebay] token refresh failed: 401 Client Error: Unauthorized for url: https://api.ebay.com/identity/v1/oauth2/token"}
+
+=== JOBS table + tick logic ===
+126:@dataclass
+127:class Job:
+130:    interval_sec: int
+285:    Job(name="mirror",          interval_sec=6 * 60,         fn=_job_mirror,            needs_network=False),
+286:    Job(name="tcg_db",          interval_sec=60 * 60,        fn=_job_tcg_db,            needs_network=True),
+287:    Job(name="tcgplayer",       interval_sec=60 * 60,        fn=_job_tcgplayer_refresh, needs_network=True),
+288:    Job(name="ebay_sweep",      interval_sec=6 * 60 * 60,    fn=_job_ebay_sweep,        needs_network=True),
+289:    Job(name="kr_cards",        interval_sec=24 * 60 * 60,   fn=_job_kr_cards,          needs_network=True),
+290:    Job(name="jpn_cards",       interval_sec=24 * 60 * 60,   fn=_job_jpn_cards,         needs_network=True),
+291:    Job(name="jpn_pocket",      interval_sec=24 * 60 * 60,   fn=_job_jpn_pocket_cards,  needs_network=True),
+292:    Job(name="chs_cards",       interval_sec=24 * 60 * 60,   fn=_job_chs_cards,         needs_network=True),
+293:    Job(name="card_hashes",     interval_sec=24 * 60 * 60,   fn=_job_card_hashes,       needs_network=False),
+297:    # in the same tick (see _run_due_jobs). The consolidator goes LAST
+301:    Job(name="ref_mappings",    interval_sec=7 * 24 * 60 * 60, fn=_job_ref_mappings,     needs_network=True),
+302:    Job(name="eng_xlsx",        interval_sec=7 * 24 * 60 * 60, fn=_job_eng_xlsx,         needs_network=True),
+                raise RuntimeError(
+                    f"sync orchestrator pid {old_pid} from {pid_file} is alive (owned by another user). "
+                    "If you're sure no other orchestrator is running, delete the pidfile."
+                )
+            except OSError as e:
+                if e.errno == errno.ESRCH:
+                    pass  # stale
+                else:
+                    raise
+            else:
+                raise RuntimeError(
+                    f"sync orchestrator pid {old_pid} is already running (from {pid_file}). "
+                    "Refusing to start a second instance — would corrupt the SQLite mirror."
+                )
+    pid_file.write_text(str(os.getpid()))
+
+logging.basicConfig(
+    level=os.environ.get("SYNC_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+)
+log = logging.getLogger("sync_orchestrator")
+
+TICK_SECONDS = int(os.environ.get("SYNC_TICK_SECONDS", "60"))
+
+
+@dataclass
+class Job:
+    """A scheduled job. Tracked between ticks so we know when it's due next."""
+    name: str
+    interval_sec: int
+    fn: Callable[[], None]
+    needs_network: bool = False
+    last_run: float = 0.0
+    last_status: str = "never"
+    last_error: str = ""
+    last_duration_sec: float = 0.0
+    runs: int = 0
+    failures: int = 0
+
+
+
+=== satellite real port (was only :8080 shown — confirm) ===
+ngansen@192.168.86.24's password: 
+sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+sudo: a password is required
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
