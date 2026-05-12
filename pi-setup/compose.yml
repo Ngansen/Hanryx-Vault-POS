@@ -407,7 +407,7 @@ services:
   sync:
     build: .
     restart: unless-stopped
-    command: ["python3", "/app/sync_orchestrator.py"]
+    entrypoint: ["python3", "/app/sync_orchestrator.py"]
     environment:
       DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       REDIS_URL:       redis://redis:6379/0
