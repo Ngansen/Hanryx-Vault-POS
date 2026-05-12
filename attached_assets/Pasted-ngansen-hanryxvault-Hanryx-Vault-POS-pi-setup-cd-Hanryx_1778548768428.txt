@@ -1,0 +1,26 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Confirm the entrypoint DID work for PID 1 (sanity check)
+docker compose exec -T pos sh -c "cat /proc/1/environ | tr '\\0' '\\n' | grep -E 'EBAY_(APP|CERT|OAUTH)' | sed 's/=.*$/=<set>/'"
+
+# 2. Add sitecustomize.py so Python always loads the secret
+cat > sitecustomize.py << 'PY'
+"""Auto-load secrets that compose's .env parser can't handle (token contains
+^ # = chars). Runs on every Python interpreter startup in the container."""
+import os
+_SECRETS = {
+    "EBAY_OAUTH_TOKEN": "/run/secrets/ebay_token","'(none)')ple:', repr(hits[:1])[:400] if hits else
+EBAY_OAUTH_TOKEN=<set>
+EBAY_CERT_ID=<set>
+EBAY_APP_ID=<set>
+/opt/venv/lib/python3.11
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 4/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         2.8s[+] up 2/4... Waiting                         2.8s ⠹ Contain... Waiting                         2.9s[+] up 2/4... Waiting                         2.9s ⠸ Contain... Waiting                         3.0s[+] up 2/4... Waiting                         3.0s ⠼ Contain... Waiting                         3.1s[+] up 2/4... Waiting                         3.1s ⠴ Contain... Waiting                         3.2s[+] up 3/4... Waiting                         3.2s ✔ Contain... Healthy                         3.2s[+] up 3/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s[+] up 4/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Started                         3.4s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+EBAY_OAUTH_TOKEN env len: 2044
+first8: v^1.1#i^
+hits= 0
+sample: (none)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup
