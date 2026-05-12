@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== USB mirror module + last invocation ===" 
+docker compose exec -T pos sh -c 'ls -la /app/usb_mirror.py 2>/dev/null; grep -nE "def mirror_once|MIRROR_INTERVAL|usb_mirror" /app/server.py | head -8'
+docker compose logs --tail=5000 pos 2>/dev/null | grep -iE 'mirror|usb_mirror|pokedex_local' | tail -15
+
+echo
+echo "=== /health/all detail (which subcheck is 503?) ==="
+curl -s http://localhost:8080/health/all | head -c 1500; echo
+
+docker compose port assistant 11434 2>/dev/nulltln
+=== USB mirror module + last invocation ===
+-rw-rw-r-- 1 hanryx hanryx 23748 May  9 01:24 /app/usb_mirror.py
+3227:    # Note: usb_mirror.price_history_recent SELECT references source/grade/
+
+=== /health/all detail (which subcheck is 503?) ===
+{"main":{"db_size_mb":257.09,"inventory":56,"local_sales":0,"pending_scans":0,"satellite_sales":0,"server":"HanryxVault Pi","sse_clients":0,"status":"ok","subsystems":{"postgres":{"error":"","ok":true},"redis":{"error":"","ok":true}},"time_ms":1778622555731,"total_sales":0,"uptime_s":73874,"version":"2.0","wal_size_mb":0.0},"overall_ok":false,"satellite":{"error":"HTTPConnectionPool(host='192.168.86.22', port=80): Max retries exceeded with url: /health (Caused by NewConnectionError(\"HTTPConnection(host='192.168.86.22', port=80): Failed to establish a new connection: [Errno 113] No route to host\"))","latency_ms":508,"ok":false},"tablets":{"online":[],"online_count":0,"stale":[],"stale_count":0},"ts_ms":1778622556240}
+
+
+=== sale_history actual columns ===
+                                       Table "public.sale_history"
+  Column  |       Type       | Collation | Nullable |                       Default                       
+----------+------------------+-----------+----------+-----------------------------------------------------
+ id       | bigint           |           | not null | nextval('sale_history_id_seq'::regclass)
+ name     | text             |           | not null | 
+ price    | double precision |           | not null | 
+ quantity | integer          |           | not null | 1
+ sold_at  | bigint           |           | not null | (EXTRACT(epoch FROM now()) * 1000::numeric)::bigint
+Indexes:
+    "sale_history_pkey" PRIMARY KEY, btree (id)
+    "idx_sale_history_name" btree (name, sold_at)
+
+
+=== where does ollama actually listen? ===
+invalid IP:0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
