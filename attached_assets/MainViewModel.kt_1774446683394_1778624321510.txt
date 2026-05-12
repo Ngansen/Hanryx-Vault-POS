@@ -1,0 +1,340 @@
+package com.hanryxvault.pos
+
+import android.app.Application
+import android.content.Context
+import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.zettle.sdk.ZettleSDK
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Locale
+import javax.inject.Inject
+
+// 💠 MVI MODEL
+data class POSViewState(
+    val cartItems: List<CartItemEntity> = emptyList(),
+    val searchResults: List<ProductEntity> = emptyList(),
+    val categories: List<String> = emptyList(),
+    val selectedCategory: String? = null,
+    val recentSales: List<SaleEntity> = emptyList(),
+    val searchQuery: String = "",
+    val subtotal: Double = 0.0,
+    val taxAmount: Double = 0.0,
+    val tipAmount: Double = 0.0,
+    val totalAmount: Double = 0.0,
+    val employeeId: String? = null,
+    val isZettleAuthenticated: Boolean = false,
+    val piStatus: String = "---",
+    val isCashDrawerEnabled: Boolean = true,
+    val customReceiptQrData: String = "https://hanryxvault.app",
+    val isLoading: Boolean = true,
+    val isProcessingPayment: Boolean = false,
+    val isSyncing: Boolean = false
+)
+
+// 💠 MVI INTENT
+sealed class POSIntent {
+    data class SearchInventory(val query: String) : POSIntent()
+    data class SelectCategory(val category: String?) : POSIntent()
+    data class AddToCart(val product: ProductEntity) : POSIntent()
+    data class UpdateCartQuantity(val item: CartItemEntity, val delta: Int) : POSIntent()
+    data class AddQuickSale(val amount: Double) : POSIntent()
+    data class RemoveFromCart(val item: CartItemEntity) : POSIntent()
+    object ClearCart : POSIntent()
+    data class CompleteSale(
+        val paymentMethod: PaymentMethod,
+        val cashReceived: Double = 0.0,
+        val changeGiven: Double = 0.0,
+        val tip: Double = 0.0,
+        val cardReference: String? = null
+    ) : POSIntent()
+    data class CompleteSplitSale(val payments: List<PaymentEntry>, val tip: Double = 0.0) : POSIntent()
+    data class RefundSale(val saleId: Int) : POSIntent()
+    data class Authorize(val id: String) : POSIntent()
+    data class SetPiStatus(val status: String) : POSIntent()
+    data class SetCashDrawerEnabled(val enabled: Boolean) : POSIntent()
+    data class SetCustomReceiptQrData(val data: String) : POSIntent()
+    object RefreshZettleAuth : POSIntent()
+    object ForceSyncInventory : POSIntent()
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    application: Application,
+    private val repository: VaultRepository,
+    private val database: AppDatabase,
+    private val paymentProcessor: WirePaymentProcessor,
+    val scannerManager: ScannerManager
+) : AndroidViewModel(application) {
+    private val cartDao = database.cartDao()
+    private val productDao = database.productDao()
+    private val saleDao = database.saleDao()
+    private val prefs = application.getSharedPreferences("vault_prefs", Context.MODE_PRIVATE)
+
+    private val _state = MutableStateFlow(POSViewState(
+        isCashDrawerEnabled = prefs.getBoolean("drawer_enabled", true),
+        customReceiptQrData = prefs.getString("receipt_qr", "https://hanryxvault.app") ?: "https://hanryxvault.app"
+    ))
+    val state: StateFlow<POSViewState> = _state.asStateFlow()
+
+    private val taxRate = 0.056
+
+    init {
+        observeDatabase()
+        checkZettleAuth()
+        refreshInventory()
+        observeScanner()
+        
+        viewModelScope.launch {
+            delay(1000)
+            _state.update { it.copy(isLoading = false) }
+        }
+    }
+
+    private fun observeScanner() {
+        scannerManager.scanEvents
+            .onEach { code ->
+                handleScannedCode(code)
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun handleScannedCode(code: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val product = productDao.getProductByCode(code)
+            if (product != null) {
+                addToCart(product)
+            }
+        }
+    }
+
+    private fun refreshInventory() {
+        viewModelScope.launch {
+            _state.update { it.copy(isSyncing = true) }
+            repository.refreshInventory()
+            _state.update { it.copy(isSyncing = false) }
+        }
+    }
+
+    private fun observeDatabase() {
+        cartDao.getCartItems()
+            .onEach { items ->
+                val subtotal = items.sumOf { it.price * it.quantity }
+                val tax = subtotal * taxRate
+                _state.update { it.copy(
+                    cartItems = items,
+                    subtotal = subtotal,
+                    taxAmount = tax,
+                    totalAmount = subtotal + tax
+                ) }
+            }.launchIn(viewModelScope)
+
+        productDao.getCategories()
+            .onEach { cats -> _state.update { it.copy(categories = cats) } }
+            .launchIn(viewModelScope)
+
+        saleDao.getRecentSales()
+            .onEach { sales -> _state.update { it.copy(recentSales = sales) } }
+            .launchIn(viewModelScope)
+
+        combine(
+            snapshotFlow { _state.value.searchQuery },
+            snapshotFlow { _state.value.selectedCategory }
+        ) { query, category ->
+            if (query.length > 1) {
+                productDao.searchProductsFts(query)
+            } else if (category != null) {
+                productDao.getProductsByCategory(category)
+            } else {
+                productDao.searchProductsLegacy("")
+            }
+        }.flatMapLatest { it }
+        .onEach { results -> _state.update { it.copy(searchResults = results) } }
+        .launchIn(viewModelScope)
+    }
+
+    fun handleIntent(intent: POSIntent) {
+        when (intent) {
+            is POSIntent.SearchInventory -> _state.update { it.copy(searchQuery = intent.query, selectedCategory = null) }
+            is POSIntent.SelectCategory -> _state.update { it.copy(selectedCategory = intent.category, searchQuery = "") }
+            is POSIntent.AddToCart -> addToCart(intent.product)
+            is POSIntent.UpdateCartQuantity -> updateCartQuantity(intent.item, intent.delta)
+            is POSIntent.AddQuickSale -> addQuickSale(intent.amount)
+            is POSIntent.RemoveFromCart -> removeFromCart(intent.item)
+            POSIntent.ClearCart -> clearCart()
+            is POSIntent.CompleteSale -> finalizeSale(intent)
+            is POSIntent.CompleteSplitSale -> finalizeSplitSale(intent)
+            is POSIntent.RefundSale -> refundSale(intent.saleId)
+            is POSIntent.Authorize -> _state.update { it.copy(employeeId = intent.id) }
+            is POSIntent.SetPiStatus -> _state.update { it.copy(piStatus = intent.status) }
+            is POSIntent.SetCashDrawerEnabled -> {
+                prefs.edit().putBoolean("drawer_enabled", intent.enabled).apply()
+                _state.update { it.copy(isCashDrawerEnabled = intent.enabled) }
+            }
+            is POSIntent.SetCustomReceiptQrData -> {
+                prefs.edit().putString("receipt_qr", intent.data).apply()
+                _state.update { it.copy(customReceiptQrData = intent.data) }
+            }
+            POSIntent.RefreshZettleAuth -> checkZettleAuth()
+            POSIntent.ForceSyncInventory -> refreshInventory()
+        }
+    }
+
+    private fun checkZettleAuth() {
+        viewModelScope.launch {
+            val isAuthenticated = withContext(Dispatchers.IO) {
+                try { ZettleSDK.instance != null } catch (e: Exception) { false }
+            }
+            _state.update { it.copy(isZettleAuthenticated = isAuthenticated) }
+        }
+    }
+
+    private fun addToCart(product: ProductEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = _state.value.cartItems.find { it.productCode == product.qrCode }
+            if (existing != null) {
+                cartDao.updateQuantity(existing.id, existing.quantity + 1)
+            } else {
+                cartDao.addToCart(CartItemEntity(name = product.name, price = product.price, productCode = product.qrCode))
+            }
+        }
+    }
+
+    private fun updateCartQuantity(item: CartItemEntity, delta: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newQty = item.quantity + delta
+            if (newQty > 0) {
+                cartDao.updateQuantity(item.id, newQty)
+            } else {
+                cartDao.removeItem(item)
+            }
+        }
+    }
+
+    private fun addQuickSale(amount: Double) {
+        viewModelScope.launch(Dispatchers.IO) {
+            cartDao.addToCart(CartItemEntity(name = "Quick Sale", price = amount, productCode = "QUICK"))
+        }
+    }
+
+    private fun removeFromCart(item: CartItemEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            cartDao.removeItem(item)
+        }
+    }
+
+    private fun clearCart() {
+        viewModelScope.launch(Dispatchers.IO) {
+            cartDao.clearCart()
+        }
+    }
+
+    private fun refundSale(saleId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            saleDao.markAsRefunded(saleId)
+        }
+    }
+
+    private fun finalizeSale(intent: POSIntent.CompleteSale) {
+        val currentState = _state.value
+        val transactionId = "TX-${System.currentTimeMillis()}"
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isProcessingPayment = true) }
+            
+            val sale = SaleEntity(
+                transactionId = transactionId,
+                subtotal = currentState.subtotal,
+                taxAmount = currentState.taxAmount,
+                tipAmount = intent.tip,
+                totalAmount = currentState.totalAmount + intent.tip,
+                items = currentState.cartItems.map { "${it.quantity}x ${it.name} @ $${String.format(Locale.US, "%.2f", it.price)}" },
+                paymentMethod = intent.paymentMethod.name,
+                employeeId = currentState.employeeId ?: "ADMIN",
+                cashReceived = intent.cashReceived,
+                changeGiven = intent.changeGiven
+            )
+            
+            val wire = WireTransaction(
+                id = transactionId,
+                subtotal = currentState.subtotal,
+                tax = currentState.taxAmount,
+                tip = intent.tip,
+                total = sale.totalAmount,
+                items = sale.items,
+                payments = listOf(PaymentEntry(
+                    method = intent.paymentMethod,
+                    amount = sale.totalAmount,
+                    reference = intent.cardReference
+                )),
+                employeeId = sale.employeeId
+            )
+
+            val result = paymentProcessor.execute(wire)
+            
+            if (result.isSuccess) {
+                repository.completeTransaction(sale, wire)
+                cartDao.clearCart()
+
+                if (currentState.isCashDrawerEnabled && intent.paymentMethod == PaymentMethod.CASH) {
+                    PrinterManager.openCashDrawer()
+                }
+            }
+            
+            _state.update { it.copy(isProcessingPayment = false) }
+        }
+    }
+
+    private fun finalizeSplitSale(intent: POSIntent.CompleteSplitSale) {
+        val currentState = _state.value
+        val transactionId = "TX-SPLIT-${System.currentTimeMillis()}"
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isProcessingPayment = true) }
+
+            val totalAmountWithTip = currentState.totalAmount + intent.tip
+
+            val wire = WireTransaction(
+                id = transactionId,
+                subtotal = currentState.subtotal,
+                tax = currentState.taxAmount,
+                tip = intent.tip,
+                total = totalAmountWithTip,
+                items = currentState.cartItems.map { "${it.quantity}x ${it.name} @ $${String.format(Locale.US, "%.2f", it.price)}" },
+                payments = intent.payments,
+                employeeId = currentState.employeeId ?: "ADMIN"
+            )
+
+            val result = paymentProcessor.execute(wire)
+
+            if (result.isSuccess) {
+                val sale = SaleEntity(
+                    transactionId = transactionId,
+                    subtotal = currentState.subtotal,
+                    taxAmount = currentState.taxAmount,
+                    tipAmount = intent.tip,
+                    totalAmount = totalAmountWithTip,
+                    items = wire.items,
+                    paymentMethod = "SPLIT",
+                    employeeId = wire.employeeId,
+                    cashReceived = intent.payments.filter { it.method == PaymentMethod.CASH }.sumOf { it.amount },
+                    changeGiven = 0.0
+                )
+                repository.completeTransaction(sale, wire)
+                cartDao.clearCart()
+                
+                if (currentState.isCashDrawerEnabled && intent.payments.any { it.method == PaymentMethod.CASH }) {
+                    PrinterManager.openCashDrawer()
+                }
+            }
+            _state.update { it.copy(isProcessingPayment = false) }
+        }
+    }
+}
