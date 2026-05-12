@@ -1,0 +1,144 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c '
+echo "--- where do the existing scrapers live? ---"
+find / -name "playwright_scraper.py" 2>/dev/null | head -5
+echo "--- and price_scrapers.py ---"
+find / -name "price_scrapers.py"     2>/dev/null | head -5
+echo "--- container /app and /opt structure ---"
+ls /app 2>/dev/null
+ls /opt 2>/dev/null
+'
+--- where do the existing scrapers live? ---
+/mnt/cards/docker/rootfs/overlayfs/680ad10aec10c2fe37afc328f5562f47f9d92395865c2ea36cf7a0f49334a99b/app/playwright_scraper.py
+/app/playwright_scraper.py
+--- and price_scrapers.py ---
+/mnt/cards/docker/rootfs/overlayfs/680ad10aec10c2fe37afc328f5562f47f9d92395865c2ea36cf7a0f49334a99b/app/price_scrapers.py
+/app/price_scrapers.py
+--- container /app and /opt structure ---
+=
+CACHED
+CANCELED
+Dockerfile
+ERROR
+MOVE_PLAYBOOK.md
+REMOTE_ACCESS.md
+SATELLITE_AUDIT.md
+TABLET_API.md
+[pos
+[recognizer
+[storefront
+[sync
+assets
+build_cards_master.py
+build_exe.bat
+build_exe.sh
+build_species_names.py
+buy_price.py
+card-images
+card_enrich.py
+cards
+cards_db_path.py
+cgc_cert.py
+cluster_backfill.py
+compose.yml
+data
+deploy-all.sh
+diagnostics-grafana-kiosk.sh
+discover_new_sets.py
+discovery_dispatch.py
+docker-compose.override.yml
+docs
+ebay_sold.py
+entrypoint.sh
+filler_db.py
+fx_rates.py
+gunicorn.conf.py
+hanryx-grafana-kiosk.desktop
+health_aggregator.py
+http_client.py
+image_lazy.py
+import_artwork_hashes.py
+import_chs_cards.py
+import_eng_xlsx.py
+import_ex_codes.py
+import_gaps.py
+import_jp_pokemoncardcom.py
+import_jp_xlsx.py
+import_jpn_cards.py
+import_jpn_pocket_cards.py
+import_kr_cards.py
+import_kr_promos.py
+import_multi_tcg.py
+import_pocket_limitless.py
+import_pokeapi_species.py
+import_ref_mappings.py
+import_tcg_db.py
+import_tcgdex.py
+init-db
+install-reliability.sh
+japanese_image_filler.py
+japanese_names_filler.py
+kiosk
+kiosk-videos
+korean_names_filler.py
+lte-failover.service
+lte-failover.sh
+migrations
+mirror_tcg_to_pg.py
+monitor_requirements.txt
+multi_tcg_visual.py
+network
+notion_master_import.py
+pi_setup_compat.py
+pkmncards_image_filler.py
+playwright_scraper.py
+pokeapi
+price_aggregator.py
+price_scrapers.py
+price_trends.py
+price_weighting.py
+printer.conf
+printer_discovery.py
+psa_cert.py
+recognizer
+recognizer_tuning.py
+recover.sh
+refresh_market_prices.py
+reload_monitor.sh
+requirements-vcs.txt
+requirements.in
+requirements.txt
+resolve
+satellite-bootstrap.sh
+satellite-doctor.sh
+satellite-screens.sh
+scan_overrides.py
+scrape_cache.py
+scripts
+secrets
+server.py
+server.py.orig
+services
+set_alias_sync.py
+set_aliases.py
+sets_browser.py
+setup.sh
+showmode.sh
+source_state.py
+species_names.py
+static
+sync_orchestrator.py
+sync_tcg_db.py
+tcg_lookup.py
+tcg_price_lookup.py
+tcgdex_api.py
+tcgplayer_proxy.py
+unified
+usb_mirror.py
+usb_resilience_setup.sh
+wg-add-peer.sh
+wireguard_status.py
+workers
+playwright
+venv
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
