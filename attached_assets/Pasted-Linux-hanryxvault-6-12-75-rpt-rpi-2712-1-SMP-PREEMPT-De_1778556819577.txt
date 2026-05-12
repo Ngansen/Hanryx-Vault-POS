@@ -1,0 +1,66 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:31:00 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+docker compose exec -T pos psql "$DATABASE_URL" -c "DELETE FROM price_history WHERE source='pricecharting';"
+
+docker compose exec -T redis sh -c "redis-cli --scan --pattern 'cache:pricecharting:*' | xargs -r redis-cli del" >/dev/null
+
+docker compose cp scripts/c16_pricecharting_backfill.py pos:/app/scripts/c16_pricecharting_backfill.py
+
+docker compose exec -T pos python3 /app/scripts/c16_pricecharting_backfill.py --max-cards 10 --rate-sec 1.0
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: No such file or directory
+        Is the server running locally and accepting connections on that socket?
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c16_price... 0.0s
+[c16-pc] 10 of 28,347 cards  rate=1.0s ETA=0h0m  min_usd=0.0  dry=False
+{"ts":"2026-05-12T03:32:20","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:32:20","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:32:21","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+[c16-pc] DONE  cards_processed=8  rows_written=20  no_match=2  errors=0  elapsed=13s
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Wipe via container env, flush cache, re-run cleanly
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "DELETE FROM price_history WHERE source='\''pricecharting'\'';"'
+
+docker compose exec -T redis sh -c "redis-cli --scan --pattern 'cache:pricecharting:*' | xargs -r redis-cli del" >/dev/null
+
+docker compose exec -T pos python3 /app/scripts/c16_pricecharting_backfill.py --max-cards 10 --rate-sec 1.0
+
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT card_id, count(*) AS n, array_agg(grade ORDER BY grade) AS grades, array_agg(round(price_usd::numeric,2) ORDER BY grade) AS prices FROM price_history WHERE source='\''pricecharting'\'' GROUP BY card_id ORDER BY card_id;"'
+DELETE 92
+[c16-pc] 10 of 28,355 cards  rate=1.0s ETA=0h0m  min_usd=0.0  dry=False
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:33:18","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+[c16-pc] DONE  cards_processed=8  rows_written=26  no_match=2  errors=0  elapsed=11s
+ card_id | n |                              grades                               |                prices                
+---------+---+-------------------------------------------------------------------+--------------------------------------
+ 351431  | 3 | {"Grade 7",Ungraded,Ungraded}                                     | {10.88,4.00,1.93}
+ 351432  | 2 | {"Grade 7",Ungraded}                                              | {7.50,2.60}
+ 351433  | 3 | {"Grade 7",Ungraded,Ungraded}                                     | {15.95,9.02,0.08}
+ 351434  | 1 | {Ungraded}                                                        | {0.23}
+ 351435  | 7 | {"Grade 7",Ungraded,Ungraded,Ungraded,Ungraded,Ungraded,Ungraded} | {5.00,1.09,0.24,6.75,0.08,0.29,0.25}
+ 351436  | 3 | {"Grade 7",Ungraded,Ungraded}                                     | {15.95,9.02,0.08}
+ 351438  | 3 | {"Grade 7","Grade 8",Ungraded}                                    | {10.33,15.00,57.94}
+ 351439  | 4 | {"Grade 7","Grade 8",Ungraded,Ungraded}                           | {5.50,12.02,2.71,2.20}
+(8 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
