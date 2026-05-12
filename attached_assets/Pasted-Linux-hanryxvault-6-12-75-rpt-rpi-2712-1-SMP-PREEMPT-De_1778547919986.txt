@@ -1,0 +1,94 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 00:26:43 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Capture all three without echoing or hitting history
+read -rsp 'EBAY_APP_ID:     ' EBAY_APP_ID; echo
+read -rsp 'EBAY_CERT_ID:    ' EBAY_CERT_ID; echo
+read -rsp 'EBAY_OAUTH_TOKEN: ' EBAY_OAUTH_TOKEN; echo
+
+# Atomically replace any existing EBAY_* lines in .env
+cp .env .env.bak.$(date +%s)
+grep -v '^EBAY_' .env > .env.new
+{
+  echo "EBAY_APP_ID=$EBAY_APP_ID"
+  echo "EBAY_CERT_ID=$EBAY_CERT_ID"
+  echo "EBAY_OAUTH_TOKEN=$EBAY_OAUTH_TOKEN"
+} >> .env.new
+"'(none)')ple:', repr(hits[:1])[:300] if hits else
+EBAY_APP_ID:     
+EBAY_CERT_ID:    
+EBAY_OAUTH_TOKEN: 
+EBAY_APP_ID            len=17
+EBAY_CERT_ID           len=22
+EBAY_OAUTH_TOKEN       len=1950
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         2.8s[+] up 2/4... Waiting                         2.8s ⠹ Contain... Waiting                         2.9s[+] up 2/4... Waiting                         2.9s ⠸ Contain... Waiting                         3.0s[+] up 2/4... Waiting                         3.0s ⠼ Contain... Waiting                         3.1s[+] up 2/4... Waiting                         3.1s ⠴ Contain... Waiting                         3.2s[+] up 4/4... Waiting                         3.2s ✔ Contain... Healthy                         3.3s[+] up 3/4... Healthy                         3.3s ✔ Contain... Healthy                         3.3s[+] up 4/4... Healthy                         3.3s ✔ Contain... Healthy                         3.3s ✔ Contain... Healthy                         3.3s ✔ Contain... Started                         3.5s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+EBAY_APP_ID len=17
+EBAY_OAUTH_TOKEN len=0
+hits= 0
+sample: (none)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+docker compose up -d --force-recreate pos
+sleep 15
+
+docker compose exec -T pos sh -c '
+  echo "EBAY_APP_ID len=${#EBAY_APP_ID}"
+  echo "EBAY_CERT_ID len=${#EBAY_CERT_ID}"
+  echo "EBAY_OAUTH_TOKEN len=${#EBAY_OAUTH_TOKEN}" 
+'
+
+docker compose exec -T pos python3 -c "
+import sys; sys.path.insert(0,'/app'); sys.path.insert(0,'/app/scripts')
+from c16_ebay_backfill import search_ebay_sold
+hits = search_ebay_sold('Charizard 4 Base Set')
+print('hits=', len(hits) if hits else 0)
+print('sample:', repr(hits[:1])[:400] if hits else"'(none)')
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 4/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         2.8s[+] up 2/4... Waiting                         2.8s ⠹ Contain... Waiting                         2.9s[+] up 2/4... Waiting                         2.9s ⠸ Contain... Waiting                         3.0s[+] up 2/4... Waiting                         3.0s ⠼ Contain... Waiting                         3.1s[+] up 2/4... Waiting                         3.1s ⠴ Contain... Waiting                         3.2s[+] up 3/4... Waiting                         3.2s ✔ Contain... Healthy                         3.2s[+] up 3/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s[+] up 4/4... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Healthy                         3.2s ✔ Contain... Started                         3.4s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+EBAY_APP_ID len=17
+EBAY_CERT_ID len=22
+EBAY_OAUTH_TOKEN len=0
+hits= 0
+sample: (none)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+read -rsp 'EBAY_OAUTH_TOKEN: ' EBAY_OAUTH_TOKEN; echo
+
+# Replace the token line with a quoted version
+grep -v '^EBAY_OAUTH_TOKEN=' .env > .env.new
+echo "EBAY_OAUTH_TOKEN=\"$EBAY_OAUTH_TOKEN\"" >> .env.new
+mv .env.new .env
+unset EBAY_OAUTH_TOKEN
+
+# Verify the line literally
+awk -F= '/^EBAY_OAUTH_TOKEN=/{printf "len-with-quotes=%d  starts=%s  ends=%s\n", length($0), substr($0,18,5), substr($0,length($0)-3,4)}' .env
+
+docker compose up -d --force-recreate pos
+"'(none)')ple:', repr(hits[:1])[:400] if hits else
+EBAY_OAUTH_TOKEN: 
+len-with-quotes=1979  starts="v^1.  ends=AA="
+[+] up 3/4
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s
+ ✔ Contain... Running                         0.0s
+[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 3/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 4/4... Running                         0.0s ✔ Contain... Running                         0.0s[+] up 2/4... Running                         0.0s ⠙ Contain... Waiting                         2.9s[+] up 2/4... Waiting                         2.9s ⠹ Contain... Waiting                         3.0s[+] up 2/4... Waiting                         3.0s ⠸ Contain... Waiting                         3.1s[+] up 2/4... Waiting                         3.1s ⠼ Contain... Waiting                         3.2s[+] up 2/4... Waiting                         3.2s ⠴ Contain... Waiting                         3.3s[+] up 3/4... Waiting                         3.3s ✔ Contain... Healthy                         3.3s[+] up 3/4... Healthy                         3.3s ✔ Contain... Healthy                         3.3s[+] up 4/4... Healthy                         3.3s ✔ Contain... Healthy                         3.3s ✔ Contain... Healthy                         3.3s ✔ Contain... Started                         3.5s ! pos        Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 0.0s
+in-container EBAY_OAUTH_TOKEN len=0
+sh: 3: Bad substitution
+hits= 0
+sample: (none)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
