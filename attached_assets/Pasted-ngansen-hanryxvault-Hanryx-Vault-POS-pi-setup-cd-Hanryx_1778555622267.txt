@@ -1,0 +1,160 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# A) Fix HTML-entity decoding in scraped strings
+sed -i \
+  -e 's/^import urllib.parse$/import html\nimport urllib.parse/' \
+  -e 's/title = link_m.group(2).strip()/title = html.unescape(link_m.group(2)).strip()/' \
+  -e 's/set_name = set_m.group(1).strip() if set_m else ""/set_name = html.unescape(set_m.group(1)).strip() if set_m else ""/' \
+  pricecharting_scraper.py
+grep -n -E 'import html|unescape' pricecharting_scraper.py
+
+# B) Show me how SCRAPERS is wired in price_scrapers.py
+docker compose exec -T pos sh -c '
+' 2>&1 | tail -8"])rade"], "$%.2f" % r["price_valu
+18:import html
+80:        title = html.unescape(link_m.group(2)).strip()
+82:        set_name = html.unescape(set_m.group(1)).strip() if set_m else ""
+--- SCRAPERS dict ---
+--- DRIFT_CANARIES ---
+--- _TRANSLATE_LANG ---
+535:_TRANSLATE_LANG: dict[str, str] = {
+536-    "hareruya2": "ja_kana",
+537-    "bunjang":   "ko",
+538-    "naver":     "ko",   # naver Open API: KR text matches site catalog 5-10x better than EN
+539-}
+540-
+541-
+542-# ──────────────────────────────────────────────────────────────────────────────
+543-SCRAPERS: dict[str, Callable[..., list[dict]]] = {
+--
+586:        target_lang = _TRANSLATE_LANG.get(name)
+587-        if target_lang:
+588-            translated = _species_translate(query, target_lang)
+589-            q_for_source = translated if translated else query
+590-            if translated and translated != query:
+--- imports near top ---
+"""
+Asian + EU price scrapers
+=========================
+
+Best-effort marketplace price lookups for the languages the POS supports
+beyond eBay (which is handled separately in server.py).
+
+Sources
+-------
+  - naver       → openapi.naver.com           (Korean general marketplace,
+                                               via Naver Open Search API)
+  - tcgkorea    → tcgkorea.com                (Korean Pokémon-card store)
+  - snkrdunk    → snkrdunk.com                (Japanese marketplace, large
+                                               Pokémon-card section)
+  - cardmarket  → api.tcgdex.net              (EU TCG marketplace EUR pricing
+                                               via tcgdex.net, Pokemon-only)
+
+  Reachable but not populated (kept in code, not in active SCRAPERS):
+  - tcgplayer   → api.tcgdex.net              (US TCG marketplace USD pricing
+                                               via tcgdex.net — wrapper exists
+                                               in `tcgdex_api.py` but tcgdex's
+                                               tcgplayer field is empirically
+                                               null on essentially every card,
+                                               so it's not in SCRAPERS to
+                                               avoid wasted detail fetches and
+                                               drift-canary noise. Re-enable
+                                               by re-adding to the dict if
+                                               tcgdex ever backfills.)
+
+Every scraper returns a UNIFORM list of dicts:
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pricecharting_scr... 0.0s
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/pricecharting_scraper.py", line 115, in search_pricecharting
+    rows = _parse_search_html(resp.text, query)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/pricecharting_scraper.py", line 80, in _parse_search_html
+    title = html.unescape(link_m.group(2)).strip()
+            ^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'unescape'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Fix the shadowing: rename param `html` → `markup`
+sed -i \
+  -e 's/def _parse_search_html(html: str, query: str)/def _parse_search_html(markup: str, query: str)/' \
+  -e 's/    tb = _TBODY_RE.search(html)/    tb = _TBODY_RE.search(markup)/' \
+  pricecharting_scraper.py
+grep -n -E '_parse_search_html|_TBODY_RE.search' pricecharting_scraper.py
+
+docker compose cp pricecharting_scraper.py pos:/app/pricecharting_scraper.py
+docker compose exec -T pos python3 -c '
+from pricecharting_scraper import search_pricecharprice_scrapers.pyec -T pos sed -n '543,600p' /app/
+70:def _parse_search_html(markup: str, query: str) -> list[dict[str, Any]]:
+71:    tb = _TBODY_RE.search(markup)
+115:    rows = _parse_search_html(resp.text, query)
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pricecharting_scr... 0.0s
+{"ts":"2026-05-12T03:12:52","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:12:52","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+  Ungraded $964.76 | Pokemon Phantasmal Flames
+  Grade 7 $775.00 | Pokemon Phantasmal Flames
+  Grade 8 $777.00 | Pokemon Phantasmal Flames
+  Ungraded $56.00 | Pokemon Promo
+  Grade 7 $41.59 | Pokemon Promo
+  Grade 8 $43.50 | Pokemon Promo
+=== SCRAPERS body ===
+SCRAPERS: dict[str, Callable[..., list[dict]]] = {
+    "naver":      naver_shopping,   # KR Open API,    via openapi.naver.com
+    "bunjang":    bunjang,          # KR C2C JSON,    via api.bunjang.co.kr
+    "hareruya2":  hareruya2,        # JP Pokemon-spec, via hareruya2.com SSR
+    "cardmarket": cardmarket,       # EU EUR,         via api.tcgdex.net
+}
+
+
+def search_all(query: str, *, sources: list[str] | None = None,
+               limit_per_source: int = 10, game: str = "Pokemon") -> dict:
+    """
+    Fan-out search across every scraper sequentially (HTTP-bound, fine on
+    a single thread for low-volume POS use).
+
+    Each source receives the language it indexes in: snkrdunk gets the
+    katakana form of the species name (e.g. 'Charizard' → 'リザードン'),
+    tcgkorea gets hangul ('Charizard' → '리자몽'). Translation is done
+    via species_names.translate(); when the query isn't a recognised
+    Pokémon species, the original (English) query is passed through.
+
+    Returns:
+        {
+          "results":    {source: [..]},
+          "errors":     {source: "msg"},
+          "query":      <original user query>,
+          "query_used": {source: <actual string sent to that scraper>}
+            ↑ debugging aid: shows whether translation fired per source.
+              Same as `query` for sources without a translation policy.
+        }
+    """
+    out: dict = {
+        "results":    {},
+        "errors":     {},
+        "query":      query,
+        "query_used": {},
+    }
+    for name in (sources or list(SCRAPERS)):
+        fn = SCRAPERS.get(name)
+        if not fn:
+            out["errors"][name] = "unknown source"
+            continue
+
+        # ── per-source query translation ────────────────────────────────
+        target_lang = _TRANSLATE_LANG.get(name)
+        if target_lang:
+            translated = _species_translate(query, target_lang)
+            q_for_source = translated if translated else query
+            if translated and translated != query:
+                log.info("[scrape:%s] query translated %r → %r (%s)",
+                         name, query, translated, target_lang)
+        else:
+            q_for_source = query
+        out["query_used"][name] = q_for_source
+
+        try:
+            if name == "cardmarket":
+                # cardmarket() accepts game= for backward compat; tcgdex
+                # only covers Pokemon, but other games used to be valid
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
