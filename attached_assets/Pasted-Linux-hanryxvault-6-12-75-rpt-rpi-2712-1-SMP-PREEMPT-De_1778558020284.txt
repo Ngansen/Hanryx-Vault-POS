@@ -1,0 +1,35 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:35:05 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ docker compose exec -T pos tail -30 /tmp/c16-pc.log
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT count(*) AS rows, count(DISTINCT card_id) AS cards FROM price_history WHERE source='\''pricecharting'\'';"'
+no configuration file provided: not found
+no configuration file provided: not found
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos tail -30 /tmp/c16-pc.log
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT count(*) AS rows, count(DISTINCT card_id) AS cards FROM price_history WHERE source='\''pricecharting'\'';"'
+ rows | cards 
+------+-------
+   14 |     8
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos ps -ef | grep -iE 'backfill|c16|ebay|pricechart' | grep -v grep
+docker compose exec -T pos ls -la /tmp/*.log /tmp/*backfill* 2>/dev/null
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT source, count(*) AS rows, count(DISTINCT card_id) AS cards, min(observed_at) AS first_write, max(observed_at) AS last_write FROM price_history GROUP BY source ORDER BY rows DESC;"'
+    source     | rows | cards |          first_write          |          last_write           
+---------------+------+-------+-------------------------------+-------------------------------
+ hareruya2     |  243 |    46 | 2026-05-08 23:48:17.680778+00 | 2026-05-09 01:36:19.018206+00
+ bunjang       |  200 |    38 | 2026-05-08 23:48:17.680778+00 | 2026-05-09 01:36:19.018206+00
+ cardmarket    |  194 |    38 | 2026-05-08 23:48:12.836145+00 | 2026-05-09 01:36:19.018206+00
+ tcgplayer     |  130 |    54 | 2026-05-08 01:09:26.032+00    | 2026-05-11 23:08:41.890317+00
+ naver         |  105 |    46 | 2026-05-09 00:18:21.749356+00 | 2026-05-09 01:36:19.018206+00
+ pricecharting |   14 |     8 | 2026-05-12 03:35:13.234664+00 | 2026-05-12 03:35:23.940026+00
+(6 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
