@@ -1,0 +1,41 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+cat > scripts/c1x_status.sh <<'SHEOF'
+#!/usr/bin/env bash
+# C1x status: snapshot of both backfills (pricecharting + multi-source).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "=== procs ==="
+docker compose exec -T pos ps -ef | grep -E 'c16_price|c17_multi' | grep -v grep || echo "(no backfill running)"
+
+echo
+echo "=== c16 pricecharting tail ==="
+docker compose exec -T pos sh -c 'tail -4 /tmp/c16./scripts/c1x_status.shp/c17.log 2>&1'ce_backfill.
+=== procs ===
+(no backfill running)
+
+=== c16 pricecharting tail ===
+[c16-pc] [18250/28347] 369865 (sm2-150)  q='Alolan Ninetales-GX #150'  hits=0 matched=0
+[c16-pc] [18300/28347] 369915 (xy8-151)  +1 rows  (13891 cards, 24595 total rows, 4409 no-match, 0 errs, 0.65 cards/s)
+[c16-pc] [18350/28347] 369967 (xy5-152)  q='Sharpedo-EX #152'  hits=0 matched=0
+[c16-pc] [18400/28347] 370019 (xy5-153)  q='Aggron-EX #153'  hits=0 matched=0
+
+=== c17 multi-source tail ===
+{"ts":"2026-05-12T11:48:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T11:48:38","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+{"ts":"2026-05-12T11:48:39","level":"INFO","logger":"price_scrapers","msg":"[scrape:bunjang] query translated 'Butterfree V' → '버터플' (ko)"}
+{"ts":"2026-05-12T11:48:40","level":"INFO","logger":"price_scrapers","msg":"[scrape:hareruya2] query translated 'Butterfree V' → 'バタフリー' (ja_kana)"}
+
+=== price_history by source ===
+    source     | rows  | cards |          last_write           | rows_1h 
+---------------+-------+-------+-------------------------------+---------
+ pricecharting | 24691 | 13956 | 2026-05-12 11:48:42.477982+00 |    2059
+ hareruya2     |   254 |    57 | 2026-05-12 11:48:37.532176+00 |      11
+ bunjang       |   211 |    49 | 2026-05-12 11:48:37.532176+00 |      11
+ cardmarket    |   204 |    48 | 2026-05-12 11:48:37.532176+00 |      10
+ tcgplayer     |   130 |    54 | 2026-05-11 23:08:41.890317+00 |       0
+ naver         |   116 |    57 | 2026-05-12 11:48:37.532176+00 |      11
+(6 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
