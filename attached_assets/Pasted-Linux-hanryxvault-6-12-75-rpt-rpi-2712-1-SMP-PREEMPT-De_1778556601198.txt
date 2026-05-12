@@ -1,0 +1,49 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 03:27:10 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Patch the filter to also require name match
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("scripts/c16_pricecharting_backfill.py")
+s = p.read_text()
+
+old = '''def _filter_to_card(rows: list[dict], card_number: str) -> list[dict]:
+    """Keep only pricecharting rows whose title #N matches our card_number."""
+    want = card_number.strip().lstrip("0") or "0"
+    out  = []
+    for r in rows:
+        m = _NUM_IN_TITLE_RE.search(r.get("title") or "")
+        if m and m.group(1).lstrip("0").rjust(1, ""))nt('totals (rows, distinct_cards):', c.fetchone
+patched
+deleted 32 rows
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied scripts/c16_price... 0.0s
+[c16-pc] 10 of 28,355 cards  rate=1.0s ETA=0h0m  min_usd=0.0  dry=False
+{"ts":"2026-05-12T03:29:18","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:29:18","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:29:18","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:29:18","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:29:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:29:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:29:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:29:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+
+[c16-pc] DONE  cards_processed=8  rows_written=72  no_match=2  errors=0  elapsed=13s
+  ('351431', 3, ['Grade 7', 'Ungraded', 'Ungraded'])
+  ('351432', 12, ['Grade 7', 'Grade 7', 'Grade 7', 'Grade 8', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351433', 9, ['Grade 7', 'Grade 7', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351434', 8, ['Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351435', 8, ['Grade 7', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351436', 9, ['Grade 7', 'Grade 7', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351438', 19, ['Grade 7', 'Grade 7', 'Grade 7', 'Grade 7', 'Grade 7', 'Grade 7', 'Grade 8', 'Grade 8', 'Grade 8', 'Grade 8', 'Grade 8', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded', 'Ungraded'])
+  ('351439', 4, ['Grade 7', 'Grade 8', 'Ungraded', 'Ungraded'])
+totals (rows, distinct_cards): (72, 8)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
