@@ -1,0 +1,109 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 01:20:00 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# 1. Confirm html.unescape works — grab a card whose set has & in it
+docker compose exec -T pos python3 -c '
+from pricecharting_scraper import search_pricecharting
+out = search_pricecharting("charizard ex", max_cards=10)
+amp = [r for r in out if "&" in r["set"] or "&amp;" in r["set"]]
+print("ampersand rows:", len(amp))
+for r in amp[:3]:
+    print(" set =", repr(r["set"]))
+'
+
+# 2. The actual call signature inside search_all + unified row schema
+'rdmarket)\b" /app/price_scrapers.pyng|hareruya2|c
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:15:15","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+ampersand rows: 3
+ set = 'Pokemon Scarlet & Violet 151'
+ set = 'Pokemon Scarlet & Violet 151'
+ set = 'Pokemon Scarlet & Violet 151'
+=== search_all call site (lines 595-640) ===
+        out["query_used"][name] = q_for_source
+
+        try:
+            if name == "cardmarket":
+                # cardmarket() accepts game= for backward compat; tcgdex
+                # only covers Pokemon, but other games used to be valid
+                # against the prior scrape implementation.
+                out["results"][name] = fn(q_for_source,
+                                          limit=limit_per_source, game=game)
+            else:
+                out["results"][name] = fn(q_for_source, limit=limit_per_source)
+        except Exception as exc:  # belt-and-suspenders; scrapers swallow most
+            log.warning("[scrape:%s] %s", name, exc)
+            out["errors"][name] = str(exc)
+            out["results"][name] = []
+    return out
+=== unified row schema (top of file, after the docstring) ===
+Every scraper returns a UNIFORM list of dicts:
+    {
+        "title":     "<listing title>",
+        "price":     <float in source currency>,
+        "currency":  "KRW" | "JPY" | "EUR",
+        "url":       "https://...",
+        "image":     "https://..." | "",
+        "source":    "naver" | "tcgkorea" | "snkrdunk" | "cardmarket",
+    }
+
+…and never raises — failures return [].  Network is wrapped with a short
+timeout and a real-browser User-Agent because every one of these sites
+silently blocks default `python-requests` clients.
+
+Anti-bot strategy
+-----------------
+We maintain a per-domain `requests.Session()` so cookies (Cloudflare
+clearance, CSRF tokens, locale prefs) persist across requests. Before the
+first search hit on a domain we issue a ONE-TIME warmup GET against the
+homepage so the session collects whatever cookies the site issues to a
+fresh visitor. Headers mimic a recent Chrome on macOS including
+client-hint headers (`sec-ch-ua*`) and fetch-mode hints (`sec-fetch-*`)
+that anti-bot WAFs use to distinguish browsers from scripts.
+
+Playwright fallback
+-------------------
+For sites that block requests-based access entirely (naver returns HTTP
+418, cardmarket Cloudflare-403, snkrdunk client-rendered SPA), each
+scraper FIRST tries `playwright_scraper.fetch_html()` — a real chromium
+browser kept warm in a background thread. If Playwright is disabled
+(`ENABLE_PLAYWRIGHT_SCRAPER=0`), not installed, or fails to launch, we
+silently fall back to the requests-based `_safe_get` path. The parsing
+below is identical for both fetch backends — Playwright only solves the
+HTML-acquisition problem; selectors and currency handling stay the same.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+import threading
+from typing import Callable
+from urllib.parse import quote_plus, urlsplit
+
+import requests
+from bs4 import BeautifulSoup
+
+try:
+    from scrape_cache import cached  # Redis-backed cache + drift detector
+except Exception:  # pragma: no cover — bare-script execution fallback
+    def cached(_source, **_):  # type: ignore[no-redef]
+=== one existing scraper signature for reference ===
+262:def naver_shopping(query: str, *, limit: int = 20) -> list[dict]:
+336:def bunjang(query: str, *, limit: int = 20) -> list[dict]:
+431:def hareruya2(query: str, *, limit: int = 20) -> list[dict]:
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
