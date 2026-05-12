@@ -1,0 +1,35 @@
+I went through the review against the actual code. Here's the honest scoreboard — some findings are real, some are wrong:
+
+✅ Real issues (worth fixing)
+#	Finding	Status
+1	HttpLoggingInterceptor.Level.BODY in release	✅ Confirmed at AppModule.kt:139 — every Zettle token, customer email, and sale total goes to logcat. Real PII leak.
+2	fallbackToDestructiveMigration() on Room v10	✅ Confirmed at AppDatabase.kt:47 — every schema bump wipes sales/cart/payment_intents.
+3	Hardcoded PIN "1234"	✅ Confirmed at SettingsScreen.kt:197.
+4	Connect timeout 2 s too tight on cellular	✅ Confirmed at AppModule.kt:134 — Zettle client uses 3 s; ApiService should match.
+5	Cloud fallback hardcodes https:// + :443	✅ Worth using parsed URL — small refactor.
+❌ Wrong findings (Pi agent didn't read closely)
+#	Claim	Reality
+4	"taxRate = 0.056 hardcoded, ignores prefs"	Wrong. L690: private val taxRate get() = prefs.getFloat("tax_rate_pct", 5.6f).toDouble() / 100.0 — already reads from prefs every access. The 5.6 is just the default.
+5	"checkZettleAuth checks ZettleSDK.instance != null (wrong condition)"	Wrong. L3312: val loggedIn = com.zettle.sdk.ZettleSDK.instance?.isLoggedIn == true — already correct.
+🟡 Endpoint mismatches (need Pi-side confirmation)
+The tablet's ApiService calls some paths the Pi agent's review doesn't list:
+
+Tablet calls GET /inventory → Pi has this ✅
+Tablet calls GET /api/v1/inventory/search, /categories, /stats → not mentioned in the Pi agent's table. Either these are aliases or they 404.
+Pi agent mentions new routes the tablet doesn't use yet: /tcg/search-multi, /tcg/search-master, /api/v1/enrich/price-refresh, /ai/chat.
+🟠 Big-effort items (defer unless you want them now)
+Split MainActivity.kt (10,616 lines) — real maintenance hazard but 1–2 day refactor.
+Move PIN to a Pi-validated endpoint — needs a new Pi route too.
+My recommendation — quick wins first
+I'd knock out items 1–5 from the "real issues" list in one APK build. They're all small surgical changes (~15 lines total + Room migration), high impact, low risk. The PIN move and MainActivity split are separate days of work and shouldn't ride on this build.
+
+For the PIN specifically: the cleanest interim fix is moving "1234" to BuildConfig.ADMIN_PIN injected from local.properties (so it's not in the source repo), and you can change it without rebuilding by editing local.properties and rebuilding once. The Pi-validated PIN is the right long-term answer but needs a new endpoint.
+
+Want me to do all 5 quick wins now? That gives you:
+
+No more PII in logcat
+No more accidental data wipe on next schema change (with a real v10→v11 migration template ready when you need it)
+Sane connect timeouts
+Cloud fallback that respects custom domains/ports
+PIN out of source control
+I won't touch the endpoint mismatches without confirmation from the Pi side first — they may already be aliased.
