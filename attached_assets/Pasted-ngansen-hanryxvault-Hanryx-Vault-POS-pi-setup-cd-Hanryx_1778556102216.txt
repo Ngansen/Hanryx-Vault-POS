@@ -1,0 +1,48 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Write a tiny patcher script (no nested quoting)
+cat > /tmp/wire_pricecharting.py <<'PY_EOF'
+import pathlib, sys
+p = pathlib.Path("/app/price_scrapers.py")
+s = p.read_text()
+if "pricecharting" in s:
+    print("ALREADY WIRED"); sys.exit(0)
+# Add import after the requests import
+old_imp = "import requests\n"
+new_imp = "import requests\n\nfrom pricecharting_scraper import search_pricecharting\n"
+if old_imp not in s:
+    print("FAIL: requests import not found"); sys.exit(1)
+s = s.replace(old_imp, new_imp, 1)
+# Add SCRAPERS entry — match the cardmarket line a'"set"))rrency"], "|", r["title"][:40], "|", r.get
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied /tmp/wire_pricech... 0.0s
+OK
+--- SCRAPERS now ---
+SCRAPERS: dict[str, Callable[..., list[dict]]] = {
+    "naver":      naver_shopping,   # KR Open API,    via openapi.naver.com
+    "bunjang":    bunjang,          # KR C2C JSON,    via api.bunjang.co.kr
+    "hareruya2":  hareruya2,        # JP Pokemon-spec, via hareruya2.com SSR
+    "cardmarket": cardmarket,       # EU EUR,         via api.tcgdex.net
+    "pricecharting": search_pricecharting,  # US-eBay sold-comps via pricecharting.com
+}
+--- import check ---
+76:from pricecharting_scraper import search_pricecharting
+550:    "pricecharting": search_pricecharting,  # US-eBay sold-comps via pricecharting.com
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[redis] Connected to redis://redis:6379/0"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[session] Redis-backed sessions enabled — operators persist across pos restarts (TTL 7d)"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[bg] price-refresh scheduler disabled via env"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] tcg_lookup registered → /tcg/*"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.fuzzy_search wired → /tcg/search-multi"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards_master search wired → /tcg/search-master"}
+{"ts":"2026-05-12T03:21:19","level":"INFO","logger":"hanryxvault","msg":"[blueprint] cards.ai_assistant registered → /ai/*"}
+errors: {}
+query_used: {'pricecharting': 'charizard ex'}
+rows: 9
+  Ungraded $964.76 USD | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Grade 7 $775.00 USD | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Grade 8 $777.00 USD | Mega Charizard X ex #125 | Pokemon Phantasmal Flames
+  Ungraded $56.00 USD | Mega Charizard X EX #23 | Pokemon Promo
+  Grade 7 $41.59 USD | Mega Charizard X EX #23 | Pokemon Promo
+  Grade 8 $43.50 USD | Mega Charizard X EX #23 | Pokemon Promo
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
