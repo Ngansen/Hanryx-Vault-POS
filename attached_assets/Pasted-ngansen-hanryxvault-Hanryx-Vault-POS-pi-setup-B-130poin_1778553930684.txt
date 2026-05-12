@@ -1,0 +1,65 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # B) 130point with a realistic browser header set
+curl -fsS -m 15 \
+  -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" \
+  -H "Accept: text/html,application/xhtml+xml" \
+  -H "Accept-Language: en-US,en;q=0.9" \
+  -H "Referer: https://130point.com/" \
+  'https://130point.com/sales/?text=Charizard+ex&searchButton=Search' \
+  -o /tmp/130p.html -w "HTTP %{http_code}, %{size_download} bytes\n"
+echo "title: $(grep -oP '<title>\K[^<]+' /tmp/130p.html | head -1)"
+echo "tables: $(grep -c '<table' /tmp/130p.html)"
+echo "result rows: $(grep -ciE 'sold|<tr' /tmp/130p.html)"
+echo "block: $(grep -ciE 'pardon|captcha|access denied|cloudflare' /tmp/130p.html)"
+curl: (22) The requested URL returned error: 403
+HTTP 403, 0 bytes
+grep: /tmp/130p.html: No such file or directory
+title: 
+grep: /tmp/130p.html: No such file or directory
+tables: 
+grep: /tmp/130p.html: No such file or directory
+result rows: 
+grep: /tmp/130p.html: No such file or directory
+block: 
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# A) Playwright install with output forced to stay visible
+docker compose exec -T pos sh -c 'playwright install chromium > /tmp/pw.log 2>&1; echo "exit=$?"; cat /tmp/pw.log; echo "==="; ls -la /root/.cache/ms-playwright/ 2>&1; ls -la /opt/venv/lib/python3.11/site-packages/playwright/driver/package/.local-browsers/ 2>&1'
+exit=0
+===
+ls: cannot access '/root/.cache/ms-playwright/': No such file or directory
+ls: cannot access '/opt/venv/lib/python3.11/site-packages/playwright/driver/package/.local-browsers/': No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# A) Playwright install with output forced to stay visible
+docker compose exec -T pos sh -c 'playwright install chromium > /tmp/pw.log 2>&1; echo "exit=$?"; cat /tmp/pw.log; echo "==="; ls -la /root/.cache/ms-playwright/ 2>&1; ls -la /opt/venv/lib/python3.11/site-packages/playwright/driver/package/.local-browsers/ 2>&1'
+exit=0
+===
+ls: cannot access '/root/.cache/ms-playwright/': No such file or directory
+ls: cannot access '/opt/venv/lib/python3.11/site-packages/playwright/driver/package/.local-browsers/': No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # B) pricecharting.com — Pokémon card pricing site that aggregates eBay sales
+curl -fsS -m 15 \
+  -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" \
+  -H "Accept: text/html,application/xhtml+xml" \
+  -H "Accept-Language: en-US,en;q=0.9" \
+  'https://www.pricecharting.com/search-products?q=charizard+ex&type=prices' \
+  -o /tmp/pc.html -w "HTTP %{http_code}, %{size_download} bytes\n"
+echo "title:  $(grep -oP '<title>\K[^<]+' /tmp/pc.html | head -1)"
+echo "rows:   $(grep -c 'product offer' /tmp/pc.html)"
+echo "block:  $(grep -ciE 'pardon|captcha|access denied|cloudflare' /tmp/pc.html)"
+HTTP 200, 475755 bytes
+title:  Charizard Ex Prices | Charizard Ex List
+rows:   0
+block:  0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # C) Naver-style probe: do ANY US commerce sites work from this network?
+for host in ebay.com 130point.com pricecharting.com cardmarket.com tcgplayer.com; do
+  printf "%-22s " "$host"
+  curl -fsS -m 8 -o /dev/null -w "HTTP %{http_code}\n" \
+    -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" \
+    "https://www.$host/" 2>&1 | tail -1
+done
+ebay.com               HTTP 200
+130point.com           HTTP 403
+pricecharting.com      HTTP 200
+cardmarket.com         HTTP 403
+tcgplayer.com          HTTP 200
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
