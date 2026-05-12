@@ -1,0 +1,121 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Pull the patched file out of the container back onto the host
+docker compose cp pos:/app/price_scrapers.py price_scrapers.py
+grep -n pricecharting price_scrapers.py
+
+# Sanity check there's no drift between host and container
+diff <(docker compose exec -T pos cat /app/price_scrapers.py) price_scrapers.py && echo "HOST==CONTAINER ✓"
+
+# Show the C16 backfill so we can plan its rewrite to use search_all
+echo "--- c16_ebay_backfill.py head ---"
+head -80 scripts/c16_ebay_backfill.py
+echo "--- price_history insert sites in server.py grep -n "price_history" server.py | head -20
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied pi-setup-pos-1:/a... 0.0s
+76:from pricecharting_scraper import search_pricecharting
+550:    "pricecharting": search_pricecharting,  # US-eBay sold-comps via pricecharting.com
+HOST==CONTAINER ✓
+--- c16_ebay_backfill.py head ---
+#!/usr/bin/env python3
+"""C16: Backfill ebay_sold price_history rows for every card in cards_master.
+
+Why
+---
+The C14 price_trends_daily matview gives 7d/30d/90d % change per (card_id, source).
+Without ebay_sold data the chip only ever shows tcgplayer trends — which is
+inflated TCGplayer LIST prices, not realised sold prices.  This script fills
+the gap by recording one ebay_sold median per card per run.
+
+Cadence
+-------
+eBay's Finding API free tier = 5000 calls/day.  Default sleep is 17s/card,
+which gives 5,082 calls/day — fits the quota with a small margin.
+
+Run
+---
+    docker compose exec -d pos sh -c \\
+      'nohup python /app/scripts/c16_ebay_backfill.py > /tmp/c16.log 2>&1 < /dev/null &'
+
+Monitor
+-------
+    docker compose exec -T pos tail -f /tmp/c16.log
+    # progress query
+    docker compose exec -T pos python -c "import os,psycopg2; c=psycopg2.connect(os.environ['DATABASE_URL']).cursor(); c.execute(\\\"SELECT count(DISTINCT card_id) FROM price_history WHERE source='ebay_sold'\\\"); print(c.fetchone()[0], 'cards have ebay_sold data')"
+
+Resume
+------
+Killed/restarted runs auto-skip any card with an ebay_sold row within the
+last 30 days.  Safe to re-run anytime — it picks up where it left off.
+
+Flags
+-----
+    --rate-sec 17        seconds between calls (default 17 = 5082/day)
+    --limit 20           how many sold listings to fetch per card
+    --min-usd 0          skip cards whose tcgplayer market < this (default 0)
+    --max-cards N        process at most N cards this run (default = all)
+    --min-hits 3         drop cards where eBay returned <N matches (noise floor)
+    --refresh-days 30    re-scrape if last ebay row older than this
+    --dry-run            don't actually call eBay or write rows; print plan
+"""
+from __future__ import annotations
+import argparse, os, sys, time, signal, statistics
+from datetime import datetime, timezone
+
+import psycopg2
+import psycopg2.extras
+
+# Repo helper — same dir layout as other C-prefixed scripts
+sys.path.insert(0, "/app")
+try:
+    from ebay_sold import search_ebay_sold, EBAY_APP_ID
+except ImportError as e:
+    sys.exit(f"FATAL: could not import ebay_sold ({e}). "
+             f"Mount the repo at /app or run from the pos container.")
+
+
+_STOP = False
+def _sigterm(*_):
+    global _STOP
+    _STOP = True
+    print("[c16] SIGTERM received — finishing current card then exiting", flush=True)
+signal.signal(signal.SIGTERM, _sigterm)
+signal.signal(signal.SIGINT,  _sigterm)
+
+
+def _build_query(row: dict) -> str:
+    """eBay-style search string from a cards_master row."""
+    parts = []
+    if row.get("name_en"):
+        parts.append(row["name_en"].strip())
+    if row.get("set_id"):
+        parts.append(row["set_id"].strip().upper())
+    if row.get("card_number"):
+        parts.append(row["card_number"].strip().lstrip("0") or "0")
+    return " ".join(parts)
+
+
+def _median_usd(hits: list[dict]) -> tuple[float, int]:
+    """Median USD price across hits.  Drops non-USD rows (cheap and reliable —
+--- price_history insert sites in server.py ---
+2516:        f"""CREATE TABLE IF NOT EXISTS price_history (
+2523:        "CREATE INDEX IF NOT EXISTS idx_price_hist ON price_history(card_id, fetched_ms)",
+3220:    # ── price_history schema migration (C11) ─────────────────────────────────
+3227:    # Note: usb_mirror.price_history_recent SELECT references source/grade/
+3230:        ("source",      "ALTER TABLE price_history ADD COLUMN source     TEXT NOT NULL DEFAULT 'tcgplayer'"),
+3231:        ("grade",       "ALTER TABLE price_history ADD COLUMN grade      TEXT NOT NULL DEFAULT 'raw'"),
+3232:        ("currency",    "ALTER TABLE price_history ADD COLUMN currency   TEXT NOT NULL DEFAULT 'USD'"),
+3233:        ("price_usd",   "ALTER TABLE price_history ADD COLUMN price_usd  DOUBLE PRECISION"),
+3234:        ("observed_at", "ALTER TABLE price_history ADD COLUMN observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+3235:        ("query_used",  "ALTER TABLE price_history ADD COLUMN query_used TEXT NOT NULL DEFAULT ''"),
+3240:        ("price_native","ALTER TABLE price_history ADD COLUMN price_native DOUBLE PRECISION"),
+3242:        if not _col_exists("price_history", col):
+3245:            log.info("[DB] Migration: added price_history.%s column", col)
+3252:            UPDATE price_history
+3262:        log.warning("[DB] price_history.observed_at backfill skipped: %s", _phe)
+3268:            "ON price_history(observed_at DESC)"
+3272:            "ON price_history(card_id, source, observed_at DESC)"
+3278:        log.warning("[DB] price_history index create skipped: %s", _phi)
+7444:    # Persist market price to price_history for trend tracking
+7453:                "INSERT INTO price_history "
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
