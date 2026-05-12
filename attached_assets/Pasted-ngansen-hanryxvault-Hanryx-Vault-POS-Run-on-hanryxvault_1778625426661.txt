@@ -1,0 +1,57 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ # Run on hanryxvault — confirms which paths actually exist
+cd ~/Hanryx-Vault-POS/pi-setup
+echo "=== route registrations in server.py ==="
+grep -nE "@app\.(get|post|route)|add_url_rule" server.py | grep -iE "inventor|categor|stat" | head -30
+
+echo
+echo "=== blueprint registrations ==="
+grep -nE "register_blueprint|url_prefix" server.py | head
+
+echo
+echo "=== live probe ==="
+for path in /inventory /api/v1/inventory/search /categories /stats /api/inventory /api/categories; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "hdoneho "  $code  $path"th?q=test")
+=== route registrations in server.py ===
+4710:@app.route("/admin/wireguard/status", methods=["GET"])
+4966:@app.route("/admin/multi/<game>/visual/status", methods=["GET"])
+5054:@app.route("/admin/monitor-stats", methods=["GET"])
+5169:@app.route("/cache/stats", methods=["GET"])
+5237:@app.route("/zettle/status", methods=["GET"])
+5939:@app.route("/admin/jpn-pocket/status", methods=["GET"])
+5995:@app.route("/admin/multi/status", methods=["GET"])
+6090:@app.route("/admin/scrape/status", methods=["GET"])
+6124:@app.route("/admin/jpn-cards/status", methods=["GET"])
+6171:@app.route("/card/scan/recognizer/status", methods=["GET"])
+6203:@app.route("/admin/chs-cards/status", methods=["GET"])
+6486:@app.route("/admin/kr-cards/status", methods=["GET"])
+6508:@app.route("/admin/en-cards/status", methods=["GET"])
+6583:@app.route("/admin/pipelines/status", methods=["GET"])
+8047:@app.route("/inventory/deduct", methods=["POST"])
+8120:@app.route("/inventory/decrement", methods=["POST"])
+8165:@app.route("/inventory", methods=["GET"])
+8233:@app.route("/push/inventory", methods=["POST"])
+8288:@app.route("/push/inventory/csv", methods=["POST"])
+9222:@app.route("/admin/trade-in/<int:ti_id>/offer-status", methods=["GET"])
+10075:@app.route("/admin/satellite-token-status", methods=["GET"])
+10099:@app.route("/admin/inventory", methods=["GET"])
+10107:@app.route("/admin/inventory", methods=["POST"])
+10196:@app.route("/admin/inventory/<qr_code>", methods=["PATCH"])
+10227:@app.route("/admin/inventory/<qr_code>", methods=["DELETE"])
+10927:@app.route("/print/status", methods=["GET"])
+11287:@app.route("/system/stats", methods=["GET"])
+11337:@app.route("/admin/inventory/export", methods=["GET"])
+11360:@app.route("/admin/inventory/import", methods=["POST"])
+11488:@app.route("/admin/inventory/template", methods=["GET"])
+
+=== blueprint registrations ===
+29456:    app.register_blueprint(_tcg_bp)
+29579:    app.register_blueprint(_ai_bp)
+
+=== live probe ===
+  200  /inventory
+  200  /api/v1/inventory/search
+  404  /categories
+  404  /stats
+  404  /api/inventory
+  404  /api/categories
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
