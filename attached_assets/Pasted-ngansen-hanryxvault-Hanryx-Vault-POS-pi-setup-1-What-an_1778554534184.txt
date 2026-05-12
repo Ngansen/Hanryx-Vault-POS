@@ -1,0 +1,95 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # 1. What anchors are actually in the search HTML? 
+grep -oE 'href="/[^"]+"' /tmp/pc.html | grep -vE 'fonts|css|js|png|jpg|svg' | sort -u | head -30
+echo '==='
+# 2. Find the actual product link pattern (often /game/, /item/, or /card/)
+grep -oE 'href="/(game|item|card|product)[^"]*"' /tmp/pc.html | head -10
+echo '==='
+# 3. Maybe the search is JSON-driven — look for fetch calls
+grep -oE '/(api|search)[^"'\'' ]+' /tmp/pc.html | sort -u | head -10
+href="/api-documentation"
+href="/big-movers"
+href="/brand/coins/american-eagles"
+href="/brand/coins/commemorative"
+href="/brand/coins/dime"
+href="/brand/coins/dollar"
+href="/brand/coins/half-dollar"
+href="/brand/coins/nickel"
+href="/brand/coins/other-coins"
+href="/brand/coins/penny"
+href="/brand/coins/quarter"
+href="/brand/comic-books/dark-horse"
+href="/brand/comic-books/dc"
+href="/brand/comic-books/dell"
+href="/brand/comic-books/image"
+href="/brand/comic-books/marvel"
+href="/brand/comic-books/other"
+href="/brand/video-games/atari"
+href="/brand/video-games/neo-geo"
+href="/brand/video-games/nintendo"
+href="/brand/video-games/other"
+href="/brand/video-games/playstation"
+href="/brand/video-games/sega"
+href="/brand/video-games/toys-to-life"
+href="/brand/video-games/xbox"
+href="/card-centering-calculator"
+href="/category/coins"
+href="/category/comic-books"
+href="/category/digimon-cards"
+href="/category/dragon-ball-cards"
+===
+href="/card-centering-calculator"
+===
+/api-documentation
+/search-products
+/search-products?exclude-variants=false&amp;q=charizard&#43;ex&amp;region-name=all&amp;type=prices&amp;view=grid
+/search-products?exclude-variants=false&amp;q=charizard&#43;ex&amp;region-name=all&amp;type=prices&amp;view=table
+/search-products?q=charizard&#43;ex&amp;type=prices
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # 4. Hit a known-good Pokemon card directly to see the price-table structure
+curl -fsS -m 15 \
+  -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" \
+  "https://www.pricecharting.com/game/pokemon-base-set/charizard-4" \
+  -o /tmp/pc_card.html -w "HTTP %{http_code}, %{size_download} bytes\n"
+echo "title: $(grep -oP '<title>\K[^<]+' /tmp/pc_card.html | head -1)"
+echo '--- price-related ids ---'
+grep -oP 'id="[a-z_-]*price[a-z_0-9-]*"' /tmp/pc_card.html | sort -u | head -15
+echo '--- price-related classes ---'
+grep -oP 'class="[^"]*price[^"]*"' /tmp/pc_card.html | sort -u | head -15
+ard.html | head -5"]*\.(csv|json)[^"]*"' /tmp/pc_c
+HTTP 200, 1039376 bytes
+title: Charizard #4 Prices | Pokemon Base Set | Pokemon Cards
+--- price-related ids ---
+id="box_only_price"
+id="complete_price"
+id="full-prices"
+id="graded_price"
+id="manual_only_price"
+id="new_price"
+id="price_comparison"
+id="price_data"
+id="used_price"
+--- price-related classes ---
+class="js-price"
+class="js-price listed-price-inline"
+class="more-prices-link"
+class="more-prices-link bottom"
+class="more-prices-link top"
+class="numeric listed-price"
+class="price"
+class="price_info"
+class="price js-price"
+class="tab available used-prices"
+class="used-prices condition-comparison"
+--- $-bearing td/spans ---
+$377.50
+$21.33
+$760.47
+$0.03
+$12.50
+$313.50
+$159.99
+$0.00
+$313.50
+$159.99
+--- CSV/JSON download links ---
+href="/manifest.json"
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
