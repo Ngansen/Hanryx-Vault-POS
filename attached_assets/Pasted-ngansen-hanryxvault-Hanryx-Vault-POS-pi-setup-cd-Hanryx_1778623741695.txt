@@ -1,0 +1,165 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== mirror tick logic ==="
+docker compose exec -T pos sh -c 'sed -n "1,50p" /app/sync_orchestrator.py'
+echo "--- snippet around line 165 (run_mirror call) ---"
+docker compose exec -T pos sh -c 'sed -n "150,200p" /app/sync_orchestrator.py'
+echo "--- main() loop body ---"
+docker compose exec -T pos sh -c 'sed -n "380,415p" /app/sync_orchestrator.py'
+
+echo
+echo "=== mirror-related log lines from sync (search wider) ==="
+docker compose logs --since 24h sync 2>&1 | grep -iE 'mirror|sqlite|pokedex' | tail -10
+docker compose logs --since 24h sync 2>&1 | grep -ail -5p://localhost/health | head -c 200' 2>&1 | t
+=== mirror tick logic ===
+"""
+sync_orchestrator.py — schedules the offline-DB sync work.
+
+Runs as its own long-lived container (`sync` service in docker-compose).
+Sleeps between ticks; on each tick decides which jobs are due and runs
+them in series. We intentionally avoid threading: each job touches the
+SQLite mirror, and SQLite + WAL handles serial writers but not parallel
+ones gracefully.
+
+Schedule
+--------
+Every 6 minutes:
+    - usb_mirror.run_mirror()  — Postgres → SQLite snapshot. Cheap (~1s).
+                                  Most-frequent because the mirror is what
+                                  the POS reads when WiFi is down; staler
+                                  than 10 min is noticeable.
+
+Every 1 hour (when WiFi up):
+    - tcgplayer_proxy           — refresh raw English market prices for the
+                                  inventory's top 1000 most-searched cards.
+    - sync_tcg_db.py            — fetch new English card releases from
+                                  pokemontcg.io.
+
+Every 6 hours (when WiFi up):
+    - ebay_sold.py              — sweep eBay for sold listings of the
+                                  inventory's most valuable cards (so we
+                                  capture grade-specific medians without
+                                  burning the daily 5000-call quota).
+
+Every 24 hours (3 AM local):
+    - import_kr_cards.py force=False
+    - import_jpn_cards.py
+    - import_jpn_pocket_cards.py
+    - import_chs_cards.py
+                                  Korean / Japanese / Chinese full refresh
+                                  from the source repos (idempotent — they
+                                  no-op if the data hasn't changed).
+    - import_artwork_hashes.py  — refresh card_hashes for the recognizer
+                                  container's Hamming-distance index.
+
+Why a separate container instead of cron on the host
+----------------------------------------------------
+- Self-contained: image is the same as `pos`, so it has every Python dep
+  the importers need without polluting the host with Pi-OS package state.
+- Restartable on its own without bouncing the POS.
+- Logs go through `docker logs sync`, queryable the same way as every
+  other service.
+- Keeps the host minimal (nothing in /etc/cron.* to surprise a future
+  admin, no host-side pip install).
+
+--- snippet around line 165 (run_mirror call) ---
+def _run_module_subprocess(module_path: str, args: list[str] | None = None) -> None:
+    """Run an existing pi-setup script as a subprocess, raising on non-zero exit.
+
+    Subprocess (rather than direct import) keeps blast radius small — if
+    one of the importers leaks file handles or sets a global, it doesn't
+    affect the orchestrator process or other jobs.
+    """
+    cmd = [sys.executable, module_path] + (args or [])
+    log.info("[run] %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    if result.returncode != 0:
+        raise RuntimeError(f"{module_path} exited {result.returncode}: {result.stderr[-2000:]}")
+
+
+def _job_mirror() -> None:
+    summary = usb_mirror.run_mirror()
+    log.info("[mirror] complete: %s", summary)
+
+
+def _job_tcg_db() -> None:
+    """Refresh English card pool from pokemontcg.io."""
+    _run_module_subprocess("/app/sync_tcg_db.py", ["--once"])
+
+
+def _job_kr_cards() -> None:
+    _run_module_subprocess("/app/import_kr_cards.py")
+
+
+def _job_jpn_cards() -> None:
+    _run_module_subprocess("/app/import_jpn_cards.py")
+
+
+def _job_jpn_pocket_cards() -> None:
+    _run_module_subprocess("/app/import_jpn_pocket_cards.py")
+
+
+def _job_chs_cards() -> None:
+    _run_module_subprocess("/app/import_chs_cards.py")
+
+
+def _job_card_hashes() -> None:
+    _run_module_subprocess("/app/import_artwork_hashes.py")
+
+
+# ── Unified card DB jobs (U1-U9 importers) ────────────────────────────────
+# These are scheduled less aggressively than the per-language importers
+# because the source data (Excel files in your Card-Database repo,
+# TCGdex API, PokéAPI CSVs) changes WEEKS apart, not hours. The
+# trade-off: a brand-new set release is in your per-language tables
+# within hours but won't be in cards_master until the next consolidator
+# tick (12h). The cashier still finds the card via the legacy table
+--- main() loop body ---
+        j.runs += 1
+        _write_status()
+
+
+def main() -> None:
+    log.info("sync_orchestrator starting; tick=%ds; usb_configured=%s",
+             TICK_SECONDS, is_usb_configured())
+    if not is_usb_configured():
+        log.warning("HANRYX_LOCAL_DB_DIR not set — orchestrator will run but mirror will fail loudly")
+    else:
+        # Pidfile lock — refuses to start if another orchestrator is alive.
+        # Only enforced when USB is configured, because the sync_log_dir()
+        # helper would write the pidfile to the in-package dev path
+        # otherwise, which is a less interesting place to enforce the lock.
+        _acquire_singleton_lock()
+
+    # On boot, fire mirror once immediately so /admin/usb-sync/status has
+    # something to show without waiting 6 minutes.
+    if is_usb_configured():
+        try:
+            _job_mirror()
+            for j in JOBS:
+                if j.name == "mirror":
+                    j.last_run = time.time()
+                    j.last_status = "ok"
+                    j.runs += 1
+                    j.last_duration_sec = 0.0
+        except Exception as e:
+            log.exception("[boot-mirror] failed: %s", e)
+
+    while True:
+        _run_due_jobs(_has_network())
+        _write_status()
+        time.sleep(TICK_SECONDS)
+
+
+
+=== mirror-related log lines from sync (search wider) ===
+
+=== satellite probe with right tools ===
+--- 192.168.86.24 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
+rtt min/avg/max/mdev = 16.483/17.191/17.900/0.708 ms
+main->sat lan:    000
+main->sat tailsc: 000
+tailscale: failed to look up local user "ngansen84" 
+Connection closed by 100.121.45.69 port 22
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
