@@ -1,0 +1,92 @@
+:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+python3 <<'PY'
+import pathlib
+P = pathlib.Path("server.py"); s = P.read_text(); n = 0
+def sub(old, new):
+    global s, n
+    assert old in s, f"missing: {old[:50]!r}"
+    s = s.replace(old, new); n += 1
+
+# #2
+sub('        smart_result = _smart_scanner.smart_scan(qr, db)\n',
+    '        try:\n'
+    '            smart_result = _smart_scanner.smart_scan(qr, db)\n'
+    '        except Exception as _ss_e:\n'
+    '            log.warning("[card/scan] smart_scan failed: %r", _ss_e); smart_result = None\n')
+
+# #4
+sub('"price":      str(r["price"])  if r["price"]  is not None else None,',
+    '"price":      float(r["price"]) if r["price"]PYH={cap}MB")ext(t); print(f"{fp}: MAX_CONTENT_LEN
+server.py: 5 patches applied
+recognizer/server.py: MAX_CONTENT_LENGTH=8MB
+server.py: MAX_CONTENT_LENGTH=16MB
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+grep -n "INSERT INTO price_history" server.py
+echo "--- context for first match ---"
+awk '/INSERT INTO price_history/{ for(i=NR-8;i<=NR+10;i++) print i": "a[i]; exit } { a[NR]=$0 }' server.py
+echo "--- _ph_price reference if any ---"
+grep -n "_ph_price\|tcgplayer.*marketPrice\|price_history.*VALUES" server.py | head -10
+7461:                "INSERT INTO price_history "
+22598:                "INSERT INTO price_history "
+--- context for first match ---
+7453:     _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
+7454:     if _ph_price:
+7455:         try:
+7456:             # C13.5: also populate price_usd + price_native (= the same
+7457:             # USD value, since tcgplayer prices ARE in USD). Without
+7458:             # this, the AI cashier's lookup_price returned price_usd:
+7459:             # null for tcgplayer rows even though native_price was set.
+7460:             db.execute(
+7461: 
+7462: 
+7463: 
+7464: 
+7465: 
+7466: 
+7467: 
+7468: 
+7469: 
+7470: 
+7471: 
+--- _ph_price reference if any ---
+4382:        mkt = summary.get("tcgplayer", {}).get("marketPrice")
+7393:                  attacks, weaknesses, tcgplayer{marketPrice, priceTiers}}
+7438:        _mkt = ((result.get("tcgData") or {}).get("tcgplayer", {}) or {}).get("marketPrice") \
+7453:    _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
+7454:    if _ph_price:
+7466:                 float(_ph_price), _now_ms(),
+7467:                 float(_ph_price), float(_ph_price))
+7576:            mkt = (enriched.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
+13216:    const fb = d.suggestedPrice || t.tcgplayer && t.tcgplayer.marketPrice;
+13313:  const raw   = Object.values(_rawTiers)[0] || d.suggestedPrice || (t.tcgplayer && t.tcgplayer.marketPrice) || 0;
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+docker compose restart pos
+sleep 10
+docker compose logs --tail=30 pos | grep -iE "error|listening|init_db" | head
+echo "--- numeric price check ---"
+docker compose exec -T pos sh -c 'curl -s "http://localhost:8080/card/scan?qr=SV1-1" | python3 -c "import sys,json;d=json.load(sys.stdin);print(\"price type:\",type(d.get(\"price\")).__name__,\"value:\",d.get(\"price\"))"'
+[+] restart 0/1
+ ⠴ Container pi-setup-pos-1 Restarting        2.4s
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_kr already has 15121 rows"}
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_chs already has 16527 rows"}
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_jpn_pocket has 3041 rows"}
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] multi-TCG weekly auto-refresh enabled"}
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[onepiece] has 3386 rows"}
+pos-1  | {"ts":"2026-05-13T14:24:26","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[lorcana] has 2283 rows"}
+pos-1  | [2026-05-13 14:24:26 +0000] [9] [INFO] Listening at: http://0.0.0.0:8080 (9)
+pos-1  | [2026-05-13 14:24:26 +0000] [9] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+--- numeric price check ---
+price type: NoneType value: None
+cd ~/Hanryx-Vault-POS/Hanryx-Vault-POS/pi-setup $ 
+git add pi-setup/server.py pi-setup/recognizer/ser
+ver.pyd pi-setup/server.py pi-setup/recognizer/sergit -c user.email=ngansen@hanryxvault.local -c use
+r.name=ngansen commit -m "fix(scanner): wrap smart_scan; numeric price/stock; identify-image upstream body+raw guard; tcg_match flag; 8/16MB upload cap body+raw guard; tcg_match flag; 8/16MB upload cap
+Scanner code review #2 #4 #5 #6 #18. #7 deferred (
+anchor mismatch — needs exact-line dump from pi)."git push 2>&1 | tail -3 exact-line dump from pi).
+[main 14e822e] fix(scanner): wrap smart_scan; numeric price/stock; identify-image upstream body+raw guard; tcg_match flag; 8/16MB upload cap
+ 2 files changed, 63 insertions(+), 47 deletions(-)
+Username for 'https://github.com': ^C
+ngansen@hanryxvault:~/Hanryx-Vault-PO
