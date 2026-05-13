@@ -1,0 +1,70 @@
+CT set_id, card_number,
+       jsonb_pretty(image_url_alt) AS alt
+FROM cards_master
+WHERE image_url_alt IS NOT NULL
+  AND jsonb_array_length(image_url_alt) > 0
+LIMIT 3;"'
+
+echo "--- aggregate shape: which keys exist, do any have non-empty local? ---"
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+WITH e AS (
+  SELECT jsonb_array_elements(image_url_alt) AS p
+  FROM cards_master
+  WHERE image_url_alt IS NOT NULL
+    AND jsonb_array_length(image_url_alt) > 0
+)
+SELECT
+  COUNT(*) AS entries,
+  COUNT(*) FILTER (WHERE p ? '\''url'\'')   AS hasGROUP BY 1 ORDER BY 2 DESC LIMIT 10;"'s(image_url_
+ set_id | card_number |                                alt                                 
+--------+-------------+--------------------------------------------------------------------
+ me01   | 20          | [                                                                 +
+        |             |     {                                                             +
+        |             |         "src": "tcgdex",                                          +
+        |             |         "url": "https://assets.tcgdex.net/en/me/me01/020",        +
+        |             |         "lang": "en",                                             +
+        |             |         "local": "/mnt/cards/cdn/assets.tcgdex.net/en/me/me01/020"+
+        |             |     }                                                             +
+        |             | ]
+ neo3   | 20          | [                                                                 +
+        |             |     {                                                             +
+        |             |         "src": "tcg_api",                                         +
+        |             |         "url": "https://images.pokemontcg.io/neo3/20.png",        +
+        |             |         "lang": "en",                                             +
+        |             |         "local": ""                                               +
+        |             |     },                                                            +
+        |             |     {                                                             +
+        |             |         "src": "tcgdex",                                          +
+        |             |         "url": "https://assets.tcgdex.net/en/neo/neo3/20",        +
+        |             |         "lang": "en",                                             +
+        |             |         "local": "/mnt/cards/cdn/assets.tcgdex.net/en/neo/neo3/20"+
+        |             |     }                                                             +
+        |             | ]
+ me03   | 20          | [                                                                 +
+        |             |     {                                                             +
+        |             |         "src": "tcgdex",                                          +
+        |             |         "url": "https://assets.tcgdex.net/en/me/me03/020",        +
+        |             |         "lang": "en",                                             +
+        |             |         "local": "/mnt/cards/cdn/assets.tcgdex.net/en/me/me03/020"+
+        |             |     }                                                             +
+        |             | ]
+(3 rows)
+
+--- aggregate shape: which keys exist, do any have non-empty local? ---
+ entries | has_url_key | has_local_key | local_nonempty | has_src_key 
+---------+-------------+---------------+----------------+-------------
+   83943 |       83943 |         83943 |          38311 |       83943
+(1 row)
+
+--- distinct src values ---
+     src      | count 
+--------------+-------
+ tcgdex       | 26605
+ tcg_api      | 20233
+ chs_official | 16125
+ kr_official  | 14898
+ pocket_lt    |  3041
+ pocket_off   |  3041
+(6 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
