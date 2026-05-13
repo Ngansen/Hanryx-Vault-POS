@@ -1,0 +1,65 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed May 13 01:10:31 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '3200,3215p' server.py
+        ("cert_number",     "ALTER TABLE inventory ADD COLUMN cert_number      TEXT NOT NULL DEFAULT ''"),
+        ("back_image_url",  "ALTER TABLE inventory ADD COLUMN back_image_url   TEXT NOT NULL DEFAULT ''"),
+        ("purchase_price",  "ALTER TABLE inventory ADD COLUMN purchase_price   DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("sale_price",      "ALTER TABLE inventory ADD COLUMN sale_price       DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        ("tags",            "ALTER TABLE inventory ADD COLUMN tags             TEXT NOT NULL DEFAULT ''"),
+        ("featured",        "ALTER TABLE inventory ADD COLUMN featured         INTEGER NOT NULL DEFAULT 0"),
+        ("listed_for_sale", "ALTER TABLE inventory ADD COLUMN listed_for_sale  INTEGER NOT NULL DEFAULT 1"),
+        ("search_key",      "ALTER TABLE inventory ADD COLUMN search_key       TEXT NOT NULL DEFAULT ''"),
+        ("card_number",     "ALTER TABLE inventory ADD COLUMN card_number      TEXT    NOT NULL DEFAULT ''"),
+        ("variant",         "ALTER TABLE inventory ADD COLUMN variant          TEXT    NOT NULL DEFAULT ''"),
+        ("release_year",    "ALTER TABLE inventory ADD COLUMN release_year     INTEGER NOT NULL DEFAULT 0"),
+        ("resale_price",    "ALTER TABLE inventory ADD COLUMN resale_price     DOUBLE PRECISION NOT NULL DEFAULT 0"),
+        # card_vector uses pgvector type — only added when extension is present
+    ]:
+        table = "sales" if col == "source" else "inventory"
+        if not _col_exists(table, col):
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "\d card_image_embedding"'
+              Table "public.card_image_embedding"
+    Column     |  Type   | Collation | Nullable |   Default    
+---------------+---------+-----------+----------+--------------
+ set_id        | text    |           | not null | 
+ card_number   | text    |           | not null | 
+ image_path    | text    |           | not null | ''::text
+ image_src     | text    |           | not null | ''::text
+ model_id      | text    |           | not null | 
+ embedding     | real[]  |           | not null | '{}'::real[]
+ embedding_dim | integer |           | not null | 0
+ norm_before   | real    |           | not null | 0
+ failure       | text    |           | not null | ''::text
+ created_at    | bigint  |           | not null | 0
+Indexes:
+    "card_image_embedding_pkey" PRIMARY KEY, btree (set_id, card_number, model_id)
+    "idx_cie_failure" btree (failure) WHERE failure <> ''::text
+    "idx_cie_model" btree (model_id)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos python3 -c "
+import psycopg2, os, traceback
+db = psycopg2.connect(os.environ['DATABASE_URL']).cursor()
+try:
+    db.execute('''
+        UPDATE inventory
+        SET card_number = LTRIM(SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'), '0')
+        WHERE card_number = ''
+          AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+    ''')
+    print('OK:', db.rowcount)
+except Exception as e:
+    print('FAIL:', type(e).__name__, repr(e))
+    traceback.print_exc()
+"
+OK: 0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
