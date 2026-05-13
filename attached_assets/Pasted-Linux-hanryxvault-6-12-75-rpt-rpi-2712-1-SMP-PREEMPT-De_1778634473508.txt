@@ -1,0 +1,50 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue May 12 21:32:12 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nE "card_number backfill|release_year backfill" server.py
+3298:        log.warning("[DB] card_number backfill skipped: %s", _be)
+3326:        log.warning("[DB] release_year backfill skipped: %s", _rye)
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+grep -nB2 -A15 "card_number backfill skipped" server.py | head -40
+3296-        except Exception:
+3297-            pass
+3298:        log.warning("[DB] card_number backfill skipped: %s", _be)
+3299-
+3300-    # Backfill release_year from set_code for existing rows
+3301-    try:
+3302-        db.execute("""
+3303-            UPDATE inventory
+3304-            SET release_year = CASE
+3305-                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+3306-                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+3307-                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+3308-                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+3309-                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+3310-                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+3311-                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+3312-                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+3313-                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT COUNT(*) AS total, COUNT(embedding) AS with_clip, COUNT(*)-COUNT(embedding) AS missing FROM cards_master;"'
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT source, COUNT(*) AS rows, COUNT(DISTINCT card_id) AS cards FROM price_history WHERE observed_at > NOW() - INTERVAL '\''7 days'\'' GROUP BY source ORDER BY rows DESC;"'
+ERROR:  column "embedding" does not exist
+LINE 1: SELECT COUNT(*) AS total, COUNT(embedding) AS with_clip, COU...
+                                        ^
+    source     | rows  | cards 
+---------------+-------+-------
+ pricecharting | 30708 | 18055
+ hareruya2     |  6593 |  6258
+ naver         |  6256 |  6062
+ cardmarket    |  6231 |  5964
+ bunjang       |  6057 |  5781
+ tcgplayer     |   155 |    56
+(6 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
