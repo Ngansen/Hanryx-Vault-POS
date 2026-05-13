@@ -311,6 +311,7 @@ def _refresh_token_if_needed():
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # upload cap (#18)
 # Long cache on /static/* — logo, brand-pulse, JS bundles never change between
 # deploys (Flask appends ?v=mtime when needed). Saves dozens of round-trips
 # per kiosk reload.
@@ -3277,53 +3278,57 @@ def init_db():
         except Exception: pass
         log.warning("[DB] price_history index create skipped: %s", _phi)
 
-    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+    # Backfill card_number — uses a fresh connection so it's immune to any
+    # earlier aborted txn in init_db (was failing every boot with cryptic
+    # "tuple index out of range" from txn-state pollution).
     try:
-        db.execute("""
-            UPDATE inventory
-            SET card_number = LTRIM(
-                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
-                '0'
-            )
-            WHERE card_number = ''
-              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
-        """)
-        db.commit()
-        log.info("[DB] Backfilled card_number column")
+        import psycopg2 as _p2
+        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
+            with _bk.cursor() as _c:
+                _c.execute("""
+                    UPDATE inventory
+                    SET card_number = LTRIM(SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'), '0')
+                    WHERE (card_number IS NULL OR card_number = '')
+                      AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+                """)
+                _rc = _c.rowcount
+            _bk.commit()
+        log.info("[DB] card_number backfill: %d rows", _rc)
     except Exception as _be:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        log.warning("[DB] card_number backfill skipped: %s", _be)
+        import traceback as _tb
+        log.warning("[DB] card_number backfill skipped: %r\n%s", _be, _tb.format_exc())
 
     # Backfill release_year from set_code for existing rows
+    # release_year backfill — fresh connection for the same reason as
+    # card_number above (txn-state pollution + the LIKE '%' chars trip
+    # psycopg2 if any cursor.execute params slip in elsewhere).
     try:
-        db.execute("""
-            UPDATE inventory
-            SET release_year = CASE
-                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
-                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
-                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
-                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
-                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
-                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
-                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
-                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
-                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
-                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
-                ELSE 0
-            END
-            WHERE release_year = 0 AND set_code != ''
-        """)
-        db.commit()
-        log.info("[DB] Backfilled release_year column")
+        import psycopg2 as _p2
+        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
+            with _bk.cursor() as _c:
+                _c.execute("""
+                    UPDATE inventory
+                    SET release_year = CASE
+                        WHEN UPPER(set_code) LIKE 'SV%%'   THEN 2023
+                        WHEN UPPER(set_code) LIKE 'SWSH%%' THEN 2020
+                        WHEN UPPER(set_code) LIKE 'SM%%'   THEN 2017
+                        WHEN UPPER(set_code) LIKE 'XY%%'   THEN 2014
+                        WHEN UPPER(set_code) LIKE 'BW%%'   THEN 2011
+                        WHEN UPPER(set_code) LIKE 'HGSS%%' THEN 2010
+                        WHEN UPPER(set_code) LIKE 'PL%%'   THEN 2009
+                        WHEN UPPER(set_code) LIKE 'DP%%'   THEN 2007
+                        WHEN UPPER(set_code) LIKE 'EX%%'   THEN 2003
+                        WHEN UPPER(set_code) LIKE 'BASE%%' THEN 1999
+                        ELSE 0
+                    END
+                    WHERE release_year = 0 AND set_code != ''
+                """)
+                _rc = _c.rowcount
+            _bk.commit()
+        log.info("[DB] release_year backfill: %d rows", _rc)
     except Exception as _rye:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        log.warning("[DB] release_year backfill skipped: %s", _rye)
+        import traceback as _tb
+        log.warning("[DB] release_year backfill skipped: %r\n%s", _rye, _tb.format_exc())
 
     # Add indexes for fast number/year/rarity searches
     try:
@@ -7281,7 +7286,10 @@ def card_scan_fast():
     # ── Smart scan fallback — rapidfuzz fuzzy match when exact DB lookup fails ──
     smart_result = None
     if not row:
-        smart_result = _smart_scanner.smart_scan(qr, db)
+        try:
+            smart_result = _smart_scanner.smart_scan(qr, db)
+        except Exception as _ss_e:
+            log.warning("[card/scan] smart_scan failed: %r", _ss_e); smart_result = None
         if smart_result and smart_result["found"]:
             item = smart_result["item"]
             # Teach the scanner so future identical scans skip fuzzy entirely
@@ -7302,8 +7310,8 @@ def card_scan_fast():
             "name":       r["name"],
             "sku":        r.get("set_code") or r["qr_code"],
             "description": r.get("description") or "",
-            "price":      str(r["price"])  if r["price"]  is not None else None,
-            "stock":      str(r["stock"])  if r["stock"]  is not None else None,
+            "price":      float(r["price"]) if r["price"] is not None else None,
+            "stock":      int(r["stock"])   if r["stock"] is not None else None,
             "confidence": confidence,
             "method":     method,
             "variant":    variant or _detect_variant(
@@ -8445,8 +8453,14 @@ def card_identify_image():
             raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         identified = json.loads(raw_text)
     except json.JSONDecodeError:
-        return jsonify({"error": "GPT response not valid JSON", "raw": raw_text}), 502
+        return jsonify({"error": "GPT response not valid JSON", "raw": locals().get("raw_text","")}), 502
     except Exception as exc:
+        _r = getattr(exc, "response", None)
+        if _r is not None:
+            _b = getattr(_r, "text", "")[:500]
+            log.warning("[identify-image] upstream %s: %s", getattr(_r,"status_code","?"), _b)
+            return jsonify({"error":"upstream","status":getattr(_r,"status_code",502),"body":_b}), 502
+        log.warning("[identify-image] unexpected: %r", exc)
         return jsonify({"error": str(exc)}), 502
 
     if "error" in identified:
@@ -8464,6 +8478,7 @@ def card_identify_image():
         "gpt":         identified,
         "qr_guess":    qr_guess,
         "enriched":    enriched,
+        "tcg_match":   bool(enriched.get("tcgData")),
     })
 
 

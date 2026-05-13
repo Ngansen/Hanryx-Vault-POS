@@ -55,6 +55,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("recognizer")
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # upload cap (#18)
 
 # ── Config ───────────────────────────────────────────────────────────────────
 DB_URL = os.environ.get(
