@@ -1,0 +1,55 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+
+echo "=== M.2 on-disk image count ==="
+sudo find /mnt/cards/pkmncards -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.webp' \) 2>/dev/null | wc -l
+sudo du -sh /mnt/cards/pkmncards 2>/dev/null
+
+echo "=== M.3 filler check ==="
+md5sum pkmncards_image_filler.py 2>/dev/null || echo "host filler missing"
+docker compose exec -T pos md5sum /app/pkmncards_image_filler.py 2>&1 | head -1
+docker compose exec -T pos python3 /app/pkmncards_image_filler.py --help 2>&1 | head -30
+
+echo "=== M.4 dirs ==="
+sudo mkdir -p /mnt/cards/cache/pkmncards /mnt/cards/pkmncards /mnt/cards/logs
+sudo chown -R 1000:1000 /mnt/cards/cache/pkmncards /mnt/cards/pkmncards
+ls -ld /mnt/cards/cache/pkmncards /mnt/cards/pkmncards
+=== M.2 on-disk image count ===
+0
+=== M.3 filler check ===
+6d8fdcda7bb8753ac3f9657a997b2566  pkmncards_image_filler.py
+6d8fdcda7bb8753ac3f9657a997b2566  /app/pkmncards_image_filler.py
+usage: pkmncards_image_filler.py [-h] [--cache-dir CACHE_DIR] [--dry-run]
+                                 [--limit-sets LIMIT_SETS] [--set-id SET_ID]
+                                 [--sleep SLEEP]
+
+pkmncards_image_filler.py — fill missing card images in cards_master from
+pkmncards.com.
+
+Walks every cards_master row whose image_url is empty, finds the matching
+set on pkmncards.com, downloads the per-card image into
+/mnt/cards/pkmncards/<set_id>/<card_number>.<ext>, and writes a
+file:// URL back into cards_master.image_url.
+
+Idempotent + resumable:
+- Skips rows that already have a non-empty image_url.
+- Skips downloads when the local file already exists.
+- Caches the pkmncards set-index at <cache>/.set_index.json.
+- Caches each set's parsed {card_number → image_url} at <cache>/<set>/.cards.json.
+
+Polite scraping:
+- ~1 request/sec by default (--sleep override) via PoliteClient.
+- Custom User-Agent identifying the project.
+- Retries on 5xx + transport errors with exponential backoff.
+- On 403/429 the script aborts loudly — that's Cloudflare telling you to
+  back off, not something to retry through.
+
+Usage (inside the pos container, /mnt/cards bind-mounted):
+
+    docker compose exec pos python3 pkmncards_image_filler.py
+    docker compose exec pos python3 pkmncards_image_filler.py --dry-run
+    docker compose exec pos python3 pkmncards_image_filler.py --limit-sets 3
+=== M.4 dirs ===
+drwxr-xr-x 2 ngansen ngansen 4096 May 13 16:09 /mnt/cards/cache/pkmncards
+drwxr-xr-x 2 ngansen ngansen 4096 May 13 16:09 /mnt/cards/pkmncards
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
