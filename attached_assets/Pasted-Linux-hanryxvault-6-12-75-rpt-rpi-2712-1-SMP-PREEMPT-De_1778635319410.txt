@@ -1,0 +1,64 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed May 13 01:12:13 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ ls -la /mnt/cards/models/clip-vit-b32.onnx 2>&1
+docker compose exec -T pos sh -c 'ls /mnt/cards/images 2>/dev/null | head -5; find /mnt/cards/images -name "*.jpg" 2>/dev/null | wc -l'
+ls: cannot access '/mnt/cards/models/clip-vit-b32.onnx': No such file or directory
+no configuration file provided: not found
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("server.py")
+s = p.read_text()
+# Wrap both backfills in a fresh-connection helper that's immune to init_db txn pollution
+old = '''    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET card_number = LTRIM(
+                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+                '0'
+            )
+            WHERE card_number = ''
+              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9PYint("patched card_number block")k not found verb
+patched card_number block
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '3300,3330p' server.py
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET release_year = CASE
+                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
+                ELSE 0
+            END
+            WHERE release_year = 0 AND set_code != ''
+        """)
+        db.commit()
+        log.info("[DB] Backfilled release_year column")
+    except Exception as _rye:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("[DB] release_year backfill skipped: %s", _rye)
+
+    # Add indexes for fast number/year/rarity searches
+    try:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_qr_code    ON inventory(qr_code)"
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
