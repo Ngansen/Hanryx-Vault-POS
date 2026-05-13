@@ -1,0 +1,64 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed May 13 01:07:16 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '3260,3300p' server.py
+        try: db.rollback()
+        except Exception: pass
+        log.warning("[DB] price_history.observed_at backfill skipped: %s", _phe)
+    # Index for the mirror's "last 90 days, ordered by observed_at" query
+    # and for /admin/market multi-source price fan-out by card.
+    try:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_price_hist_observed "
+            "ON price_history(observed_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_price_hist_card_src "
+            "ON price_history(card_id, source, observed_at DESC)"
+        )
+        db.commit()
+    except Exception as _phi:
+        try: db.rollback()
+        except Exception: pass
+        log.warning("[DB] price_history index create skipped: %s", _phi)
+
+    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+    try:
+        db.execute("""
+            UPDATE inventory
+            SET card_number = LTRIM(
+                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+                '0'
+            )
+            WHERE card_number = ''
+              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+        """)
+        db.commit()
+        log.info("[DB] Backfilled card_number column")
+    except Exception as _be:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("[DB] card_number backfill skipped: %s", _be)
+
+    # Backfill release_year from set_code for existing rows
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "\dt" | grep -iE "embed|clip|visual|vector"'
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "SELECT table_name, column_name FROM information_schema.columns WHERE column_name ILIKE '\''%embed%'\'' OR column_name ILIKE '\''%vector%'\'';"'
+ public | card_image_embedding  | table | vaultpos
+      table_name      |  column_name  
+----------------------+---------------
+ inventory            | card_vector
+ card_image_embedding | embedding
+ card_image_embedding | embedding_dim
+(3 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
