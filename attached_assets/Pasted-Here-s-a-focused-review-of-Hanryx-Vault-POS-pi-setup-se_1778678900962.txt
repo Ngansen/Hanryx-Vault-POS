@@ -1,0 +1,106 @@
+Here's a focused review of Hanryx-Vault-POS/pi-setup/server.py (the 1.28 MB main file) plus recognizer/server.py, only for the card recognition / card data / marketplace surfaces the scanner PWA actually touches.
+
+🔴 Critical — these will bite the scanner directly
+1. /card/identify-image is gated by @require_api_token ✅, but /card/scan, /card/lookup, /card/enrich, /market/price, /scan/intelligent are all NONE (no auth)
+Mixing auth styles on sibling endpoints causes the exact "works in admin browser but 401 from scanner" class of bug. Recommend either:
+
+Make the four read-only card endpoints accept X-Api-Token optionally and continue to allow anonymous (current behavior), or
+Apply @require_api_token uniformly so the scanner's token has a single contract.
+The scanner only needs the first option to remove confusion; pick one and document it.
+2. /card/scan — fast path silently swallows the smart-scan exception
+Line ~7284: _smart_scanner.smart_scan(qr, db) is called with no try/except. If rapidfuzz isn't installed, or _smart_scanner is None on a half-deployed Pi, the request 500s and the scanner shows a generic network error instead of "not found". Wrap it:
+
+try:
+    smart_result = _smart_scanner.smart_scan(qr, db)
+except Exception as e:
+    log.warning("[card/scan] smart_scan failed: %s", e)
+    smart_result = None
+3. /card/scan cache is keyed by raw qr, not normalized qr
+_qr_scan_cache[qr] = result uses the user-supplied string. Two URL variants of the same card (https://…?set=SV1&number=4 vs SV1-4) will each consume a cache slot and hit the DB independently. Key on _normalize_qr(qr) instead — or on result["code"] after success.
+
+4. /card/scan returns price and stock as strings (str(r["price"]))
+Lines 7305-7306. The scanner's LookupResult likely expects numbers. Mobile already works around this; the PWA's piLookup should too — but the Pi side is the bug. Return them as JSON numbers:
+
+"price": float(r["price"]) if r["price"] is not None else None,
+"stock": int(r["stock"])   if r["stock"]   is not None else None,
+5. /card/identify-image — broken JSON path leaks raw_text undefined
+Line 8448: except json.JSONDecodeError: return jsonify({..., "raw": raw_text}). If the OpenAI call itself raises before raw_text is assigned, this references an unbound local on a different code path — but more importantly, when the API returns a 4xx/5xx and resp.raise_for_status() raises, the generic except Exception as exc returns just str(exc) with no body. Capture resp.text for logging:
+
+except _requests.HTTPError as e:
+    body = getattr(e.response, "text", "")[:500]
+    log.warning("[identify-image] OpenAI %s: %s", e.response.status_code, body)
+    return jsonify({"error": "openai_upstream", "status": e.response.status_code}), 502
+6. /card/identify-image enrichment ignores when GPT returns set+number it made up
+_enrich_with_tcg(None, qr_guess) is called whenever set_c and number exist — even if _tcg_fetch(qr_guess) returns nothing. The scanner then displays an empty enriched: {}. Add a confidence field, e.g.:
+
+return jsonify({
+  "identified": True,
+  "gpt": identified,
+  "qr_guess": qr_guess,
+  "enriched": enriched,
+  "tcg_match": bool(enriched.get("tcgData")),
+})
+The PWA can already use tcg_match to show "AI identified but not in TCG DB."
+
+🟡 Card data quality
+7. /card/enrich price-history INSERT runs on every GET
+Lines 7444-7463 write to price_history on each /card/enrich hit. A single PWA scan that re-renders 3× (focus/blur/SWR refresh) writes 3 rows. Either dedupe by (card_id, date) or only write when called from a write context (POST). Recommend:
+
+# Only persist on POST or when ?persist=1 query is present
+if request.method == "POST" or request.args.get("persist") == "1":
+    ...insert...
+This also keeps the trend chart honest — currently every scan inflates "samples" without a real price change.
+
+8. _card_lookup step 5 fetches up to 200 rows then sorts in Python
+Lines 3961-3966. For a busy inventory this is fine, but if inventory grows past ~50k rows the LIKE %x% triple-OR over name+variant+rarity becomes the dominant query. Add a pg_trgm GIN index:
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX inventory_name_trgm ON inventory USING gin (LOWER(name) gin_trgm_ops);
+Then rewrite the WHERE to use LOWER(name) % %s (similarity) for the first token.
+
+9. _card_lookup step 2 fallback uses LIKE %card_num% on name and qr_code
+Lines 3892-3897. If card_num="1" this matches everything containing "1" — e.g. SV1's entire set. Restrict to qr_code LIKE '%-1' (suffix) or skip the LIKE fallback when card_num is shorter than 3 digits.
+
+10. /card/scan doesn't tell the client which confidence is fuzzy
+method is set, but the scanner currently treats any found:true identically. Consider gating PWA behavior on method != "exact" to show a "Did you mean?" UI rather than auto-committing. The Pi already returns suggestions — the PWA isn't using them.
+
+🟡 Marketplace
+11. /market/price — unbounded LIKE %name% on 30-day sale_history
+Line 18082: LIKE %{name[:30]}%. sale_history can be huge (months of POS data) and there's no index hinted. Add:
+
+CREATE INDEX sale_history_name_lower_sold_at ON sale_history (LOWER(name), sold_at);
+Also: a 30-char prefix can be ambiguous ("Charizard" vs "Charizard ex" vs "Charizard VMAX" all match). Pass set_code+card_number through to the SQL and prefer that key when present.
+
+12. /market/price weighted average is not time-decayed
+A sale from day-29 weighs identically to day-1. For a volatile market this gives stale prices. Quick fix:
+
+SELECT SUM(price * EXP(-(extract(epoch from now()) - sold_at/1000) / 1209600)) / SUM(...) ...
+(2-week half-life). The current "high/medium/low" confidence buckets stay useful.
+
+13. /market/search has no caching
+Every call hits _tcg_search → live api.pokemontcg.io. The TCG cache helpers (_tcg_db_get/_tcg_db_set) only cache by card id, not by search query. If a user types a name in the PWA market lookup, every keystroke is an upstream call. Add a small TTLCache(maxsize=200, ttl=300) keyed on the query string.
+
+14. /market/price returns confidence:"none" when nothing matches — but still 200 OK with marketPrice:0.0
+The PWA can't distinguish "card is genuinely free" from "no data." Either return 404 or set marketPrice: null. Recommend null so the PWA can render "—".
+
+🟢 Recognizer service (recognizer/server.py, 575 lines)
+15. PHASH_THRESHOLD=18 is generous; consider exposing per-game tuning
+The comment says ≤16 = same card with lighting differences, ≤22 = different card. 18 is in the gray zone. Recognizer already loads _apply_tuning from DB — make threshold tunable per game (Pokémon vs MTG vs Lorcana have different layout densities, so phash collisions differ).
+
+16. Recognizer hash index reload every 600 s holds the GIL while reading the whole card_hashes table
+_load_hash_index — for a big DB this freezes recognize requests for 1-3 s. Either:
+
+Load into a temp dict and atomic-swap, or
+Make it incremental (only fetch rows where updated_at > last_load_ts).
+17. OCR uses eng+kor+jpn+chi_sim on every frame
+That's ~4× slower than eng alone. Add a fast path: if pHash already gives a ≤ 8-bit match, skip OCR entirely. Currently _scan_image runs both unconditionally.
+
+18. No size cap on uploaded image bytes
+recognize_image and recognize_video accept whatever the client posts. A 50 MB upload will OOM the Pi. Add Flask's MAX_CONTENT_LENGTH = 8 * 1024 * 1024 and reject early.
+
+✅ Things that are already good (no change needed)
+TCG cache layering (memory → Postgres → live API → JustTCG fallback → stale-on-error) is well-designed.
+_card_lookup priority order (exact → normalized → set+num → tokens → vector) is sensible.
+/card/scan CORS handling is correct.
+_smart_scanner.learn(qr, item["qr_code"]) self-improving fuzzy match is great.
+Variant multiplier + condition handling are factored cleanly.
