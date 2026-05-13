@@ -1,0 +1,133 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed May 13 02:01:37 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+sed -n '3278,3330p' server.py
+        log.warning("[DB] price_history index create skipped: %s", _phi)
+
+    # Backfill card_number — uses a fresh connection so it's immune to any
+    # earlier aborted txn in init_db (was failing every boot with cryptic
+    # "tuple index out of range" from txn-state pollution).
+    try:
+        import psycopg2 as _p2
+        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
+            with _bk.cursor() as _c:
+                _c.execute("""
+                    UPDATE inventory
+                    SET card_number = LTRIM(SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'), '0')
+                    WHERE (card_number IS NULL OR card_number = '')
+                      AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+                """)
+                _rc = _c.rowcount
+            _bk.commit()
+        log.info("[DB] card_number backfill: %d rows", _rc)
+    except Exception as _be:
+        log.warning("[DB] card_number backfill skipped: %r", _be)
+
+    # Backfill release_year from set_code for existing rows
+    # release_year backfill — fresh connection for the same reason as
+    # card_number above (txn-state pollution + the LIKE '%' chars trip
+    # psycopg2 if any cursor.execute params slip in elsewhere).
+    try:
+        import psycopg2 as _p2
+        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
+            with _bk.cursor() as _c:
+                _c.execute("""
+                    UPDATE inventory
+                    SET release_year = CASE
+                        WHEN UPPER(set_code) LIKE 'SV%%'   THEN 2023
+                        WHEN UPPER(set_code) LIKE 'SWSH%%' THEN 2020
+                        WHEN UPPER(set_code) LIKE 'SM%%'   THEN 2017
+                        WHEN UPPER(set_code) LIKE 'XY%%'   THEN 2014
+                        WHEN UPPER(set_code) LIKE 'BW%%'   THEN 2011
+                        WHEN UPPER(set_code) LIKE 'HGSS%%' THEN 2010
+                        WHEN UPPER(set_code) LIKE 'PL%%'   THEN 2009
+                        WHEN UPPER(set_code) LIKE 'DP%%'   THEN 2007
+                        WHEN UPPER(set_code) LIKE 'EX%%'   THEN 2003
+                        WHEN UPPER(set_code) LIKE 'BASE%%' THEN 1999
+                        ELSE 0
+                    END
+                    WHERE release_year = 0 AND set_code != ''
+                """)
+                _rc = _c.rowcount
+            _bk.commit()
+        log.info("[DB] release_year backfill: %d rows", _rc)
+    except Exception as _rye:
+        log.warning("[DB] release_year backfill skipped: %r", _rye)
+
+    # Add indexes for fast number/year/rarity searches
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ python3 <<'PY'
+import pathlib
+p = pathlib.Path("server.py")
+s = p.read_text()
+old1 = 'log.warning("[DB] card_number backfill skipped: %r", _be)'
+new1 = ('import traceback as _tb\n'
+        '        log.warning("[DB] card_number backfill skipped: %r\\n%s", _be, _tb.format_exc())')
+old2 = 'log.warning("[DB] release_year backfill skipped: %r", _rye)'
+new2 = ('import traceback as _tb\n'
+        '        log.warning("[DB] release_year backfill skipped: %r\\n%s", _rye, _tb.format_exc())')
+assert old1 in s and old2 in s
+s = s.replace(old1, new1).replace(old2, new2)
+p.write_text(s)
+PYint("traceback logging added")
+traceback logging added
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose restart pos
+sleep 10
+docker compose logs --tail=120 pos 2>&1 | grep -A 25 "backfill skipped" | head -80
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"unified.schema","msg":"[unified.schema] init complete (31 tables, trgm=True)"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[DB] Unified schema ready: 31 tables, trgm=True"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+pos-1  | [2026-05-13 02:04:02 +0000] [9] [INFO] DB schema initialised successfully
+pos-1  | [2026-05-13 02:04:02 +0000] [9] [INFO] Listening at: http://0.0.0.0:8080 (9)
+pos-1  | [2026-05-13 02:04:02 +0000] [9] [INFO] Using worker: gevent
+pos-1  | [2026-05-13 02:04:02 +0000] [14] [INFO] Booting worker with pid: 14
+pos-1  | [2026-05-13 02:04:02 +0000] [14] [INFO] [bg] pricing-prewarm disabled via env
+pos-1  | [2026-05-13 02:04:02 +0000] [14] [INFO] [bg] lang-prewarm disabled via env
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] daily refresh scheduler started"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 56 cards"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 56 products — skipping auto-sync"}
+pos-1  | {"ts":"2026-05-13T02:04:03","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+pos-1  | {"ts":"2026-05-13T02:04:03","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+pos-1  | [2026-05-13 02:04:03 +0000] [9] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+pos-1  | 100.121.45.69 - - [13/May/2026:02:04:06 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/8.14.1"
+pos-1  | 127.0.0.1 - - [13/May/2026:02:04:06 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/7.88.1"
+pos-1  | 192.168.86.24 - - [13/May/2026:02:04:09 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/8.14.1"
+pos-1  | 100.121.45.69 - - [13/May/2026:02:04:10 +0000] "GET /health HTTP/1.1" 200 314 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 100.121.45.69 - - [13/May/2026:02:04:10 +0000] "GET /health HTTP/1.1" 200 314 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+pos-1  | 127.0.0.1 - - [13/May/2026:02:04:21 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/7.88.1"
+pos-1  | 100.121.45.69 - - [13/May/2026:02:04:36 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/8.14.1"
+pos-1  | 127.0.0.1 - - [13/May/2026:02:04:36 +0000] "GET /health HTTP/1.1" 200 315 "-" "curl/7.88.1"
+pos-1  | 100.121.45.69 - - [13/May/2026:02:04:40 +0000] "GET /health HTTP/1.1" 200 315 "http://hanryxvault:8080/kiosk" "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+--
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[pgvector] HNSW index ready"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"unified.schema","msg":"[unified.schema] init complete (31 tables, trgm=True)"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[DB] Unified schema ready: 31 tables, trgm=True"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[DB] Initialized PostgreSQL database"}
+pos-1  | [2026-05-13 02:08:25 +0000] [9] [INFO] DB schema initialised successfully
+pos-1  | [2026-05-13 02:08:25 +0000] [9] [INFO] Listening at: http://0.0.0.0:8080 (9)
+pos-1  | [2026-05-13 02:08:25 +0000] [9] [INFO] Using worker: gevent
+pos-1  | [2026-05-13 02:08:25 +0000] [14] [INFO] Booting worker with pid: 14
+pos-1  | [2026-05-13 02:08:25 +0000] [14] [INFO] [bg] pricing-prewarm disabled via env
+pos-1  | [2026-05-13 02:08:25 +0000] [14] [INFO] [bg] lang-prewarm disabled via env
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[tcgcsv] daily refresh scheduler started"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index loaded: 56 cards"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[cloud-sync] Inventory has 56 products — skipping auto-sync"}
+pos-1  | [2026-05-13 02:08:25 +0000] [9] [INFO] Control socket listening at /app/.gunicorn/gunicorn.ctl
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[pokeapi] canonical name index ready: 1025 species"}
+pos-1  | {"ts":"2026-05-13T02:08:25","level":"INFO","logger":"hanryxvault","msg":"[smart-scan] Index warmed up at startup"}
+pos-1  | 192.168.86.24 - - [13/May/2026:02:08:26 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/8.14.1"
+pos-1  | 127.0.0.1 - - [13/May/2026:02:08:28 +0000] "GET /health HTTP/1.1" 200 314 "-" "curl/7.88.1"
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ .
