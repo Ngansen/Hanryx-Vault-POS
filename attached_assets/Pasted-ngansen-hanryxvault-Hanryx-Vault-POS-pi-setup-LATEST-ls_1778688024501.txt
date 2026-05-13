@@ -1,0 +1,51 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+LATEST=$(ls -t /mnt/cards/logs/jp_names_*.log | head -1)
+echo "log: $LATEST"
+sudo tail -30 "$LATEST"
+echo "--- still running? (1=yes, 0=done/dead) ---" 
+docker compose exec -T pos sh -c 'ps aux | grep japanese_names_filler | grep -v grep | wc -l'
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+SELECT COUNT(*) total,
+       COUNT(*) FILTER (WHERE name_jp IS NOT NULL AND name_jp <> '\'''\'') with_jp,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE name_jp IS NOT NULL AND name_jp <> '\'''\'') / NULLIF(COUNT(*),0), 2) AS pct
+FROM cards_master;"'
+log: /mnt/cards/logs/jp_names_2026-05-13_1557.log
+2026-05-13 15:58:18,892 [INFO] japanese_names_filler: [sv04.5] 245 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/4
+2026-05-13 15:58:19,799 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:19,802 [INFO] japanese_names_filler: [swsh12] 245 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/2
+2026-05-13 15:58:21,229 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:21,233 [INFO] japanese_names_filler: [sv4pt5] 245 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/4
+2026-05-13 15:58:21,961 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:21,964 [INFO] japanese_names_filler: [sv10] 244 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/10
+2026-05-13 15:58:22,857 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:22,860 [INFO] japanese_names_filler: [sm8b] 243 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/8
+2026-05-13 15:58:23,896 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:23,899 [INFO] japanese_names_filler: [a4] 241 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/4
+2026-05-13 15:58:24,821 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:24,823 [INFO] japanese_names_filler: [A4] 241 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/4
+2026-05-13 15:58:25,939 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:25,942 [INFO] japanese_names_filler: [sm8] 240 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/8
+2026-05-13 15:58:27,482 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:27,484 [INFO] japanese_names_filler: [a3] 239 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/3
+2026-05-13 15:58:27,687 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:27,690 [INFO] japanese_names_filler: [A3] 239 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/3
+2026-05-13 15:58:28,695 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:28,700 [INFO] japanese_names_filler: [sm10] 238 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/10
+2026-05-13 15:58:29,828 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:29,830 [INFO] japanese_names_filler: [swsh7] 237 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/7
+2026-05-13 15:58:30,696 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:30,699 [WARNING] japanese_names_filler: [SM-P] no source match (name=SM-P)
+2026-05-13 15:58:30,700 [INFO] japanese_names_filler: [B2] 234 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/297
+2026-05-13 15:58:31,702 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:31,705 [INFO] japanese_names_filler: [S-P] 234 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/263
+2026-05-13 15:58:32,723 [INFO] japanese_names_filler:   [artofpkm] 0 cards parsed
+2026-05-13 15:58:32,728 [INFO] japanese_names_filler: [b2] 234 missing  pl=—  pg=—  ap=https://www.artofpkm.com/sets/2
+--- still running? (1=yes, 0=done/dead) ---
+sh: 1: ps: not found
+0
+ total | with_jp |  pct  
+-------+---------+-------
+ 91792 |   24014 | 26.16
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
