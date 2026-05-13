@@ -1,0 +1,59 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "\d cards_master" | head -25'
+echo "---"
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+SELECT
+  (SELECT COUNT(*) FROM cards_master) AS cards_master_total,
+  (SELECT COUNT(*) FROM card_image_embedding WHERE failure = '\'''\'') AS embeddings_ok,
+  (SELECT COUNT(*) FROM card_image_embedding WHERE failure <> '\'''\'') AS embeddings_failed,
+  (SELECT COUNT(DISTINCT (set_id, card_number)) FROM card_image_embedding WHERE failure = '\'''\'') AS unique_cards_embedded;"'
+                                    Table "public.cards_master"
+     Column      |  Type   | Collation | Nullable |                     Default                     
+-----------------+---------+-----------+----------+-------------------------------------------------
+ master_id       | bigint  |           | not null | nextval('cards_master_master_id_seq'::regclass)
+ set_id          | text    |           | not null | 
+ card_number     | text    |           | not null | 
+ variant_code    | text    |           | not null | 'STD'::text
+ pokedex_id      | integer |           |          | 
+ name_en         | text    |           | not null | ''::text
+ name_kr         | text    |           | not null | ''::text
+ name_jp         | text    |           | not null | ''::text
+ name_chs        | text    |           | not null | ''::text
+ name_cht        | text    |           | not null | ''::text
+ name_fr         | text    |           | not null | ''::text
+ name_de         | text    |           | not null | ''::text
+ name_it         | text    |           | not null | ''::text
+ name_es         | text    |           | not null | ''::text
+ card_type       | text    |           | not null | ''::text
+ energy_type     | text    |           | not null | ''::text
+ subtype         | text    |           | not null | ''::text
+ stage           | text    |           | not null | ''::text
+ rarity          | text    |           | not null | ''::text
+ rarity_code     | text    |           | not null | ''::text
+ hp              | integer |           |          | 
+ artist          | text    |           | not null | ''::text
+---
+ cards_master_total | embeddings_ok | embeddings_failed | unique_cards_embedded 
+--------------------+---------------+-------------------+-----------------------
+              91792 |             0 |                 0 |                     0
+(1 row)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # Replace the two `try: db.execute(UPDATE ...); db.commit()` blocks with:
+try:
+    import psycopg2
+    with psycopg2.connect(os.environ["DATABASE_URL"]) as _bk_conn:
+        with _bk_conn.cursor() as _bk:
+            _bk.execute("""<the UPDATE SQL>""")
+        _bk_conn.commit()
+    log.info("[DB] Backfilled card_number column") 
+except Exception as _be:
+    log.warning("[DB] card_number backfill skipped: %r", _be)  # %r = full repr for next time
+-bash: try:: command not found
+-bash: import: command not found
+-bash: syntax error near unexpected token `('
+-bash: syntax error near unexpected token `('
+-bash: syntax error near unexpected token `"""<the UPDATE SQL>"""'
+-bash: syntax error near unexpected token `log.info'
+-bash: except: command not found
+-bash: syntax error near unexpected token `"[DB] card_number backfill skipped: %r",'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
