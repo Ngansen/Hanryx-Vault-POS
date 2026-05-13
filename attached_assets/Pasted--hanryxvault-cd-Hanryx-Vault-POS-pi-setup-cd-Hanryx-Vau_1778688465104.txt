@@ -1,0 +1,39 @@
+@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup                    cd ~/Hanryx-Vault-POS/pi-s
+etup
+# Quick install in running container so we can ver# Quick install in running container so we can ver
+ify the model TODAY -T pos pip install --no-cache-docker compose exec -T pos pip install --no-cache-
+dir 'onnxruntime>=1.16,<2.0' 2>&1 | tail -10
+# Verify shape
+# Verify shape exec -T pos python3 -c "
+docker compose exec -T pos python3 -c "
+import onnxruntime as ort.__version__)
+print('ort version:', ort.__version__)odels/clip-vs = ort.InferenceSession('/mnt/cards/models/clip-v
+it-b32.onnx', providers=['CPUExecutionProvider'])
+print('inputs:')nputs():  print(f'  {i.name}: {i.sfor i in s.get_inputs():  print(f'  {i.name}: {i.s
+hape} {i.type}'))
+print('outputs:')tputs(): print(f'  {o.name}: {o.sfor o in s.get_outputs(): print(f'  {o.name}: {o.s
+hape} {o.type}')
+"
+# If shape is correct, persist for next rebuild
+# If shape is correct, persist for next rebuild
+echo "--- current requirements.in ---"ents.in
+grep -n "onnx\|numpy\|Pillow" requirements.in
+Requirement already satisfied: onnxruntime<2.0,>=1.16 in /opt/venv/lib/python3.11/site-packages (1.26.0)
+Requirement already satisfied: flatbuffers in /opt/venv/lib/python3.11/site-packages (from onnxruntime<2.0,>=1.16) (25.12.19)
+Requirement already satisfied: numpy>=1.21.6 in /opt/venv/lib/python3.11/site-packages (from onnxruntime<2.0,>=1.16) (2.4.4)
+Requirement already satisfied: packaging in /opt/venv/lib/python3.11/site-packages (from onnxruntime<2.0,>=1.16) (26.2)
+Requirement already satisfied: protobuf in /opt/venv/lib/python3.11/site-packages (from onnxruntime<2.0,>=1.16) (7.34.1)
+
+[notice] A new release of pip is available: 24.0 -> 26.1.1
+[notice] To update, run: pip install --upgrade pip
+2026-05-13 16:07:18.759140487 [W:onnxruntime:Default, device_discovery.cc:283 GetGpuDevices] Failed to detect devices under "/sys/class/drm/card1": device_discovery.cc:93 ReadFileContents Failed to open file: "/sys/class/drm/card1/device/vendor"
+2026-05-13 16:07:18.759203469 [W:onnxruntime:Default, device_discovery.cc:283 GetGpuDevices] Failed to detect devices under "/sys/class/drm/card0": device_discovery.cc:93 ReadFileContents Failed to open file: "/sys/class/drm/card0/device/vendor"
+ort version: 1.26.0
+inputs:
+  pixel_values: ['batch_size', 'num_channels', 'height', 'width'] tensor(float)
+outputs:
+  image_embeds: ['batch_size', 512] tensor(float)
+--- current requirements.in ---
+33:Pillow>=10.0.0
+99:numpy>=1.24.0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
