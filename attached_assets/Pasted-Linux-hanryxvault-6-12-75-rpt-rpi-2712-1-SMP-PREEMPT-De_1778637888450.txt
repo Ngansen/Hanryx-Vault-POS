@@ -1,0 +1,133 @@
+Linux hanryxvault 6.12.75+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.75-1+rpt1 (2026-03-11) aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Wed May 13 01:35:38 2026 from 192.168.86.31
+ngansen@hanryxvault:~ $ cd ~/Hanryx-Vault-POS/pi-setup
+python3 <<'PY'
+import pathlib
+p = pathlib.Path("server.py")
+lines = p.read_text().splitlines(keepends=True)
+target = next((i for i,l in enumerate(lines) if "Backfilled release_year" in l), None)
+assert target, "anchor not found"
+start = target
+while lines[start].rstrip() != "    try:": start -= 1
+end = target
+while "release_year backfill skipped" not in lines[end]: end += 1
+print(f"replacing lines {start+1}-{end+1}")
+NEW = '''    try:
+        import psycopg2 as _p2
+        _sql = ("UPDATE inventory SET release_yearPYint("patched release_year block")ear backfill sk
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+AssertionError: anchor not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ python3 <<'PY'
+import pathlib
+p = pathlib.Path("server.py")
+lines = p.read_text().splitlines(keepends=True)
+target = next((i for i,l in enumerate(lines) if "Backfilled release_year" in l), None)
+assert target, "anchor not found"
+start = target
+while lines[start].rstrip() != "    try:": start -= 1
+end = target
+while "release_year backfill skipped" not in lines[end]: end += 1
+print(f"replacing lines {start+1}-{end+1}")
+NEW = '''    try:
+        import psycopg2 as _p2
+        _sql = ("UPDATE inventory SET release_year = CASE "
+                "WHEN UPPER(set_code) LIKE 'SV%' T"backfill|tuple index|init_db" | head -20grep -iE 
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+AssertionError: anchor not found
+-bash: syntax error near unexpected token `('
+3295:        log.info("[DB] card_number backfill: %d rows", _rc)
+3297:        log.warning("[DB] card_number backfill skipped: %r", _be)
+3300:    # release_year backfill — fresh connection for the same reason as
+3326:        log.info("[DB] release_year backfill: %d rows", _rc)
+3328:        log.warning("[DB] release_year backfill skipped: %r", _rye)
+---
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_kr already has 15121 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_chs already has 16527 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_jpn_pocket has 3041 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] multi-TCG weekly auto-refresh enabled"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[onepiece] has 3386 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[lorcana] has 2283 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ grep -n "card_number backfill\|release_year backfill" server.py | head
+echo "---"
+docker compose restart pos
+sleep 8
+docker compose logs --tail=80 pos 2>&1 | grep -iE "backfill|tuple index|init_db" | head -20
+3295:        log.info("[DB] card_number backfill: %d rows", _rc)
+3297:        log.warning("[DB] card_number backfill skipped: %r", _be)
+3300:    # release_year backfill — fresh connection for the same reason as
+3326:        log.info("[DB] release_year backfill: %d rows", _rc)
+3328:        log.warning("[DB] release_year backfill skipped: %r", _rye)
+---
+[+] restart 0/1
+ ⠴ Container pi-setup-pos-1 Restarting        2.5s
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_kr already has 15121 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_chs already has 16527 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_jpn_pocket has 3041 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] multi-TCG weekly auto-refresh enabled"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[onepiece] has 3386 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[lorcana] has 2283 rows"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:02:56","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_kr already has 15121 rows"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_chs already has 16527 rows"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_jpn_pocket has 3041 rows"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] multi-TCG weekly auto-refresh enabled"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[onepiece] has 3386 rows"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"INFO","logger":"hanryxvault","msg":"[init_db] cards_multi[lorcana] has 2283 rows"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] card_number backfill skipped: tuple index out of range"}
+pos-1  | {"ts":"2026-05-13T02:04:02","level":"WARNING","logger":"hanryxvault","msg":"[DB] release_year backfill skipped: tuple index out of range"}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos sh -c 'psql "$DATABASE_URL"' <<'SQL'
+CREATE TABLE IF NOT EXISTS price_history_monthly ( 
+  card_id     BIGINT       NOT NULL,
+  source      TEXT         NOT NULL DEFAULT '',
+  grade       TEXT         NOT NULL DEFAULT '',
+  currency    TEXT         NOT NULL DEFAULT 'USD', 
+  year_month  INTEGER      NOT NULL,
+  obs_count   INTEGER      NOT NULL DEFAULT 0,
+  price_min   DOUBLE PRECISION,
+  price_p25   DOUBLE PRECISION,
+  price_med   DOUBLE PRECISION,
+  price_p75   DOUBLE PRECISION,
+  price_max   DOUBLE PRECISION,
+  price_avg   DOUBLE PRECISION,
+  price_usd_med DOUBLE PRECISION,
+  computed_at BIGINT       NOT NULL DEFAULT EXTRACSQLprice_history_monthlyDESC);_phm_ym ON price_his
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+                            Table "public.price_history_monthly"
+    Column     |       Type       | Collation | Nullable |              Default              
+---------------+------------------+-----------+----------+-----------------------------------
+ card_id       | bigint           |           | not null | 
+ source        | text             |           | not null | ''::text
+ grade         | text             |           | not null | ''::text
+ currency      | text             |           | not null | 'USD'::text
+ year_month    | integer          |           | not null | 
+ obs_count     | integer          |           | not null | 0
+ price_min     | double precision |           |          | 
+ price_p25     | double precision |           |          | 
+ price_med     | double precision |           |          | 
+ price_p75     | double precision |           |          | 
+ price_max     | double precision |           |          | 
+ price_avg     | double precision |           |          | 
+ price_usd_med | double precision |           |          | 
+ computed_at   | bigint           |           | not null | EXTRACT(epoch FROM now())::bigint
+Indexes:
+    "price_history_monthly_pkey" PRIMARY KEY, btree (card_id, source, grade, currency, year_month)
+    "idx_phm_card_ym" btree (card_id, year_month DESC)
+    "idx_phm_ym" btree (year_month DESC)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
