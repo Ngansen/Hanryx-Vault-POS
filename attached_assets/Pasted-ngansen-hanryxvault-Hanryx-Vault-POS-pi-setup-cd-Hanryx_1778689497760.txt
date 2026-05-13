@@ -1,0 +1,47 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+
+# Pre-state: any image_health_check rows already?
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -c "
+SELECT status, COUNT(*) FROM image_health_check
+WHERE checked_at = (SELECT MAX(checked_at) FROM image_health_check h2
+                    WHERE h2.set_id = image_health_check.set_id
+                      AND h2.card_number = image_health_check.card_number)
+GROUP BY 1 ORDER BY 2 DESC;" 2>&1' | head -20
+
+# Verify worker is callable
+docker compose exec -T pos python3 -m workers.run --list 2>&1 | head -15
+
+# Seed image_health queue
+echo "=== seeding image_health queue ==="
+docker compose exec -T pos python3 -m workers.run image_health --seed --once --batch-size 500 2>&1 | tail -25
+ status | count 
+--------+-------
+(0 rows)
+
+  cards_master_audit  workers.cards_master_audit.CardsMasterAuditWorker
+  clip_embed      workers.clip_embedder.ClipEmbedderWorker
+  cross_region_alias  workers.cross_region_aliaser.CrossRegionAliaserWorker
+  data_analysis   workers.data_analyst.DataAnalystWorker
+  en_set_audit    workers.en_set_audit.EnSetAuditWorker
+  image_health    workers.image_health.ImageHealthWorker
+  image_mirror    workers.image_mirror.ImageMirrorWorker
+  image_thumbnail  workers.image_thumbnailer.ImageThumbnailerWorker
+  kr_set_audit    workers.kr_set_audit.KrSetAuditWorker
+  lang_enrich     workers.language_helper.LanguageEnrichWorker
+  ocr_index       workers.ocr_indexer.OcrIndexerWorker
+  price_refresh   workers.price_refresh.PriceRefreshWorker
+  set_mapping_import  workers.set_mapping_import.SetMappingImportWorker
+  zh_set_audit    workers.zh_set_audit.ZhSetAuditWorker
+=== seeding image_health queue ===
+2026-05-13 16:24:07,823 INFO workers.image_health: [image_health] seed enqueued 33717 task(s)
+2026-05-13 16:24:07,823 INFO workers.run: [image_health] seed() enqueued 33717 task(s)
+{
+  "once": {
+    "claimed": 500,
+    "ok": 500,
+    "failed": 0,
+    "duration": 2
+  }
+}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
