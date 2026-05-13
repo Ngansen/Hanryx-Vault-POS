@@ -1,0 +1,47 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+
+# Copy file into running container (lost on container recreate — that's fine for tonight)
+docker compose cp image_local_downloader.py pos:/app/image_local_downloader.py
+docker compose exec -T pos ls -la /app/image_local_downloader.py
+docker compose exec -T pos md5sum /app/image_local_downloader.py
+md5sum image_local_downloader.py
+
+# Real picture: count files per src CDN root
+echo "=== existing files per CDN root ==="
+sudo find /mnt/cards/cdn -mindepth 2 -maxdepth 2 -type d 2>/dev/null | while read d; do
+  echo "$d: $(sudo find "$d" -type f 2>/dev/null | wc -l)"
+done
+
+# Dry-run: see actual to_fetch count
+docker compose exec -T pos python3 /app/image_local_downloader.py --dry-run --limit 5 2>&1 | tail -2l -15nloader.py --limit 10 --src tcgdex 2>&1 | tai
+[+] copy 1/1
+ ✔ pi-setup-pos-1 Copied image_local_downl... 0.0s
+-rw-rw-r-- 1 1000 1000 7111 May 13 16:16 /app/image_local_downloader.py
+7796928b1b6d7b18519b587fdcf5324a  /app/image_local_downloader.py
+7796928b1b6d7b18519b587fdcf5324a  image_local_downloader.py
+=== existing files per CDN root ===
+/mnt/cards/cdn/firebasestorage.googleapis.com/v0: 2
+/mnt/cards/cdn/assets.tcgdex.net/en: 21096
+/mnt/cards/cdn/assets.tcgdex.net/fr: 42
+/mnt/cards/cdn/assets.tcgdex.net/ja: 3297
+/mnt/cards/cdn/assets.tcgdex.net/es: 48
+/mnt/cards/cdn/assets.tcgdex.net/de: 73
+/mnt/cards/cdn/assets.tcgdex.net/zh-tw: 957
+/mnt/cards/cdn/assets.tcgdex.net/it: 224
+/mnt/cards/cdn/raw.githubusercontent.com/Ngansen: 0
+/mnt/cards/cdn/cards.image.pokemonkorea.co.kr/data: 12019
+2026-05-13 16:18:18,494 [INFO] image_local_downloader: cards_master rows with image_url_alt: 62160
+2026-05-13 16:18:18,769 [INFO] image_local_downloader: entries with non-empty local across all srcs: {"tcgdex": 25733, "kr_official": 12020, "chs_official": 558}
+2026-05-13 16:18:18,769 [INFO] image_local_downloader: entries needing download: 0
+2026-05-13 16:18:18,769 [INFO] image_local_downloader: limited to first 0 entries
+2026-05-13 16:18:18,769 [INFO] image_local_downloader: dry-run; 0 entries would be fetched
+2026-05-13 16:18:20,339 [INFO] image_local_downloader: cards_master rows with image_url_alt: 62160
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: entries with non-empty local across all srcs: {"tcgdex": 25733, "kr_official": 12020, "chs_official": 558}
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: entries needing download: 0
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: limited to first 0 entries
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: ────────────────────────────────────────────────────────────
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: DONE in 0.0s  ok=0 fail=0
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: by_src: {}
+2026-05-13 16:18:20,542 [INFO] image_local_downloader: fail_reasons: {}
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
