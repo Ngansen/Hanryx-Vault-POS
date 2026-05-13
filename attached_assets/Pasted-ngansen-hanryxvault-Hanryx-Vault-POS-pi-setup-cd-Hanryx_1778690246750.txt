@@ -1,0 +1,36 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+/cd ~/Hanryx-Vault-POS/pi-setup
+
+# Pick 3 ALL_CORRUPT cards, see what's actually on disk
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -t -c "
+WITH latest AS (
+  SELECT DISTINCT ON (set_id, card_number) set_id, card_number, status, notes
+  FROM image_health_check
+  ORDER BY set_id, card_number, checked_at DESC
+)
+SELECT set_id, card_number, notes
+FROM latest WHERE status = '\''ALL_CORRUPT'\''
+LIMIT 5;"'
+
+# Pick one, inspect the actual files
+echo "=== sample bytes from one ALL_CORRUPT card ==="
+docker compose exec -T pos sh -c 'psql "$DATABASE_URL" -t -c "
+WITH latest AS (
+  SELECT DISTINCT ON (set_id, card_number) set_id,donedo head -c 20 "$f" | xxd | head -1ad f; do-typ
+-bash: /cd: No such file or directory
+ERROR:  column "notes" does not exist
+LINE 3: ... ON (set_id, card_number) set_id, card_number, status, notes
+                                                                  ^
+=== sample bytes from one ALL_CORRUPT card ===
+ [{"src": "tcgdex", "url": "https://assets.tcgdex.
+net/en/tcgp/A1/010", "lang": "en", "local": "/mnt/
+cards/cdn/assets.tcgdex.net/en/tcgp/A1/010"}, {"src": "pocket_off", "url": "https://raw.githubusercontent.com/Ngansen/pokemon-tcg-pocket-database/main/dist/images/sets/A1/cPK_10_000100_00_SPEAR_R.webp", "lang": "jp", "local": ""}]=== file types for one suspect set ===--- /mnt/cards/cdn/assets.tcgdex.net/en/sm/sm7/160
+ ---/mnt/cards/cdn/assets.tcgdex.net/en/sm/sm7/160: HTML document, ASCII text-bash: xxd: command not found--- /mnt/cards/cdn/assets.tcgdex.net/en/sm/sm7/29 ---/mnt/cards/cdn/assets.tcgdex.net/en/sm/sm7/29: HTML document, ASCII text-bash: xxd: command not found--- /mnt/cards/cdn/assets.tcgdex.net/en/hgss/hgss1/96 ---/mnt/cards/cdn/assets.tcgdex.net/en/hgss/hgss1/96: HTML document, ASCII text-bash: xxd: command not found
+--- /mnt/cards/cdn/assets.tcgdex.net/en/sm/sm1/23 ---
+/mnt/cards/cdn/assets.tcgdex.net/en/sm/sm1/23: HTML document, ASCII text
+-bash: xxd: command not found--- /mnt/cards/cdn/assets.tcgdex.net/en/ex/ex8/94 
+---
+/mnt/cards/cdn/assets.tcgdex.net/en/ex/ex8/94: HTM
+L document, ASCII text
+-bash: xxd: command not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
