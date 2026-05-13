@@ -1,0 +1,44 @@
+:~/Hanryx-Vault-POS/pi-setup $ 
+sudo mkdir -p /mnt/cards/models
+sudo chown ngansen:ngansen /mnt/cards/models
+cd /mnt/cards/models
+
+wget -O clip-vit-b32.onnx \
+  https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model.onnx
+ls -lh clip-vit-b32.onnx
+file clip-vit-b32.onnx
+
+# Sanity: input shape [1,3,224,224], output [1,512]
+cd ~/Hanryx-Vault-POS/pi-setup
+docker compose exec -T pos python3 -c "
+import onnxruntime as ort
+s = ort.InferenceSession('/mnt/cards/models/clip-vit-b32.onnx', providers=['CPUExecutionProvider'])
+print('inputs:')
+for i in s.get_inputs():  print(f'  {i.name}: {i.shape} {i.type}')
+print('outputs:')
+for o in s.get_outputs(): print(f'  {o.name}: {o.shape} {o.type}')
+"
+--2026-05-13 16:05:04--  https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model.onnx
+Resolving huggingface.co (huggingface.co)... 2600:9000:254b:ec00:17:b174:6d00:93a1, 2600:9000:254b:a00:17:b174:6d00:93a1, 2600:9000:254b:7e00:17:b174:6d00:93a1, ...
+Connecting to huggingface.co (huggingface.co)|2600:9000:254b:ec00:17:b174:6d00:93a1|:443... connected.
+HTTP request sent, awaiting response... 302 Found
+Location: https://cas-bridge.xethub.hf.co/xet-bridge-us/646760a4a48c2b6f0d5edaba/581a113c3b8efbfe361c0ddc6debf45f59f2760a49de41fbbf13f28731c920bf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cas%2F20260513%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260513T160505Z&X-Amz-Expires=3600&X-Amz-Signature=2a67b47bbaf2c01617ea6a927d82b18381b9c39cac4dd59601e2b2f5d1160046&X-Amz-SignedHeaders=host&X-Xet-Cas-Uid=public&response-content-disposition=inline%3B+filename*%3DUTF-8%27%27vision_model.onnx%3B+filename%3D%22vision_model.onnx%22%3B&x-amz-checksum-mode=ENABLED&x-id=GetObject&Expires=1778691905&Policy=eyJTdGF0ZW1lbnQiOlt7IkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc3ODY5MTkwNX19LCJSZXNvdXJjZSI6Imh0dHBzOi8vY2FzLWJyaWRnZS54ZXRodWIuaGYuY28veGV0LWJyaWRnZS11cy82NDY3NjBhNGE0OGMyYjZmMGQ1ZWRhYmEvNTgxYTExM2MzYjhlZmJmZTM2MWMwZGRjNmRlYmY0NWY1OWYyNzYwYTQ5ZGU0MWZiYmYxM2YyODczMWM5MjBiZioifV19&Signature=itUL0WeHhAmKIDrxpkDS9eo9iOzZ4QSF0a%7E11JLe4vys%7EatlZTNe9moZlR5pahiiWtgEbyAf6YS-kY38vYUBqjygbh-aqlFb0Drm8Ig9LlwV2F2suT5zAqc-SECqyIX99nm6Xw1-SoLnEquMBnLi1%7E%7EU65Q3i3OcgaYh-sOxn5KXguyy1NdBSkS2xA-gMz5cQXNWvOqWwRStPV4bv5OMrHVEQaBH1A8BuRKRqfkYX3UYil5Ta0c69mLNTbF9jswstopAGkM0B%7EUzWWK2DU-p2wbo2gE1vnSiV5q9mcEnmeGJA9QgxWOOmqaQBQzX7rXqxVmqHMMDMUubKZ9bXYzMcA__&Key-Pair-Id=K2L8F4GPSG1IFC [following]
+--2026-05-13 16:05:05--  https://cas-bridge.xethub.hf.co/xet-bridge-us/646760a4a48c2b6f0d5edaba/581a113c3b8efbfe361c0ddc6debf45f59f2760a49de41fbbf13f28731c920bf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cas%2F20260513%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260513T160505Z&X-Amz-Expires=3600&X-Amz-Signature=2a67b47bbaf2c01617ea6a927d82b18381b9c39cac4dd59601e2b2f5d1160046&X-Amz-SignedHeaders=host&X-Xet-Cas-Uid=public&response-content-disposition=inline%3B+filename*%3DUTF-8''vision_model.onnx%3B+filename%3D%22vision_model.onnx%22%3B&x-amz-checksum-mode=ENABLED&x-id=GetObject&Expires=1778691905&Policy=eyJTdGF0ZW1lbnQiOlt7IkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc3ODY5MTkwNX19LCJSZXNvdXJjZSI6Imh0dHBzOi8vY2FzLWJyaWRnZS54ZXRodWIuaGYuY28veGV0LWJyaWRnZS11cy82NDY3NjBhNGE0OGMyYjZmMGQ1ZWRhYmEvNTgxYTExM2MzYjhlZmJmZTM2MWMwZGRjNmRlYmY0NWY1OWYyNzYwYTQ5ZGU0MWZiYmYxM2YyODczMWM5MjBiZioifV19&Signature=itUL0WeHhAmKIDrxpkDS9eo9iOzZ4QSF0a~11JLe4vys~atlZTNe9moZlR5pahiiWtgEbyAf6YS-kY38vYUBqjygbh-aqlFb0Drm8Ig9LlwV2F2suT5zAqc-SECqyIX99nm6Xw1-SoLnEquMBnLi1~~U65Q3i3OcgaYh-sOxn5KXguyy1NdBSkS2xA-gMz5cQXNWvOqWwRStPV4bv5OMrHVEQaBH1A8BuRKRqfkYX3UYil5Ta0c69mLNTbF9jswstopAGkM0B~UzWWK2DU-p2wbo2gE1vnSiV5q9mcEnmeGJA9QgxWOOmqaQBQzX7rXqxVmqHMMDMUubKZ9bXYzMcA__&Key-Pair-Id=K2L8F4GPSG1IFC
+Resolving cas-bridge.xethub.hf.co (cas-bridge.xethub.hf.co)... 18.160.181.55, 18.160.181.88, 18.160.181.54, ...
+Connecting to cas-bridge.xethub.hf.co (cas-bridge.xethub.hf.co)|18.160.181.55|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 351685709 (335M)
+Saving to: 'clip-vit-b32.onnx'
+
+clip-vit-b32  70% 237.66M  6.01MB/s    eta 13s    
+clip-vit-b32  72% 244.54M  6.68MB/s    eta 12s    
+clip-vit-b32 100% 335.39M  5.93MB/s    in 45s     
+
+2026-05-13 16:05:50 (7.47 MB/s) - 'clip-vit-b32.onnx' saved [351685709/351685709]
+
+-rw-rw-r-- 1 ngansen ngansen 336M May 13 16:05 clip-vit-b32.onnx
+clip-vit-b32.onnx: data
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+ModuleNotFoundError: No module named 'onnxruntime'
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
