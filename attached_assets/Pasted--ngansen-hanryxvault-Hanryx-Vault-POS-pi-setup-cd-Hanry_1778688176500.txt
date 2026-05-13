@@ -1,0 +1,113 @@
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+# Kill — ps not in container, use pgrep on host or
+ pidof insidede in container, use pgrep on host o
+docker compose exec -T pos sh -c 'pgrep -f japanese_names_filler | xargs -r kill -TERM'
+sleep 3
+docker compose exec -T pos sh -c 'pgrep -f japanese_names_filler && echo STILL_ALIVE || echo killed' 
+
+# Top of log: what did discovery actually find?
+LATEST=$(ls -t /mnt/cards/logs/jp_names_*.log | head -1)
+echo "=== discovery numbers ==="
+sudo grep -E "set entries cached|set index" "$LATEST"
+echo "=== cached set indexes on disk ==="
+ls -la /mnt/cards/cache/jp_names/*/  2>/dev/null
+echo "=== sample of pokellector keys ==="
+sudo head -c 2000 /mnt/cards/cache/jp_names/pokellector/.set_index.json 2>/dev/null
+echo "=== sample of artofpkm keys ==="
+sudo head -c 2000 /mnt/cards/cache/jp_names/artofpkm/.set_index.json 2>/dev/null
+sh: 1: pgrep: not found
+sh: 1: pgrep: not found
+killed
+=== discovery numbers ===
+2026-05-13 15:57:54,892 [INFO] japanese_names_filler: [pokellector] fetching set index: https://jp.pokellector.com/sets
+2026-05-13 15:57:57,557 [INFO] japanese_names_filler: [pokellector] → 0 set entries cached
+2026-05-13 15:57:57,557 [INFO] japanese_names_filler: [pokeguardian] fetching set index: https://www.pokeguardian.com/sets/set-lists/japanese-sets
+2026-05-13 15:57:58,674 [INFO] japanese_names_filler: [pokeguardian] → 0 set entries cached
+2026-05-13 15:57:58,674 [INFO] japanese_names_filler: [artofpkm] fetching set index: https://www.artofpkm.com/sets
+2026-05-13 15:57:59,928 [INFO] japanese_names_filler: [artofpkm] → 826 set entries cached
+=== cached set indexes on disk ===
+/mnt/cards/cache/jp_names/artofpkm/:
+total 56
+drwxr-xr-x 2 root    root     4096 May 13 15:57 .
+drwxr-xr-x 5 ngansen ngansen  4096 May 13 15:57 ..
+-rw-r--r-- 1 root    root    46133 May 13 15:57 .set_index.json
+
+/mnt/cards/cache/jp_names/pokeguardian/:
+total 12
+drwxr-xr-x 2 root    root    4096 May 13 15:57 .
+drwxr-xr-x 5 ngansen ngansen 4096 May 13 15:57 ..
+-rw-r--r-- 1 root    root       2 May 13 15:57 .set_index.json
+
+/mnt/cards/cache/jp_names/pokellector/:
+total 12
+drwxr-xr-x 2 root    root    4096 May 13 15:57 .
+drwxr-xr-x 5 ngansen ngansen 4096 May 13 15:57 ..
+-rw-r--r-- 1 root    root       2 May 13 15:57 .set_index.json
+=== sample of pokellector keys ===
+{}=== sample of artofpkm keys ===
+{
+  "10": "https://www.artofpkm.com/sets/10",
+  "100": "https://www.artofpkm.com/sets/100",
+  "102": "https://www.artofpkm.com/sets/102",
+  "103": "https://www.artofpkm.com/sets/103",
+  "104": "https://www.artofpkm.com/sets/104",
+  "105": "https://www.artofpkm.com/sets/105",
+  "106": "https://www.artofpkm.com/sets/106",
+  "107": "https://www.artofpkm.com/sets/107",
+  "108": "https://www.artofpkm.com/sets/108",
+  "109": "https://www.artofpkm.com/sets/109",
+  "10th-movie-commemoration-set": "https://www.artofpkm.com/sets/159",
+  "11": "https://www.artofpkm.com/sets/11",
+  "111": "https://www.artofpkm.com/sets/111",
+  "112": "https://www.artofpkm.com/sets/112",
+  "113": "https://www.artofpkm.com/sets/113",
+  "114": "https://www.artofpkm.com/sets/114",
+  "116": "https://www.artofpkm.com/sets/116",
+  "117": "https://www.artofpkm.com/sets/117",
+  "118": "https://www.artofpkm.com/sets/118",
+  "119": "https://www.artofpkm.com/sets/119",
+  "11th-movie-commemoration-set": "https://www.artofpkm.com/sets/177",
+  "12": "https://www.artofpkm.com/sets/12",
+  "120": "https://www.artofpkm.com/sets/120",
+  "121": "https://www.artofpkm.com/sets/121",
+  "123": "https://www.artofpkm.com/sets/123",
+  "125": "https://www.artofpkm.com/sets/125",
+  "126": "https://www.artofpkm.com/sets/126",
+  "127": "https://www.artofpkm.com/sets/127",
+  "129": "https://www.artofpkm.com/sets/129",
+  "13": "https://www.artofpkm.com/sets/13",
+  "130": "https://www.artofpkm.com/sets/130",
+  "131": "https://www.artofpkm.com/sets/131",
+  "133": "https://www.artofpkm.com/sets/133",
+  "134": "https://www.artofpkm.com/sets/134",
+  "137": "https://www.artofpkm.com/sets/137",
+  "138": "https://www.artofpkm.com/sets/138",
+  "139": "https://www.artofpkm.com/sets/139",
+  "14": "https://www.artofpkm.com/sets/14",
+  "140": "https://www.artofpkm.com/sets/140",
+  "142": "https://www.artofpkm.com/sets/142",
+  "145": "https://www.artofpkm.com/sets/145",
+  "146": "https://www.artofpkm.com/sets/146",
+  "147": "https://www.artongansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+cd ~/Hanryx-Vault-POS/pi-setup
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+. sv1 (Scarlet & Violet base)n pokellector — e.g.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
+docker compose exec -T pos python3 /app/japanese_names_filler.py \
+>   --cache-dir /mnt/cards/cache/jp_names \
+>   --sleep 1.0 --set-id sv1 --debug --dry-run 2>&1 | head -40
+2026-05-13 16:02:19,038 [INFO] japanese_names_filler: Cache dir: /mnt/cards/cache/jp_names  (sources=['pokellector', 'pokeguardian', 'artofpkm'], dry_run=True, sleep=1.0s)
+2026-05-13 16:02:19,127 [INFO] japanese_names_filler: Sets with missing Japanese names: 1
+2026-05-13 16:02:19,129 [WARNING] japanese_names_filler: [sv1] no source match (name=Alomomola)
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler: ────────────────────────────────────────────────────────────
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler: DONE in 0.1s
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   sets_attempted       0
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   sets_unmapped        1
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   names_filled         0
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   names_unmatched      0
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   rows_updated         0
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   by_source            {'pokellector': 0, 'pokeguardian': 0, 'artofpkm': 0}
+2026-05-13 16:02:19,129 [INFO] japanese_names_filler:   errors               0
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ 
