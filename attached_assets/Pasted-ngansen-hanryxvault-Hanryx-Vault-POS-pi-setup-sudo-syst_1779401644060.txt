@@ -1,0 +1,56 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo systemctl status docker --no-pager | head -20
+○ docker.service - Docker Application Container Engine
+     Loaded: loaded (/usr/lib/systemd/system/docker.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/docker.service.d
+             └─wait-for-cards.conf
+     Active: inactive (dead)
+        Job: 6076
+TriggeredBy: ● docker.socket
+       Docs: https://docs.docker.com
+
+May 21 22:12:25 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:25 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:36 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:36 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:46 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:46 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:56 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:56 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:13:06 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:13:06 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo journalctl -u docker --no-pager -n 30
+May 21 22:11:03 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:03 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:11:14 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:14 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:11:24 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:24 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:11:34 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:34 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:11:44 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:44 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:11:55 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:11:55 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:05 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:05 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:15 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:15 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:25 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:25 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:36 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:36 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:46 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:46 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:12:56 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:12:56 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:13:06 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:13:06 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:13:17 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:13:17 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+May 21 22:13:27 hanryxvault systemd[1]: Dependency failed for docker.service - Docker Application Container Engine.
+May 21 22:13:27 hanryxvault systemd[1]: docker.service: Job docker.service/start failed with result 'dependency'.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo systemctl restart docker
+sleep 10
+docker ps
+A dependency job for docker.service failed. See 'journalctl -xe' for details.
+
