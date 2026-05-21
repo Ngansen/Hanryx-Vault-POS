@@ -1,0 +1,21 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos bash -c 'psql "$DATABASE_URL" -c "UPDATE cards_master c SET image_url_alt = (SELECT jsonb_agg(CASE WHEN p->>'\''src'\'' = '\''tcgdex'\'' AND p->>'\''url'\'' !~ '\''\.png$|\.webp$|\.jpg$'\'' THEN jsonb_set(jsonb_set(p, '\''{url}'\'', to_jsonb((p->>'\''url'\'') || '\''/high.png'\''))::jsonb, '\''{local}'\'', to_jsonb((p->>'\''local'\'') || '\''.png'\'')) ELSE p END) FROM jsonb_array_elements(image_url_alt) p) WHERE image_url_alt @> '\''[{\"src\":\"tcgdex\"}]'\''::jsonb AND EXISTS (SELECT 1 FROM jsonb_array_elements(image_url_alt) p WHERE p->>'\''src'\'' = '\''tcgdex'\'' AND p->>'\''url'\'' !~ '\''\.png$|\.webp$|\.jpg$'\'');"'
+UPDATE 26605
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos bash -c 'psql "$DATABASE_URL" -c "SELECT image_url_alt FROM cards_master WHERE set_id='\''sm7'\'' AND card_number='\''160'\'';"'
+                                                                                                                         image_url_alt                                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ [{"src": "tcg_api", "url": "https://images.pokemontcg.io/sm7/160.png", "lang": "en", "local": ""}, {"src": "tcgdex", "url": "https://assets.tcgdex.net/en/sm/sm7/160/high.png", "lang": "en", "local": "/mnt/cards/cdn/assets.tcgdex.net/en/sm/^Cansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo find /mnt/cards/cdn/assets.tcgdex.net -type f ! -name '*.png' ! -name '*.webp' ! -name '*.jpg' -print | wc -l
+25737
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo find /mnt/cards/cdn/assets.tcgdex.net -type f ! -name '*.png' ! -name '*.webp' ! -name '*.jpg' -delete
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker compose exec -T pos python3 /app/image_local_downloader.py --src tcgdex --dry-run --limit 5
+2026-05-21 22:23:39,731 [INFO] image_local_downloader: cards_master rows with image_url_alt: 62160
+2026-05-21 22:23:40,025 [INFO] image_local_downloader: entries with non-empty local across all srcs: {"tcgdex": 26605, "kr_official": 12020, "chs_official": 558}
+2026-05-21 22:23:40,025 [INFO] image_local_downloader: entries needing download: 26605
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: limited to first 5 entries
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: DRY: ex16/20 [tcgdex] https://assets.tcgdex.net/en/ex/ex16/20/high.png -> /mnt/cards/cdn/assets.tcgdex.net/en/ex/ex16/20.png
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: DRY: ex11/20 [tcgdex] https://assets.tcgdex.net/en/ex/ex11/20/high.png -> /mnt/cards/cdn/assets.tcgdex.net/en/ex/ex11/20.png
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: DRY: sv06/20 [tcgdex] https://assets.tcgdex.net/en/sv/sv06/020/high.png -> /mnt/cards/cdn/assets.tcgdex.net/en/sv/sv06/020.png
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: DRY: ex14/20 [tcgdex] https://assets.tcgdex.net/en/ex/ex14/20/high.png -> /mnt/cards/cdn/assets.tcgdex.net/en/ex/ex14/20.png
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: DRY: ex4/20 [tcgdex] https://assets.tcgdex.net/en/ex/ex4/20/high.png -> /mnt/cards/cdn/assets.tcgdex.net/en/ex/ex4/20.png
+2026-05-21 22:23:40,030 [INFO] image_local_downloader: dry-run; 5 entries would be fetched
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
