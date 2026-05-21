@@ -1,0 +1,28 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ mkdir -p /mnt/cards/logs
+nohup docker compose exec -T pos python3 /app/image_local_downloader.py --progress-every 500 > /mnt/cards/logs/image_dl_$(date +%F_%H%M).log 2>&1 &
+disown
+[1] 9815
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sleep 10 && ls -la /mnt/cards/logs/image_dl_*.log | tail -1 && echo --- && tail -10 /mnt/cards/logs/image_dl_*.log
+gansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ mkdir -p /mnt/cards/logs
+nohup docker compose exec -T pos python3 /app/image_local_downloader.py --progress-every 500 > /mnt/cards/logs/image_dl_$(date +%F_%H%M).log 2>&1 &
+disown
+[1] 9815
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sleep 10 && ls -la /mnt/cards/logs/image_dl_*.log | tail -1 && echo --- && tail -10 /mnt/cards/logs/image_dl_*.log
+
+-rw-rw-r-- 1 ngansen ngansen 370 May 21 22:24 /mnt/cards/logs/image_dl_2026-05-21_2224.log
+---
+nohup: ignoring input
+2026-05-21 22:24:16,958 [INFO] image_local_downloader: cards_master rows with image_url_alt: 62160
+2026-05-21 22:24:17,466 [INFO] image_local_downloader: entries with non-empty local across all srcs: {"tcgdex": 26605, "kr_official": 12020, "chs_official": 558}
+2026-05-21 22:24:17,466 [INFO] image_local_downloader: entries needing download: 26605
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ gansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ mkdir -p /mnt/cards/logs
+-bash: gansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup: No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ nohup docker compose exec -T pos python3 /app/image_local_downloader.py --progress-every 500 > /mnt/cards/logs/image_dl_$(date +%F_%H%M).log 2>&1 &
+[1] 10315
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ disown
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ [1] 9815
+-bash: [1]: command not found
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sleep 10 && ls -la /mnt/cards/logs/image_dl_*.log | tail -1 && echo --- && tail -10 /mnt/cards/logs/image_dl_*.log
+-bash: ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup: No such file or directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $
