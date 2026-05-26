@@ -1,0 +1,42 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ tail -30 /tmp/grafana-kiosk.log
+[2026-05-26T22:18:49+00:00] launching /usr/lib/chromium/chromium kiosk
+[19068:19093:0526/221853.878076:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[19068:19093:0526/221916.861170:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[19068:19093:0526/222012.479611:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[19068:19093:0526/222136.419387:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[19068:19093:0526/222441.643728:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+/home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh: line 137: 19068 Killed                  "$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir="$USER_DATA_DIR" --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required "$URL"
+[2026-05-26T22:32:12+00:00] chromium exited rc=137 — relaunching in 5 s
+[2026-05-26T22:32:17+00:00] launching /usr/lib/chromium/chromium kiosk
+[35850:35880:0526/223222.181274:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[35850:35880:0526/223248.712449:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[35850:35880:0526/223337.823588:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[35850:35880:0526/223533.709658:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[35850:35880:0526/223918.587040:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[35850:35880:0526/224552.072341:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+/home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh: line 137: 35850 Killed                  "$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir="$USER_DATA_DIR" --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required "$URL"
+[2026-05-26T22:57:02+00:00] chromium exited rc=137 — relaunching in 5 s
+[2026-05-26T22:57:07+00:00] launching /usr/lib/chromium/chromium kiosk
+[66994:67016:0526/225711.572064:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[2026-05-26T22:57:25+00:00] another grafana-kiosk launcher holds the lock — exiting
+[66994:67016:0526/225735.488508:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[66994:67016:0526/225819.546345:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[66994:67016:0526/225950.237221:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+Warning: Vulkan shaderUniform*ArrayDynamicIndexing required.
+ - While initializing adapter (backend=BackendType::Vulkan)
+    at InitializeImpl (../../third_party/dawn/src/dawn/native/vulkan/PhysicalDeviceVk.cpp:240)
+
+Warning: maxDynamicUniformBuffersPerPipelineLayout artificially reduced from 1000000 to 16 to fit dynamic offset allocation limit.
+Warning: maxDynamicStorageBuffersPerPipelineLayout artificially reduced from 1000000 to 16 to fit dynamic offset allocation limit.
+[66994:66994:0526/230008.085120:ERROR:services/on_device_model/public/cpp/service_client.cc:36] Unexpected on_device_model service disconnect: Error loading backend.
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ ls -la /tmp/grafana-kiosk.lock /tmp/chromium-grafana/ 2>/dev/null | head -5
+-rw-rw-r--  1 ngansen ngansen   0 May 26 22:57 /tmp/grafana-kiosk.lock
+
+/tmp/chromium-grafana/:
+total 4192
+drwx------ 32 ngansen ngansen     820 May 26 23:00 .
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ flock -n /tmp/grafana-kiosk.lock echo "lock is FREE" || echo "lock is HELD"
+cat /proc/$(cat /proc/*/fd 2>/dev/null | grep -l "/tmp/grafana-kiosk.lock" 2>/dev/null | head -1 | grep -o '/proc/[0-9]*' | head -1 | cut -d/ -f3)/cmdline 2>/dev/null | tr '\0' ' '
+lock is HELD
+reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=0  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:BD:9D:38 vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=6e827fca-02 rootfstype=ext4 fsck.repair=yes rootwait ds=nocloud;i=rpi-imager-1775177442601 cfg80211.ieee80211_regdom=IS
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
