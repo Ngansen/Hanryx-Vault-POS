@@ -1,0 +1,57 @@
+ngansen@hanryxvault:~ $ cat /etc/chromium.d/*
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-renderer-accessibility --enable-remote-extensions"
+
+# API keys assigned to Debian by Google for access to their services like sync and gmail.
+
+export GOOGLE_API_KEY="AIzaSyCkfPOPZXDKNn8hhgu3JrA62wIgC93d44k"
+export GOOGLE_DEFAULT_CLIENT_ID="811574891467.apps.googleusercontent.com"
+export GOOGLE_DEFAULT_CLIENT_SECRET="kdloedMFGdGla2P1zacGjAQh"
+# A set of command line flags that we want to set by default.
+
+# Do not hide any extensions in the about:extensions dialog
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --show-component-extension-options"
+
+# Enable GPU rasterization.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-gpu-rasterization"
+
+# Don't display any warnings about not being the default browser
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-default-browser-check"
+
+# Disable pinging
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-pings"
+
+# Disable the builtin media router (bug #833477)
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --media-router=0"
+# Chromium normally creates shared memory regions in /dev/shm/ (tmpfs).
+# If that location is low on available space, the browser will crash due
+# to insufficient shared memory (even when main memory is plentiful) in
+# functions like gpu::ClientSharedImageInterface::CreateSharedImage().
+# For more details, see https://bugs.debian.org/1072299#78
+
+shm_avail=$(findmnt -bnr -o avail -T /dev/shm)
+
+if [ $shm_avail -lt 4080218931 ]  # 3.8 GB
+then
+        # Use $TMPDIR or /tmp instead
+        export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-dev-shm-usage"
+fi
+# remote extensions on by default
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"
+
+# load all of the extensions installed to /usr/share/chromium/extensions
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --load-extension=`ls -dm /usr/share/chromium/extensions/* 2>/dev/null | tr -d '\n'`"
+Any files placed in this directory will be sourced prior to executing chromium.
+ngansen@hanryxvault:~ $ rm -f /tmp/chromium-grafana/Singleton*
+CHROMIUM_FLAGS="" WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 \
+  /usr/lib/chromium/chromium \
+  --no-first-run --user-data-dir=/tmp/chromium-grafana \
+  --password-store=basic --use-mock-keychain \
+  --window-size=800,500 \
+  "http://localhost:3001" \
+  > /tmp/chrome-wayland0-test.log 2>&1 &
+[1] 106384
+ngansen@hanryxvault:~ $ sleep 10 && ps -ef | grep chromium | grep -v grep | head -3 && tail -5 /tmp/chrome-wayland0-test.log
+[1]+  Exit 1                  CHROMIUM_FLAGS="" WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 /usr/lib/chromium/chromium --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --window-size=800,500 "http://localhost:3001" > /tmp/chrome-wayland0-test.log 2>&1
+[106384:106384:0526/232811.660783:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[106384:106384:0526/232811.660835:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+ngansen@hanryxvault:~ $ 
