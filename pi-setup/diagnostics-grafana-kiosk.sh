@@ -115,6 +115,12 @@ echo "[$(date -Is)] using $CHROMIUM"
 
 # 4 + 5. Watchdog loop — relaunch Chromium if it ever dies.
 while true; do
+    # Clear stale singleton files left by unclean shutdowns (power cuts etc.)
+    # Without this, chromium prints "Opening in existing browser session" and
+    # exits rc=0 on every launch loop iteration after an abrupt power loss.
+    rm -f "${USER_DATA_DIR}/SingletonLock" \
+          "${USER_DATA_DIR}/SingletonCookie" \
+          "${USER_DATA_DIR}/SingletonSocket"
     echo "[$(date -Is)] launching $CHROMIUM kiosk"
     "$CHROMIUM" \
         --kiosk \
