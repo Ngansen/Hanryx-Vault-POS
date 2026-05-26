@@ -1,0 +1,27 @@
+ngansen@hanryxvault:~ $ sudo pkill -f 'diagnostics-grafana-kiosk'
+sudo pkill -9 -f 'user-data-dir=/tmp/chromium-grafana'
+sleep 2
+rm -f /tmp/chromium-grafana/Singleton* /tmp/grafana-kiosk.lock
+Killed
+ngansen@hanryxvault:~ $ DISPLAY=:0 WAYLAND_DISPLAY="" XDG_RUNTIME_DIR=/run/user/$(id -u) \
+  XAUTHORITY=/home/ngansen/.Xauthority \
+  /usr/lib/chromium/chromium \
+  --ozone-platform=x11 --kiosk --noerrdialogs --disable-infobars \
+  --disable-translate --disable-features=TranslateUI \
+  --check-for-update-interval=31536000 --overscroll-history-navigation=0 \
+  --disable-pinch --no-first-run \
+  --user-data-dir=/tmp/chromium-grafana \
+  --password-store=basic --use-mock-keychain \
+  --autoplay-policy=no-user-gesture-required \
+  "http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark" \
+  > /tmp/grafana-x11-test.log 2>&1 &
+[1] 93700
+ngansen@hanryxvault:~ $ sleep 8 && tail -5 /tmp/grafana-x11-test.log && ps -ef | grep chromium | grep -v grep | head -2
+[93792:93792:0526/231806.701182:ERROR:gpu/config/gpu_info_collector.cc:100] gl::init::CreateGLContext failed
+[93792:93792:0526/231806.701229:ERROR:gpu/config/gpu_info_collector.cc:602] Could not create context for info collection.
+[93792:93792:0526/231806.701271:ERROR:gpu/ipc/service/gpu_init.cc:115] CollectGraphicsInfo failed.
+[93792:93792:0526/231806.703614:ERROR:components/viz/service/main/viz_main_impl.cc:189] Exiting GPU process due to errors during initialization
+[93700:93722:0526/231810.645723:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+ngansen    93700   88164  5 23:18 pts/0    00:00:01 /usr/lib/chromium/chromium --ozone-platform=x11 --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen    93703       1  0 23:18 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+ngansen@hanryxvault:~ $
