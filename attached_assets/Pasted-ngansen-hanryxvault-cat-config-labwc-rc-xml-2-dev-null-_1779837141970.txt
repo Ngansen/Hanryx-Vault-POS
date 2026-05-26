@@ -1,0 +1,38 @@
+ngansen@hanryxvault:~ $ cat ~/.config/labwc/rc.xml 2>/dev/null || cat /etc/xdg/labwc/rc.xml 2>/dev/null | head -60
+<?xml version="1.0"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+        <touch deviceName="yldzkj USB2IIC_CTP_CONTROL" mapToOutput="HDMI-A-2" mouseEmulation="yes"/>
+</openbox_config>
+ngansen@hanryxvault:~ $ ls -la ~/.config/labwc/ /etc/labwc/ /etc/xdg/labwc/ 2>/dev/null
+/etc/xdg/labwc/:
+total 24
+drwxr-xr-x  2 root root 4096 May  7 23:57 .
+drwxr-xr-x 17 root root 4096 May 10 00:21 ..
+-rw-r--r--  1 root root  134 Nov 17  2025 autostart
+-rw-r--r--  1 root root  270 Nov 17  2025 environment
+-rw-r--r--  1 root root 5551 Mar  3 09:10 rc.xml
+
+/home/ngansen/.config/labwc/:
+total 20
+drwxr-xr-x  2 ngansen ngansen 4096 May  8 00:13 .
+drwx------ 18 ngansen ngansen 4096 May  8 04:45 ..
+-rw-rw-r--  1 ngansen ngansen  137 May  8 00:13 autostart
+-rw-r--r--  1 ngansen ngansen   88 Apr  3 01:17 environment
+-rw-rw-r--  1 ngansen ngansen  185 Apr 14 20:57 rc.xml
+ngansen@hanryxvault:~ $ sudo pkill -9 -f 'user-data-dir=/tmp/chromium-grafana'
+sleep 2
+rm -f /tmp/chromium-grafana/Singleton*
+WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/lib/chromium/chromium \
+  --no-first-run --user-data-dir=/tmp/chromium-grafana \
+  --password-store=basic --use-mock-keychain \
+  "http://localhost:3001" &
+sleep 8
+ps -ef | grep chromium | grep -v grep | head -2
+Killed
+[1] 85784
+[85784:85784:0526/231157.559808:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[85784:85784:0526/231157.559862:ERROR:ui/aura/env.cc:246] The platform failed to initialize.  Exiting.
+[1]+  Exit 1                  WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/lib/chromium/chromium --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain "http://localhost:3001"
+ngansen    85840   19042 19 23:11 ?        00:00:00 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen    85860       1  0 23:11 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+ngansen@hanryxvault:~ $
