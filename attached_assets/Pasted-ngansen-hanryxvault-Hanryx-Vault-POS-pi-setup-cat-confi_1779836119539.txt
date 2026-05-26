@@ -1,0 +1,45 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cat ~/.config/autostart/hanryx-grafana-kiosk.desktop
+[Desktop Entry]
+Type=Application
+Name=HanryxVault Grafana Diagnostic Kiosk
+Exec=/bin/bash -c 'sleep 8 && /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >> /home/ngansen/grafana-kiosk.log 2>&1'
+X-GNOME-Autostart-enabled=true
+[1]+  Exit 127                DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=$(cat /proc/$(pgrep -u ngansen lightdm-session 2> /dev/null | head -1)/environ 2> /dev/null | tr '\0' '\n' | grep DBUS | cut -d= -f2-) bash /usr/local/bin/diagnostics-grafana-kiosk.sh
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ find /home/ngansen /usr/local /opt /etc -name "*grafana-kiosk*" -o -name "*hanryx-kiosk*" 2>/dev/null | head -20
+/home/ngansen/.config/autostart/hanryx-grafana-kiosk.desktop
+/home/ngansen/.config/autostart/hanryx-kiosk.desktop.disabled
+/home/ngansen/grafana-kiosk.log
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776521238576.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-head-60-var-log-hanryx-kiosk-log-ec_1776516748978.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted--ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-e_1776519062087.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776518334479.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-80-var-log-hanryx-kiosk-log-12_1776517183617.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776518713717.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-100-var-log-hanryx-kiosk-log-e_1776516608651.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-40-var-log-hanryx-kiosk-log-ec_1776517621931.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-15-var-log-hanryx-kiosk-log-ec_1776522758288.txt
+/home/ngansen/hanryx-vault-pos/attached_assets/Pasted-ngansen-hanryxvault-tail-60-var-log-hanryx-kiosk-log-ec_1776517461768.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776521238576.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-head-60-var-log-hanryx-kiosk-log-ec_1776516748978.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted--ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-e_1776519062087.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776518334479.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-80-var-log-hanryx-kiosk-log-12_1776517183617.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-30-var-log-hanryx-kiosk-log-ec_1776518713717.txt
+/home/ngansen/Hanryx-Vault-POS/attached_assets/Pasted-ngansen-hanryxvault-tail-100-var-log-hanryx-kiosk-log-e_1776516608651.txt
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/lib/chromium/chromium \
+  --ozone-platform=wayland --kiosk --noerrdialogs --disable-infobars \
+  --disable-translate --disable-features=TranslateUI \
+  --check-for-update-interval=31536000 --overscroll-history-navigation=0 \
+  --disable-pinch --no-first-run \
+  --user-data-dir=/tmp/chromium-grafana \
+  --password-store=basic --use-mock-keychain \
+  --autoplay-policy=no-user-gesture-required \
+  "http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark" \
+  > /tmp/grafana-chromium.log 2>&1 &
+[1] 55243
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sleep 5 && ps -ef | grep chromium | grep -v grep | head -3
+[1]+  Done                    WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/lib/chromium/chromium --ozone-platform=wayland --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required "http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark" > /tmp/grafana-chromium.log 2>&1
+ngansen    35850   19042  0 22:32 ?        00:00:02 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen    35852       1  0 22:32 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+ngansen    35855       1  0 22:32 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=4 --shared-client-connection
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
