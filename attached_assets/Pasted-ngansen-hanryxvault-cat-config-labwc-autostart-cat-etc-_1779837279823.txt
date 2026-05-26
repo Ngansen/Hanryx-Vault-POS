@@ -1,0 +1,29 @@
+ngansen@hanryxvault:~ $ cat ~/.config/labwc/autostart
+cat /etc/xdg/labwc/autostart
+ps -ef | grep labwc | grep -v grep
+/bin/bash -c 'sleep 8 && /home/ngansen/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh >> /home/ngansen/grafana-kiosk.log 2>&1' &
+/usr/bin/lwrespawn /usr/bin/pcmanfm-pi &
+/usr/bin/lwrespawn /usr/bin/wf-panel-pi &
+/usr/bin/kanshi &
+/usr/bin/lxsession-xdg-autostart
+ngansen    18642   18634  0 22:18 ?        00:00:01 labwc
+ngansen    18684   18642  0 22:18 ?        00:00:00 /usr/bin/ssh-agent labwc
+ngansen@hanryxvault:~ $ sudo pkill -9 -f 'user-data-dir=/tmp/chromium-grafana'
+sleep 2
+rm -f /tmp/chromium-grafana/Singleton*
+Killed
+ngansen@hanryxvault:~ $ DISPLAY=:0 WAYLAND_DISPLAY="" XDG_RUNTIME_DIR=/run/user/$(id -u) \
+  /usr/lib/chromium/chromium \
+  --ozone-platform=x11 --kiosk --noerrdialogs --disable-infobars \
+  --no-first-run --user-data-dir=/tmp/chromium-grafana \
+  --password-store=basic --use-mock-keychain \
+  --autoplay-policy=no-user-gesture-required \
+  "http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark" \
+  > /tmp/grafana-chromium-x11.log 2>&1 &
+[1] 88776
+ngansen@hanryxvault:~ $ sleep 8 && ps -ef | grep chromium | grep -v grep | head -2 && tail -5 /tmp/grafana-chromium-x11.log
+[1]+  Done                    DISPLAY=:0 WAYLAND_DISPLAY="" XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/lib/chromium/chromium --ozone-platform=x11 --kiosk --noerrdialogs --disable-infobars --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required "http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark" > /tmp/grafana-chromium-x11.log 2>&1
+ngansen    88562   19042  5 23:14 ?        00:00:01 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen    88564       1  0 23:14 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+Opening in existing browser session.
+ngansen@hanryxvault:~
