@@ -1,0 +1,64 @@
+ngansen@hanryxvault:~ $ for c in /sys/class/drm/card1/card1-HDMI-A-1/dpms; do echo "$c: $(cat $c)"; done
+DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority xset q 2>/dev/null | grep -A2 'DPMS'
+/sys/class/drm/card1/card1-HDMI-A-1/dpms: On
+DPMS (Display Power Management Signaling):
+  Server does not have the DPMS Extension
+ngansen@hanryxvault:~ $ DISPLAY=:0 XAUTHORITY=/home/ngansen/.Xauthority xset dpms force on
+WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 wlr-randr --output HDMI-A-1 --on
+server does not have extension for dpms option
+xset:  unknown option force
+
+usage:  xset [-display host:dpy] option ...
+    To turn bell off:
+        -b                b off               b 0
+    To set bell volume, pitch and duration:
+         b [vol [pitch [dur]]]          b on
+    To disable bug compatibility mode:
+        -bc
+    To enable bug compatibility mode:
+        bc
+    To turn keyclick off:
+        -c                c off               c 0
+    To set keyclick volume:
+         c [0-100]        c on
+    To control Display Power Management Signaling (DPMS) features:
+        -dpms      DPMS features off
+        +dpms      DPMS features on
+         dpms [standby [suspend [off]]]     
+              force standby 
+              force suspend 
+              force off 
+              force on 
+              (also implicitly enables DPMS features) 
+              a timeout value of zero disables the mode 
+    To set the font path:
+         fp= path[,path...]
+    To restore the default font path:
+         fp default
+    To have the server reread font databases:
+         fp rehash
+    To remove elements from font path:
+        -fp path[,path...]  fp- path[,path...]
+    To prepend or append elements to font path:
+        +fp path[,path...]  fp+ path[,path...]
+    To set LED states off or on:
+        -led [1-32]         led off
+         led [1-32]         led on
+        -led named 'name'   led off
+         led named 'name'   led on
+    To set mouse acceleration and threshold:
+         m [acc_mult[/acc_div] [thr]]    m default
+    To set pixel colors:
+         p pixel_value color_name
+    To turn auto-repeat off or on:
+        -r [keycode]        r off
+         r [keycode]        r on
+         r rate [delay [rate]]
+    For screen-saver control:
+         s [timeout [cycle]]  s default    s on
+         s blank              s noblank    s off
+         s expose             s noexpose
+         s activate           s reset
+    For status information:  q
+    To print version: -version
+ngansen@hanryxvault:~ $
