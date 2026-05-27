@@ -1,3 +1,10 @@
+# Pull in Prometheus + Grafana + node-exporter so a single
+# `docker compose up -d` from pi-setup/ brings the whole stack up,
+# including the Grafana kiosk dashboard, without needing a separate
+# `cd monitoring && docker compose up -d` step.
+include:
+  - monitoring/docker-compose.yml
+
 services:
 
   # ── PostgreSQL — shared database server ───────────────────────────────────────

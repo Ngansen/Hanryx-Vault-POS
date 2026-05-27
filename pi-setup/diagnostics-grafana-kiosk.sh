@@ -69,6 +69,8 @@ echo "[$(date -Is)] diagnostics-grafana-kiosk starting (PID $$)"
 
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/home/$(id -un)/.Xauthority}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 # 1. Wait for X (max 60 s)
 for i in $(seq 1 60); do
@@ -91,10 +93,26 @@ for i in $(seq 1 120); do
 done
 
 # 3. Disable blanking / DPMS — booth screen must never sleep.
+#    X11 path (XWayland):
 xset s off          2>/dev/null || true
 xset -dpms          2>/dev/null || true
 xset s noblank      2>/dev/null || true
 unclutter -idle 0.5 -root >/dev/null 2>&1 &
+#    Wayland path (wlroots/labwc): the compositor can blank outputs at the
+#    wlroots level independently of X11 DPMS. Re-enable all connected
+#    outputs every 55 s so the dashboard stays visible even when no
+#    pointer/keyboard events reach the compositor's idle timer.
+#    chromium --ozone-platform=wayland (below) also sends the
+#    zwp_idle_inhibit_manager_v1 protocol in fullscreen/kiosk mode, which
+#    is the proper first-line defence; this loop is belt-and-suspenders.
+if command -v wlr-randr >/dev/null 2>&1 && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    (while true; do
+        wlr-randr 2>/dev/null \
+            | awk '/^[A-Z]/{out=$1} / enabled/{print out}' \
+            | xargs -r -I{} wlr-randr --output {} --on 2>/dev/null
+        sleep 55
+    done) &
+fi
 
 # Resolve chromium binary. Prefer the REAL binary at /usr/lib/chromium/chromium
 # over the /usr/bin/chromium wrapper script — the Pi OS wrapper adds default
@@ -136,6 +154,9 @@ while true; do
         --password-store=basic \
         --use-mock-keychain \
         --autoplay-policy=no-user-gesture-required \
+        --ozone-platform=wayland \
+        --enable-features=UseOzonePlatform,VaapiVideoDecoder \
+        --disable-dev-shm-usage \
         "$URL"
     rc=$?
     echo "[$(date -Is)] chromium exited rc=$rc — relaunching in 5 s"
