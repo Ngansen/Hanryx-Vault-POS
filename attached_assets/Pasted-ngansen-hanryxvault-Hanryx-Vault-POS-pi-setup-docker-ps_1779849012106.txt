@@ -1,0 +1,44 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ docker ps | grep grafana
+curl -s http://localhost:3000/api/health 2>/dev/null
+curl -s http://localhost:3001/api/health 2>/dev/null
+3ab3ba52815a   grafana/grafana:latest            "/run.sh"                3 weeks ago      Up 14 minutes             0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp   grafana
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#c9982e" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="HanRYX Vault" />
+    <title>HanRYX Vault - Premium Korean Pokémon Cards</title>
+    <meta name="description" content="HanRYX Vault specializes in premium Korean Pokémon card singles, with select English and Japanese cards. Discover rare singles and sealed products from your trusted source." />
+    <meta property="og:title" content="HanRYX Vault - Premium Korean Pokémon Cards" />
+    <meta property="og:description" content="Your trusted source for premium Korean Pokémon cards. Shop rare singles, booster boxes, and sealed products." />
+    <meta property="og:image" content="https://han-ryx-vault.replit.app/icon-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:url" content="https://han-ryx-vault.replit.app/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="HanRYX Vault - Premium Korean Pokémon Cards" />
+    <meta name="twitter:description" content="Your trusted source for premium Korean Pokémon cards. Shop rare singles, booster boxes, and sealed products." />
+    <meta name="twitter:image" content="https://han-ryx-vault.replit.app/icon-512.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-es0xVvUg.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CQ0Q3EEs.css">
+  </head>
+  <body class="dark">
+    <div id="root"></div>
+  </body>
+</html>
+{
+  "database": "ok",
+  "version": "13.0.1",
+  "commit": "a100054f"
+}ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
