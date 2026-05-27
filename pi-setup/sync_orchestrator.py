@@ -82,6 +82,12 @@ import usb_mirror
 # ensures only one orchestrator runs per host: on startup, write our pid;
 # if a previous pid is alive (kill -0 succeeds), exit. Stale pidfiles
 # (process gone) are silently overwritten.
+#
+# Container note: inside Docker every process is PID 1. On container
+# restart the new process also gets PID 1, so os.kill(1, 0) always
+# succeeds (init is immortal) and would falsely block startup. We detect
+# this by comparing old_pid to our own PID — if they match, the pidfile
+# is stale from a previous container run and is safe to overwrite.
 def _acquire_singleton_lock() -> None:
     pid_file = sync_log_dir() / "sync.pid"
     if pid_file.exists():
@@ -89,7 +95,7 @@ def _acquire_singleton_lock() -> None:
             old_pid = int(pid_file.read_text().strip())
         except (ValueError, OSError):
             old_pid = 0
-        if old_pid > 0:
+        if old_pid > 0 and old_pid != os.getpid():
             try:
                 os.kill(old_pid, 0)  # signal 0 = liveness check, no signal sent
             except ProcessLookupError:
