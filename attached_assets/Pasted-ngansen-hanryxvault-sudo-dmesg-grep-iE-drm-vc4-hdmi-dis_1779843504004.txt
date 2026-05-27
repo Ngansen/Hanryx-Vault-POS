@@ -1,0 +1,30 @@
+ngansen@hanryxvault:~ $ sudo dmesg | grep -iE 'drm|vc4|hdmi|display|crtc' | tail -40
+[    5.272854] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    6.078194] v3d 1002000000.v3d: [drm] Transparent Hugepage support is recommended for optimal performance on this platform!
+[    6.094256] [drm] Initialized v3d 1.0.0 for 1002000000.v3d on minor 0
+[    6.471293] vc4_hvs 107c580000.hvs: bcm2712_iommu_of_xlate: MMU 1000005200.iommu
+[    6.471301] vc4_hvs 107c580000.hvs: bcm2712_iommu_probe_device: MMU 1000005200.iommu
+[    6.471306] vc4_hvs 107c580000.hvs: bcm2712_iommu_device_group: MMU 1000005200.iommu
+[    6.471311] vc4_hvs 107c580000.hvs: Adding to iommu group 1
+[    6.471315] vc4_hvs 107c580000.hvs: bcm2712_iommu_attach_dev: MMU 1000005200.iommu
+[    6.471817] vc4-drm axi:gpu: bcm2712_iommu_of_xlate: MMU 1000005200.iommu
+[    6.471823] vc4-drm axi:gpu: bcm2712_iommu_probe_device: MMU 1000005200.iommu
+[    6.471827] vc4-drm axi:gpu: bcm2712_iommu_device_group: MMU 1000005200.iommu
+[    6.471831] vc4-drm axi:gpu: Adding to iommu group 1
+[    6.471834] vc4-drm axi:gpu: bcm2712_iommu_attach_dev: MMU 1000005200.iommu
+[    6.479980] vc4-drm axi:gpu: bound 107c580000.hvs (ops vc4_hvs_ops [vc4])
+[    6.481194] rc rc0: vc4-hdmi-0 as /devices/platform/soc@107c000000/107c701400.hdmi/rc/rc0
+[    6.481234] input: vc4-hdmi-0 as /devices/platform/soc@107c000000/107c701400.hdmi/rc/rc0/input1
+[    6.481779] input: vc4-hdmi-0 HDMI Jack as /devices/platform/soc@107c000000/107c701400.hdmi/sound/card0/input2
+[    6.483362] vc4-drm axi:gpu: bound 107c701400.hdmi (ops vc4_hdmi_ops [vc4])
+[    6.485397] rc rc1: vc4-hdmi-1 as /devices/platform/soc@107c000000/107c706400.hdmi/rc/rc1
+[    6.485461] input: vc4-hdmi-1 as /devices/platform/soc@107c000000/107c706400.hdmi/rc/rc1/input3
+[    6.488247] input: vc4-hdmi-1 HDMI Jack as /devices/platform/soc@107c000000/107c706400.hdmi/sound/card1/input4
+[    6.491504] vc4-drm axi:gpu: bound 107c706400.hdmi (ops vc4_hdmi_ops [vc4])
+[    6.491658] vc4-drm axi:gpu: bound 107c500000.mop (ops vc4_txp_ops [vc4])
+[    6.491721] vc4-drm axi:gpu: bound 107c501000.moplet (ops vc4_txp_ops [vc4])
+[    6.491776] vc4-drm axi:gpu: bound 107c410000.pixelvalve (ops vc4_crtc_ops [vc4])
+[    6.491830] vc4-drm axi:gpu: bound 107c411000.pixelvalve (ops vc4_crtc_ops [vc4])
+[    6.564027] [drm] Initialized vc4 0.0.0 for axi:gpu on minor 1
+[    6.657535] vc4-drm axi:gpu: [drm] fb0: vc4drmfb frame buffer device
+ngansen@hanryxvault:~ $ 
