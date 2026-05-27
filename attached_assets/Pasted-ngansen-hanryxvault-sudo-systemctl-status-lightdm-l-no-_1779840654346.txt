@@ -1,0 +1,31 @@
+ngansen@hanryxvault:~ $ sudo systemctl status lightdm -l --no-pager -n 30
+cat ~/grafana-kiosk.log | head -30
+ps -ef | grep chromium | grep -v grep
+ls -la /usr/bin/pcmanfm-pi /usr/bin/wf-panel-pi /usr/bin/lwrespawn 2>/dev/null
+● lightdm.service - Light Display Manager
+     Loaded: loaded (/usr/lib/systemd/system/lightdm.service; enabled; preset: enabled)
+     Active: active (running) since Tue 2026-05-26 23:47:04 GMT; 23min ago
+ Invocation: fae340c0617941c899c30079828d800f
+       Docs: man:lightdm(1)
+   Main PID: 977 (lightdm)
+      Tasks: 4 (limit: 9578)
+        CPU: 45ms
+     CGroup: /system.slice/lightdm.service
+             └─977 /usr/sbin/lightdm
+
+May 26 23:47:03 hanryxvault systemd[1]: Starting lightdm.service - Light Display Manager...
+May 26 23:47:04 hanryxvault systemd[1]: Started lightdm.service - Light Display Manager.
+May 26 23:47:04 hanryxvault lightdm[1004]: pam_succeed_if(lightdm-autologin:auth): requirement "shell notin /sbin/nologin:/usr/sbin/nologin:/bin/false:/usr/bin/false" was met by user "ngansen"
+May 26 23:47:04 hanryxvault lightdm[1004]: pam_unix(lightdm-autologin:session): session opened for user ngansen(uid=1000) by ngansen(uid=0)
+May 26 23:47:04 hanryxvault lightdm[1004]: Failed to write utmpx: No such file or directory
+nohup: ignoring input
+ngansen     3760    2033  0 May26 ?        00:00:04 /usr/lib/chromium/chromium --kiosk --noerrdialogs --disable-infobars --disable-translate --disable-features=TranslateUI --check-for-update-interval=31536000 --overscroll-history-navigation=0 --disable-pinch --no-first-run --user-data-dir=/tmp/chromium-grafana --password-store=basic --use-mock-keychain --autoplay-policy=no-user-gesture-required http://localhost:3001/d/hanryx-pi-ops/hanryxvault-pi-operator?orgId=1&refresh=10s&kiosk&theme=dark
+ngansen     3789       1  0 May26 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=5 --shared-client-connection
+ngansen     3815       1  0 May26 ?        00:00:00 /usr/lib/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/ngansen/.config/chromium/Crash Reports --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=147.0.7727.55 --initial-client-fd=4 --shared-client-connection
+ngansen     3817    3760  0 May26 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --no-zygote-sandbox --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen     3818    3760  0 May26 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen     3825    3818  0 May26 ?        00:00:00 /usr/lib/chromium/chromium --type=zygote --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable
+ngansen     3909    3817  0 May26 ?        00:00:08 /usr/lib/chromium/chromium --type=gpu-process --ozone-platform=wayland --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --gpu-preferences=UAAAAAAAAAAgAQAAAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAgAAAAAAAAA --shared-files --metrics-shmem-handle=4,i,5495622116223101038,14748761403875278423,262144 --field-trial-handle=3,i,795792885620907651,9403706850951311185,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,4657099145894030778,17236917638068256258,4 --trace-process-track-uuid=3190708988185955192
+ngansen     3915    3760  0 May26 ?        00:00:03 /usr/lib/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,5981728271565311824,5667583840877042075,524288 --field-trial-handle=3,i,795792885620907651,9403706850951311185,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,4657099145894030778,17236917638068256258,4 --trace-process-track-uuid=3190708989122997041
+ngansen     3932    3825  0 May26 ?        00:00:00 /usr/lib/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-GB --service-sandbox-type=utility --render-node-override=/dev/dri/card1 --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,1851556079051489651,12381820812060397683,524288 --field-trial-handle=3,i,795792885620907651,9403706850951311185,262144 --disable-features=EyeDropper,TranslateUI --variations-seed-version --pseudonymization-salt-handle=7,i,4657099145894030778,17236917638068256258,4 --trace-process-track-uuid=3190708990060038890
+ngansen     4023    3825  2 May26 ?        00:00:30 /usr/lib/chromium/chromium --type=renderer --crashpad-handler-pid=0 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/chromium-grafana --c
