@@ -1,0 +1,107 @@
+ngansen@hanryxvault:~ $ WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 wlr-randr
+cat /etc/xdg/labwc/rc.xml | grep -A5 -B2 -iE 'window|rule|output|workspace'
+cat /home/ngansen/grafana-kiosk.log
+HDMI-A-2 "NewTek 0x0000 000000 (HDMI-A-2)"
+  Make: NewTek
+  Model: 0x0000
+  Serial: 000000
+  Physical size: 480x270 mm
+  Enabled: yes
+  Modes:
+    1024x600 px, 59.993000 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+    1680x1050 px, 59.882999 Hz
+    1280x1024 px, 75.025002 Hz
+    1280x1024 px, 60.020000 Hz
+    1440x900 px, 59.901001 Hz
+    1280x960 px, 60.000000 Hz
+    1366x768 px, 60.009998 Hz
+    1360x768 px, 60.014999 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 60.000000 Hz
+    1280x720 px, 59.939999 Hz
+    1280x720 px, 50.000000 Hz
+    1024x768 px, 75.028999 Hz
+    1024x768 px, 70.069000 Hz
+    1024x768 px, 60.004002 Hz
+    832x624 px, 74.551003 Hz
+    800x600 px, 75.000000 Hz
+    800x600 px, 72.188004 Hz
+    800x600 px, 60.317001 Hz
+    800x600 px, 56.250000 Hz
+    720x576 px, 50.000000 Hz
+    720x480 px, 60.000000 Hz
+    720x480 px, 59.939999 Hz
+    640x480 px, 75.000000 Hz
+    640x480 px, 72.808998 Hz
+    640x480 px, 66.667000 Hz
+    640x480 px, 60.000000 Hz
+    640x480 px, 59.939999 Hz
+    640x480 px, 59.939999 Hz
+    720x400 px, 70.082001 Hz
+  Position: 0,0
+  Transform: normal
+  Scale: 1.000000
+  Adaptive Sync: disabled
+    <cornerRadius>0</cornerRadius>
+    <keepBorder>yes</keepBorder>
+    <font place="ActiveWindow">
+      <name>Nunito Sans</name>
+      <size>12</size>
+      <weight>Light</weight>
+      <slant>Normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>Nunito Sans</name>
+      <size>12</size>
+      <weight>Light</weight>
+      <slant>Normal</slant>
+    </font>
+--
+      </mousebind>
+    </context>
+    <context name="WindowMenu">
+      <mousebind button="Left" action="Click">
+      </mousebind>
+      <mousebind button="Right" action="Click">
+      </mousebind>
+    </context>
+--
+  </mouse>
+
+  <windowRules>
+    <windowRule identifier="Kodi" serverDecoration="yes" />
+  </windowRules>
+
+  <snapping>
+    <range>0</range>
+    <topMaximize>no</topMaximize>
+  </snapping>
+--
+  </magnifier>
+
+  <windowSwitcher show="yes" preview="yes" outlines="yes" allWorkspaces="no">
+    <fields>
+      <field content="icon" width="5%" />
+      <field content="title" width="95%" />
+    </fields>
+  </windowSwitcher>
+
+  <touch deviceName="10-0038 generic ft5x06 (79)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="11-0038 generic ft5x06 (79)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="6-0038 generic ft5x06 (79)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="4-0038 generic ft5x06 (79)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="10-0038 generic ft5x06 (00)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="11-0038 generic ft5x06 (00)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="6-0038 generic ft5x06 (00)" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="4-0038 generic ft5x06 (00)" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="10-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="11-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-2" mouseEmulation="yes" />
+  <touch deviceName="6-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-1" mouseEmulation="yes" />
+  <touch deviceName="4-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-2" mouseEmulation="yes" />
+
+</openbox_config>
+
+nohup: ignoring input
+nohup: ignoring input
+ngansen@hanryxva
