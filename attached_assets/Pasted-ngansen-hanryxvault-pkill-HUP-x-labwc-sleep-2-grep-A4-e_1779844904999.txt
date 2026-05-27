@@ -1,0 +1,29 @@
+ngansen@hanryxvault:~ $ pkill -HUP -x labwc
+sleep 2
+grep -A4 'export DISPLAY=' ~/Hanryx-Vault-POS/pi-setup/diagnostics-grafana-kiosk.sh | head -6
+export DISPLAY="${DISPLAY:-:0}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export XAUTHORITY="${XAUTHORITY:-/home/$(id -un)/.Xauthority}"
+
+ngansen@hanryxvault:~ $ which wf-panel-pi kanshi 2>/dev/null
+dpkg -l | grep -E 'pcmanfm|kanshi|wf-panel'
+/usr/bin/wf-panel-pi
+/usr/bin/kanshi
+ii  kanshi                               1.5.1-2+b1                           arm64        Define output profiles that are automatically enabled and disabled on hotplug
+ii  wf-panel-pi                          1.13                                 arm64        Desktop panel for Raspberry Pi Wayland environments
+ii  wfplug-batt                          1.2                                  arm64        Battery monitor plugin for wf-panel-pi
+ii  wfplug-bluetooth                     1.7                                  arm64        Bluetooth plugin for wf-panel-pi
+ii  wfplug-clock                         1.5                                  arm64        Clock plugin for wf-panel-pi
+ii  wfplug-connect                       1.10                                 arm64        Raspberry Pi Connect plugin for wf-panel-pi
+ii  wfplug-cpu                           1.2                                  arm64        CPU plugin for wf-panel-pi
+ii  wfplug-cputemp                       1.2                                  arm64        CPU temperature plugin for wf-panel-pi
+ii  wfplug-ejecter                       1.8                                  arm64        Ejecter plugin for wf-panel-pi
+ii  wfplug-gpu                           1.2                                  arm64        GPU plugin for wf-panel-pi
+ii  wfplug-menu                          1.14                                 arm64        Menu plugin for wf-panel-pi
+ii  wfplug-netman                        1.10                                 arm64        Network Manager plugin for wf-panel-pi
+ii  wfplug-power                         1.5                                  arm64        Power plugin for wf-panel-pi
+ii  wfplug-squeek                        1.2                                  arm64        Squeekboard plugin for wf-panel-pi
+ii  wfplug-updater                       1.4                                  arm64        Updater plugin for wf-panel-pi
+ii  wfplug-volumepulse                   1.9                                  arm64        PulseAudio controller plugin for wf-panel-pi
+ngansen@hanryxvault:~ $ 
