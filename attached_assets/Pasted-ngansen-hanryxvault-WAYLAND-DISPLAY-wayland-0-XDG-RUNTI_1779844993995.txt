@@ -1,0 +1,63 @@
+ngansen@hanryxvault:~ $ WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 /usr/bin/wf-panel-pi &
+sleep 4
+ps -ef | grep wf-panel | grep -v grep
+[1] 2139
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:38.995: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:38.995: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:38.995: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:38.995: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:39.048: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.048: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:39.048: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+** Message: 01:22:39.346: batt: battery 0 not found
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:39.433: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:39.433: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_name: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_app_info_get_icon: assertion 'G_IS_APP_INFO (appinfo)' failed
+
+(wf-panel-pi:2139): GLib-GIO-CRITICAL **: 01:22:39.433: g_icon_to_string: assertion 'icon != NULL' failed
+
+(wf-panel-pi:2139): GLib-GObject-CRITICAL **: 01:22:39.433: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+** Message: 01:22:39.487: up: Checking for updates
+
+** (wf-panel-pi:2139): WARNING **: 01:22:39.564: failed to load icon "nm-signal-00": Icon 'nm-signal-00' not present in theme Adwaita
+
+** (wf-panel-pi:2139): WARNING **: 01:22:39.565: failed to load icon "nm-vpn-active-lock": Icon 'nm-vpn-active-lock' not present in theme Adwaita
+
+** (wf-panel-pi:2139): WARNING **: 01:22:39.565: failed to load icon "nm-signal-75": Icon 'nm-signal-75' not present in theme Adwaita
+** Message: 01:22:39.721: up: Error updating cache - Failed to obtain authentication.
+ngansen     2139    1536  5 01:22 pts/0    00:00:00 /usr/bin/wf-panel-pi
+ngansen@hanryxvault:~ $
