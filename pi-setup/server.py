@@ -311,7 +311,6 @@ def _refresh_token_if_needed():
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # upload cap (#18)
 # Long cache on /static/* — logo, brand-pulse, JS bundles never change between
 # deploys (Flask appends ?v=mtime when needed). Saves dozens of round-trips
 # per kiosk reload.
@@ -3218,117 +3217,53 @@ def init_db():
             db.commit()
             log.info("[DB] Migration: added %s.%s column", table, col)
 
-    # ── price_history schema migration (C11) ─────────────────────────────────
-    # Original schema only had (card_id, card_name, market_price, fetched_ms),
-    # which is enough for the legacy single-source TCGplayer feed but can't
-    # represent the multi-source / multi-currency rows the background market
-    # refresh writes (naver KRW, bunjang KRW, hareruya2 JPY, cardmarket EUR).
-    # Adding columns is non-destructive: existing rows get sensible defaults
-    # (source='tcgplayer', currency='USD', observed_at=fetched_ms->timestamp).
-    # Note: usb_mirror.price_history_recent SELECT references source/grade/
-    # observed_at; before this migration that SELECT silently failed.
-    for col, ddl in [
-        ("source",      "ALTER TABLE price_history ADD COLUMN source     TEXT NOT NULL DEFAULT 'tcgplayer'"),
-        ("grade",       "ALTER TABLE price_history ADD COLUMN grade      TEXT NOT NULL DEFAULT 'raw'"),
-        ("currency",    "ALTER TABLE price_history ADD COLUMN currency   TEXT NOT NULL DEFAULT 'USD'"),
-        ("price_usd",   "ALTER TABLE price_history ADD COLUMN price_usd  DOUBLE PRECISION"),
-        ("observed_at", "ALTER TABLE price_history ADD COLUMN observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
-        ("query_used",  "ALTER TABLE price_history ADD COLUMN query_used TEXT NOT NULL DEFAULT ''"),
-        # C13.5: native-currency price (real KRW/JPY/EUR value before
-        # USD conversion). market_price/price_usd are USD-equivalents;
-        # without this column the AI cashier was forced to alias the
-        # USD value as `native_price` and produce double-USD output.
-        ("price_native","ALTER TABLE price_history ADD COLUMN price_native DOUBLE PRECISION"),
-    ]:
-        if not _col_exists("price_history", col):
-            db.execute(ddl)
-            db.commit()
-            log.info("[DB] Migration: added price_history.%s column", col)
-    # Backfill observed_at from the legacy fetched_ms (epoch ms) for rows
-    # that were inserted before this migration. Idempotent: only touches
-    # rows where observed_at is still the migration default (NOW()) AND
-    # fetched_ms is meaningfully older than now (>10s skew tolerance).
+    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
     try:
         db.execute("""
-            UPDATE price_history
-               SET observed_at = TO_TIMESTAMP(fetched_ms / 1000.0)
-             WHERE fetched_ms > 0
-               AND observed_at >= NOW() - INTERVAL '10 seconds'
-               AND ABS(EXTRACT(EPOCH FROM observed_at) * 1000 - fetched_ms) > 10000
+            UPDATE inventory
+            SET card_number = LTRIM(
+                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+                '0'
+            )
+            WHERE card_number = ''
+              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
         """)
         db.commit()
-    except Exception as _phe:
-        try: db.rollback()
-        except Exception: pass
-        log.warning("[DB] price_history.observed_at backfill skipped: %s", _phe)
-    # Index for the mirror's "last 90 days, ordered by observed_at" query
-    # and for /admin/market multi-source price fan-out by card.
-    try:
-        db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_price_hist_observed "
-            "ON price_history(observed_at DESC)"
-        )
-        db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_price_hist_card_src "
-            "ON price_history(card_id, source, observed_at DESC)"
-        )
-        db.commit()
-    except Exception as _phi:
-        try: db.rollback()
-        except Exception: pass
-        log.warning("[DB] price_history index create skipped: %s", _phi)
-
-    # Backfill card_number — uses a fresh connection so it's immune to any
-    # earlier aborted txn in init_db (was failing every boot with cryptic
-    # "tuple index out of range" from txn-state pollution).
-    try:
-        import psycopg2 as _p2
-        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
-            with _bk.cursor() as _c:
-                _c.execute("""
-                    UPDATE inventory
-                    SET card_number = LTRIM(SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'), '0')
-                    WHERE (card_number IS NULL OR card_number = '')
-                      AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
-                """)
-                _rc = _c.rowcount
-            _bk.commit()
-        log.info("[DB] card_number backfill: %d rows", _rc)
+        log.info("[DB] Backfilled card_number column")
     except Exception as _be:
-        import traceback as _tb
-        log.warning("[DB] card_number backfill skipped: %r\n%s", _be, _tb.format_exc())
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("[DB] card_number backfill skipped: %s", _be)
 
     # Backfill release_year from set_code for existing rows
-    # release_year backfill — fresh connection for the same reason as
-    # card_number above (txn-state pollution + the LIKE '%' chars trip
-    # psycopg2 if any cursor.execute params slip in elsewhere).
     try:
-        import psycopg2 as _p2
-        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
-            with _bk.cursor() as _c:
-                _c.execute("""
-                    UPDATE inventory
-                    SET release_year = CASE
-                        WHEN UPPER(set_code) LIKE 'SV%%'   THEN 2023
-                        WHEN UPPER(set_code) LIKE 'SWSH%%' THEN 2020
-                        WHEN UPPER(set_code) LIKE 'SM%%'   THEN 2017
-                        WHEN UPPER(set_code) LIKE 'XY%%'   THEN 2014
-                        WHEN UPPER(set_code) LIKE 'BW%%'   THEN 2011
-                        WHEN UPPER(set_code) LIKE 'HGSS%%' THEN 2010
-                        WHEN UPPER(set_code) LIKE 'PL%%'   THEN 2009
-                        WHEN UPPER(set_code) LIKE 'DP%%'   THEN 2007
-                        WHEN UPPER(set_code) LIKE 'EX%%'   THEN 2003
-                        WHEN UPPER(set_code) LIKE 'BASE%%' THEN 1999
-                        ELSE 0
-                    END
-                    WHERE release_year = 0 AND set_code != ''
-                """)
-                _rc = _c.rowcount
-            _bk.commit()
-        log.info("[DB] release_year backfill: %d rows", _rc)
+        db.execute("""
+            UPDATE inventory
+            SET release_year = CASE
+                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
+                ELSE 0
+            END
+            WHERE release_year = 0 AND set_code != ''
+        """)
+        db.commit()
+        log.info("[DB] Backfilled release_year column")
     except Exception as _rye:
-        import traceback as _tb
-        log.warning("[DB] release_year backfill skipped: %r\n%s", _rye, _tb.format_exc())
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("[DB] release_year backfill skipped: %s", _rye)
 
     # Add indexes for fast number/year/rarity searches
     try:
@@ -4384,166 +4319,6 @@ def _enrich_with_tcg(local_result: dict | None, qr_code: str) -> dict:
             out["suggestedPrice"] = round(mkt, 2)
 
     return out
-
-
-# ===========================================================================
-# C15a — extras surfaced to /card/enrich and /market/price.
-#   Purely additive JSON keys — does NOT change any existing field.  Lets the
-#   tablet APK light up the variant picker, abilities panel, trend chip and
-#   buyback quote without an APK rebuild (next call picks them up).
-# ===========================================================================
-
-def _c15_split_qr(norm_qr: str) -> tuple[str, str]:
-    """'SV1-25' -> ('sv1', '25').  Empty strings on parse failure."""
-    m = re.match(r'^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$', (norm_qr or "").strip())
-    return (m.group(1).lower(), m.group(2).lstrip("0") or "0") if m else ("", "")
-
-
-def _c15_card_extras(db, norm_qr: str) -> dict:
-    """C14 enrichment fields from cards_master for a canonical qr_code.
-    Returns {} on miss/error so callers can dict-merge safely."""
-    set_id, num = _c15_split_qr(norm_qr)
-    if not set_id:
-        return {}
-    try:
-        row = db.execute("""
-            SELECT variant, rarity_subtype, card_text,
-                   abilities_jsonb, attacks_jsonb,
-                   name_en, name_jp, name_kr
-            FROM cards_master
-            WHERE LOWER(set_id) = %s
-              AND (card_number = %s OR card_number = LPAD(%s::text, 3, '0'))
-            LIMIT 1
-        """, (set_id, num, num)).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] cards_master lookup failed for %s: %s", norm_qr, _e)
-        return {}
-    if not row:
-        return {}
-    return {
-        "variant":         row["variant"]         or "normal",
-        "rarity_subtype":  row["rarity_subtype"]  or "",
-        "card_text":       row["card_text"]       or "",
-        "abilities":       row["abilities_jsonb"] or [],
-        "attacks_full":    row["attacks_jsonb"]   or [],
-        "names_i18n":      {
-            "en": row["name_en"] or "",
-            "jp": row["name_jp"] or "",
-            "kr": row["name_kr"] or "",
-        },
-    }
-
-
-def _c15_trend(db, norm_qr: str) -> dict:
-    """Read pct_7d/30d/90d from price_trends_daily (matview).
-    Prefers tcgplayer, then cardmarket, else freshest source."""
-    try:
-        row = db.execute("""
-            SELECT source, pct_7d, pct_30d, pct_90d, price_now, last_seen
-            FROM price_trends_daily
-            WHERE card_id = %s
-            ORDER BY CASE source
-                       WHEN 'tcgplayer'  THEN 0
-                       WHEN 'cardmarket' THEN 1
-                       ELSE 2 END,
-                     last_seen DESC
-            LIMIT 1
-        """, (norm_qr,)).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] price_trends_daily lookup failed for %s: %s", norm_qr, _e)
-        return {}
-    if not row:
-        return {}
-    return {
-        "source":    row["source"],
-        "pct_7d":    float(row["pct_7d"])    if row["pct_7d"]    is not None else None,
-        "pct_30d":   float(row["pct_30d"])   if row["pct_30d"]   is not None else None,
-        "pct_90d":   float(row["pct_90d"])   if row["pct_90d"]   is not None else None,
-        "price_now": float(row["price_now"]) if row["price_now"] is not None else None,
-        "as_of":     row["last_seen"].isoformat() if row["last_seen"] else None,
-    }
-
-
-def _c15_variants(db, norm_qr: str) -> list:
-    """Sibling cards with the same set+number but different variant — feeds
-    the variant-picker when a scan is ambiguous (e.g. normal vs reverse_holo
-    vs special_illust all printed at SV1-25)."""
-    set_id, num = _c15_split_qr(norm_qr)
-    if not set_id:
-        return []
-    try:
-        rows = db.execute("""
-            SELECT cm.master_id, cm.variant, cm.rarity_subtype, cm.name_en,
-                   COALESCE(inv.price, 0)::float AS price,
-                   COALESCE(inv.stock, 0)::int   AS stock
-            FROM cards_master cm
-            LEFT JOIN inventory inv
-              ON UPPER(inv.qr_code) = UPPER(cm.master_id)
-            WHERE LOWER(cm.set_id) = %s
-              AND (cm.card_number = %s OR cm.card_number = LPAD(%s::text, 3, '0'))
-            ORDER BY CASE cm.variant
-                       WHEN 'normal'         THEN 0
-                       WHEN 'reverse_holo'   THEN 1
-                       WHEN 'holo'           THEN 2
-                       WHEN 'full_art'       THEN 3
-                       WHEN 'special_illust' THEN 4
-                       WHEN 'hyper_rare'     THEN 5
-                       ELSE 9 END
-        """, (set_id, num, num)).fetchall()
-    except Exception as _e:
-        log.debug("[c15a] variants lookup failed for %s: %s", norm_qr, _e)
-        return []
-    return [
-        {"master_id":      r["master_id"],
-         "variant":        r["variant"] or "normal",
-         "rarity_subtype": r["rarity_subtype"] or "",
-         "name":           r["name_en"] or "",
-         "price":          float(r["price"]) if r["price"] else 0.0,
-         "stock":          int(r["stock"]) if r["stock"] else 0}
-        for r in rows
-    ]
-
-
-def _c15_buyback_quote(db, market_usd: float, *, rarity: str = "", set_id: str = "",
-                       condition: str = "NM", game: str = "pokemon") -> dict:
-    """Compute trade-in offer from buyback_rules.  Picks the most-specific
-    active rule (set+rarity > rarity-only > set-only > generic) breaking ties
-    by priority DESC."""
-    if not market_usd or market_usd <= 0:
-        return {}
-    try:
-        row = db.execute("""
-            SELECT rule_name, ratio::float AS ratio,
-                   COALESCE(min_price_usd, 0)::float AS min_price_usd
-            FROM buyback_rules
-            WHERE active = TRUE
-              AND condition = %s
-              AND game_code = %s
-              AND (set_id IS NULL OR LOWER(set_id) = LOWER(%s))
-              AND (rarity IS NULL OR LOWER(rarity) = LOWER(%s))
-            ORDER BY (CASE WHEN set_id IS NOT NULL THEN 2 ELSE 0 END
-                    + CASE WHEN rarity IS NOT NULL THEN 1 ELSE 0 END) DESC,
-                     priority DESC
-            LIMIT 1
-        """, (condition.upper(), game, set_id or "", rarity or "")).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] buyback rule lookup failed: %s", _e)
-        return {}
-    if not row:
-        return {}
-    ratio = float(row["ratio"])
-    min_p = float(row["min_price_usd"])
-    if min_p > 0 and market_usd < min_p:
-        return {"ratio": ratio, "quote_usd": 0.0,
-                "rule_name": row["rule_name"], "below_min": True,
-                "min_price_usd": min_p}
-    return {"ratio": ratio, "quote_usd": round(market_usd * ratio, 2),
-            "rule_name": row["rule_name"], "below_min": False}
-
-
-# ===========================================================================
-# /  end C15a helpers  /
-# ===========================================================================
 
 
 def _fire_webhook(payload: dict):
@@ -6088,6 +5863,58 @@ def card_price_scrape():
             flat.extend(rows)
         out["median_usd"] = None
 
+    # ── IQR outlier filter + optional CLIP listing verification ──────────────
+    try:
+        import price_filter as _pf
+
+        # Optional CLIP reference: caller may pass set_id + card_number so we
+        # can verify listing thumbnails visually against the known-NM image.
+        set_id_ref  = (request.values.get("set_id")      or body.get("set_id")      or "").strip()
+        card_num_ref = (request.values.get("card_number") or body.get("card_number") or "").strip()
+
+        ref_emb: list | None = None
+        if set_id_ref and card_num_ref and _OPENAI_API_KEY:
+            try:
+                _rdb  = _direct_db()
+                _rcur = _rdb.cursor()
+                _rcur.execute(
+                    "SELECT embedding FROM card_image_embedding "
+                    "WHERE set_id=%s AND card_number=%s AND failure='' "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (set_id_ref, card_num_ref),
+                )
+                _row = _rcur.fetchone()
+                _rdb.close()
+                if _row and _row[0]:
+                    ref_emb = list(_row[0])
+            except Exception as _emb_err:
+                log.debug("[card/price] ref embedding lookup failed: %s", _emb_err)
+
+        # embed_fn: wraps server's _clip_embed_bytes → list[float]
+        def _embed_fn(img_bytes: bytes):
+            arr = _clip_embed_bytes(img_bytes)
+            if arr is None:
+                return None
+            flat_arr = arr.flatten().tolist()
+            return flat_arr
+
+        flat, _fstats = _pf.apply_filters(
+            flat,
+            iqr_k=1.5,
+            reference_embedding=ref_emb,
+            embed_fn=_embed_fn if ref_emb else None,
+        )
+        out["filter_stats"] = _fstats
+        out["filtered_median_usd"] = _fstats.get("filtered_median_usd")
+
+        # Propagate per-listing tags back into per-source results
+        _tagged = {id(r): r for r in flat}
+        for src in out["results"]:
+            out["results"][src] = [_tagged.get(id(r), r) for r in out["results"][src]]
+
+    except Exception as _pf_err:
+        log.info("[card/price] price_filter skipped: %s", _pf_err)
+
     out["count"] = len(flat)
     return jsonify(out)
 
@@ -7286,10 +7113,7 @@ def card_scan_fast():
     # ── Smart scan fallback — rapidfuzz fuzzy match when exact DB lookup fails ──
     smart_result = None
     if not row:
-        try:
-            smart_result = _smart_scanner.smart_scan(qr, db)
-        except Exception as _ss_e:
-            log.warning("[card/scan] smart_scan failed: %r", _ss_e); smart_result = None
+        smart_result = _smart_scanner.smart_scan(qr, db)
         if smart_result and smart_result["found"]:
             item = smart_result["item"]
             # Teach the scanner so future identical scans skip fuzzy entirely
@@ -7310,8 +7134,8 @@ def card_scan_fast():
             "name":       r["name"],
             "sku":        r.get("set_code") or r["qr_code"],
             "description": r.get("description") or "",
-            "price":      float(r["price"]) if r["price"] is not None else None,
-            "stock":      int(r["stock"])   if r["stock"] is not None else None,
+            "price":      str(r["price"])  if r["price"]  is not None else None,
+            "stock":      str(r["stock"])  if r["stock"]  is not None else None,
             "confidence": confidence,
             "method":     method,
             "variant":    variant or _detect_variant(
@@ -7426,51 +7250,128 @@ def card_enrich():
     result  = _enrich_with_tcg(local, norm_qr)
     result["normalizedQr"] = norm_qr
 
-    # ── C15a: extras (additive — old fields untouched) ─────────────────────
-    try:
-        result.update(_c15_card_extras(db, norm_qr))
-        _trend = _c15_trend(db, norm_qr)
-        if _trend:
-            result["trend"] = _trend
-        _vlist = _c15_variants(db, norm_qr)
-        if len(_vlist) > 1:
-            result["variants_available"] = _vlist
-        _mkt = ((result.get("tcgData") or {}).get("tcgplayer", {}) or {}).get("marketPrice") \
-               or result.get("price")
-        if _mkt:
-            _bb = _c15_buyback_quote(
-                db, float(_mkt),
-                rarity=(result.get("rarity") or ""),
-                set_id=(result.get("setCode") or "").lower(),
-                condition="NM",
-            )
-            if _bb:
-                result["buyback"] = _bb
-    except Exception as _c15_err:
-        log.debug("[c15a] /card/enrich extras failed for %s: %s", norm_qr, _c15_err)
-
     # Persist market price to price_history for trend tracking
     _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
     if _ph_price:
         try:
-            # C13.5: also populate price_usd + price_native (= the same
-            # USD value, since tcgplayer prices ARE in USD). Without
-            # this, the AI cashier's lookup_price returned price_usd:
-            # null for tcgplayer rows even though native_price was set.
             db.execute(
-                "INSERT INTO price_history "
-                "  (card_id, card_name, market_price, fetched_ms, "
-                "   source, currency, price_usd, price_native) "
-                "VALUES (%s,%s,%s,%s,'tcgplayer','USD',%s,%s)",
-                (norm_qr, result.get("name") or norm_qr,
-                 float(_ph_price), _now_ms(),
-                 float(_ph_price), float(_ph_price))
+                "INSERT INTO price_history (card_id, card_name, market_price, fetched_ms) "
+                "VALUES (%s,%s,%s,%s)",
+                (norm_qr, result.get("name") or norm_qr, float(_ph_price), _now_ms())
             )
             db.commit()
         except Exception:
             pass
 
+    # Staleness: tell the client how old the price data is
+    _STALE_MS  = 7 * 86400 * 1000   # 7 days
+    try:
+        _last_ph = db.execute(
+            "SELECT MAX(fetched_ms) FROM price_history WHERE card_id=%s",
+            (norm_qr,)
+        ).fetchone()[0]
+        result["lastPriceScrapedMs"] = _last_ph
+        result["priceDataStale"]     = (_last_ph is None) or (_last_ph < _now_ms() - _STALE_MS)
+        result["priceDataAgeDays"]   = round((_now_ms() - _last_ph) / 86400000, 1) if _last_ph else None
+    except Exception:
+        pass
+
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Price trend history endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/card/price-trend", methods=["GET"])
+def card_price_trend():
+    """
+    GET /card/price-trend?card_id=SV1-1&days=30
+    GET /card/price-trend?set_id=SV1&card_number=1&days=90
+
+    Returns price_history rows for charting plus a plain-English trend
+    summary (direction, % change, last scraped timestamp).
+
+    card_id may also be a plain card name stored in price_history.
+    days defaults to 30, capped at 365.
+    """
+    card_id  = (request.args.get("card_id")     or "").strip()
+    set_id   = (request.args.get("set_id")      or "").strip().upper()
+    card_num = (request.args.get("card_number") or "").strip()
+    try:
+        days = max(1, min(int(request.args.get("days") or 30), 365))
+    except (ValueError, TypeError):
+        days = 30
+
+    if not card_id:
+        if set_id and card_num:
+            card_id = f"{set_id}-{card_num}"
+        else:
+            return jsonify({"error": "card_id or (set_id + card_number) required"}), 400
+
+    cutoff_ms = _now_ms() - days * 86400 * 1000
+
+    try:
+        db  = _direct_db()
+        cur = db.cursor()
+        cur.execute("""
+            SELECT fetched_ms,
+                   market_price,
+                   COALESCE(source,    'unknown') AS source,
+                   COALESCE(price_usd, market_price) AS price_usd,
+                   COALESCE(currency,  'USD')     AS currency
+              FROM price_history
+             WHERE card_id = %s AND fetched_ms >= %s
+             ORDER BY fetched_ms ASC
+        """, (card_id, cutoff_ms))
+        rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        db.close()
+    except Exception as exc:
+        log.exception("[card/price-trend] db query failed")
+        return jsonify({"error": str(exc)}), 500
+
+    if not rows:
+        return jsonify({
+            "card_id": card_id, "days": days,
+            "points": [], "by_source": {}, "summary": None,
+        })
+
+    # Flat USD price series (ignoring None)
+    usd_vals = [r["price_usd"] for r in rows if r.get("price_usd")]
+    first_p  = usd_vals[0]  if usd_vals else None
+    last_p   = usd_vals[-1] if usd_vals else None
+    pct      = round((last_p - first_p) / first_p * 100, 1) \
+               if first_p and last_p and first_p > 0 else None
+    direction = ("up" if (pct or 0) > 2 else
+                 "down" if (pct or 0) < -2 else "flat")
+
+    # Group compact time-series by source for charting
+    by_source: dict[str, list] = {}
+    for r in rows:
+        by_source.setdefault(r["source"], []).append({
+            "t": r["fetched_ms"],
+            "p": round(r["price_usd"] or r["market_price"] or 0, 4),
+        })
+
+    last_ms    = rows[-1]["fetched_ms"]
+    stale_days = round((_now_ms() - last_ms) / 86400000, 1)
+
+    return jsonify({
+        "card_id":   card_id,
+        "days":      days,
+        "points":    rows,
+        "by_source": by_source,
+        "summary": {
+            "n":               len(rows),
+            "first_price_usd": round(first_p, 4) if first_p else None,
+            "last_price_usd":  round(last_p,  4) if last_p  else None,
+            "pct_change":      pct,
+            "direction":       direction,
+            "last_scraped_ms": last_ms,
+            "stale_days":      stale_days,
+            "is_stale":        stale_days > 7,
+        },
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -8453,14 +8354,8 @@ def card_identify_image():
             raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         identified = json.loads(raw_text)
     except json.JSONDecodeError:
-        return jsonify({"error": "GPT response not valid JSON", "raw": locals().get("raw_text","")}), 502
+        return jsonify({"error": "GPT response not valid JSON", "raw": raw_text}), 502
     except Exception as exc:
-        _r = getattr(exc, "response", None)
-        if _r is not None:
-            _b = getattr(_r, "text", "")[:500]
-            log.warning("[identify-image] upstream %s: %s", getattr(_r,"status_code","?"), _b)
-            return jsonify({"error":"upstream","status":getattr(_r,"status_code",502),"body":_b}), 502
-        log.warning("[identify-image] unexpected: %r", exc)
         return jsonify({"error": str(exc)}), 502
 
     if "error" in identified:
@@ -8478,8 +8373,87 @@ def card_identify_image():
         "gpt":         identified,
         "qr_guess":    qr_guess,
         "enriched":    enriched,
-        "tcg_match":   bool(enriched.get("tcgData")),
     })
+
+
+# ---------------------------------------------------------------------------
+# Feature 1b: Card Condition Grading via GPT-4o Vision
+# ---------------------------------------------------------------------------
+
+@app.route("/card/grade", methods=["POST"])
+@require_api_token
+def card_grade():
+    """
+    POST /card/grade
+    Body (JSON):
+      image        — base64-encoded JPEG/PNG of the card to grade (required)
+      set_id       — optional; used to fetch a local NM reference image
+      card_number  — optional; used with set_id
+      market_price — optional float; if provided, offer_price is calculated
+    Returns:
+      grade, confidence, notes, defects, offer_rate, offer_price?, reference_used
+    """
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    data         = request.get_json(silent=True) or {}
+    img_b64      = (data.get("image") or "").strip()
+    set_id       = (data.get("set_id") or "").strip()
+    card_number  = (data.get("card_number") or "").strip()
+    market_price = float(data.get("market_price") or 0)
+
+    if not img_b64:
+        return jsonify({"error": "image (base64) required"}), 400
+
+    # Try to find a local NM reference image for comparison
+    ref_path = None
+    if set_id and card_number:
+        try:
+            from unified.local_images import local_path_for as _local_resolve
+            db  = _direct_db()
+            cur = db.cursor()
+            cur.execute(
+                "SELECT image_url_alt FROM cards_master "
+                "WHERE set_id=%s AND card_number=%s LIMIT 1",
+                (set_id, card_number),
+            )
+            row = cur.fetchone()
+            db.close()
+            if row:
+                alt = row[0]
+                if isinstance(alt, str):
+                    try:
+                        alt = json.loads(alt) if alt else []
+                    except Exception:
+                        alt = []
+                for c in (alt or []):
+                    lp = (c.get("local") or "").strip()
+                    if not lp:
+                        try:
+                            lp = _local_resolve(c.get("src", ""),
+                                                c.get("url", ""),
+                                                set_id=set_id)
+                        except Exception:
+                            lp = ""
+                    if lp and os.path.isfile(lp):
+                        ref_path = lp
+                        break
+        except Exception:
+            log.exception("[card/grade] reference image lookup failed")
+
+    try:
+        from card_grading import grade_card as _grade_card
+    except ImportError:
+        return jsonify({"error": "card_grading module not available"}), 500
+
+    result = _grade_card(img_b64, reference_path=ref_path)
+    if "error" in result:
+        return jsonify(result), 502
+
+    if market_price:
+        result["offer_price"] = round(market_price * result["offer_rate"], 2)
+    result["reference_used"] = bool(ref_path)
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
@@ -8673,6 +8647,9 @@ def admin_trade_in_list():
       <input id="ti-qr" type="text" placeholder="QR Code / Card Code" style="flex:1;min-width:160px">
       <input id="ti-name" type="text" placeholder="Card Name" style="flex:2;min-width:180px">
       <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option><option>PSA 10</option><option>PSA 9</option><option>PSA 8</option><option>PSA 7</option></select>
+      <button type="button" onclick="triggerGrade()" title="Auto-grade card with AI camera" style="background:#1d4ed8;color:#fff;border:none;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px">📷 Grade</button>
+      <input id="ti-grade-img" type="file" accept="image/*" capture="environment" style="display:none" onchange="gradeFromFile(this)">
+      <span id="ti-grade-badge" style="display:none;font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px"></span>
       <input id="ti-offered" type="number" step="0.01" placeholder="$ Offer" style="width:90px">
       <input id="ti-market" type="number" step="0.01" placeholder="$ Market" style="width:90px">
       <button class="btn-gold" onclick="addTiItem()" style="background:#4ade80;color:#000">+ Add</button>
@@ -8684,12 +8661,25 @@ def admin_trade_in_list():
       <button type="button" onclick="lookupPsaCert()" style="background:#1e3a8a;color:#dbeafe;border:1px solid #3b82f6;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">🔍 Authenticate</button>
       <span id="ti-cert-msg" style="font-size:11px;color:#888;flex:2;min-width:140px"></span>
     </div>
+    <!-- Bulk counter-offer controls -->
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#0a0a0a;border:1px solid #1f2937;border-radius:6px;flex-wrap:wrap">
+      <span style="font-size:12px;color:#60a5fa;font-weight:700;letter-spacing:.5px;white-space:nowrap">⚖ COUNTER-OFFER</span>
+      <input type="range" id="ti-bulk-slider" min="30" max="100" step="5" value="60"
+             oninput="document.getElementById('ti-bulk-pct-lbl').textContent=this.value+'%'"
+             style="flex:1;min-width:100px;accent-color:#4ade80">
+      <span id="ti-bulk-pct-lbl" style="font-weight:700;color:#4ade80;min-width:38px;text-align:right">60%</span>
+      <span style="font-size:11px;color:#666">of market</span>
+      <button onclick="applyBulkPct()" style="background:#1f2937;color:#e2e8f0;border:1px solid #4ade80;border-radius:4px;padding:4px 14px;cursor:pointer;font-size:13px;white-space:nowrap">Apply to all</button>
+    </div>
     <table id="ti-items-table" style="margin-bottom:16px">
-      <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th></th></tr></thead>
-      <tbody id="ti-items-body"><tr><td colspan='5' style='color:#666'>No items yet</td></tr></tbody>
+      <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th>% Slider</th><th></th></tr></thead>
+      <tbody id="ti-items-body"><tr><td colspan='6' style='color:#666'>No items yet</td></tr></tbody>
     </table>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
+        <button id="ti-receipt-btn" onclick="openReceipt()" style="display:none;background:#374151;color:#e2e8f0;border:1px solid #4b5563;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:13px">🖨 Receipt</button>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn-gold" id="ti-send-tablet-btn" onclick="sendOfferToTablet()" style="background:#0ea5e9;color:#000;font-size:14px">📲 Send Offer to Tablet</button>
         <span id="ti-tablet-heartbeat" title="Last time the customer tablet checked in" style="font-size:12px;font-weight:700;color:#888;min-width:135px;text-align:center;padding:6px 10px;border-radius:6px;background:#1a1a1a;border:1px solid #2a2a2a">📱 Tablet — checking…</span>
@@ -8750,23 +8740,86 @@ async function openTi(id) {{
 
 function renderTiItems() {{
   const tbody = document.getElementById('ti-items-body');
+  const receiptBtn = document.getElementById('ti-receipt-btn');
   if (!_activeTiItems.length) {{
-    tbody.innerHTML = "<tr><td colspan='5' style='color:#666'>No items yet</td></tr>";
+    tbody.innerHTML = "<tr><td colspan='6' style='color:#666'>No items yet</td></tr>";
     document.getElementById('ti-total').textContent = '0.00';
+    if (receiptBtn) receiptBtn.style.display = 'none';
     return;
   }}
   let total = 0;
   tbody.innerHTML = _activeTiItems.map(it => {{
-    total += parseFloat(it.offered_price || 0);
+    const offr = parseFloat(it.offered_price || 0);
+    const mkt  = parseFloat(it.market_price  || 0);
+    total += offr;
+    const pct  = mkt > 0 ? Math.round(offr / mkt * 100) : 60;
+    const pctClamped = Math.min(100, Math.max(30, pct));
+    const pctColour  = pct >= 75 ? '#f87171' : pct >= 55 ? '#facc15' : '#4ade80';
     return `<tr>
       <td><b>${{it.name}}</b><br><small style="color:#888">${{it.qr_code}}</small></td>
       <td>${{it.condition}}</td>
-      <td style="color:#4ade80">$${{parseFloat(it.offered_price).toFixed(2)}}</td>
-      <td style="color:#aaa">$${{parseFloat(it.market_price||0).toFixed(2)}}</td>
+      <td id="ti-offer-${{it.id}}" style="color:#4ade80;font-weight:700">$${{offr.toFixed(2)}}</td>
+      <td style="color:#aaa">$${{mkt.toFixed(2)}}</td>
+      <td style="min-width:130px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" min="30" max="100" step="5" value="${{pctClamped}}"
+                 style="flex:1;accent-color:#4ade80"
+                 oninput="updateItemPct(${{it.id}},${{mkt}},parseInt(this.value))">
+          <span id="ti-pct-lbl-${{it.id}}" style="font-size:11px;font-weight:700;color:${{pctColour}};min-width:30px;text-align:right">${{pctClamped}}%</span>
+        </div>
+      </td>
       <td><button onclick="removeTiItem(${{it.id}})" style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;cursor:pointer;padding:2px 8px">✕</button></td>
     </tr>`;
   }}).join('');
   document.getElementById('ti-total').textContent = total.toFixed(2);
+  if (receiptBtn) receiptBtn.style.display = 'inline-block';
+}}
+
+// ── Counter-offer slider helpers ──────────────────────────────────────────
+
+let _itemUpdateTimer = {{}};
+function updateItemPct(itemId, marketPrice, pct) {{
+  const offered = Math.round(marketPrice * pct / 100 * 100) / 100;
+  const offerEl = document.getElementById('ti-offer-' + itemId);
+  const lblEl   = document.getElementById('ti-pct-lbl-' + itemId);
+  if (offerEl) offerEl.textContent = '$' + offered.toFixed(2);
+  if (lblEl)   lblEl.textContent   = pct + '%';
+  // Debounce: only send to server after slider settles for 400ms
+  clearTimeout(_itemUpdateTimer[itemId]);
+  _itemUpdateTimer[itemId] = setTimeout(async () => {{
+    const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/update-item/' + itemId, {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{offered_price: offered}})
+    }});
+    if (d && d.items) {{
+      _activeTiItems = d.items;
+      // Recompute total without clobbering the DOM (slider still focused)
+      const t = _activeTiItems.reduce((s, it) => s + parseFloat(it.offered_price || 0), 0);
+      document.getElementById('ti-total').textContent = t.toFixed(2);
+    }}
+  }}, 400);
+}}
+
+async function applyBulkPct() {{
+  const pct = parseInt(document.getElementById('ti-bulk-slider').value);
+  for (const it of _activeTiItems) {{
+    const mkt = parseFloat(it.market_price || 0);
+    if (mkt > 0) {{
+      await _apiFetch('/admin/trade-in/' + _activeTiId + '/update-item/' + it.id, {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{offered_price: Math.round(mkt * pct / 100 * 100) / 100}})
+      }});
+    }}
+  }}
+  // Re-fetch and re-render
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId);
+  if (d && d.items) {{ _activeTiItems = d.items; renderTiItems(); }}
+}}
+
+function openReceipt() {{
+  if (_activeTiId) window.open('/admin/trade-in/' + _activeTiId + '/receipt', '_blank');
 }}
 
 async function addTiItem() {{
@@ -8847,6 +8900,76 @@ document.addEventListener('DOMContentLoaded', () => {{
     document.getElementById('ti-offered').value = (mv * 0.80).toFixed(2);
   }});
 }});
+
+// ── AI Card Grading ──────────────────────────────────────────────────────────
+// Tapping 📷 Grade opens the camera (mobile) or file picker (desktop).
+// The selected photo is sent to /card/grade; the result fills the condition
+// dropdown, shows a colour-coded badge, and auto-calculates the offer price.
+
+function triggerGrade() {{
+  document.getElementById('ti-grade-img').click();
+}}
+
+async function gradeFromFile(input) {{
+  const file = input.files[0];
+  if (!file) return;
+  const badge = document.getElementById('ti-grade-badge');
+  badge.textContent = '⏳ Grading…';
+  badge.style.background = '#1f2937';
+  badge.style.color = '#facc15';
+  badge.style.display = 'inline-block';
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {{
+    const b64 = ev.target.result; // data-URI
+    // Pull optional set_id / card_number from QR field (format "SV1-4")
+    const qr = (document.getElementById('ti-qr').value || '').trim();
+    const qrMatch = qr.match(/^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$/);
+    const set_id     = qrMatch ? qrMatch[1] : '';
+    const card_number = qrMatch ? qrMatch[2] : '';
+    const market_price = parseFloat(document.getElementById('ti-market').value) || 0;
+
+    try {{
+      const resp = await fetch('/card/grade', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ image: b64, set_id, card_number, market_price }})
+      }});
+      const d = await resp.json();
+      if (d.error) {{
+        badge.textContent = '❌ ' + d.error;
+        badge.style.background = '#7f1d1d';
+        badge.style.color = '#fca5a5';
+        return;
+      }}
+      // Update condition dropdown
+      const sel = document.getElementById('ti-cond');
+      for (let i = 0; i < sel.options.length; i++) {{
+        if (sel.options[i].text === d.grade) {{ sel.selectedIndex = i; break; }}
+      }}
+      // Auto-fill offer price if not already set
+      if (d.offer_price && !parseFloat(document.getElementById('ti-offered').value)) {{
+        document.getElementById('ti-offered').value = d.offer_price.toFixed(2);
+      }}
+      // Grade badge colour: NM=green LP=yellow MP=orange HP/DMG=red
+      const colours = {{NM:'#14532d:#4ade80', LP:'#713f12:#fbbf24',
+                        MP:'#7c2d12:#fb923c', HP:'#7f1d1d:#f87171', DMG:'#7f1d1d:#f87171'}};
+      const [bg, fg] = (colours[d.grade] || '#1f2937:#e5e7eb').split(':');
+      const pct = Math.round(d.offer_rate * 100);
+      const ref = d.reference_used ? ' 🖼' : '';
+      badge.style.background = bg;
+      badge.style.color = fg;
+      badge.textContent = d.grade + ' · ' + pct + '% offer' + ref;
+      badge.title = d.notes + (d.defects?.length ? '\nDefects: ' + d.defects.join(', ') : '');
+    }} catch(e) {{
+      badge.textContent = '❌ ' + e.message;
+      badge.style.background = '#7f1d1d';
+      badge.style.color = '#fca5a5';
+    }}
+    input.value = '';
+  }};
+  reader.readAsDataURL(file);
+}}
 
 async function removeTiItem(itemId) {{
   if (!_activeTiId) return;
@@ -9631,6 +9754,163 @@ def admin_trade_in_cancel(ti_id):
     threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"cancelled": True}, daemon=True).start()
     _tablet_offer_clear()
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Feature F: update a single item's offered_price (counter-offer slider)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/trade-in/<int:ti_id>/update-item/<int:item_id>", methods=["POST"])
+@require_admin
+def admin_trade_in_update_item(ti_id, item_id):
+    """
+    POST /admin/trade-in/<ti_id>/update-item/<item_id>
+    Body: {"offered_price": 12.50}
+    Updates the item's offered_price and returns the full item list so
+    the front-end can recompute the total without a full page reload.
+    """
+    body          = request.get_json(silent=True) or {}
+    offered_price = round(float(body.get("offered_price") or 0), 2)
+    db            = get_db()
+    db.execute(
+        "UPDATE trade_in_items SET offered_price=%s WHERE id=%s AND trade_in_id=%s",
+        (offered_price, item_id, ti_id)
+    )
+    # Keep trade_ins.total_value in sync
+    db.execute(
+        "UPDATE trade_ins SET total_value=("
+        "  SELECT COALESCE(SUM(offered_price),0) FROM trade_in_items WHERE trade_in_id=%s"
+        ") WHERE id=%s",
+        (ti_id, ti_id)
+    )
+    db.commit()
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+    ).fetchall()
+    return jsonify({"ok": True, "items": [dict(r) for r in items]})
+
+
+# ---------------------------------------------------------------------------
+# Feature E: printable trade-in receipt
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/trade-in/<int:ti_id>/receipt", methods=["GET"])
+@require_admin
+def admin_trade_in_receipt(ti_id):
+    """
+    GET /admin/trade-in/<ti_id>/receipt
+    Returns a self-contained, print-ready HTML receipt for the trade-in.
+    Works for open, completed, and cancelled trade-ins alike.
+    """
+    db    = get_db()
+    ti    = db.execute("SELECT * FROM trade_ins WHERE id=%s", (ti_id,)).fetchone()
+    if not ti:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Trade-in not found</h2>", 404
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+    ).fetchall()
+
+    total_offered = sum(float(i["offered_price"] or 0) for i in items)
+    total_market  = sum(float(i["market_price"]  or 0) for i in items)
+    discount_pct  = round((1 - total_offered / total_market) * 100, 1) if total_market > 0 else 0
+    store_credit  = round(total_offered * 1.20, 2)
+
+    created_ts = ""
+    if ti["created_at"]:
+        import datetime as _dt
+        created_ts = _dt.datetime.utcfromtimestamp(ti["created_at"] / 1000).strftime("%Y-%m-%d %H:%M UTC")
+    completed_ts = ""
+    if ti["completed_at"]:
+        completed_ts = _dt.datetime.utcfromtimestamp(ti["completed_at"] / 1000).strftime("%Y-%m-%d %H:%M UTC")
+
+    status_colour = {"completed": "#4ade80", "cancelled": "#f87171", "open": "#facc15"}.get(
+        ti["status"], "#888"
+    )
+
+    rows_html = ""
+    for it in items:
+        mkt    = float(it["market_price"]  or 0)
+        offr   = float(it["offered_price"] or 0)
+        pct    = f"{round(offr/mkt*100)}%" if mkt > 0 else "—"
+        acc    = "✓" if int(it.get("accepted") or 1) else "✗"
+        rows_html += (
+            f"<tr>"
+            f"<td>{it['name']}</td>"
+            f"<td style='color:#888;font-size:11px'>{it['qr_code']}</td>"
+            f"<td>{it['condition']}</td>"
+            f"<td style='text-align:right'>${mkt:.2f}</td>"
+            f"<td style='text-align:right;color:#4ade80'>${offr:.2f}</td>"
+            f"<td style='text-align:center;color:#aaa'>{pct}</td>"
+            f"<td style='text-align:center'>{acc}</td>"
+            f"</tr>"
+        )
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipt {ti['reference']} | HanryxVault POS</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Courier New', monospace; background: #fff; color: #111; padding: 24px; max-width: 700px; margin: 0 auto; }}
+  h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 4px; }}
+  .store {{ font-size: 13px; color: #555; margin-bottom: 20px; }}
+  .meta-row {{ display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }}
+  .meta-row b {{ min-width: 120px; display: inline-block; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; font-size: 13px; }}
+  th {{ background: #111; color: #fff; padding: 6px 8px; text-align: left; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }}
+  tr:nth-child(even) td {{ background: #f9f9f9; }}
+  .totals {{ font-size: 14px; border-top: 2px solid #111; padding-top: 12px; }}
+  .totals-row {{ display: flex; justify-content: space-between; margin-bottom: 4px; }}
+  .totals-row.big {{ font-size: 17px; font-weight: 700; margin-top: 8px; }}
+  .credit-note {{ margin-top: 14px; padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 13px; }}
+  .no-print {{ margin-bottom: 20px; }}
+  @media print {{
+    .no-print {{ display: none; }}
+    body {{ padding: 12px; }}
+  }}
+</style>
+</head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="padding:8px 20px;background:#111;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">🖨 Print</button>
+  <button onclick="window.close()" style="padding:8px 20px;background:#eee;color:#111;border:none;border-radius:4px;cursor:pointer;font-size:14px;margin-left:8px">✕ Close</button>
+</div>
+
+<h1>HanryxVault POS</h1>
+<div class="store">Trade-In Receipt</div>
+
+<div class="meta-row"><b>Reference</b> {ti['reference']}</div>
+<div class="meta-row"><b>Customer</b> {ti['customer'] or 'Walk-in'}</div>
+<div class="meta-row"><b>Status</b> <span style="color:{status_colour};font-weight:700">{ti['status'].upper()}</span></div>
+<div class="meta-row"><b>Created</b> {created_ts}</div>
+{'<div class="meta-row"><b>Completed</b> ' + completed_ts + '</div>' if completed_ts else ''}
+{('<div class="meta-row"><b>Notes</b> ' + ti['notes'] + '</div>') if ti.get('notes') else ''}
+
+<table>
+  <thead><tr>
+    <th>Card</th><th>Code</th><th>Cond</th>
+    <th style="text-align:right">Market</th>
+    <th style="text-align:right">Offered</th>
+    <th style="text-align:center">%</th>
+    <th style="text-align:center">Acc</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+
+<div class="totals">
+  <div class="totals-row"><span>Total market value</span><span>${total_market:.2f}</span></div>
+  <div class="totals-row"><span>Trade-in discount ({discount_pct}%)</span><span>-${total_market - total_offered:.2f}</span></div>
+  <div class="totals-row big"><span>TOTAL CASH OFFER</span><span>${total_offered:.2f}</span></div>
+</div>
+
+<div class="credit-note">
+  <b>Store Credit Alternative:</b> ${store_credit:.2f} (+20%) — ask a staff member to apply.
+</div>
+
+<div style="margin-top:24px;font-size:11px;color:#888;text-align:center">
+  HanryxVault POS · Generated {created_ts}
+</div>
+</body></html>""")
 
 
 # ---------------------------------------------------------------------------
@@ -18150,30 +18430,6 @@ def market_price():
         market = round(weighted_sum / weight_total, 2)
         confidence = "high" if local_sales_30d >= 3 else ("medium" if weight_total >= 4 else "low")
 
-    # ── C15a: trend chip + buyback quote (additive) ───────────────────────
-    trend_pct_7d = trend_pct_30d = trend_pct_90d = None
-    buyback_quote = None
-    buyback_ratio = None
-    try:
-        if set_code and card_number:
-            _qr = f"{set_code}-{card_number}".upper()
-            _t = _c15_trend(db, _qr)
-            trend_pct_7d  = _t.get("pct_7d")
-            trend_pct_30d = _t.get("pct_30d")
-            trend_pct_90d = _t.get("pct_90d")
-        if market > 0:
-            _bb = _c15_buyback_quote(
-                db, market,
-                rarity=(tcgdb_rarity or ""),
-                set_id=(set_code or "").lower(),
-                condition="NM",
-            )
-            if _bb:
-                buyback_quote = _bb.get("quote_usd")
-                buyback_ratio = _bb.get("ratio")
-    except Exception as _c15_mp_err:
-        log.debug("[c15a] /market/price extras failed: %s", _c15_mp_err)
-
     return jsonify({
         "marketPrice":    market,
         "confidence":     confidence,
@@ -18185,12 +18441,6 @@ def market_price():
         "tcgdbRarity":    tcgdb_rarity,
         "storePrice":     store_price,
         "language":       lang,
-        # C15a additive fields
-        "trend_pct_7d":   trend_pct_7d,
-        "trend_pct_30d":  trend_pct_30d,
-        "trend_pct_90d":  trend_pct_90d,
-        "buyback_quote":  buyback_quote,
-        "buyback_ratio":  buyback_ratio,
     })
 
 
@@ -22591,15 +22841,10 @@ def _enrich_single_card(qr_code: str, db) -> bool:
     rp = updated_fields.get("resale_price")
     if rp:
         try:
-            # C13.5: populate source/currency/price_usd/price_native so
-            # the AI cashier's lookup_price returns a fully-populated
-            # tcgplayer market entry instead of null price_usd.
             db.execute(
-                "INSERT INTO price_history "
-                "  (card_id, card_name, market_price, "
-                "   source, currency, price_usd, price_native) "
-                "VALUES (%s, %s, %s, 'tcgplayer', 'USD', %s, %s)",
-                (qr_code, card_name, rp, float(rp), float(rp)),
+                "INSERT INTO price_history (card_id, card_name, market_price) "
+                "VALUES (%s, %s, %s)",
+                (qr_code, card_name, rp),
             )
             db.commit()
         except Exception:
