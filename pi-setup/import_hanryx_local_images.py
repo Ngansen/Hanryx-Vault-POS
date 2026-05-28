@@ -150,27 +150,33 @@ def _num_variants(raw: str) -> set[str]:
     return variants
 
 
-def find_card_id(cur, set_id: str, raw_num: str) -> Optional[int]:
-    """Return cards_master.id for (set_id, card_number), trying multiple
-    normalised forms. Returns None if no match."""
+def find_card_id(cur, set_id: str, raw_num: str) -> Optional[tuple]:
+    """Return (set_id, card_number) composite key for the cards_master row,
+    trying multiple normalised forms of raw_num. Returns None if no match."""
     for num in _num_variants(raw_num):
         cur.execute(
-            "SELECT id FROM cards_master WHERE set_id=%s AND card_number=%s LIMIT 1",
+            "SELECT set_id, card_number FROM cards_master"
+            " WHERE set_id=%s AND card_number=%s LIMIT 1",
             (set_id, num),
         )
         row = cur.fetchone()
         if row:
-            return row[0]
+            return (row[0], row[1])
     return None
 
 
 def append_candidate(
-    cur, card_id: int, local_path: str, lang: str, dry_run: bool
+    cur, card_id: tuple, local_path: str, lang: str, dry_run: bool
 ) -> bool:
     """Append a {src, url, local, lang} entry to cards_master.image_url_alt
     if this exact local_path is not already listed. Returns True if the row
-    was (or would be, in dry-run) updated."""
-    cur.execute("SELECT image_url_alt FROM cards_master WHERE id=%s", (card_id,))
+    was (or would be, in dry-run) updated.
+    card_id is a (set_id, card_number) tuple."""
+    sid, cnum = card_id
+    cur.execute(
+        "SELECT image_url_alt FROM cards_master WHERE set_id=%s AND card_number=%s",
+        (sid, cnum),
+    )
     row = cur.fetchone()
     if not row:
         return False
@@ -196,8 +202,9 @@ def append_candidate(
 
     if not dry_run:
         cur.execute(
-            "UPDATE cards_master SET image_url_alt=%s::jsonb WHERE id=%s",
-            (json.dumps(alt), card_id),
+            "UPDATE cards_master SET image_url_alt=%s::jsonb"
+            " WHERE set_id=%s AND card_number=%s",
+            (json.dumps(alt), sid, cnum),
         )
     return True
 
