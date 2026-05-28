@@ -7263,7 +7263,115 @@ def card_enrich():
         except Exception:
             pass
 
+    # Staleness: tell the client how old the price data is
+    _STALE_MS  = 7 * 86400 * 1000   # 7 days
+    try:
+        _last_ph = db.execute(
+            "SELECT MAX(fetched_ms) FROM price_history WHERE card_id=%s",
+            (norm_qr,)
+        ).fetchone()[0]
+        result["lastPriceScrapedMs"] = _last_ph
+        result["priceDataStale"]     = (_last_ph is None) or (_last_ph < _now_ms() - _STALE_MS)
+        result["priceDataAgeDays"]   = round((_now_ms() - _last_ph) / 86400000, 1) if _last_ph else None
+    except Exception:
+        pass
+
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Price trend history endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/card/price-trend", methods=["GET"])
+def card_price_trend():
+    """
+    GET /card/price-trend?card_id=SV1-1&days=30
+    GET /card/price-trend?set_id=SV1&card_number=1&days=90
+
+    Returns price_history rows for charting plus a plain-English trend
+    summary (direction, % change, last scraped timestamp).
+
+    card_id may also be a plain card name stored in price_history.
+    days defaults to 30, capped at 365.
+    """
+    card_id  = (request.args.get("card_id")     or "").strip()
+    set_id   = (request.args.get("set_id")      or "").strip().upper()
+    card_num = (request.args.get("card_number") or "").strip()
+    try:
+        days = max(1, min(int(request.args.get("days") or 30), 365))
+    except (ValueError, TypeError):
+        days = 30
+
+    if not card_id:
+        if set_id and card_num:
+            card_id = f"{set_id}-{card_num}"
+        else:
+            return jsonify({"error": "card_id or (set_id + card_number) required"}), 400
+
+    cutoff_ms = _now_ms() - days * 86400 * 1000
+
+    try:
+        db  = _direct_db()
+        cur = db.cursor()
+        cur.execute("""
+            SELECT fetched_ms,
+                   market_price,
+                   COALESCE(source,    'unknown') AS source,
+                   COALESCE(price_usd, market_price) AS price_usd,
+                   COALESCE(currency,  'USD')     AS currency
+              FROM price_history
+             WHERE card_id = %s AND fetched_ms >= %s
+             ORDER BY fetched_ms ASC
+        """, (card_id, cutoff_ms))
+        rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        db.close()
+    except Exception as exc:
+        log.exception("[card/price-trend] db query failed")
+        return jsonify({"error": str(exc)}), 500
+
+    if not rows:
+        return jsonify({
+            "card_id": card_id, "days": days,
+            "points": [], "by_source": {}, "summary": None,
+        })
+
+    # Flat USD price series (ignoring None)
+    usd_vals = [r["price_usd"] for r in rows if r.get("price_usd")]
+    first_p  = usd_vals[0]  if usd_vals else None
+    last_p   = usd_vals[-1] if usd_vals else None
+    pct      = round((last_p - first_p) / first_p * 100, 1) \
+               if first_p and last_p and first_p > 0 else None
+    direction = ("up" if (pct or 0) > 2 else
+                 "down" if (pct or 0) < -2 else "flat")
+
+    # Group compact time-series by source for charting
+    by_source: dict[str, list] = {}
+    for r in rows:
+        by_source.setdefault(r["source"], []).append({
+            "t": r["fetched_ms"],
+            "p": round(r["price_usd"] or r["market_price"] or 0, 4),
+        })
+
+    last_ms    = rows[-1]["fetched_ms"]
+    stale_days = round((_now_ms() - last_ms) / 86400000, 1)
+
+    return jsonify({
+        "card_id":   card_id,
+        "days":      days,
+        "points":    rows,
+        "by_source": by_source,
+        "summary": {
+            "n":               len(rows),
+            "first_price_usd": round(first_p, 4) if first_p else None,
+            "last_price_usd":  round(last_p,  4) if last_p  else None,
+            "pct_change":      pct,
+            "direction":       direction,
+            "last_scraped_ms": last_ms,
+            "stale_days":      stale_days,
+            "is_stale":        stale_days > 7,
+        },
+    })
 
 
 # ---------------------------------------------------------------------------
