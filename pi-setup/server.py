@@ -8661,12 +8661,25 @@ def admin_trade_in_list():
       <button type="button" onclick="lookupPsaCert()" style="background:#1e3a8a;color:#dbeafe;border:1px solid #3b82f6;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700">🔍 Authenticate</button>
       <span id="ti-cert-msg" style="font-size:11px;color:#888;flex:2;min-width:140px"></span>
     </div>
+    <!-- Bulk counter-offer controls -->
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#0a0a0a;border:1px solid #1f2937;border-radius:6px;flex-wrap:wrap">
+      <span style="font-size:12px;color:#60a5fa;font-weight:700;letter-spacing:.5px;white-space:nowrap">⚖ COUNTER-OFFER</span>
+      <input type="range" id="ti-bulk-slider" min="30" max="100" step="5" value="60"
+             oninput="document.getElementById('ti-bulk-pct-lbl').textContent=this.value+'%'"
+             style="flex:1;min-width:100px;accent-color:#4ade80">
+      <span id="ti-bulk-pct-lbl" style="font-weight:700;color:#4ade80;min-width:38px;text-align:right">60%</span>
+      <span style="font-size:11px;color:#666">of market</span>
+      <button onclick="applyBulkPct()" style="background:#1f2937;color:#e2e8f0;border:1px solid #4ade80;border-radius:4px;padding:4px 14px;cursor:pointer;font-size:13px;white-space:nowrap">Apply to all</button>
+    </div>
     <table id="ti-items-table" style="margin-bottom:16px">
-      <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th></th></tr></thead>
-      <tbody id="ti-items-body"><tr><td colspan='5' style='color:#666'>No items yet</td></tr></tbody>
+      <thead><tr><th>Card</th><th>Condition</th><th>Offer</th><th>Market</th><th>% Slider</th><th></th></tr></thead>
+      <tbody id="ti-items-body"><tr><td colspan='6' style='color:#666'>No items yet</td></tr></tbody>
     </table>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div style="font-size:16px;color:#facc15">Total: $<span id="ti-total">0.00</span></div>
+        <button id="ti-receipt-btn" onclick="openReceipt()" style="display:none;background:#374151;color:#e2e8f0;border:1px solid #4b5563;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:13px">🖨 Receipt</button>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn-gold" id="ti-send-tablet-btn" onclick="sendOfferToTablet()" style="background:#0ea5e9;color:#000;font-size:14px">📲 Send Offer to Tablet</button>
         <span id="ti-tablet-heartbeat" title="Last time the customer tablet checked in" style="font-size:12px;font-weight:700;color:#888;min-width:135px;text-align:center;padding:6px 10px;border-radius:6px;background:#1a1a1a;border:1px solid #2a2a2a">📱 Tablet — checking…</span>
@@ -8727,23 +8740,86 @@ async function openTi(id) {{
 
 function renderTiItems() {{
   const tbody = document.getElementById('ti-items-body');
+  const receiptBtn = document.getElementById('ti-receipt-btn');
   if (!_activeTiItems.length) {{
-    tbody.innerHTML = "<tr><td colspan='5' style='color:#666'>No items yet</td></tr>";
+    tbody.innerHTML = "<tr><td colspan='6' style='color:#666'>No items yet</td></tr>";
     document.getElementById('ti-total').textContent = '0.00';
+    if (receiptBtn) receiptBtn.style.display = 'none';
     return;
   }}
   let total = 0;
   tbody.innerHTML = _activeTiItems.map(it => {{
-    total += parseFloat(it.offered_price || 0);
+    const offr = parseFloat(it.offered_price || 0);
+    const mkt  = parseFloat(it.market_price  || 0);
+    total += offr;
+    const pct  = mkt > 0 ? Math.round(offr / mkt * 100) : 60;
+    const pctClamped = Math.min(100, Math.max(30, pct));
+    const pctColour  = pct >= 75 ? '#f87171' : pct >= 55 ? '#facc15' : '#4ade80';
     return `<tr>
       <td><b>${{it.name}}</b><br><small style="color:#888">${{it.qr_code}}</small></td>
       <td>${{it.condition}}</td>
-      <td style="color:#4ade80">$${{parseFloat(it.offered_price).toFixed(2)}}</td>
-      <td style="color:#aaa">$${{parseFloat(it.market_price||0).toFixed(2)}}</td>
+      <td id="ti-offer-${{it.id}}" style="color:#4ade80;font-weight:700">$${{offr.toFixed(2)}}</td>
+      <td style="color:#aaa">$${{mkt.toFixed(2)}}</td>
+      <td style="min-width:130px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" min="30" max="100" step="5" value="${{pctClamped}}"
+                 style="flex:1;accent-color:#4ade80"
+                 oninput="updateItemPct(${{it.id}},${{mkt}},parseInt(this.value))">
+          <span id="ti-pct-lbl-${{it.id}}" style="font-size:11px;font-weight:700;color:${{pctColour}};min-width:30px;text-align:right">${{pctClamped}}%</span>
+        </div>
+      </td>
       <td><button onclick="removeTiItem(${{it.id}})" style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;cursor:pointer;padding:2px 8px">✕</button></td>
     </tr>`;
   }}).join('');
   document.getElementById('ti-total').textContent = total.toFixed(2);
+  if (receiptBtn) receiptBtn.style.display = 'inline-block';
+}}
+
+// ── Counter-offer slider helpers ──────────────────────────────────────────
+
+let _itemUpdateTimer = {{}};
+function updateItemPct(itemId, marketPrice, pct) {{
+  const offered = Math.round(marketPrice * pct / 100 * 100) / 100;
+  const offerEl = document.getElementById('ti-offer-' + itemId);
+  const lblEl   = document.getElementById('ti-pct-lbl-' + itemId);
+  if (offerEl) offerEl.textContent = '$' + offered.toFixed(2);
+  if (lblEl)   lblEl.textContent   = pct + '%';
+  // Debounce: only send to server after slider settles for 400ms
+  clearTimeout(_itemUpdateTimer[itemId]);
+  _itemUpdateTimer[itemId] = setTimeout(async () => {{
+    const d = await _apiFetch('/admin/trade-in/' + _activeTiId + '/update-item/' + itemId, {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{offered_price: offered}})
+    }});
+    if (d && d.items) {{
+      _activeTiItems = d.items;
+      // Recompute total without clobbering the DOM (slider still focused)
+      const t = _activeTiItems.reduce((s, it) => s + parseFloat(it.offered_price || 0), 0);
+      document.getElementById('ti-total').textContent = t.toFixed(2);
+    }}
+  }}, 400);
+}}
+
+async function applyBulkPct() {{
+  const pct = parseInt(document.getElementById('ti-bulk-slider').value);
+  for (const it of _activeTiItems) {{
+    const mkt = parseFloat(it.market_price || 0);
+    if (mkt > 0) {{
+      await _apiFetch('/admin/trade-in/' + _activeTiId + '/update-item/' + it.id, {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{offered_price: Math.round(mkt * pct / 100 * 100) / 100}})
+      }});
+    }}
+  }}
+  // Re-fetch and re-render
+  const d = await _apiFetch('/admin/trade-in/' + _activeTiId);
+  if (d && d.items) {{ _activeTiItems = d.items; renderTiItems(); }}
+}}
+
+function openReceipt() {{
+  if (_activeTiId) window.open('/admin/trade-in/' + _activeTiId + '/receipt', '_blank');
 }}
 
 async function addTiItem() {{
@@ -9678,6 +9754,163 @@ def admin_trade_in_cancel(ti_id):
     threading.Thread(target=_kiosk_push_trade, args=(ti_id,), kwargs={"cancelled": True}, daemon=True).start()
     _tablet_offer_clear()
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Feature F: update a single item's offered_price (counter-offer slider)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/trade-in/<int:ti_id>/update-item/<int:item_id>", methods=["POST"])
+@require_admin
+def admin_trade_in_update_item(ti_id, item_id):
+    """
+    POST /admin/trade-in/<ti_id>/update-item/<item_id>
+    Body: {"offered_price": 12.50}
+    Updates the item's offered_price and returns the full item list so
+    the front-end can recompute the total without a full page reload.
+    """
+    body          = request.get_json(silent=True) or {}
+    offered_price = round(float(body.get("offered_price") or 0), 2)
+    db            = get_db()
+    db.execute(
+        "UPDATE trade_in_items SET offered_price=%s WHERE id=%s AND trade_in_id=%s",
+        (offered_price, item_id, ti_id)
+    )
+    # Keep trade_ins.total_value in sync
+    db.execute(
+        "UPDATE trade_ins SET total_value=("
+        "  SELECT COALESCE(SUM(offered_price),0) FROM trade_in_items WHERE trade_in_id=%s"
+        ") WHERE id=%s",
+        (ti_id, ti_id)
+    )
+    db.commit()
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+    ).fetchall()
+    return jsonify({"ok": True, "items": [dict(r) for r in items]})
+
+
+# ---------------------------------------------------------------------------
+# Feature E: printable trade-in receipt
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/trade-in/<int:ti_id>/receipt", methods=["GET"])
+@require_admin
+def admin_trade_in_receipt(ti_id):
+    """
+    GET /admin/trade-in/<ti_id>/receipt
+    Returns a self-contained, print-ready HTML receipt for the trade-in.
+    Works for open, completed, and cancelled trade-ins alike.
+    """
+    db    = get_db()
+    ti    = db.execute("SELECT * FROM trade_ins WHERE id=%s", (ti_id,)).fetchone()
+    if not ti:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Trade-in not found</h2>", 404
+    items = db.execute(
+        "SELECT * FROM trade_in_items WHERE trade_in_id=%s ORDER BY id", (ti_id,)
+    ).fetchall()
+
+    total_offered = sum(float(i["offered_price"] or 0) for i in items)
+    total_market  = sum(float(i["market_price"]  or 0) for i in items)
+    discount_pct  = round((1 - total_offered / total_market) * 100, 1) if total_market > 0 else 0
+    store_credit  = round(total_offered * 1.20, 2)
+
+    created_ts = ""
+    if ti["created_at"]:
+        import datetime as _dt
+        created_ts = _dt.datetime.utcfromtimestamp(ti["created_at"] / 1000).strftime("%Y-%m-%d %H:%M UTC")
+    completed_ts = ""
+    if ti["completed_at"]:
+        completed_ts = _dt.datetime.utcfromtimestamp(ti["completed_at"] / 1000).strftime("%Y-%m-%d %H:%M UTC")
+
+    status_colour = {"completed": "#4ade80", "cancelled": "#f87171", "open": "#facc15"}.get(
+        ti["status"], "#888"
+    )
+
+    rows_html = ""
+    for it in items:
+        mkt    = float(it["market_price"]  or 0)
+        offr   = float(it["offered_price"] or 0)
+        pct    = f"{round(offr/mkt*100)}%" if mkt > 0 else "—"
+        acc    = "✓" if int(it.get("accepted") or 1) else "✗"
+        rows_html += (
+            f"<tr>"
+            f"<td>{it['name']}</td>"
+            f"<td style='color:#888;font-size:11px'>{it['qr_code']}</td>"
+            f"<td>{it['condition']}</td>"
+            f"<td style='text-align:right'>${mkt:.2f}</td>"
+            f"<td style='text-align:right;color:#4ade80'>${offr:.2f}</td>"
+            f"<td style='text-align:center;color:#aaa'>{pct}</td>"
+            f"<td style='text-align:center'>{acc}</td>"
+            f"</tr>"
+        )
+
+    return render_template_string(f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipt {ti['reference']} | HanryxVault POS</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Courier New', monospace; background: #fff; color: #111; padding: 24px; max-width: 700px; margin: 0 auto; }}
+  h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 4px; }}
+  .store {{ font-size: 13px; color: #555; margin-bottom: 20px; }}
+  .meta-row {{ display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }}
+  .meta-row b {{ min-width: 120px; display: inline-block; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; font-size: 13px; }}
+  th {{ background: #111; color: #fff; padding: 6px 8px; text-align: left; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }}
+  tr:nth-child(even) td {{ background: #f9f9f9; }}
+  .totals {{ font-size: 14px; border-top: 2px solid #111; padding-top: 12px; }}
+  .totals-row {{ display: flex; justify-content: space-between; margin-bottom: 4px; }}
+  .totals-row.big {{ font-size: 17px; font-weight: 700; margin-top: 8px; }}
+  .credit-note {{ margin-top: 14px; padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 13px; }}
+  .no-print {{ margin-bottom: 20px; }}
+  @media print {{
+    .no-print {{ display: none; }}
+    body {{ padding: 12px; }}
+  }}
+</style>
+</head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="padding:8px 20px;background:#111;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">🖨 Print</button>
+  <button onclick="window.close()" style="padding:8px 20px;background:#eee;color:#111;border:none;border-radius:4px;cursor:pointer;font-size:14px;margin-left:8px">✕ Close</button>
+</div>
+
+<h1>HanryxVault POS</h1>
+<div class="store">Trade-In Receipt</div>
+
+<div class="meta-row"><b>Reference</b> {ti['reference']}</div>
+<div class="meta-row"><b>Customer</b> {ti['customer'] or 'Walk-in'}</div>
+<div class="meta-row"><b>Status</b> <span style="color:{status_colour};font-weight:700">{ti['status'].upper()}</span></div>
+<div class="meta-row"><b>Created</b> {created_ts}</div>
+{'<div class="meta-row"><b>Completed</b> ' + completed_ts + '</div>' if completed_ts else ''}
+{('<div class="meta-row"><b>Notes</b> ' + ti['notes'] + '</div>') if ti.get('notes') else ''}
+
+<table>
+  <thead><tr>
+    <th>Card</th><th>Code</th><th>Cond</th>
+    <th style="text-align:right">Market</th>
+    <th style="text-align:right">Offered</th>
+    <th style="text-align:center">%</th>
+    <th style="text-align:center">Acc</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+
+<div class="totals">
+  <div class="totals-row"><span>Total market value</span><span>${total_market:.2f}</span></div>
+  <div class="totals-row"><span>Trade-in discount ({discount_pct}%)</span><span>-${total_market - total_offered:.2f}</span></div>
+  <div class="totals-row big"><span>TOTAL CASH OFFER</span><span>${total_offered:.2f}</span></div>
+</div>
+
+<div class="credit-note">
+  <b>Store Credit Alternative:</b> ${store_credit:.2f} (+20%) — ask a staff member to apply.
+</div>
+
+<div style="margin-top:24px;font-size:11px;color:#888;text-align:center">
+  HanryxVault POS · Generated {created_ts}
+</div>
+</body></html>""")
 
 
 # ---------------------------------------------------------------------------
