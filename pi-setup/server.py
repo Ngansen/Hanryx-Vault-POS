@@ -3217,66 +3217,6 @@ def init_db():
             db.commit()
             log.info("[DB] Migration: added %s.%s column", table, col)
 
-    # ── price_history schema migration (C11) ─────────────────────────────────
-    # Original schema only had (card_id, card_name, market_price, fetched_ms),
-    # which is enough for the legacy single-source TCGplayer feed but can't
-    # represent the multi-source / multi-currency rows the background market
-    # refresh writes (naver KRW, bunjang KRW, hareruya2 JPY, cardmarket EUR).
-    # Adding columns is non-destructive: existing rows get sensible defaults
-    # (source='tcgplayer', currency='USD', observed_at=fetched_ms->timestamp).
-    # Note: usb_mirror.price_history_recent SELECT references source/grade/
-    # observed_at; before this migration that SELECT silently failed.
-    for col, ddl in [
-        ("source",      "ALTER TABLE price_history ADD COLUMN source     TEXT NOT NULL DEFAULT 'tcgplayer'"),
-        ("grade",       "ALTER TABLE price_history ADD COLUMN grade      TEXT NOT NULL DEFAULT 'raw'"),
-        ("currency",    "ALTER TABLE price_history ADD COLUMN currency   TEXT NOT NULL DEFAULT 'USD'"),
-        ("price_usd",   "ALTER TABLE price_history ADD COLUMN price_usd  DOUBLE PRECISION"),
-        ("observed_at", "ALTER TABLE price_history ADD COLUMN observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
-        ("query_used",  "ALTER TABLE price_history ADD COLUMN query_used TEXT NOT NULL DEFAULT ''"),
-        # C13.5: native-currency price (real KRW/JPY/EUR value before
-        # USD conversion). market_price/price_usd are USD-equivalents;
-        # without this column the AI cashier was forced to alias the
-        # USD value as `native_price` and produce double-USD output.
-        ("price_native","ALTER TABLE price_history ADD COLUMN price_native DOUBLE PRECISION"),
-    ]:
-        if not _col_exists("price_history", col):
-            db.execute(ddl)
-            db.commit()
-            log.info("[DB] Migration: added price_history.%s column", col)
-    # Backfill observed_at from the legacy fetched_ms (epoch ms) for rows
-    # that were inserted before this migration. Idempotent: only touches
-    # rows where observed_at is still the migration default (NOW()) AND
-    # fetched_ms is meaningfully older than now (>10s skew tolerance).
-    try:
-        db.execute("""
-            UPDATE price_history
-               SET observed_at = TO_TIMESTAMP(fetched_ms / 1000.0)
-             WHERE fetched_ms > 0
-               AND observed_at >= NOW() - INTERVAL '10 seconds'
-               AND ABS(EXTRACT(EPOCH FROM observed_at) * 1000 - fetched_ms) > 10000
-        """)
-        db.commit()
-    except Exception as _phe:
-        try: db.rollback()
-        except Exception: pass
-        log.warning("[DB] price_history.observed_at backfill skipped: %s", _phe)
-    # Index for the mirror's "last 90 days, ordered by observed_at" query
-    # and for /admin/market multi-source price fan-out by card.
-    try:
-        db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_price_hist_observed "
-            "ON price_history(observed_at DESC)"
-        )
-        db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_price_hist_card_src "
-            "ON price_history(card_id, source, observed_at DESC)"
-        )
-        db.commit()
-    except Exception as _phi:
-        try: db.rollback()
-        except Exception: pass
-        log.warning("[DB] price_history index create skipped: %s", _phi)
-
     # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
     try:
         db.execute("""
@@ -4379,166 +4319,6 @@ def _enrich_with_tcg(local_result: dict | None, qr_code: str) -> dict:
             out["suggestedPrice"] = round(mkt, 2)
 
     return out
-
-
-# ===========================================================================
-# C15a — extras surfaced to /card/enrich and /market/price.
-#   Purely additive JSON keys — does NOT change any existing field.  Lets the
-#   tablet APK light up the variant picker, abilities panel, trend chip and
-#   buyback quote without an APK rebuild (next call picks them up).
-# ===========================================================================
-
-def _c15_split_qr(norm_qr: str) -> tuple[str, str]:
-    """'SV1-25' -> ('sv1', '25').  Empty strings on parse failure."""
-    m = re.match(r'^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$', (norm_qr or "").strip())
-    return (m.group(1).lower(), m.group(2).lstrip("0") or "0") if m else ("", "")
-
-
-def _c15_card_extras(db, norm_qr: str) -> dict:
-    """C14 enrichment fields from cards_master for a canonical qr_code.
-    Returns {} on miss/error so callers can dict-merge safely."""
-    set_id, num = _c15_split_qr(norm_qr)
-    if not set_id:
-        return {}
-    try:
-        row = db.execute("""
-            SELECT variant, rarity_subtype, card_text,
-                   abilities_jsonb, attacks_jsonb,
-                   name_en, name_jp, name_kr
-            FROM cards_master
-            WHERE LOWER(set_id) = %s
-              AND (card_number = %s OR card_number = LPAD(%s::text, 3, '0'))
-            LIMIT 1
-        """, (set_id, num, num)).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] cards_master lookup failed for %s: %s", norm_qr, _e)
-        return {}
-    if not row:
-        return {}
-    return {
-        "variant":         row["variant"]         or "normal",
-        "rarity_subtype":  row["rarity_subtype"]  or "",
-        "card_text":       row["card_text"]       or "",
-        "abilities":       row["abilities_jsonb"] or [],
-        "attacks_full":    row["attacks_jsonb"]   or [],
-        "names_i18n":      {
-            "en": row["name_en"] or "",
-            "jp": row["name_jp"] or "",
-            "kr": row["name_kr"] or "",
-        },
-    }
-
-
-def _c15_trend(db, norm_qr: str) -> dict:
-    """Read pct_7d/30d/90d from price_trends_daily (matview).
-    Prefers tcgplayer, then cardmarket, else freshest source."""
-    try:
-        row = db.execute("""
-            SELECT source, pct_7d, pct_30d, pct_90d, price_now, last_seen
-            FROM price_trends_daily
-            WHERE card_id = %s
-            ORDER BY CASE source
-                       WHEN 'tcgplayer'  THEN 0
-                       WHEN 'cardmarket' THEN 1
-                       ELSE 2 END,
-                     last_seen DESC
-            LIMIT 1
-        """, (norm_qr,)).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] price_trends_daily lookup failed for %s: %s", norm_qr, _e)
-        return {}
-    if not row:
-        return {}
-    return {
-        "source":    row["source"],
-        "pct_7d":    float(row["pct_7d"])    if row["pct_7d"]    is not None else None,
-        "pct_30d":   float(row["pct_30d"])   if row["pct_30d"]   is not None else None,
-        "pct_90d":   float(row["pct_90d"])   if row["pct_90d"]   is not None else None,
-        "price_now": float(row["price_now"]) if row["price_now"] is not None else None,
-        "as_of":     row["last_seen"].isoformat() if row["last_seen"] else None,
-    }
-
-
-def _c15_variants(db, norm_qr: str) -> list:
-    """Sibling cards with the same set+number but different variant — feeds
-    the variant-picker when a scan is ambiguous (e.g. normal vs reverse_holo
-    vs special_illust all printed at SV1-25)."""
-    set_id, num = _c15_split_qr(norm_qr)
-    if not set_id:
-        return []
-    try:
-        rows = db.execute("""
-            SELECT cm.master_id, cm.variant, cm.rarity_subtype, cm.name_en,
-                   COALESCE(inv.price, 0)::float AS price,
-                   COALESCE(inv.stock, 0)::int   AS stock
-            FROM cards_master cm
-            LEFT JOIN inventory inv
-              ON UPPER(inv.qr_code) = UPPER(cm.master_id)
-            WHERE LOWER(cm.set_id) = %s
-              AND (cm.card_number = %s OR cm.card_number = LPAD(%s::text, 3, '0'))
-            ORDER BY CASE cm.variant
-                       WHEN 'normal'         THEN 0
-                       WHEN 'reverse_holo'   THEN 1
-                       WHEN 'holo'           THEN 2
-                       WHEN 'full_art'       THEN 3
-                       WHEN 'special_illust' THEN 4
-                       WHEN 'hyper_rare'     THEN 5
-                       ELSE 9 END
-        """, (set_id, num, num)).fetchall()
-    except Exception as _e:
-        log.debug("[c15a] variants lookup failed for %s: %s", norm_qr, _e)
-        return []
-    return [
-        {"master_id":      r["master_id"],
-         "variant":        r["variant"] or "normal",
-         "rarity_subtype": r["rarity_subtype"] or "",
-         "name":           r["name_en"] or "",
-         "price":          float(r["price"]) if r["price"] else 0.0,
-         "stock":          int(r["stock"]) if r["stock"] else 0}
-        for r in rows
-    ]
-
-
-def _c15_buyback_quote(db, market_usd: float, *, rarity: str = "", set_id: str = "",
-                       condition: str = "NM", game: str = "pokemon") -> dict:
-    """Compute trade-in offer from buyback_rules.  Picks the most-specific
-    active rule (set+rarity > rarity-only > set-only > generic) breaking ties
-    by priority DESC."""
-    if not market_usd or market_usd <= 0:
-        return {}
-    try:
-        row = db.execute("""
-            SELECT rule_name, ratio::float AS ratio,
-                   COALESCE(min_price_usd, 0)::float AS min_price_usd
-            FROM buyback_rules
-            WHERE active = TRUE
-              AND condition = %s
-              AND game_code = %s
-              AND (set_id IS NULL OR LOWER(set_id) = LOWER(%s))
-              AND (rarity IS NULL OR LOWER(rarity) = LOWER(%s))
-            ORDER BY (CASE WHEN set_id IS NOT NULL THEN 2 ELSE 0 END
-                    + CASE WHEN rarity IS NOT NULL THEN 1 ELSE 0 END) DESC,
-                     priority DESC
-            LIMIT 1
-        """, (condition.upper(), game, set_id or "", rarity or "")).fetchone()
-    except Exception as _e:
-        log.debug("[c15a] buyback rule lookup failed: %s", _e)
-        return {}
-    if not row:
-        return {}
-    ratio = float(row["ratio"])
-    min_p = float(row["min_price_usd"])
-    if min_p > 0 and market_usd < min_p:
-        return {"ratio": ratio, "quote_usd": 0.0,
-                "rule_name": row["rule_name"], "below_min": True,
-                "min_price_usd": min_p}
-    return {"ratio": ratio, "quote_usd": round(market_usd * ratio, 2),
-            "rule_name": row["rule_name"], "below_min": False}
-
-
-# ===========================================================================
-# /  end C15a helpers  /
-# ===========================================================================
 
 
 def _fire_webhook(payload: dict):
@@ -7418,45 +7198,14 @@ def card_enrich():
     result  = _enrich_with_tcg(local, norm_qr)
     result["normalizedQr"] = norm_qr
 
-    # ── C15a: extras (additive — old fields untouched) ─────────────────────
-    try:
-        result.update(_c15_card_extras(db, norm_qr))
-        _trend = _c15_trend(db, norm_qr)
-        if _trend:
-            result["trend"] = _trend
-        _vlist = _c15_variants(db, norm_qr)
-        if len(_vlist) > 1:
-            result["variants_available"] = _vlist
-        _mkt = ((result.get("tcgData") or {}).get("tcgplayer", {}) or {}).get("marketPrice") \
-               or result.get("price")
-        if _mkt:
-            _bb = _c15_buyback_quote(
-                db, float(_mkt),
-                rarity=(result.get("rarity") or ""),
-                set_id=(result.get("setCode") or "").lower(),
-                condition="NM",
-            )
-            if _bb:
-                result["buyback"] = _bb
-    except Exception as _c15_err:
-        log.debug("[c15a] /card/enrich extras failed for %s: %s", norm_qr, _c15_err)
-
     # Persist market price to price_history for trend tracking
     _ph_price = (result.get("tcgData") or {}).get("tcgplayer", {}).get("marketPrice")
     if _ph_price:
         try:
-            # C13.5: also populate price_usd + price_native (= the same
-            # USD value, since tcgplayer prices ARE in USD). Without
-            # this, the AI cashier's lookup_price returned price_usd:
-            # null for tcgplayer rows even though native_price was set.
             db.execute(
-                "INSERT INTO price_history "
-                "  (card_id, card_name, market_price, fetched_ms, "
-                "   source, currency, price_usd, price_native) "
-                "VALUES (%s,%s,%s,%s,'tcgplayer','USD',%s,%s)",
-                (norm_qr, result.get("name") or norm_qr,
-                 float(_ph_price), _now_ms(),
-                 float(_ph_price), float(_ph_price))
+                "INSERT INTO price_history (card_id, card_name, market_price, fetched_ms) "
+                "VALUES (%s,%s,%s,%s)",
+                (norm_qr, result.get("name") or norm_qr, float(_ph_price), _now_ms())
             )
             db.commit()
         except Exception:
@@ -8468,6 +8217,86 @@ def card_identify_image():
 
 
 # ---------------------------------------------------------------------------
+# Feature 1b: Card Condition Grading via GPT-4o Vision
+# ---------------------------------------------------------------------------
+
+@app.route("/card/grade", methods=["POST"])
+@require_api_token
+def card_grade():
+    """
+    POST /card/grade
+    Body (JSON):
+      image        — base64-encoded JPEG/PNG of the card to grade (required)
+      set_id       — optional; used to fetch a local NM reference image
+      card_number  — optional; used with set_id
+      market_price — optional float; if provided, offer_price is calculated
+    Returns:
+      grade, confidence, notes, defects, offer_rate, offer_price?, reference_used
+    """
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    data         = request.get_json(silent=True) or {}
+    img_b64      = (data.get("image") or "").strip()
+    set_id       = (data.get("set_id") or "").strip()
+    card_number  = (data.get("card_number") or "").strip()
+    market_price = float(data.get("market_price") or 0)
+
+    if not img_b64:
+        return jsonify({"error": "image (base64) required"}), 400
+
+    # Try to find a local NM reference image for comparison
+    ref_path = None
+    if set_id and card_number:
+        try:
+            from unified.local_images import local_path_for as _local_resolve
+            db  = _direct_db()
+            cur = db.cursor()
+            cur.execute(
+                "SELECT image_url_alt FROM cards_master "
+                "WHERE set_id=%s AND card_number=%s LIMIT 1",
+                (set_id, card_number),
+            )
+            row = cur.fetchone()
+            db.close()
+            if row:
+                alt = row[0]
+                if isinstance(alt, str):
+                    try:
+                        alt = json.loads(alt) if alt else []
+                    except Exception:
+                        alt = []
+                for c in (alt or []):
+                    lp = (c.get("local") or "").strip()
+                    if not lp:
+                        try:
+                            lp = _local_resolve(c.get("src", ""),
+                                                c.get("url", ""),
+                                                set_id=set_id)
+                        except Exception:
+                            lp = ""
+                    if lp and os.path.isfile(lp):
+                        ref_path = lp
+                        break
+        except Exception:
+            log.exception("[card/grade] reference image lookup failed")
+
+    try:
+        from card_grading import grade_card as _grade_card
+    except ImportError:
+        return jsonify({"error": "card_grading module not available"}), 500
+
+    result = _grade_card(img_b64, reference_path=ref_path)
+    if "error" in result:
+        return jsonify(result), 502
+
+    if market_price:
+        result["offer_price"] = round(market_price * result["offer_rate"], 2)
+    result["reference_used"] = bool(ref_path)
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
 # Feature 2a: Stock Check API — lets Inventory-Scanner app query live stock
 # ---------------------------------------------------------------------------
 
@@ -8658,6 +8487,9 @@ def admin_trade_in_list():
       <input id="ti-qr" type="text" placeholder="QR Code / Card Code" style="flex:1;min-width:160px">
       <input id="ti-name" type="text" placeholder="Card Name" style="flex:2;min-width:180px">
       <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option><option>PSA 10</option><option>PSA 9</option><option>PSA 8</option><option>PSA 7</option></select>
+      <button type="button" onclick="triggerGrade()" title="Auto-grade card with AI camera" style="background:#1d4ed8;color:#fff;border:none;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px">📷 Grade</button>
+      <input id="ti-grade-img" type="file" accept="image/*" capture="environment" style="display:none" onchange="gradeFromFile(this)">
+      <span id="ti-grade-badge" style="display:none;font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px"></span>
       <input id="ti-offered" type="number" step="0.01" placeholder="$ Offer" style="width:90px">
       <input id="ti-market" type="number" step="0.01" placeholder="$ Market" style="width:90px">
       <button class="btn-gold" onclick="addTiItem()" style="background:#4ade80;color:#000">+ Add</button>
@@ -8832,6 +8664,76 @@ document.addEventListener('DOMContentLoaded', () => {{
     document.getElementById('ti-offered').value = (mv * 0.80).toFixed(2);
   }});
 }});
+
+// ── AI Card Grading ──────────────────────────────────────────────────────────
+// Tapping 📷 Grade opens the camera (mobile) or file picker (desktop).
+// The selected photo is sent to /card/grade; the result fills the condition
+// dropdown, shows a colour-coded badge, and auto-calculates the offer price.
+
+function triggerGrade() {{
+  document.getElementById('ti-grade-img').click();
+}}
+
+async function gradeFromFile(input) {{
+  const file = input.files[0];
+  if (!file) return;
+  const badge = document.getElementById('ti-grade-badge');
+  badge.textContent = '⏳ Grading…';
+  badge.style.background = '#1f2937';
+  badge.style.color = '#facc15';
+  badge.style.display = 'inline-block';
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {{
+    const b64 = ev.target.result; // data-URI
+    // Pull optional set_id / card_number from QR field (format "SV1-4")
+    const qr = (document.getElementById('ti-qr').value || '').trim();
+    const qrMatch = qr.match(/^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$/);
+    const set_id     = qrMatch ? qrMatch[1] : '';
+    const card_number = qrMatch ? qrMatch[2] : '';
+    const market_price = parseFloat(document.getElementById('ti-market').value) || 0;
+
+    try {{
+      const resp = await fetch('/card/grade', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ image: b64, set_id, card_number, market_price }})
+      }});
+      const d = await resp.json();
+      if (d.error) {{
+        badge.textContent = '❌ ' + d.error;
+        badge.style.background = '#7f1d1d';
+        badge.style.color = '#fca5a5';
+        return;
+      }}
+      // Update condition dropdown
+      const sel = document.getElementById('ti-cond');
+      for (let i = 0; i < sel.options.length; i++) {{
+        if (sel.options[i].text === d.grade) {{ sel.selectedIndex = i; break; }}
+      }}
+      // Auto-fill offer price if not already set
+      if (d.offer_price && !parseFloat(document.getElementById('ti-offered').value)) {{
+        document.getElementById('ti-offered').value = d.offer_price.toFixed(2);
+      }}
+      // Grade badge colour: NM=green LP=yellow MP=orange HP/DMG=red
+      const colours = {{NM:'#14532d:#4ade80', LP:'#713f12:#fbbf24',
+                        MP:'#7c2d12:#fb923c', HP:'#7f1d1d:#f87171', DMG:'#7f1d1d:#f87171'}};
+      const [bg, fg] = (colours[d.grade] || '#1f2937:#e5e7eb').split(':');
+      const pct = Math.round(d.offer_rate * 100);
+      const ref = d.reference_used ? ' 🖼' : '';
+      badge.style.background = bg;
+      badge.style.color = fg;
+      badge.textContent = d.grade + ' · ' + pct + '% offer' + ref;
+      badge.title = d.notes + (d.defects?.length ? '\nDefects: ' + d.defects.join(', ') : '');
+    }} catch(e) {{
+      badge.textContent = '❌ ' + e.message;
+      badge.style.background = '#7f1d1d';
+      badge.style.color = '#fca5a5';
+    }}
+    input.value = '';
+  }};
+  reader.readAsDataURL(file);
+}}
 
 async function removeTiItem(itemId) {{
   if (!_activeTiId) return;
@@ -18135,30 +18037,6 @@ def market_price():
         market = round(weighted_sum / weight_total, 2)
         confidence = "high" if local_sales_30d >= 3 else ("medium" if weight_total >= 4 else "low")
 
-    # ── C15a: trend chip + buyback quote (additive) ───────────────────────
-    trend_pct_7d = trend_pct_30d = trend_pct_90d = None
-    buyback_quote = None
-    buyback_ratio = None
-    try:
-        if set_code and card_number:
-            _qr = f"{set_code}-{card_number}".upper()
-            _t = _c15_trend(db, _qr)
-            trend_pct_7d  = _t.get("pct_7d")
-            trend_pct_30d = _t.get("pct_30d")
-            trend_pct_90d = _t.get("pct_90d")
-        if market > 0:
-            _bb = _c15_buyback_quote(
-                db, market,
-                rarity=(tcgdb_rarity or ""),
-                set_id=(set_code or "").lower(),
-                condition="NM",
-            )
-            if _bb:
-                buyback_quote = _bb.get("quote_usd")
-                buyback_ratio = _bb.get("ratio")
-    except Exception as _c15_mp_err:
-        log.debug("[c15a] /market/price extras failed: %s", _c15_mp_err)
-
     return jsonify({
         "marketPrice":    market,
         "confidence":     confidence,
@@ -18170,12 +18048,6 @@ def market_price():
         "tcgdbRarity":    tcgdb_rarity,
         "storePrice":     store_price,
         "language":       lang,
-        # C15a additive fields
-        "trend_pct_7d":   trend_pct_7d,
-        "trend_pct_30d":  trend_pct_30d,
-        "trend_pct_90d":  trend_pct_90d,
-        "buyback_quote":  buyback_quote,
-        "buyback_ratio":  buyback_ratio,
     })
 
 
@@ -22576,15 +22448,10 @@ def _enrich_single_card(qr_code: str, db) -> bool:
     rp = updated_fields.get("resale_price")
     if rp:
         try:
-            # C13.5: populate source/currency/price_usd/price_native so
-            # the AI cashier's lookup_price returns a fully-populated
-            # tcgplayer market entry instead of null price_usd.
             db.execute(
-                "INSERT INTO price_history "
-                "  (card_id, card_name, market_price, "
-                "   source, currency, price_usd, price_native) "
-                "VALUES (%s, %s, %s, 'tcgplayer', 'USD', %s, %s)",
-                (qr_code, card_name, rp, float(rp), float(rp)),
+                "INSERT INTO price_history (card_id, card_name, market_price) "
+                "VALUES (%s, %s, %s)",
+                (qr_code, card_name, rp),
             )
             db.commit()
         except Exception:
