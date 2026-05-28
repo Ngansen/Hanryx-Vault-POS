@@ -8217,6 +8217,86 @@ def card_identify_image():
 
 
 # ---------------------------------------------------------------------------
+# Feature 1b: Card Condition Grading via GPT-4o Vision
+# ---------------------------------------------------------------------------
+
+@app.route("/card/grade", methods=["POST"])
+@require_api_token
+def card_grade():
+    """
+    POST /card/grade
+    Body (JSON):
+      image        — base64-encoded JPEG/PNG of the card to grade (required)
+      set_id       — optional; used to fetch a local NM reference image
+      card_number  — optional; used with set_id
+      market_price — optional float; if provided, offer_price is calculated
+    Returns:
+      grade, confidence, notes, defects, offer_rate, offer_price?, reference_used
+    """
+    if not _OPENAI_API_KEY:
+        return jsonify({"error": "OPENAI_API_KEY not configured"}), 503
+
+    data         = request.get_json(silent=True) or {}
+    img_b64      = (data.get("image") or "").strip()
+    set_id       = (data.get("set_id") or "").strip()
+    card_number  = (data.get("card_number") or "").strip()
+    market_price = float(data.get("market_price") or 0)
+
+    if not img_b64:
+        return jsonify({"error": "image (base64) required"}), 400
+
+    # Try to find a local NM reference image for comparison
+    ref_path = None
+    if set_id and card_number:
+        try:
+            from unified.local_images import local_path_for as _local_resolve
+            db  = _direct_db()
+            cur = db.cursor()
+            cur.execute(
+                "SELECT image_url_alt FROM cards_master "
+                "WHERE set_id=%s AND card_number=%s LIMIT 1",
+                (set_id, card_number),
+            )
+            row = cur.fetchone()
+            db.close()
+            if row:
+                alt = row[0]
+                if isinstance(alt, str):
+                    try:
+                        alt = json.loads(alt) if alt else []
+                    except Exception:
+                        alt = []
+                for c in (alt or []):
+                    lp = (c.get("local") or "").strip()
+                    if not lp:
+                        try:
+                            lp = _local_resolve(c.get("src", ""),
+                                                c.get("url", ""),
+                                                set_id=set_id)
+                        except Exception:
+                            lp = ""
+                    if lp and os.path.isfile(lp):
+                        ref_path = lp
+                        break
+        except Exception:
+            log.exception("[card/grade] reference image lookup failed")
+
+    try:
+        from card_grading import grade_card as _grade_card
+    except ImportError:
+        return jsonify({"error": "card_grading module not available"}), 500
+
+    result = _grade_card(img_b64, reference_path=ref_path)
+    if "error" in result:
+        return jsonify(result), 502
+
+    if market_price:
+        result["offer_price"] = round(market_price * result["offer_rate"], 2)
+    result["reference_used"] = bool(ref_path)
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
 # Feature 2a: Stock Check API — lets Inventory-Scanner app query live stock
 # ---------------------------------------------------------------------------
 
@@ -8407,6 +8487,9 @@ def admin_trade_in_list():
       <input id="ti-qr" type="text" placeholder="QR Code / Card Code" style="flex:1;min-width:160px">
       <input id="ti-name" type="text" placeholder="Card Name" style="flex:2;min-width:180px">
       <select id="ti-cond" style="min-width:80px"><option>NM</option><option>LP</option><option>MP</option><option>HP</option><option>DMG</option><option>PSA 10</option><option>PSA 9</option><option>PSA 8</option><option>PSA 7</option></select>
+      <button type="button" onclick="triggerGrade()" title="Auto-grade card with AI camera" style="background:#1d4ed8;color:#fff;border:none;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px">📷 Grade</button>
+      <input id="ti-grade-img" type="file" accept="image/*" capture="environment" style="display:none" onchange="gradeFromFile(this)">
+      <span id="ti-grade-badge" style="display:none;font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px"></span>
       <input id="ti-offered" type="number" step="0.01" placeholder="$ Offer" style="width:90px">
       <input id="ti-market" type="number" step="0.01" placeholder="$ Market" style="width:90px">
       <button class="btn-gold" onclick="addTiItem()" style="background:#4ade80;color:#000">+ Add</button>
@@ -8581,6 +8664,76 @@ document.addEventListener('DOMContentLoaded', () => {{
     document.getElementById('ti-offered').value = (mv * 0.80).toFixed(2);
   }});
 }});
+
+// ── AI Card Grading ──────────────────────────────────────────────────────────
+// Tapping 📷 Grade opens the camera (mobile) or file picker (desktop).
+// The selected photo is sent to /card/grade; the result fills the condition
+// dropdown, shows a colour-coded badge, and auto-calculates the offer price.
+
+function triggerGrade() {{
+  document.getElementById('ti-grade-img').click();
+}}
+
+async function gradeFromFile(input) {{
+  const file = input.files[0];
+  if (!file) return;
+  const badge = document.getElementById('ti-grade-badge');
+  badge.textContent = '⏳ Grading…';
+  badge.style.background = '#1f2937';
+  badge.style.color = '#facc15';
+  badge.style.display = 'inline-block';
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {{
+    const b64 = ev.target.result; // data-URI
+    // Pull optional set_id / card_number from QR field (format "SV1-4")
+    const qr = (document.getElementById('ti-qr').value || '').trim();
+    const qrMatch = qr.match(/^([A-Za-z0-9]+)-(\d+[A-Za-z]?)$/);
+    const set_id     = qrMatch ? qrMatch[1] : '';
+    const card_number = qrMatch ? qrMatch[2] : '';
+    const market_price = parseFloat(document.getElementById('ti-market').value) || 0;
+
+    try {{
+      const resp = await fetch('/card/grade', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ image: b64, set_id, card_number, market_price }})
+      }});
+      const d = await resp.json();
+      if (d.error) {{
+        badge.textContent = '❌ ' + d.error;
+        badge.style.background = '#7f1d1d';
+        badge.style.color = '#fca5a5';
+        return;
+      }}
+      // Update condition dropdown
+      const sel = document.getElementById('ti-cond');
+      for (let i = 0; i < sel.options.length; i++) {{
+        if (sel.options[i].text === d.grade) {{ sel.selectedIndex = i; break; }}
+      }}
+      // Auto-fill offer price if not already set
+      if (d.offer_price && !parseFloat(document.getElementById('ti-offered').value)) {{
+        document.getElementById('ti-offered').value = d.offer_price.toFixed(2);
+      }}
+      // Grade badge colour: NM=green LP=yellow MP=orange HP/DMG=red
+      const colours = {{NM:'#14532d:#4ade80', LP:'#713f12:#fbbf24',
+                        MP:'#7c2d12:#fb923c', HP:'#7f1d1d:#f87171', DMG:'#7f1d1d:#f87171'}};
+      const [bg, fg] = (colours[d.grade] || '#1f2937:#e5e7eb').split(':');
+      const pct = Math.round(d.offer_rate * 100);
+      const ref = d.reference_used ? ' 🖼' : '';
+      badge.style.background = bg;
+      badge.style.color = fg;
+      badge.textContent = d.grade + ' · ' + pct + '% offer' + ref;
+      badge.title = d.notes + (d.defects?.length ? '\nDefects: ' + d.defects.join(', ') : '');
+    }} catch(e) {{
+      badge.textContent = '❌ ' + e.message;
+      badge.style.background = '#7f1d1d';
+      badge.style.color = '#fca5a5';
+    }}
+    input.value = '';
+  }};
+  reader.readAsDataURL(file);
+}}
 
 async function removeTiItem(itemId) {{
   if (!_activeTiId) return;
