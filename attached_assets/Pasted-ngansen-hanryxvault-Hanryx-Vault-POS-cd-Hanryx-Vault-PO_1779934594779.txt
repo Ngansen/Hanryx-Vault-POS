@@ -1,0 +1,46 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd ~/Hanryx-Vault-POS/pi-setup
+
+# Install onnxruntime temporarily
+docker compose exec pos pip install onnxruntime
+
+# Kill old clip worker (needs sudo) and restart it 
+sudo pkill -f 'workers.run clip_embed' 2>/dev/null; sleep 2
+nohup docker compose exec -T pos python3 -m workers.run clip_embed --loop \
+  > /tmp/worker-clip-embed.log 2>&1 &
+sleep 4 && tail -n 10 /tmp/worker-clip-embed.log
+
+# Check queue state
+docker compose exec db psql -U vaultpos vaultpos -c \
+  "SELECT status, task_type, COUNT(*) FROM bg_task_queue GROUP BY status, task_type ORDER BY status, task_type;"
+Collecting onnxruntime
+  Downloading onnxruntime-1.26.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (5.3 kB)
+Collecting flatbuffers (from onnxruntime)
+  Downloading flatbuffers-25.12.19-py2.py3-none-any.whl.metadata (1.0 kB)
+Requirement already satisfied: numpy>=1.21.6 in /opt/venv/lib/python3.11/site-packages (from onnxruntime) (2.4.4)
+Requirement already satisfied: packaging in /opt/venv/lib/python3.11/site-packages (from onnxruntime) (26.2)
+Collecting protobuf (from onnxruntime)
+  Downloading protobuf-7.35.0-cp310-abi3-manylinux2014_aarch64.whl.metadata (595 bytes)
+Downloading onnxruntime-1.26.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (16.0 MB)
+   ━━━━━━━━━━━━ 16.0/16.0 MB 10.1 MB/s eta 0:00:00
+Downloading flatbuffers-25.12.19-py2.py3-none-any.whl (26 kB)
+Downloading protobuf-7.35.0-cp310-abi3-manylinux2014_aarch64.whl (328 kB)
+   ━━━━━━━━━━━━ 328.8/328.8   6.5 MB/s eta 0:00:00
+                kB                                
+Installing collected packages: flatbuffers, protobuf, onnxruntime
+Successfully installed flatbuffers-25.12.19 onnxruntime-1.26.0 protobuf-7.35.0
+
+[notice] A new release of pip is available: 24.0 -> 26.1.1
+[notice] To update, run: pip install --upgrade pip
+[1] 20846
+nohup: ignoring input
+2026-05-28 02:15:54,815 INFO workers.run: [clip_embed] entering loop (max_idle=None)
+ status |  task_type   | count 
+--------+--------------+-------
+ DONE   | clip_embed   | 12578
+ DONE   | image_health | 34589
+ DONE   | image_mirror | 25733
+(3 rows)
+
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ find ~/Hanryx-Vault-POS -name 'lock-python-deps.sh' 2>/dev/null
+/home/ngansen/Hanryx-Vault-POS/pi-setup/scripts/lock-python-deps.sh
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
