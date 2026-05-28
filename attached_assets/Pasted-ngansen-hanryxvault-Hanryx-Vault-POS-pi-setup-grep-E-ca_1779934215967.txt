@@ -1,0 +1,25 @@
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ grep -E 'cards|381e39df|sda' /etc/fstab
+cat /boot/firmware/cmdline.txt | tr ' ' '\n' | grep -i usb
+systemctl list-units --type=mount | grep mnt
+UUID=381e39df-5f24-44ad-a925-38d5b60e4256  /mnt/cards  ext4  defaults,noatime,nofail,x-systemd.device-timeout=10  0  2
+  mnt-cards-docker-rootfs-overlayfs-01b80d16d9a7043c34f514dc314fa9ef924264107fd804c24e2d92a8ef87f909.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/01b80d16d9a7043c34f514dc314fa9ef924264107fd804c24e2d92a8ef87f909
+  mnt-cards-docker-rootfs-overlayfs-16e4af736d44e6a0588e7638084cf7794dad3bf87ea6105b0e6ecf917e6d4cc5.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/16e4af736d44e6a0588e7638084cf7794dad3bf87ea6105b0e6ecf917e6d4cc5
+  mnt-cards-docker-rootfs-overlayfs-2989f3b3381401f0f943853bc847cbcb4ec6462fe67f81f5102564cdda2b044c.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/2989f3b3381401f0f943853bc847cbcb4ec6462fe67f81f5102564cdda2b044c
+  mnt-cards-docker-rootfs-overlayfs-4500c973c8d3301f75d61476ae2f9c01756babb1ad553d7d1674a4421db24d73.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/4500c973c8d3301f75d61476ae2f9c01756babb1ad553d7d1674a4421db24d73
+  mnt-cards-docker-rootfs-overlayfs-72444510aba2ae36ad42bc5baa3d7dcf26eb082ceb3eda757c39eb71c8304281.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/72444510aba2ae36ad42bc5baa3d7dcf26eb082ceb3eda757c39eb71c8304281
+  mnt-cards-docker-rootfs-overlayfs-900260d47787281f9c1890bf35d7a149f95da64258043135cc9020353722e076.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/900260d47787281f9c1890bf35d7a149f95da64258043135cc9020353722e076
+  mnt-cards-docker-rootfs-overlayfs-99fbfe0697ef44aa13fcd2497e141ac541ba3f6783945abc7bdf2c77c4322d1a.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/99fbfe0697ef44aa13fcd2497e141ac541ba3f6783945abc7bdf2c77c4322d1a
+  mnt-cards-docker-rootfs-overlayfs-c21623117d1b067a16017f8f51b07d96556b315f64d15304acb7d31faf304b33.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/c21623117d1b067a16017f8f51b07d96556b315f64d15304acb7d31faf304b33
+  mnt-cards-docker-rootfs-overlayfs-c347b6786fbf561bc8d3db962e01b38f3c5fdc3ff47c6046c539bcaf59f33e41.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/c347b6786fbf561bc8d3db962e01b38f3c5fdc3ff47c6046c539bcaf59f33e41
+  mnt-cards-docker-rootfs-overlayfs-c509c169921c107e8beaa4e78b7fcb1c68c709d1ce31f511583f2f07e5de31f5.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/c509c169921c107e8beaa4e78b7fcb1c68c709d1ce31f511583f2f07e5de31f5
+  mnt-cards-docker-rootfs-overlayfs-ddcdba4b2eb79e5ea4d01d892559f4bb1ae170bdc40df4f09f1e20e00a9ad30f.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/ddcdba4b2eb79e5ea4d01d892559f4bb1ae170bdc40df4f09f1e20e00a9ad30f
+  mnt-cards-docker-rootfs-overlayfs-f682ef4f135d30714c75df8e13f7b2cc6c120f8312d98dab7e4acf94ecfd216f.mount loaded active mounted /mnt/cards/docker/rootfs/overlayfs/f682ef4f135d30714c75df8e13f7b2cc6c120f8312d98dab7e4acf94ecfd216f
+  mnt-cards.mount                                                                                          loaded active mounted /mnt/cards
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ sudo sed -i 's/$/ usbcore.autosuspend=-1/' /boot/firmware/cmdline.txt
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ # Change the cards line in /etc/fstab from:
+UUID=381e39df  /mnt/cards  ext4  defaults
+# To:
+UUID=381e39df  /mnt/cards  ext4  defaults,nofail,x-systemd.device-timeout=60s  0  2
+-bash: /mnt/cards: Is a directory
+-bash: /mnt/cards: Is a directory
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $  
