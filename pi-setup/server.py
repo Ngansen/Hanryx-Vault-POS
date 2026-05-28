@@ -5863,6 +5863,58 @@ def card_price_scrape():
             flat.extend(rows)
         out["median_usd"] = None
 
+    # ── IQR outlier filter + optional CLIP listing verification ──────────────
+    try:
+        import price_filter as _pf
+
+        # Optional CLIP reference: caller may pass set_id + card_number so we
+        # can verify listing thumbnails visually against the known-NM image.
+        set_id_ref  = (request.values.get("set_id")      or body.get("set_id")      or "").strip()
+        card_num_ref = (request.values.get("card_number") or body.get("card_number") or "").strip()
+
+        ref_emb: list | None = None
+        if set_id_ref and card_num_ref and _OPENAI_API_KEY:
+            try:
+                _rdb  = _direct_db()
+                _rcur = _rdb.cursor()
+                _rcur.execute(
+                    "SELECT embedding FROM card_image_embedding "
+                    "WHERE set_id=%s AND card_number=%s AND failure='' "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (set_id_ref, card_num_ref),
+                )
+                _row = _rcur.fetchone()
+                _rdb.close()
+                if _row and _row[0]:
+                    ref_emb = list(_row[0])
+            except Exception as _emb_err:
+                log.debug("[card/price] ref embedding lookup failed: %s", _emb_err)
+
+        # embed_fn: wraps server's _clip_embed_bytes → list[float]
+        def _embed_fn(img_bytes: bytes):
+            arr = _clip_embed_bytes(img_bytes)
+            if arr is None:
+                return None
+            flat_arr = arr.flatten().tolist()
+            return flat_arr
+
+        flat, _fstats = _pf.apply_filters(
+            flat,
+            iqr_k=1.5,
+            reference_embedding=ref_emb,
+            embed_fn=_embed_fn if ref_emb else None,
+        )
+        out["filter_stats"] = _fstats
+        out["filtered_median_usd"] = _fstats.get("filtered_median_usd")
+
+        # Propagate per-listing tags back into per-source results
+        _tagged = {id(r): r for r in flat}
+        for src in out["results"]:
+            out["results"][src] = [_tagged.get(id(r), r) for r in out["results"][src]]
+
+    except Exception as _pf_err:
+        log.info("[card/price] price_filter skipped: %s", _pf_err)
+
     out["count"] = len(flat)
     return jsonify(out)
 
