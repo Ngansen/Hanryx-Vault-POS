@@ -1,0 +1,149 @@
+pi-setup/data/jp_pokellector/Weezing.csv
+        pi-setup/data/jp_pokellector/Whimsicott.csv
+        pi-setup/data/jp_pokellector/Whirlipede.csv
+        pi-setup/data/jp_pokellector/Whiscash.csv
+        pi-setup/data/jp_pokellector/Whismur.csv
+        pi-setup/data/jp_pokellector/Wigglytuff.csv
+        pi-setup/data/jp_pokellector/Wiglett.csv
+        pi-setup/data/jp_pokellector/Wimpod.csv
+        pi-setup/data/jp_pokellector/Wingull.csv
+        pi-setup/data/jp_pokellector/Wishiwashi.csv
+        pi-setup/data/jp_pokellector/Wobbuffet.csv
+        pi-setup/data/jp_pokellector/Woobat.csv
+        pi-setup/data/jp_pokellector/Wooloo.csv
+        pi-setup/data/jp_pokellector/Wooper.csv
+        pi-setup/data/jp_pokellector/Wormadam.csv
+        pi-setup/data/jp_pokellector/Wugtrio.csv
+        pi-setup/data/jp_pokellector/Wurmple.csv
+        pi-setup/data/jp_pokellector/Wynaut.csv
+        pi-setup/data/jp_pokellector/Wyrdeer.csv
+        pi-setup/data/jp_pokellector/Xatu.csv
+        pi-setup/data/jp_pokellector/Xerneas.csv
+        pi-setup/data/jp_pokellector/Xurkitree.csv
+        pi-setup/data/jp_pokellector/Yamask.csv
+        pi-setup/data/jp_pokellector/Yamper.csv
+        pi-setup/data/jp_pokellector/Yanma.csv
+        pi-setup/data/jp_pokellector/Yanmega.csv
+        pi-setup/data/jp_pokellector/Yungoos.csv
+        pi-setup/data/jp_pokellector/Yveltal.csv
+        pi-setup/data/jp_pokellector/Zacian.csv
+        pi-setup/data/jp_pokellector/Zamazenta.csv
+        pi-setup/data/jp_pokellector/Zangoose.csv
+        pi-setup/data/jp_pokellector/Zapdos.csv
+        pi-setup/data/jp_pokellector/Zarude.csv
+        pi-setup/data/jp_pokellector/Zebstrika.csv
+        pi-setup/data/jp_pokellector/Zekrom.csv
+        pi-setup/data/jp_pokellector/Zeraora.csv
+        pi-setup/data/jp_pokellector/Zigzagoon.csv
+        pi-setup/data/jp_pokellector/Zoroark.csv
+        pi-setup/data/jp_pokellector/Zorua.csv
+        pi-setup/data/jp_pokellector/Zubat.csv
+        pi-setup/data/jp_pokellector/Zweilous.csv
+        pi-setup/data/jp_pokellector/Zygarde.csv
+        pi-setup/docker-compose.override.yml
+        pi-setup/image_local_downloader.py
+        pi-setup/monitoring/nohup.out
+        pi-setup/pricecharting_scraper.py
+        pi-setup/printer.conf
+        pi-setup/resolve
+        pi-setup/scripts/c16_pricecharting_backfill.py
+        pi-setup/scripts/c17_multi_source_backfill.py
+        pi-setup/scripts/c1x_status.sh
+        pi-setup/scripts/checkup.sh
+        pi-setup/scripts/rollup_price_history_monthly.py
+        pi-setup/secrets/
+        pi-setup/server.py.orig
+        pi-setup/sitecustomize.py
+        probe/
+        scrape-dump/
+
+nothing added to commit but untracked files present (use "git add" to track)
+ngansen@hanryxvault:~/Hanryx-Vault-POS $ cd pi-setup
+docker compose restart pos
+sleep 15
+docker compose logs --tail=20 pos | grep -E 'Running|ERROR'
+[+] restart 0/1
+ ⠼ Container pi-setup-pos-1 Restarting        2.4s
+ngansen@hanryxvault:~/Hanryx-Vault-POS/pi-setup $ cd ~/Hanryx-Vault-POS
+git show 14e822e -- pi-setup/server.py | head -80
+commit 14e822e2d17bab9b3f3c5ca6c38c038eb82091df
+Author: ngansen <ngansen@hanryxvault.local>
+Date:   Wed May 13 14:25:11 2026 +0000
+
+    fix(scanner): wrap smart_scan; numeric price/stock; identify-image upstream body+raw guard; tcg_match flag; 8/16MB upload cap
+    
+    Scanner code review #2 #4 #5 #6 #18. #7 deferred (anchor mismatch — needs exact-line dump from pi).
+
+diff --git a/pi-setup/server.py b/pi-setup/server.py
+index 97a61a6..5a18f6e 100644
+--- a/pi-setup/server.py
++++ b/pi-setup/server.py
+@@ -311,6 +311,7 @@ def _refresh_token_if_needed():
+ # ---------------------------------------------------------------------------
+ 
+ app = Flask(__name__)
++app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # upload cap (#18)
+ # Long cache on /static/* — logo, brand-pulse, JS bundles never change between
+ # deploys (Flask appends ?v=mtime when needed). Saves dozens of round-trips
+ # per kiosk reload.
+@@ -3277,53 +3278,57 @@ def init_db():
+         except Exception: pass
+         log.warning("[DB] price_history index create skipped: %s", _phi)
+ 
+-    # Backfill card_number for rows that have a SET-NUM qr_code but empty card_number
+-    try:
+-        db.execute("""
+-            UPDATE inventory
+-            SET card_number = LTRIM(
+-                SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'),
+-                '0'
+-            )
+-            WHERE card_number = ''
+-              AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
+-        """)
+-        db.commit()
+-        log.info("[DB] Backfilled card_number column")
++    # Backfill card_number — uses a fresh connection so it's immune to any
++    # earlier aborted txn in init_db (was failing every boot with cryptic
++    # "tuple index out of range" from txn-state pollution).
++    try:
++        import psycopg2 as _p2
++        with _p2.connect(os.environ["DATABASE_URL"]) as _bk:
++            with _bk.cursor() as _c:
++                _c.execute("""
++                    UPDATE inventory
++                    SET card_number = LTRIM(SUBSTRING(qr_code FROM '[A-Za-z]{2,8}[-/]0*([0-9]{1,4}[A-Za-z]?)'), '0')
++                    WHERE (card_number IS NULL OR card_number = '')
++                      AND qr_code ~ '[A-Za-z]{2,8}[-/][0-9]'
++                """)
++                _rc = _c.rowcount
++            _bk.commit()
++        log.info("[DB] card_number backfill: %d rows", _rc)
+     except Exception as _be:
+-        try:
+-            db.rollback()
+-        except Exception:
+-            pass
+-        log.warning("[DB] card_number backfill skipped: %s", _be)
++        import traceback as _tb
++        log.warning("[DB] card_number backfill skipped: %r\n%s", _be, _tb.format_exc())
+ 
+     # Backfill release_year from set_code for existing rows
+-    try:
+-        db.execute("""
+-            UPDATE inventory
+-            SET release_year = CASE
+-                WHEN UPPER(set_code) LIKE 'SV%'   THEN 2023
+-                WHEN UPPER(set_code) LIKE 'SWSH%' THEN 2020
+-                WHEN UPPER(set_code) LIKE 'SM%'   THEN 2017
+-                WHEN UPPER(set_code) LIKE 'XY%'   THEN 2014
+-                WHEN UPPER(set_code) LIKE 'BW%'   THEN 2011
+-                WHEN UPPER(set_code) LIKE 'HGSS%' THEN 2010
+-                WHEN UPPER(set_code) LIKE 'PL%'   THEN 2009
+-                WHEN UPPER(set_code) LIKE 'DP%'   THEN 2007
+-                WHEN UPPER(set_code) LIKE 'EX%'   THEN 2003
+-                WHEN UPPER(set_code) LIKE 'BASE%' THEN 1999
+-                ELSE 0
+-            END
+-            WHERE release_year = 0 AND set_code != ''
+ngansen@hanryxvault:~/Hanryx-Vault-POS $
