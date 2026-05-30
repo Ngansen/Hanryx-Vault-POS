@@ -208,6 +208,12 @@ services:
       NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
 
+      # PayPal webhook sale integration (set in pi-setup/.env).
+      # PAYPAL_MODE: live (default) or sandbox for testing.
+      PAYPAL_CLIENT_ID:     ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_MODE:          ${PAYPAL_MODE:-live}
+
       # Self-hosted offline PokeAPI mirror (see pokeapi/ service below).
       # The Flask server prefers this URL and only falls back to pokeapi.co
       # if the local mirror is unreachable.

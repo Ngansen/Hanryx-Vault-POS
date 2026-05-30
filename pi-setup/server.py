@@ -23353,6 +23353,183 @@ def api_v1_categories():
                      "conditions": conds, "languages": langs})
 
 
+# ── PayPal sale webhook ─────────────────────────────────────────────────────
+
+_PAYPAL_CLIENT_ID     = os.environ.get("PAYPAL_CLIENT_ID", "")
+_PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "")
+_PAYPAL_MODE          = os.environ.get("PAYPAL_MODE", "live").lower()  # "live" | "sandbox"
+
+
+def _paypal_base() -> str:
+    return (
+        "https://api-m.sandbox.paypal.com"
+        if _PAYPAL_MODE == "sandbox"
+        else "https://api-m.paypal.com"
+    )
+
+
+def _paypal_access_token() -> str:
+    """Fetch a short-lived Bearer token from PayPal OAuth2."""
+    if not _PAYPAL_CLIENT_ID or not _PAYPAL_CLIENT_SECRET:
+        raise ValueError("PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not set in environment")
+    import urllib.request as _ur, base64 as _b64
+    creds   = _b64.b64encode(f"{_PAYPAL_CLIENT_ID}:{_PAYPAL_CLIENT_SECRET}".encode()).decode()
+    req     = _ur.Request(
+        f"{_paypal_base()}/v1/oauth2/token",
+        data   = b"grant_type=client_credentials",
+        headers= {"Authorization": f"Basic {creds}",
+                  "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with _ur.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())["access_token"]
+
+
+def _paypal_verify_order(order_id: str) -> dict:
+    """Return the PayPal order object; raise if not COMPLETED."""
+    import urllib.request as _ur
+    token = _paypal_access_token()
+    req   = _ur.Request(
+        f"{_paypal_base()}/v2/checkout/orders/{order_id}",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"},
+    )
+    with _ur.urlopen(req, timeout=10) as resp:
+        order = json.loads(resp.read())
+    if order.get("status") != "COMPLETED":
+        raise ValueError(f"PayPal order {order_id} status is {order.get('status')} — not COMPLETED")
+    return order
+
+
+@app.route("/api/v1/webhook/paypal-sale", methods=["POST", "OPTIONS"])
+def api_v1_paypal_sale():
+    """
+    Called by your website after PayPal captures payment.
+    Verifies the order with PayPal, then deducts stock and records the sale.
+
+    Body (JSON):
+      {
+        "order_id": "<PayPal order ID>",
+        "items": [{"qr_code": "...", "qty": 1}, ...]
+      }
+
+    Returns:
+      200  {"ok": true, "transaction_id": "...", "items_sold": [...]}
+      400  bad request
+      402  PayPal order not COMPLETED
+      404  one or more qr_codes not found
+      409  duplicate order (already processed) or out of stock
+      500  server / PayPal API error
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data     = request.get_json(silent=True) or {}
+    order_id = (data.get("order_id") or "").strip()
+    items    = data.get("items") or []
+
+    if not order_id:
+        return jsonify({"error": "order_id required"}), 400
+    if not items or not isinstance(items, list):
+        return jsonify({"error": "items array required"}), 400
+
+    # Normalise items
+    parsed = []
+    for it in items:
+        qr  = (it.get("qr_code") or "").strip()
+        qty = max(1, int(it.get("qty") or 1))
+        if not qr:
+            return jsonify({"error": "each item needs qr_code"}), 400
+        parsed.append({"qr_code": qr, "qty": qty})
+
+    # Idempotency — reject if this PayPal order was already processed
+    idem_key = f"paypal:{order_id}"
+    db = get_db()
+    existing = db.execute(
+        "SELECT response_json FROM sales_idempotency WHERE idempotency_key = %s",
+        (idem_key,)
+    ).fetchone()
+    if existing:
+        return jsonify(json.loads(existing["response_json"])), 200
+
+    # Verify with PayPal
+    try:
+        _paypal_verify_order(order_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 402
+    except Exception as e:
+        log.exception("[paypal-sale] PayPal verification failed for %s", order_id)
+        return jsonify({"error": f"PayPal API error: {e}"}), 500
+
+    # Check all items exist and have sufficient stock before touching anything
+    rows = {}
+    for it in parsed:
+        row = db.execute(
+            "SELECT name, price, stock FROM inventory WHERE qr_code = %s",
+            (it["qr_code"],)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": f"Product not found: {it['qr_code']}"}), 404
+        if row["stock"] < it["qty"]:
+            return jsonify({
+                "error": f"Insufficient stock for {it['qr_code']}: "
+                         f"have {row['stock']}, need {it['qty']}"
+            }), 409
+        rows[it["qr_code"]] = row
+
+    # Deduct stock + build sale line items
+    now_ms     = _now_ms()
+    tid        = f"PAYPAL-{order_id[:16]}-{now_ms}"
+    line_items = []
+    subtotal   = 0.0
+
+    for it in parsed:
+        row = rows[it["qr_code"]]
+        db.execute(
+            "UPDATE inventory SET stock = stock - %s, last_updated = %s WHERE qr_code = %s",
+            (it["qty"], now_ms, it["qr_code"])
+        )
+        line_price = float(row["price"]) * it["qty"]
+        subtotal  += line_price
+        line_items.append({
+            "qrCode":    it["qr_code"],
+            "name":      row["name"],
+            "qty":       it["qty"],
+            "unitPrice": float(row["price"]),
+        })
+
+    # Record sale
+    db.execute("""
+        INSERT INTO sales (transaction_id, timestamp_ms, subtotal, tax_amount,
+                           tip_amount, total_amount, payment_method, employee_id,
+                           items_json, source)
+        VALUES (%s,%s,%s,0,0,%s,%s,%s,%s,%s)
+    """, (
+        tid, now_ms, subtotal, subtotal,
+        "paypal", "website",
+        json.dumps(line_items),
+        "paypal-webhook",
+    ))
+
+    response = {
+        "ok":             True,
+        "transaction_id": tid,
+        "order_id":       order_id,
+        "total":          round(subtotal, 2),
+        "items_sold":     line_items,
+    }
+
+    # Store idempotency record
+    db.execute(
+        "INSERT INTO sales_idempotency (idempotency_key, response_json) "
+        "VALUES (%s, %s) ON CONFLICT (idempotency_key) DO NOTHING",
+        (idem_key, json.dumps(response))
+    )
+    db.commit()
+    _invalidate_inventory()
+    log.info("[paypal-sale] processed order=%s tid=%s total=%.2f", order_id, tid, subtotal)
+    return jsonify(response)
+
+
 # ── Enrichment control endpoints ───────────────────────────────────────────
 
 @app.route("/api/v1/enrich/start", methods=["POST"])
