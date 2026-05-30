@@ -11468,6 +11468,7 @@ _ADMIN_BASE_CSS = """
   .nav-pill.nav-active{background:#f59e0b;border-color:#f59e0b;color:#000;font-weight:800}
   .nav-clock{margin-left:auto;color:#333;font-size:11px;white-space:nowrap;flex-shrink:0;
     padding-left:12px}
+  .nav-sep{width:1px;height:18px;background:#2a2a2a;flex-shrink:0;margin:0 2px;align-self:center}
 
   /* ── Quick-action card grid (dashboard) ───────────────────────────── */
   .qa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));
@@ -11504,36 +11505,47 @@ _ADMIN_CSS = f"<style>{_ADMIN_BASE_CSS}</style>"
 
 
 def _admin_nav(active: str = "dashboard") -> str:
+    # Each entry is either a page tuple (key, href, icon, label)
+    # or None to insert a visual group separator
     pages = [
-        ("dashboard", "/admin",             "🏠", "Dashboard"),
-        ("search",    "/admin/search",      "🔎", "Search"),
-        ("discovery", "/admin/discovery",   "🆕", "Discovery"),
-        ("market",    "/admin/market",      "📈", "Market"),
-        ("sets",      "/admin/sets",        "🗂️", "Sets"),
-        ("imports",   "/admin/imports",     "🚚", "Imports"),
-        ("ai-insights","/admin/ai-insights",  "🧠", "AI Insights"),
-        ("scan-ai",   "/admin/scan-ai",     "🤖", "AI Scan"),
+        # ── Core ───────────────────────────────────────────────────────────
+        ("dashboard", "/admin",              "🏠", "Dashboard"),
+        ("search",    "/admin/search",       "🔎", "Search"),
+        ("market",    "/admin/market",       "📈", "Market"),
+        None,
+        # ── Catalog & AI ───────────────────────────────────────────────────
+        ("discovery", "/admin/discovery",    "🆕", "Discovery"),
+        ("sets",      "/admin/sets",         "🗂️", "Sets"),
+        ("imports",   "/admin/imports",      "🚚", "Imports"),
+        ("ai-insights","/admin/ai-insights", "🧠", "AI Insights"),
+        ("scan-ai",   "/admin/scan-ai",      "🤖", "AI Scan"),
         ("fake-detector", "/admin/fake-detector", "🔍", "Fake Detect"),
-        ("pack-rip",  "/admin/pack-rip",    "🎰", "Pack Rip"),
-        ("buy-list",  "/admin/buy-list",    "📋", "Buy List"),
-        ("trade-in",  "/admin/trade-in",    "🔁", "Trade-In"),
-        ("bundles",   "/admin/bundles",     "📦", "Bundles"),
-        ("csv",       "/admin/csv",         "📥", "Import"),
-        ("purchases", "/admin/purchases",   "🛒", "Purchases"),
-        ("layby",     "/admin/layby",       "🏷️", "Layby"),
-        ("profit",    "/admin/profit-loss", "💰", "P&L"),
-        ("eod",       "/admin/eod",         "🏧", "End of Day"),
-        ("customers", "/admin/customers",   "👥", "Customers"),
-        ("receipt",   "/admin/receipt",     "🖨️", "Receipt"),
-        ("enrich",    "/admin/enrich",      "🧬", "Enrich"),
-        ("kiosk",     "/admin/kiosk",       "🖥️", "Kiosk"),
-        ("system",    "/admin/system",      "⚙️", "System"),
-        ("logs",      "/admin/logs",        "📋", "Logs"),
+        None,
+        # ── Commerce ───────────────────────────────────────────────────────
+        ("trade-in",  "/admin/trade-in",     "🔁", "Trade-In"),
+        ("pack-rip",  "/admin/pack-rip",     "🎰", "Pack Rip"),
+        ("buy-list",  "/admin/buy-list",     "📋", "Buy List"),
+        ("bundles",   "/admin/bundles",      "📦", "Bundles"),
+        ("purchases", "/admin/purchases",    "🛒", "Purchases"),
+        ("csv",       "/admin/csv",          "📥", "Import"),
+        ("layby",     "/admin/layby",        "🏷️", "Layby"),
+        ("customers", "/admin/customers",    "👥", "Customers"),
+        None,
+        # ── Finance & Config ───────────────────────────────────────────────
+        ("profit",    "/admin/profit-loss",  "💰", "P&L"),
+        ("eod",       "/admin/eod",          "🏧", "End of Day"),
+        ("receipt",   "/admin/receipt",      "🖨️", "Receipt"),
+        ("enrich",    "/admin/enrich",       "🧬", "Enrich"),
+        ("kiosk",     "/admin/kiosk",        "🖥️", "Kiosk"),
+        ("system",    "/admin/system",       "⚙️", "System"),
+        ("logs",      "/admin/logs",         "📋", "Logs"),
     ]
+    sep = '<span class="nav-sep"></span>'
     items = "".join(
-        f'<a href="{href}" class="nav-pill{" nav-active" if k == active else ""}">'
-        f'{icon} {lbl}</a>'
-        for k, href, icon, lbl in pages
+        sep if p is None else
+        f'<a href="{p[1]}" class="nav-pill{" nav-active" if p[0] == active else ""}">'
+        f'{p[2]} {p[3]}</a>'
+        for p in pages
     )
     hub_dot = (
         '<span id="hub-dot" title="POS hub status" '
@@ -13641,7 +13653,9 @@ function applyCond() {{
           arbBadge = `<span class="arb-badge arb-lowdata">⚠ Low data (${{count}})</span>`;
         }} else if (pct < 0) {{
           arbBadge = `<span class="arb-badge arb-premium">🔥 Premium — higher than EN</span>`;
-        }} else if (pct <= 10 && count >= 5) {{
+        }} else if (pct === 0 && count >= 5) {{
+          arbBadge = `<span class="arb-badge" style="background:#0f172a;color:#818cf8;font-weight:800">= EN parity</span>`;
+        }} else if (pct > 0 && pct <= 10 && count >= 5) {{
           arbBadge = `<span class="arb-badge arb-parity">⚠ Near parity (${{pct}}% off)</span>`;
         }}
       }} else {{
@@ -16881,6 +16895,7 @@ def admin_dashboard():
   .card label{{color:#777;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:4px}}
   .card .value{{color:#f59e0b;font-size:28px;font-weight:900}}
   .card .value.green{{color:#4caf50}}
+  .card .value.red{{color:#ef4444}}
   .form-panel{{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:20px;margin-top:24px}}
   .form-panel h2{{margin-top:0;margin-bottom:14px;font-size:11px;color:#555;letter-spacing:1.5px;text-transform:uppercase}}
   .form-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}}
@@ -16999,7 +17014,7 @@ def admin_dashboard():
     </div>
     <div class="cards" style="margin-bottom:0">
       <div class="card"><label>Inventory Items</label><div class="value" id="stat-inv">{inv_count}</div></div>
-      <div class="card"><label>Low Stock Items</label><div class="value{'red' if low_stock_count > 0 else ''}" id="stat-low">{low_stock_count}</div></div>
+      <div class="card"><label>Low Stock Items</label><div class="value{' red' if low_stock_count > 0 else ''}" id="stat-low">{low_stock_count}</div></div>
     </div>
   </div>
   <div class="sparkline-panel">
