@@ -12873,7 +12873,8 @@ def admin_market():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HanryxVault — Market Prices</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+        onerror="this.onerror=null;this.src='https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js'"></script>
 <style>
 {_ADMIN_BASE_CSS}
   .search-row{{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}}
@@ -14055,7 +14056,7 @@ function renderEbaySection(d) {{
   // ── Chart.js weekly trend line ─────────────────────────────────────────────
   if (_ebayChart) {{ _ebayChart.destroy(); _ebayChart = null; }}
   const weeks = (trend.weeks || []);
-  const hasChart = weeks.length >= 2;
+  const hasChart = weeks.length >= 2 && typeof Chart !== 'undefined';
   document.querySelector('.chart-wrap').style.display = hasChart ? 'block' : 'none';
   if (hasChart) {{
     const ctx = document.getElementById('priceChart').getContext('2d');
