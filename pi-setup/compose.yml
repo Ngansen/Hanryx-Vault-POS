@@ -420,7 +420,7 @@ services:
   sync:
     build: .
     restart: unless-stopped
-    command: ["python3", "/app/sync_orchestrator.py"]
+    entrypoint: ["python3", "/app/sync_orchestrator.py"]
     environment:
       DATABASE_URL:    postgresql://vaultpos:${DB_PASSWORD:?DB_PASSWORD is required (set in pi-setup/.env)}@db:5432/vaultpos
       REDIS_URL:       redis://redis:6379/0
@@ -439,6 +439,11 @@ services:
       EBAY_CERT_ID:        ${EBAY_CERT_ID:-}
       POKEMONTCG_API_KEY:  ${POKEMONTCG_API_KEY:-}
       TCGPL_API_KEY:       ${TCGPL_API_KEY:-}
+      # Naver Open API creds — refresh_market_prices.py calls naver_shopping()
+      # which silently returns [] without these (no rows in price_history for
+      # the naver source). Same vars are set on the pos service.
+      NAVER_CLIENT_ID:     ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
     volumes:
       # See `pos` service for rationale on the bind mount + propagation: rslave.
       - type: bind

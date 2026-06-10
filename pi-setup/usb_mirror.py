@@ -146,15 +146,23 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         """
         CREATE TABLE cards_jpn (
             set_code TEXT, card_number TEXT, set_name TEXT, series TEXT,
-            name_jp TEXT, name_en TEXT, rarity TEXT, hp INTEGER,
-            artist TEXT, image_url TEXT,
+            name_jp TEXT, name_en TEXT, rarity TEXT,
+            card_type TEXT, image_url TEXT, release_date TEXT,
             _mirror_at INTEGER,
             PRIMARY KEY (set_code, card_number)
         )
         """,
+        # C13.6: matched to the actual postgres schema in server.py (init_db
+        # CREATE TABLE IF NOT EXISTS cards_jpn → url,set_code,set_name,
+        # series,card_number,name_en,name_jp,rarity,card_type,image_url,
+        # release_date,raw,imported_at). Earlier pre-C13.5 mirror SELECT
+        # referenced `hp` and `artist` which have NEVER existed in
+        # postgres — both were guesses. Replaced with the real columns
+        # card_type + release_date (also useful for the multi-language
+        # browser) and properly dropped `hp` / `artist`.
         """
         SELECT set_code, card_number, set_name, series, name_jp, name_en,
-               rarity, hp, artist, image_url
+               rarity, card_type, image_url, release_date
           FROM cards_jpn
         """,
         f"""
@@ -185,21 +193,34 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
     # cards_chs — Chinese card pool (covers both Simplified and Traditional;
     # commodity_code is the official 商品编码 from cn.pokemon.com).
     "cards_chs": (
+        # C13.7: postgres PK is card_id (BIGINT) — commodity_code defaults
+        # to '' for most upstream rows, so the previous DISTINCT ON
+        # (commodity_code) collapsed 16,527 → 9 rows and the SQLite schema
+        # was missing name_chs entirely. Use card_id as PK; carry the
+        # display columns the offline POS actually needs.
         """
         CREATE TABLE cards_chs (
-            commodity_code TEXT, commodity_name TEXT,
-            collection_number TEXT, yoren_code TEXT,
-            image_url TEXT,
-            _mirror_at INTEGER,
-            PRIMARY KEY (commodity_code)
+            card_id INTEGER PRIMARY KEY,
+            commodity_code TEXT, collection_number TEXT,
+            commodity_name TEXT, name_chs TEXT,
+            yoren_code TEXT, card_type_text TEXT,
+            rarity_text TEXT, hp INTEGER,
+            attribute TEXT, pokedex_code TEXT,
+            illustrators TEXT, image_url TEXT,
+            _mirror_at INTEGER
         )
         """,
         """
-        SELECT commodity_code, commodity_name, collection_number, yoren_code, image_url
+        SELECT card_id, commodity_code, collection_number,
+               commodity_name, name_chs,
+               yoren_code, card_type_text,
+               rarity_text, hp,
+               attribute, pokedex_code,
+               illustrators, image_url
           FROM cards_chs
         """,
         f"""
-        INSERT INTO cards_chs VALUES (?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO cards_chs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 
@@ -336,9 +357,13 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         )
         """,
         """
-        SELECT qr_code, name, set_name, language, condition, item_type,
+        -- C13.3: postgres column is `set_code`, not `set_name` (aliased so the
+        -- SQLite consumer side doesn't have to change). The historical `sold`
+        -- column was never added to the inventory table; SOLD items just have
+        -- stock=0, so we hard-zero the column for now.
+        SELECT qr_code, name, set_code AS set_name, language, condition, item_type,
                grade, grading_company, stock, price, sale_price, image_url,
-               COALESCE(sold, 0)
+               0 AS sold
           FROM inventory
         """,
         f"""
@@ -357,10 +382,15 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
         )
         """,
         """
-        SELECT id, qr_code, name, sold_price,
-               EXTRACT(EPOCH FROM sold_at)::BIGINT
+        -- C13.3: postgres sale_history is name-keyed (no qr_code column —
+        -- the table predates the inventory rewrite that introduced QR codes
+        -- as the primary key). sold_at is BIGINT epoch-MS, not TIMESTAMPTZ,
+        -- so we divide by 1000 to match the SQLite mirror's seconds convention
+        -- and compare in epoch-ms against (NOW - 90d).
+        SELECT id, '' AS qr_code, name, price AS sold_price,
+               (sold_at / 1000)::BIGINT AS sold_at_sec
           FROM sale_history
-         WHERE sold_at >= NOW() - INTERVAL '90 days'
+         WHERE sold_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '90 days') * 1000)::BIGINT
         """,
         f"""
         INSERT INTO sale_history_recent VALUES (?,?,?,?,?,{_NOW_EPOCH_SQL})
@@ -369,17 +399,35 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
 
     # price_history_recent — last 90 days. Capped at 200k rows so a
     # single chatty source can't blow the SQLite mirror past USB capacity.
+    # C11: added currency + price_usd so the AI cashier can compare across
+    # naver(KRW) / bunjang(KRW) / hareruya2(JPY) / cardmarket(EUR) /
+    # tcgplayer(USD) without doing FX math at inference time.
     "price_history_recent": (
         """
         CREATE TABLE price_history_recent (
             id INTEGER PRIMARY KEY,
             card_id TEXT, source TEXT, grade TEXT,
-            price REAL, observed_at INTEGER,
+            price REAL, currency TEXT, price_usd REAL,
+            price_native REAL,
+            observed_at INTEGER,
             _mirror_at INTEGER
         )
         """,
+        # C13.5: added price_native — the actual native-currency price
+        # from the scraper before USD conversion. Pre-C13.5 we only
+        # stored market_price (USD) and price_usd (also USD); ai_assistant
+        # was reading market_price and labelling it native_price, which
+        # produced nonsense like "naver: 35.5 ₩ (~$35.5)" for a card
+        # that's actually 47k KRW. COALESCE here so old rows (where
+        # price_native is NULL) gracefully fall back to market_price —
+        # the legacy display will be wrong but won't crash, and gets
+        # corrected on the next refresh_market_prices tick.
+        # Postgres market_price is still aliased to `price` for the
+        # legacy /admin/market trend chart consumers.
         """
-        SELECT id, card_id, source, grade, price,
+        SELECT id, card_id, source, grade, market_price AS price,
+               currency, price_usd,
+               COALESCE(price_native, market_price) AS price_native,
                EXTRACT(EPOCH FROM observed_at)::BIGINT
           FROM price_history
          WHERE observed_at >= NOW() - INTERVAL '90 days'
@@ -387,7 +435,7 @@ _MIRRORS: dict[str, tuple[str, str, str]] = {
          LIMIT 200000
         """,
         f"""
-        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,{_NOW_EPOCH_SQL})
+        INSERT INTO price_history_recent VALUES (?,?,?,?,?,?,?,?,?,{_NOW_EPOCH_SQL})
         """,
     ),
 }
@@ -427,12 +475,23 @@ def _mirror_one(pg_conn, lite_conn: sqlite3.Connection, name: str, ddl: str, sel
     # short window where the table doesn't exist (between DROP and the
     # next reader's query) is irrelevant because the writer holds the
     # write lock for the whole transaction.
+    # C13.4: try/except around the SQLite txn so an INSERT failure (e.g. a
+    # UNIQUE constraint violation, or a column-count mismatch between SELECT
+    # and INSERT) gets ROLLBACK'd. Without this, the lite_conn stays mid-
+    # BEGIN forever and every subsequent _mirror_one call dies with
+    # "cannot start a transaction within a transaction" — silently wiping
+    # the rest of the mirror cycle (we lost inventory_snapshot + the two
+    # *_recent tables this way for months).
     lite_conn.execute("BEGIN IMMEDIATE")
-    lite_conn.execute(f"DROP TABLE IF EXISTS {name}")
-    lite_conn.execute(ddl)
-    if rows:
-        lite_conn.executemany(insert_sql, rows)
-    lite_conn.commit()
+    try:
+        lite_conn.execute(f"DROP TABLE IF EXISTS {name}")
+        lite_conn.execute(ddl)
+        if rows:
+            lite_conn.executemany(insert_sql, rows)
+        lite_conn.commit()
+    except Exception:
+        lite_conn.rollback()
+        raise
     return len(rows)
 
 
@@ -448,6 +507,19 @@ def run_mirror() -> dict:
     db_path = local_db_path()
     counts: dict[str, int] = {}
 
+    # C13.4: the sync container runs as root but the pos container's Flask
+    # process runs as the unprivileged `hanryx` user (see pi-setup/Dockerfile
+    # ENTRYPOINT → entrypoint.sh `exec su -s /bin/sh hanryx ...`). With the
+    # default 022 umask, root-created sqlite files end up mode 644 → hanryx
+    # can read but not write, and SQLite needs write access on the .db file
+    # AND its directory to create the -journal/-wal/-shm sidecars even for
+    # SELECT queries. Symptom: ai_assistant returns "attempt to write a
+    # readonly database" while the orchestrator's mirror succeeds. Forcing
+    # 0o002 here makes new files 664 (rw for group, where hanryx and root
+    # share the supplementary group via the bind mount) and lets us chmod
+    # any pre-existing root-644 file in-place after the cycle completes.
+    os.umask(0o002)
+
     with _pg_conn() as pg, _sqlite_conn(db_path) as lite:
         for name, (ddl, select_sql, insert_sql) in _MIRRORS.items():
             try:
@@ -459,6 +531,28 @@ def run_mirror() -> dict:
                 # endpoint reports per-table errors.
                 log.error("[mirror] %s failed: %s", name, e)
                 counts[name] = -1
+
+    # C13.4: chmod the .db (and any -wal/-shm/-journal sidecars SQLite has
+    # created by now) to 0o666, plus the parent dir to 0o777, so the
+    # unprivileged hanryx user inside the pos container can open them r/w.
+    # 0o664 isn't enough — hanryx (created via `useradd -r` in pi-setup/
+    # Dockerfile, primary group `hanryx`) is NOT a member of root's group,
+    # so a root:root 664 file is effectively read-only to it. SQLite then
+    # raises "attempt to write a readonly database" even on SELECT-only
+    # workloads because it tries to create -journal/-wal/-shm sidecars in
+    # the same directory. World-writable is acceptable here: /mnt/cards is
+    # an internal bind mount that's never exposed to untrusted users, and
+    # the kiosk runs as a single appliance.
+    import glob as _glob
+    try:
+        os.chmod(os.path.dirname(db_path), 0o777)
+    except OSError as _e:
+        log.warning("[mirror] chmod dir %s skipped: %s", os.path.dirname(db_path), _e)
+    for _p in _glob.glob(db_path + "*"):
+        try:
+            os.chmod(_p, 0o666)
+        except OSError as _e:
+            log.warning("[mirror] chmod %s skipped: %s", _p, _e)
 
     elapsed = time.time() - started
     summary = {"counts": counts, "elapsed_sec": round(elapsed, 2), "ts": int(time.time())}
