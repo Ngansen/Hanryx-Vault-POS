@@ -1,0 +1,92 @@
+~/workspace$ git pull --rebase origin main
+git push origin main
+remote: Enumerating objects: 1024, done.
+remote: Counting objects: 100% (115/115), done.
+remote: Compressing objects: 100% (51/51), done.
+remote: Total 1024 (delta 86), reused 76 (delta 64), pack-reused 909 (from 1)
+Receiving objects: 100% (1024/1024), 1.75 MiB | 12.65 MiB/s, done.
+Resolving deltas: 100% (664/664), completed with 4 local objects.
+From https://github.com/Ngansen/Hanryx-Vault-POS
+ * branch            main       -> FETCH_HEAD
+   b4768d9..c561a17  main       -> origin/main
+warning: skipped previously applied commit 94c012f
+warning: skipped previously applied commit f87ca03
+warning: skipped previously applied commit 572811d
+warning: skipped previously applied commit feeaa93
+warning: skipped previously applied commit 79c9429
+warning: skipped previously applied commit deac36a
+warning: skipped previously applied commit b1f1feb
+warning: skipped previously applied commit fe4b619
+warning: skipped previously applied commit 4e07099
+warning: skipped previously applied commit 6c427e2
+warning: skipped previously applied commit e6d1d15
+warning: skipped previously applied commit 45f8505
+warning: skipped previously applied commit acacc50
+warning: skipped previously applied commit 3f6053a
+warning: skipped previously applied commit d159d07
+warning: skipped previously applied commit 7bd395b
+warning: skipped previously applied commit bac28d0
+warning: skipped previously applied commit 791f785
+warning: skipped previously applied commit 66d20b6
+warning: skipped previously applied commit 520e22d
+warning: skipped previously applied commit 7dad28d
+warning: skipped previously applied commit e01ad0f
+warning: skipped previously applied commit fb52ad0
+warning: skipped previously applied commit 81ddfca
+warning: skipped previously applied commit 3f258bc
+warning: skipped previously applied commit 6be5219
+warning: skipped previously applied commit 6c16455
+warning: skipped previously applied commit 20a716c
+warning: skipped previously applied commit d96d8cd
+warning: skipped previously applied commit 85b5018
+warning: skipped previously applied commit f000467
+warning: skipped previously applied commit 827c06b
+warning: skipped previously applied commit c0b865a
+warning: skipped previously applied commit ff209f0
+warning: skipped previously applied commit 81245dd
+warning: skipped previously applied commit 2b254ea
+warning: skipped previously applied commit daf32f5
+warning: skipped previously applied commit d7451bf
+warning: skipped previously applied commit d93b0e8
+warning: skipped previously applied commit b66f519
+warning: skipped previously applied commit 8aefefb
+warning: skipped previously applied commit c5fcd21
+warning: skipped previously applied commit 99d4c51
+warning: skipped previously applied commit a7d663f
+warning: skipped previously applied commit f763817
+warning: skipped previously applied commit d73a181
+warning: skipped previously applied commit 16fc3f0
+warning: skipped previously applied commit 092b858
+warning: skipped previously applied commit 9e6530e
+warning: skipped previously applied commit 5c0c268
+warning: skipped previously applied commit 6925507
+warning: skipped previously applied commit e110646
+warning: skipped previously applied commit a9738a6
+warning: skipped previously applied commit 0a49a01
+warning: skipped previously applied commit 2774353
+warning: skipped previously applied commit fbd8a32
+warning: skipped previously applied commit 631474b
+warning: skipped previously applied commit d1b72d2
+warning: skipped previously applied commit dbadb51
+hint: use --reapply-cherry-picks to include skipped commits
+hint: Disable this message with "git config set advice.skippedCherryPicks false"
+warning: Cannot merge binary files: pi-setup/assets/dragon_emblem.png (HEAD vs. 922a1be (Update receipt formatting and image processing for better display))
+Auto-merging pi-setup/assets/dragon_emblem.png
+CONFLICT (content): Merge conflict in pi-setup/assets/dragon_emblem.png
+Auto-merging pi-setup/server.py
+CONFLICT (content): Merge conflict in pi-setup/server.py
+error: could not apply 922a1be... Update receipt formatting and image processing for better display
+hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
+hint: You can instead skip this commit: run "git rebase --skip".
+hint: To abort and get back to the state before "git rebase", run "git rebase --abort".
+hint: Disable this message with "git config set advice.mergeConflict false"
+Could not apply 922a1be... # Update receipt formatting and image processing for better display
+To https://github.com/Ngansen/Hanryx-Vault-POS.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/Ngansen/Hanryx-Vault-POS.git'
+hint: Updates were rejected because a pushed branch tip is behind its remote
+hint: counterpart. If you want to integrate the remote changes, use 'git pull'
+hint: before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+~/workspace$ 
