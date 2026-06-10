@@ -8141,6 +8141,16 @@ def get_inventory():
 
 @app.route("/push/inventory", methods=["POST"])
 def push_inventory():
+    # Optional shared-secret auth. If SCANNER_API_KEY is set, callers must
+    # send it as X-Api-Key header or api_key body field.
+    if _SCANNER_API_KEY:
+        caller_key = (
+            request.headers.get("X-Api-Key")
+            or (request.get_json(force=True, silent=True) or {}).get("api_key", "")
+        ).strip()
+        if caller_key != _SCANNER_API_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+
     data = request.get_json(force=True, silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
@@ -23358,6 +23368,7 @@ def api_v1_categories():
 _PAYPAL_CLIENT_ID     = os.environ.get("PAYPAL_CLIENT_ID", "")
 _PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "")
 _PAYPAL_MODE          = os.environ.get("PAYPAL_MODE", "live").lower()  # "live" | "sandbox"
+_SCANNER_API_KEY      = os.environ.get("SCANNER_API_KEY", "")          # shared secret for /push/inventory
 
 
 def _paypal_base() -> str:
@@ -23460,7 +23471,7 @@ def api_v1_paypal_sale():
         log.exception("[paypal-sale] PayPal verification failed for %s", order_id)
         return jsonify({"error": f"PayPal API error: {e}"}), 500
 
-    # Check all items exist and have sufficient stock before touching anything
+    # Pre-flight: verify all items exist before touching anything
     rows = {}
     for it in parsed:
         row = db.execute(
@@ -23469,14 +23480,10 @@ def api_v1_paypal_sale():
         ).fetchone()
         if not row:
             return jsonify({"error": f"Product not found: {it['qr_code']}"}), 404
-        if row["stock"] < it["qty"]:
-            return jsonify({
-                "error": f"Insufficient stock for {it['qr_code']}: "
-                         f"have {row['stock']}, need {it['qty']}"
-            }), 409
         rows[it["qr_code"]] = row
 
-    # Deduct stock + build sale line items
+    # Atomic stock deduction — WHERE stock >= qty prevents overselling
+    # even under concurrent requests for the last copy.
     now_ms     = _now_ms()
     tid        = f"PAYPAL-{order_id[:16]}-{now_ms}"
     line_items = []
@@ -23484,10 +23491,17 @@ def api_v1_paypal_sale():
 
     for it in parsed:
         row = rows[it["qr_code"]]
-        db.execute(
-            "UPDATE inventory SET stock = stock - %s, last_updated = %s WHERE qr_code = %s",
-            (it["qty"], now_ms, it["qr_code"])
+        cur = db.execute(
+            "UPDATE inventory SET stock = stock - %s, last_updated = %s "
+            "WHERE qr_code = %s AND stock >= %s",
+            (it["qty"], now_ms, it["qr_code"], it["qty"])
         )
+        if cur.rowcount == 0:
+            db.rollback()
+            return jsonify({
+                "error": f"Out of stock (race): {it['qr_code']} "
+                         f"(needed {it['qty']}, sold out)"
+            }), 409
         line_price = float(row["price"]) * it["qty"]
         subtotal  += line_price
         line_items.append({
@@ -23527,6 +23541,15 @@ def api_v1_paypal_sale():
     db.commit()
     _invalidate_inventory()
     log.info("[paypal-sale] processed order=%s tid=%s total=%.2f", order_id, tid, subtotal)
+
+    # Fire sale email alerts (one per line item, non-blocking)
+    for li in line_items:
+        threading.Thread(
+            target=_send_sale_email,
+            args=(li["name"], li["unitPrice"], "paypal", li["qty"]),
+            daemon=True,
+        ).start()
+
     return jsonify(response)
 
 
