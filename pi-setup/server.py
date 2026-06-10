@@ -2702,6 +2702,19 @@ def init_db():
             created_at      BIGINT NOT NULL DEFAULT {_NOW_MS_PG}
         )""",
 
+        # ── Cart reservations (website hold-before-checkout) ──────────────────
+        f"""CREATE TABLE IF NOT EXISTS cart_reservations (
+            id          BIGSERIAL PRIMARY KEY,
+            token       TEXT NOT NULL,
+            qr_code     TEXT NOT NULL,
+            qty         INTEGER NOT NULL DEFAULT 1,
+            created_at  BIGINT NOT NULL DEFAULT {_NOW_MS_PG},
+            expires_at  BIGINT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cart_res_token     ON cart_reservations(token)",
+        "CREATE INDEX IF NOT EXISTS idx_cart_res_qr        ON cart_reservations(qr_code)",
+        "CREATE INDEX IF NOT EXISTS idx_cart_res_expires   ON cart_reservations(expires_at)",
+
         # ── Enterprise: Returns / refunds ─────────────────────────────────────
         f"""CREATE TABLE IF NOT EXISTS returns (
             id           BIGSERIAL PRIMARY KEY,
@@ -23315,18 +23328,36 @@ def api_v1_inventory_detail(qr):
         ph_ids
     ).fetchall()
 
-    # Latest price per source (for the market_prices widget)
+    # Latest price per source with USD conversion
+    try:
+        import fx_rates as _fx
+        _fx_rates = _fx.rates("USD")
+    except Exception:
+        _fx_rates = {}
+
+    def _to_usd(amount: float, currency: str) -> float | None:
+        if currency == "USD":
+            return round(amount, 2)
+        rate = _fx_rates.get(currency.upper())
+        if rate and rate > 0:
+            return round(amount / rate, 2)
+        return None
+
     seen_sources: set[str] = set()
     market_prices: list[dict] = []
     for h in history:
         src = h["source"]
         if src not in seen_sources:
             seen_sources.add(src)
+            price     = round(float(h["market_price"]), 2)
+            currency  = h["currency"]
+            price_usd = _to_usd(price, currency)
             market_prices.append({
-                "source":   src,
-                "price":    round(float(h["market_price"]), 2),
-                "currency": h["currency"],
-                "age_days": round((_now_ms() - h["fetched_ms"]) / 86_400_000, 1),
+                "source":    src,
+                "price":     price,
+                "currency":  currency,
+                "price_usd": price_usd,
+                "age_days":  round((_now_ms() - h["fetched_ms"]) / 86_400_000, 1),
             })
 
     # Staleness — auto-trigger background refresh if >7 days old
@@ -23342,20 +23373,41 @@ def api_v1_inventory_detail(qr):
                 pass
         threading.Thread(target=_bg_refresh, daemon=True).start()
 
-    # ── Image URL resolution ─────────────────────────────────────────────────
-    set_id  = _lookup_set_id(db, r)
+    # ── Image URL resolution + alternate images ──────────────────────────────
+    set_id   = _lookup_set_id(db, r)
     card_num = (r.get("card_number") or "").strip()
+
     def _img_url(lang: str) -> str:
         if set_id and card_num:
             return f"/card/image?set_id={set_id}&card_number={card_num}&lang={lang}"
         return r.get("image_url") or ""
 
+    # Fetch alternate image scans from cards_master
+    alt_images: list[str] = []
+    if set_id and card_num:
+        try:
+            master_row = db.execute(
+                "SELECT image_url_alt FROM cards_master "
+                "WHERE LOWER(set_id)=LOWER(%s) AND card_number=%s LIMIT 1",
+                (set_id, card_num)
+            ).fetchone()
+            if master_row and master_row["image_url_alt"]:
+                raw = master_row["image_url_alt"]
+                if isinstance(raw, list):
+                    alt_images = [str(u) for u in raw if u]
+                elif isinstance(raw, str):
+                    parsed = json.loads(raw)
+                    alt_images = [str(u) for u in parsed if u]
+        except Exception:
+            pass
+
     images = {
-        "cdn":   r.get("image_url") or "",        # direct CDN, usable from browser
-        "en":    _img_url("en"),                   # proxy through your server
-        "jp":    _img_url("jp"),
-        "kr":    _img_url("kr"),
-        "back":  r.get("back_image_url") or "",
+        "cdn":       r.get("image_url") or "",    # direct CDN, use in <img> without proxy
+        "en":        _img_url("en"),               # proxy through your server for USB scan
+        "jp":        _img_url("jp"),
+        "kr":        _img_url("kr"),
+        "back":      r.get("back_image_url") or "",
+        "alt":       alt_images,                   # alternate artwork / language scans
     }
 
     # ── eBay sold history ────────────────────────────────────────────────────
@@ -23746,9 +23798,10 @@ def api_v1_paypal_sale():
     if request.method == "OPTIONS":
         return "", 204
 
-    data     = request.get_json(silent=True) or {}
-    order_id = (data.get("order_id") or "").strip()
-    items    = data.get("items") or []
+    data      = request.get_json(silent=True) or {}
+    order_id  = (data.get("order_id") or "").strip()
+    items     = data.get("items") or []
+    cart_token = (data.get("cart_token") or "").strip()  # optional — releases reservation
 
     if not order_id:
         return jsonify({"error": "order_id required"}), 400
@@ -23850,6 +23903,10 @@ def api_v1_paypal_sale():
         "VALUES (%s, %s) ON CONFLICT (idempotency_key) DO NOTHING",
         (idem_key, json.dumps(response))
     )
+    # Release cart reservation if a token was provided
+    if cart_token:
+        db.execute("DELETE FROM cart_reservations WHERE token = %s", (cart_token,))
+
     db.commit()
     _invalidate_inventory()
     log.info("[paypal-sale] processed order=%s tid=%s total=%.2f", order_id, tid, subtotal)
@@ -23906,6 +23963,300 @@ def api_v1_price_refresh():
     """Trigger immediate price refresh for stale cards."""
     _bg(_run_price_refresh)
     return jsonify({"ok": True, "message": "Price refresh started in background"})
+
+
+# ── 1. Bulk local backfill ──────────────────────────────────────────────────
+
+@app.route("/api/v1/enrich/backfill-local", methods=["POST"])
+@require_admin
+def api_v1_backfill_local():
+    """
+    Fill inventory gaps (image, rarity, card_number, tcg_id, description)
+    from the local cards_master table — no internet required, runs in seconds.
+
+    POST /api/v1/enrich/backfill-local
+    Optional body: { "only_missing": true }  (default true — skip cards with image+rarity)
+
+    Returns: { ok, filled, skipped, total }
+    """
+    data         = request.get_json(silent=True) or {}
+    only_missing = data.get("only_missing", True)
+
+    def _run():
+        db = _direct_db()
+        try:
+            if only_missing:
+                rows = db.execute(
+                    "SELECT qr_code, name, set_code, card_number, tcg_id, "
+                    "image_url, rarity, description, variant "
+                    "FROM inventory "
+                    "WHERE image_url='' OR rarity='' OR card_number='' "
+                    "ORDER BY last_updated ASC"
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT qr_code, name, set_code, card_number, tcg_id, "
+                    "image_url, rarity, description, variant FROM inventory"
+                ).fetchall()
+
+            filled = 0
+            skipped = 0
+            for row in rows:
+                updates = _enrich_from_cards_master(dict(row), db)
+                if updates:
+                    updates["last_updated"] = _now_ms()
+                    sets = ", ".join(f"{k}=%s" for k in updates)
+                    vals = list(updates.values()) + [row["qr_code"]]
+                    db.execute(f"UPDATE inventory SET {sets} WHERE qr_code=%s", vals)
+                    filled += 1
+                else:
+                    skipped += 1
+            db.commit()
+            _invalidate_inventory()
+            log.info("[backfill-local] filled=%d skipped=%d total=%d",
+                     filled, skipped, len(rows))
+        finally:
+            db.close()
+
+    _bg(_run)
+    return jsonify({"ok": True,
+                    "message": "Local backfill started in background — "
+                               "check /api/v1/enrich/status for progress"})
+
+
+# ── 2. PayPal refund webhook ────────────────────────────────────────────────
+
+@app.route("/api/v1/webhook/paypal-refund", methods=["POST", "OPTIONS"])
+def api_v1_paypal_refund():
+    """
+    Called by your website when a PayPal refund is issued.
+    Verifies the refund with PayPal, restores stock, and voids the sale record.
+
+    Body: { "order_id": "<PayPal order ID>", "reason": "optional reason" }
+
+    Returns 200 (idempotent — calling twice is safe).
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data     = request.get_json(silent=True) or {}
+    order_id = (data.get("order_id") or "").strip()
+    reason   = (data.get("reason") or "paypal-refund").strip()[:200]
+
+    if not order_id:
+        return jsonify({"error": "order_id required"}), 400
+
+    idem_key = f"paypal-refund:{order_id}"
+    db = get_db()
+
+    # Idempotency — already processed
+    existing = db.execute(
+        "SELECT response_json FROM sales_idempotency WHERE idempotency_key = %s",
+        (idem_key,)
+    ).fetchone()
+    if existing:
+        return jsonify(json.loads(existing["response_json"])), 200
+
+    # Verify with PayPal — order must exist (COMPLETED means captured;
+    # the refund may already be REFUNDED or have capture->refund sub-resources)
+    try:
+        order = _paypal_verify_order_refund(order_id)
+    except Exception as e:
+        log.exception("[paypal-refund] PayPal verify failed for %s", order_id)
+        return jsonify({"error": f"PayPal API error: {e}"}), 500
+
+    # Find the original sale
+    tid_prefix = f"PAYPAL-{order_id[:16]}-"
+    sale = db.execute(
+        "SELECT id, items_json, total_amount FROM sales "
+        "WHERE transaction_id LIKE %s LIMIT 1",
+        (tid_prefix + "%",)
+    ).fetchone()
+
+    restored = []
+    if sale:
+        try:
+            items = json.loads(sale["items_json"] or "[]")
+        except Exception:
+            items = []
+
+        for li in items:
+            qr  = li.get("qrCode") or li.get("qr_code", "")
+            qty = int(li.get("qty") or 1)
+            if qr and qty:
+                db.execute(
+                    "UPDATE inventory SET stock = stock + %s, last_updated = %s "
+                    "WHERE qr_code = %s",
+                    (qty, _now_ms(), qr)
+                )
+                restored.append({"qr_code": qr, "qty": qty})
+
+        # Record as a return
+        try:
+            db.execute(
+                "INSERT INTO returns "
+                "(reference, original_sale_id, reason, refund_amount, "
+                " refund_method, status, created_by) "
+                "VALUES (%s, %s, %s, %s, 'paypal', 'completed', 'paypal-webhook')",
+                (f"REFUND-{order_id[:16]}", sale["id"],
+                 reason, float(sale["total_amount"]))
+            )
+        except Exception:
+            pass  # returns table may not have all columns — non-fatal
+
+    _invalidate_inventory()
+
+    response = {
+        "ok":           True,
+        "order_id":     order_id,
+        "stock_restored": restored,
+        "sale_found":   sale is not None,
+    }
+    db.execute(
+        "INSERT INTO sales_idempotency (idempotency_key, response_json) "
+        "VALUES (%s, %s) ON CONFLICT (idempotency_key) DO NOTHING",
+        (idem_key, json.dumps(response))
+    )
+    db.commit()
+    log.info("[paypal-refund] order=%s restored=%d items", order_id, len(restored))
+    return jsonify(response)
+
+
+def _paypal_verify_order_refund(order_id: str) -> dict:
+    """
+    Fetch PayPal order — accepts COMPLETED (captured) or REFUNDED status.
+    Also accepts orders where captures have a REFUNDED status.
+    """
+    import urllib.request as _ur
+    token = _paypal_access_token()
+    req   = _ur.Request(
+        f"{_paypal_base()}/v2/checkout/orders/{order_id}",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"},
+    )
+    with _ur.urlopen(req, timeout=10) as resp:
+        order = json.loads(resp.read())
+
+    status = order.get("status", "")
+    if status in ("COMPLETED", "REFUNDED"):
+        return order
+
+    # Check if any capture within the order has been refunded
+    for pu in order.get("purchase_units", []):
+        for cap in pu.get("payments", {}).get("captures", []):
+            if cap.get("status") in ("REFUNDED", "PARTIALLY_REFUNDED"):
+                return order
+
+    raise ValueError(
+        f"PayPal order {order_id} status={status} — no refund found"
+    )
+
+
+# ── 3. Cart reservation ─────────────────────────────────────────────────────
+
+_CART_TTL_MINUTES = 10  # default hold time
+
+
+@app.route("/api/v1/cart/reserve", methods=["POST", "OPTIONS"])
+def api_v1_cart_reserve():
+    """
+    Hold stock for a website cart session before the user checks out.
+    Call when the user clicks "Add to Cart" or reaches checkout.
+
+    Body: {
+      "items": [{"qr_code": "...", "qty": 1}],
+      "ttl_minutes": 10,      (optional, default 10, max 30)
+      "token": "existing-tok" (optional — extend an existing reservation)
+    }
+
+    Returns: { "token": "<uuid>", "expires_at": <ms>, "reserved": [...] }
+    Stock check considers existing reservations by OTHER tokens.
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data     = request.get_json(silent=True) or {}
+    items    = data.get("items") or []
+    ttl      = min(max(int(data.get("ttl_minutes") or _CART_TTL_MINUTES), 1), 30)
+    token    = (data.get("token") or "").strip() or __import__("uuid").uuid4().hex
+
+    if not items:
+        return jsonify({"error": "items required"}), 400
+
+    now_ms     = _now_ms()
+    expires_at = now_ms + ttl * 60_000
+    db         = get_db()
+
+    # Expire stale reservations first (lazy cleanup)
+    db.execute("DELETE FROM cart_reservations WHERE expires_at < %s", (now_ms,))
+
+    reserved = []
+    for it in items:
+        qr  = (it.get("qr_code") or "").strip()
+        qty = max(1, int(it.get("qty") or 1))
+        if not qr:
+            continue
+
+        # Available = physical stock − qty held by OTHER active tokens
+        row = db.execute(
+            "SELECT stock FROM inventory WHERE qr_code = %s", (qr,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": f"Product not found: {qr}"}), 404
+
+        held_by_others = db.execute(
+            "SELECT COALESCE(SUM(qty),0) AS held FROM cart_reservations "
+            "WHERE qr_code=%s AND token!=%s AND expires_at>%s",
+            (qr, token, now_ms)
+        ).fetchone()["held"] or 0
+
+        available = row["stock"] - int(held_by_others)
+        if available < qty:
+            db.rollback()
+            return jsonify({
+                "error": f"Not enough stock for {qr}: "
+                         f"available={available}, requested={qty}"
+            }), 409
+
+        # Upsert reservation for this token+qr
+        db.execute("DELETE FROM cart_reservations WHERE token=%s AND qr_code=%s",
+                   (token, qr))
+        db.execute(
+            "INSERT INTO cart_reservations (token, qr_code, qty, expires_at) "
+            "VALUES (%s, %s, %s, %s)",
+            (token, qr, qty, expires_at)
+        )
+        reserved.append({"qr_code": qr, "qty": qty})
+
+    db.commit()
+    return jsonify({
+        "token":      token,
+        "expires_at": expires_at,
+        "ttl_minutes": ttl,
+        "reserved":   reserved,
+    })
+
+
+@app.route("/api/v1/cart/release", methods=["POST", "OPTIONS"])
+def api_v1_cart_release():
+    """
+    Release a cart reservation — call when user abandons cart or PayPal
+    payment is confirmed (stock is deducted permanently at that point).
+
+    Body: { "token": "<token>" }
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    data  = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "token required"}), 400
+
+    db = get_db()
+    cur = db.execute("DELETE FROM cart_reservations WHERE token = %s", (token,))
+    db.commit()
+    return jsonify({"ok": True, "released": cur.rowcount})
 
 
 # ── Admin enrichment dashboard ─────────────────────────────────────────────
