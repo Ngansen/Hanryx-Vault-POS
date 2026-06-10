@@ -22755,9 +22755,102 @@ def _enrich_log(msg: str):
     log.info("[enrich] %s", msg)
 
 
+def _cards_master_lookup(db, set_id: str = "", card_number: str = "",
+                         name: str = "") -> dict | None:
+    """
+    Find the best matching cards_master row for a given inventory card.
+    Resolution order:
+      1. Exact (set_id, card_number) match
+      2. Fuzzy name match via pg_trgm (name_en / name_kr / name_jp)
+    Returns a plain dict or None.
+    """
+    # 1. Exact set+number match (most reliable)
+    if set_id and card_number:
+        row = db.execute(
+            "SELECT set_id, card_number, name_en, name_kr, name_jp, name_chs, name_cht, "
+            "rarity, card_type, hp, artist, image_url, image_url_alt, pokedex_id "
+            "FROM cards_master WHERE LOWER(set_id)=LOWER(%s) AND card_number=%s LIMIT 1",
+            (set_id, card_number)
+        ).fetchone()
+        if row:
+            return dict(row)
+
+    # 2. pg_trgm fuzzy name search (best match across EN / KR / JP)
+    if name:
+        nm = name.split("(")[0].strip()  # strip parentheticals
+        try:
+            row = db.execute(
+                "SELECT set_id, card_number, name_en, name_kr, name_jp, name_chs, name_cht, "
+                "rarity, card_type, hp, artist, image_url, image_url_alt, pokedex_id, "
+                "GREATEST(similarity(name_en,%s), similarity(name_kr,%s), "
+                "         similarity(name_jp,%s)) AS sim "
+                "FROM cards_master "
+                "WHERE name_en %% %s OR name_kr %% %s OR name_jp %% %s "
+                "ORDER BY sim DESC LIMIT 1",
+                (nm, nm, nm, nm, nm, nm)
+            ).fetchone()
+            if row and row["sim"] and float(row["sim"]) >= 0.35:
+                return dict(row)
+        except Exception:
+            pass  # pg_trgm not available or no match
+
+    return None
+
+
+def _enrich_from_cards_master(row: dict, db) -> dict:
+    """
+    Local-first enrichment: fill inventory fields from cards_master.
+    Returns a dict of fields to update (may be empty).
+    """
+    sc  = (row.get("set_code") or "").strip()
+    cn  = (row.get("card_number") or "").strip()
+    nm  = (row.get("name") or "").strip()
+    tid = (row.get("tcg_id") or "").strip()
+
+    # Try set_id from tcg_id format "sv1-025"
+    set_id = sc
+    if tid and "-" in tid:
+        set_id = tid.rsplit("-", 1)[0]
+
+    master = _cards_master_lookup(db, set_id=set_id, card_number=cn, name=nm)
+    if not master:
+        return {}
+
+    updates: dict = {}
+
+    if not row.get("image_url") and master.get("image_url"):
+        updates["image_url"] = master["image_url"]
+
+    if not row.get("rarity") and master.get("rarity"):
+        updates["rarity"] = master["rarity"]
+
+    if not row.get("card_number") and master.get("card_number"):
+        updates["card_number"] = master["card_number"]
+
+    if not row.get("set_code") and master.get("set_id"):
+        updates["set_code"] = master["set_id"].upper()
+
+    if not row.get("tcg_id") and master.get("set_id") and master.get("card_number"):
+        updates["tcg_id"] = f"{master['set_id']}-{master['card_number']}"
+
+    # description — card_type + HP
+    if not row.get("description"):
+        parts = []
+        if master.get("card_type"):
+            parts.append(master["card_type"])
+        if master.get("hp"):
+            parts.append(f"HP {master['hp']}")
+        if master.get("artist"):
+            parts.append(f"Art: {master['artist']}")
+        if parts:
+            updates["description"] = " · ".join(parts)
+
+    return updates
+
+
 def _enrich_single_card(qr_code: str, db) -> bool:
     """
-    Enrich one card: TCG API data → update inventory fields → eBay market price
+    Enrich one card: local cards_master first → TCG API → eBay market price
     → pgvector embedding. Returns True if the card was actually enriched.
     """
     row = db.execute(
@@ -22768,9 +22861,17 @@ def _enrich_single_card(qr_code: str, db) -> bool:
     if not row:
         return False
 
-    updated_fields = {}
+    updated_fields: dict = {}
     card_name = row["name"]
     cid = (row["tcg_id"] or qr_code).lower().strip()
+
+    # ── 0. Local cards_master enrichment (instant, offline) ───────────────
+    local_updates = _enrich_from_cards_master(dict(row), db)
+    if local_updates:
+        updated_fields.update(local_updates)
+        # Merge into row so downstream steps see the filled-in values
+        row = dict(row)
+        row.update(local_updates)
 
     # ── 1. TCG API enrichment ──────────────────────────────────────────────
     tcg_raw = _tcg_fetch(cid)
@@ -23309,6 +23410,120 @@ def api_v1_inventory_detail(qr):
     }
 
     return jsonify(card)
+
+
+@app.route("/api/v1/autofill", methods=["GET", "OPTIONS"])
+def api_v1_autofill():
+    """
+    Instant card data lookup from the local cards_master database.
+    Call this as the user types a set + card number (or card name) to
+    pre-fill inventory / website forms without any external API calls.
+
+    Query params (at least one required):
+      set_id      — TCGdex set id, e.g. 'sv1' or 'SV1'
+      card_number — collector number, e.g. '025' or '25'
+      name        — card name (EN/KR/JP), used for fuzzy match if set+num missing
+      limit       — max results for name-only search (default 5, max 20)
+
+    Returns:
+      Single card:  { found: true, card: { ... } }
+      Name search:  { found: true, cards: [ ... ] }
+      No match:     { found: false }
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+
+    set_id      = (request.args.get("set_id") or "").strip()
+    card_number = (request.args.get("card_number") or "").strip()
+    name        = (request.args.get("name") or "").strip()
+    try:
+        limit = min(int(request.args.get("limit") or 5), 20)
+    except (TypeError, ValueError):
+        limit = 5
+
+    if not set_id and not card_number and not name:
+        return jsonify({"error": "set_id, card_number, or name required"}), 400
+
+    db = get_db()
+
+    def _fmt(m: dict) -> dict:
+        alt_images = []
+        try:
+            raw = m.get("image_url_alt")
+            if isinstance(raw, str):
+                import json as _j
+                alt_images = _j.loads(raw) if raw else []
+            elif isinstance(raw, list):
+                alt_images = raw
+        except Exception:
+            pass
+        return {
+            "set_id":      m.get("set_id", ""),
+            "card_number": m.get("card_number", ""),
+            "tcg_id":      f"{m['set_id']}-{m['card_number']}" if m.get("set_id") and m.get("card_number") else "",
+            "name_en":     m.get("name_en", ""),
+            "name_kr":     m.get("name_kr", ""),
+            "name_jp":     m.get("name_jp", ""),
+            "name_chs":    m.get("name_chs", ""),
+            "name_cht":    m.get("name_cht", ""),
+            "rarity":      m.get("rarity", ""),
+            "card_type":   m.get("card_type", ""),
+            "hp":          m.get("hp"),
+            "artist":      m.get("artist", ""),
+            "pokedex_id":  m.get("pokedex_id"),
+            "image_url":   m.get("image_url", ""),
+            "image_url_alt": alt_images,
+            "image_proxy_en": (
+                f"/card/image?set_id={m['set_id']}&card_number={m['card_number']}&lang=en"
+                if m.get("set_id") and m.get("card_number") else ""
+            ),
+            "image_proxy_jp": (
+                f"/card/image?set_id={m['set_id']}&card_number={m['card_number']}&lang=jp"
+                if m.get("set_id") and m.get("card_number") else ""
+            ),
+            "image_proxy_kr": (
+                f"/card/image?set_id={m['set_id']}&card_number={m['card_number']}&lang=kr"
+                if m.get("set_id") and m.get("card_number") else ""
+            ),
+        }
+
+    # ── Exact set + number lookup ────────────────────────────────────────────
+    if set_id and card_number:
+        master = _cards_master_lookup(db, set_id=set_id, card_number=card_number)
+        if master:
+            return jsonify({"found": True, "card": _fmt(master)})
+        return jsonify({"found": False})
+
+    # ── Name-based fuzzy search — return top N matches ───────────────────────
+    if name:
+        nm = name.split("(")[0].strip()
+        try:
+            rows = db.execute(
+                "SELECT set_id, card_number, name_en, name_kr, name_jp, name_chs, name_cht, "
+                "rarity, card_type, hp, artist, image_url, image_url_alt, pokedex_id, "
+                "GREATEST(similarity(name_en,%s), similarity(name_kr,%s), "
+                "         similarity(name_jp,%s)) AS sim "
+                "FROM cards_master "
+                "WHERE name_en %% %s OR name_kr %% %s OR name_jp %% %s "
+                "ORDER BY sim DESC LIMIT %s",
+                (nm, nm, nm, nm, nm, nm, limit)
+            ).fetchall()
+            if rows:
+                return jsonify({"found": True, "cards": [_fmt(dict(r)) for r in rows]})
+        except Exception as e:
+            log.warning("[autofill] trgm search failed: %s", e)
+
+        # Fallback: exact name_en match (pg_trgm unavailable)
+        row = db.execute(
+            "SELECT set_id, card_number, name_en, name_kr, name_jp, name_chs, name_cht, "
+            "rarity, card_type, hp, artist, image_url, image_url_alt, pokedex_id "
+            "FROM cards_master WHERE LOWER(name_en)=LOWER(%s) LIMIT %s",
+            (nm, limit)
+        ).fetchall()
+        if row:
+            return jsonify({"found": True, "cards": [_fmt(dict(r)) for r in row]})
+
+    return jsonify({"found": False})
 
 
 @app.route("/api/v1/inventory/search", methods=["GET", "OPTIONS"])
