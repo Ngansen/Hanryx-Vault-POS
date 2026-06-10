@@ -23145,9 +23145,51 @@ def api_v1_inventory():
     })
 
 
+def _ph_card_ids(r: dict) -> list[str]:
+    """
+    Build the list of card_id values to search in price_history for a given
+    inventory row.  Scrapers store under different keys depending on which
+    pipeline ran:
+      - plain qr_code  (quick-sell / admin entry)
+      - "SET_CODE-card_number"  (TCGdex enrichment)
+      - card name  (older /card/price scrapes)
+    """
+    ids: list[str] = [r["qr_code"]]
+    sc  = (r.get("set_code") or "").strip()
+    cn  = (r.get("card_number") or "").strip()
+    nm  = (r.get("name") or "").strip()
+    if sc and cn:
+        ids.append(f"{sc}-{cn}")
+        ids.append(f"{sc.lower()}-{cn}")
+    if nm:
+        ids.append(nm)
+        ids.append(nm.split("(")[0].strip())  # strip parentheticals, e.g. "Pikachu (25th)"
+    return list(dict.fromkeys(ids))           # deduplicate, preserve order
+
+
+def _lookup_set_id(db, r: dict) -> str:
+    """
+    Resolve TCGdex set_id (e.g. 'sv1') from inventory row.
+    Tries cards_master join on tcg_id first, then set_code normalisation.
+    """
+    tid = (r.get("tcg_id") or "").strip()
+    if tid:
+        try:
+            row = db.execute(
+                "SELECT set_id FROM cards_master WHERE set_id || '-' || card_number = %s "
+                "OR set_id = %s LIMIT 1", (tid, tid)
+            ).fetchone()
+            if row and row["set_id"]:
+                return row["set_id"]
+        except Exception:
+            pass
+    sc = (r.get("set_code") or "").strip()
+    return sc.lower() if sc else ""
+
+
 @app.route("/api/v1/inventory/<path:qr>", methods=["GET", "OPTIONS"])
 def api_v1_inventory_detail(qr):
-    """Single card detail with full TCG data and price history."""
+    """Single card detail with full TCG data, market prices, and image URLs."""
     if request.method == "OPTIONS":
         return "", 204
 
@@ -23156,15 +23198,66 @@ def api_v1_inventory_detail(qr):
     if not r:
         return jsonify({"error": "Card not found"}), 404
 
-    enriched = _enrich_with_tcg(dict(r), qr)
+    r = dict(r)
+    enriched = _enrich_with_tcg(r, qr)
 
-    # Price history (last 30 entries)
+    # ── Price history — query across all known card_id formats ───────────────
+    ph_ids      = _ph_card_ids(r)
+    ph_placeholders = ",".join(["%s"] * len(ph_ids))
     history = db.execute(
-        "SELECT market_price, fetched_ms FROM price_history "
-        "WHERE card_id = %s ORDER BY fetched_ms DESC LIMIT 30", (qr,)
+        f"SELECT market_price, fetched_ms, "
+        f"COALESCE(source,'unknown') AS source, "
+        f"COALESCE(currency,'USD') AS currency "
+        f"FROM price_history "
+        f"WHERE card_id IN ({ph_placeholders}) "
+        f"ORDER BY fetched_ms DESC LIMIT 60",
+        ph_ids
     ).fetchall()
 
-    # eBay sold history
+    # Latest price per source (for the market_prices widget)
+    seen_sources: set[str] = set()
+    market_prices: list[dict] = []
+    for h in history:
+        src = h["source"]
+        if src not in seen_sources:
+            seen_sources.add(src)
+            market_prices.append({
+                "source":   src,
+                "price":    round(float(h["market_price"]), 2),
+                "currency": h["currency"],
+                "age_days": round((_now_ms() - h["fetched_ms"]) / 86_400_000, 1),
+            })
+
+    # Staleness — auto-trigger background refresh if >7 days old
+    _STALE_MS = 7 * 86_400_000
+    latest_ms = history[0]["fetched_ms"] if history else None
+    price_stale = (latest_ms is None) or (latest_ms < _now_ms() - _STALE_MS)
+    if price_stale and r.get("name"):
+        def _bg_refresh(name=r["name"]):
+            try:
+                import price_scrapers
+                price_scrapers.search_all(name, limit=5)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_refresh, daemon=True).start()
+
+    # ── Image URL resolution ─────────────────────────────────────────────────
+    set_id  = _lookup_set_id(db, r)
+    card_num = (r.get("card_number") or "").strip()
+    def _img_url(lang: str) -> str:
+        if set_id and card_num:
+            return f"/card/image?set_id={set_id}&card_number={card_num}&lang={lang}"
+        return r.get("image_url") or ""
+
+    images = {
+        "cdn":   r.get("image_url") or "",        # direct CDN, usable from browser
+        "en":    _img_url("en"),                   # proxy through your server
+        "jp":    _img_url("jp"),
+        "kr":    _img_url("kr"),
+        "back":  r.get("back_image_url") or "",
+    }
+
+    # ── eBay sold history ────────────────────────────────────────────────────
     ebay_history = []
     try:
         ebay_rows = db.execute(
@@ -23179,36 +23272,40 @@ def api_v1_inventory_detail(qr):
         pass
 
     card = {
-        "qr_code":      r["qr_code"],
-        "name":         r["name"],
-        "price":        float(r["price"]),
-        "category":     r["category"],
-        "rarity":       r["rarity"],
-        "set_code":     r["set_code"],
-        "description":  r["description"],
-        "stock":        r["stock"],
-        "image_url":    r["image_url"],
-        "tcg_id":       r["tcg_id"],
-        "condition":    r["condition"],
-        "item_type":    r["item_type"],
-        "language":     r["language"],
-        "grading":      {"company": r["grading_company"], "grade": r["grade"],
-                         "cert": r["cert_number"]} if r["grading_company"] else None,
-        "variant":      r["variant"],
-        "release_year": r["release_year"],
-        "resale_price": float(r["resale_price"]),
+        "qr_code":        r["qr_code"],
+        "name":           r["name"],
+        "price":          float(r["price"]),
+        "category":       r["category"],
+        "rarity":         r["rarity"],
+        "set_code":       r["set_code"],
+        "set_id":         set_id,
+        "description":    r["description"],
+        "stock":          r["stock"],
+        "image_url":      r["image_url"],    # kept for backward compat
+        "images":         images,
+        "tcg_id":         r["tcg_id"],
+        "condition":      r["condition"],
+        "item_type":      r["item_type"],
+        "language":       r["language"],
+        "grading":        {"company": r["grading_company"], "grade": r["grade"],
+                           "cert": r["cert_number"]} if r["grading_company"] else None,
+        "variant":        r["variant"],
+        "release_year":   r["release_year"],
+        "resale_price":   float(r["resale_price"]),
         "purchase_price": float(r["purchase_price"]),
-        "sale_price":   float(r["sale_price"]),
-        "tags":         [t.strip() for t in r["tags"].split(",") if t.strip()] if r["tags"] else [],
-        "featured":     bool(r["featured"]),
-        "listed":       bool(r["listed_for_sale"]),
-        "card_number":  r["card_number"],
-        "back_image":   r["back_image_url"],
-        "updated_at":   r["last_updated"],
-        "tcg_data":     enriched.get("tcgData"),
-        "price_history": [{"price": float(h["market_price"]), "at": h["fetched_ms"]}
-                          for h in history],
-        "ebay_history":  ebay_history,
+        "sale_price":     float(r["sale_price"]),
+        "tags":           [t.strip() for t in r["tags"].split(",") if t.strip()] if r["tags"] else [],
+        "featured":       bool(r["featured"]),
+        "listed":         bool(r["listed_for_sale"]),
+        "card_number":    r["card_number"],
+        "updated_at":     r["last_updated"],
+        "tcg_data":       enriched.get("tcgData"),
+        "market_prices":  market_prices,
+        "price_stale":    price_stale,
+        "price_history":  [{"price": float(h["market_price"]), "at": h["fetched_ms"],
+                            "source": h["source"], "currency": h["currency"]}
+                           for h in history],
+        "ebay_history":   ebay_history,
     }
 
     return jsonify(card)
